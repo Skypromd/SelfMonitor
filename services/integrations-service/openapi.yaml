@@ -1,0 +1,73 @@
+openapi: 3.0.3
+info:
+  title: Integrations Service
+  description: >-
+    Acts as a facade for connecting to external third-party APIs like HMRC (for
+    tax submissions) or Xero (for accounting).
+  version: 1.0.0
+paths:
+  /integrations/hmrc/submit-tax-return:
+    post:
+      summary: Submit a tax return to HMRC
+      tags:
+        - Integrations
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HMRCSubmissionRequest'
+      responses:
+        '202':
+          description: Submission accepted by HMRC.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionStatus'
+        '400':
+          description: Invalid submission data.
+        '502':
+          description: Bad Gateway - Error communicating with the external service.
+
+components:
+  schemas:
+    HMRCSubmissionRequest:
+      type: object
+      properties:
+        tax_period_start:
+          type: string
+          format: date
+        tax_period_end:
+          type: string
+          format: date
+        tax_due:
+          type: number
+          format: float
+      required:
+        - tax_period_start
+        - tax_period_end
+        - tax_due
+    SubmissionStatus:
+      type: object
+      properties:
+        submission_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [pending, completed, failed]
+        message:
+          type: string
+          example: 'Your submission has been received and is being processed.'
+      required:
+        - submission_id
+        - status
+        - message
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

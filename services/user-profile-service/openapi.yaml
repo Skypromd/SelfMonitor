@@ -1,0 +1,92 @@
+openapi: 3.0.3
+info:
+  title: User Profile Service
+  description: Manages user profile data, such as names, contact information, and preferences.
+  version: 1.0.0
+paths:
+  /profiles/me:
+    get:
+      summary: Get the current user's profile
+      tags:
+        - Profiles
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: The user profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '404':
+          description: Profile not found.
+    put:
+      summary: Create or update the current user's profile
+      tags:
+        - Profiles
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdate'
+      responses:
+        '200':
+          description: Profile updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          description: Invalid input.
+
+components:
+  schemas:
+    UserProfileUpdate:
+      type: object
+      properties:
+        first_name:
+          type: string
+          example: 'John'
+        last_name:
+          type: string
+          example: 'Doe'
+        date_of_birth:
+          type: string
+          format: date
+          example: '1990-01-15'
+    UserProfile:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: "The user's unique ID, obtained from the auth token."
+          example: 'fake-user-123'
+        first_name:
+          type: string
+          example: 'John'
+        last_name:
+          type: string
+          example: 'Doe'
+        date_of_birth:
+          type: string
+          format: date
+          example: '1990-01-15'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - user_id
+        - created_at
+        - updated_at
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

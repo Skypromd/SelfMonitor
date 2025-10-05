@@ -1,0 +1,23 @@
+{
+  "common": {
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "error_unexpected": "An unexpected error occurred. Please try again later.",
+    "logout": "Log Out"
+  },
+  "auth": {
+    "login_title": "Log In",
+    "logout_button": "Log Out"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "activity": "Activity",
+    "transactions": "Transactions",
+    "documents": "Documents",
+    "reports": "Reports",
+    "marketplace": "Marketplace",
+    "submission": "Tax Submission",
+    "profile": "Profile",
+    "admin": "Admin"
+  }
+}

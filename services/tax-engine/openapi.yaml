@@ -1,0 +1,125 @@
+openapi: 3.0.3
+info:
+  title: Tax Engine Service
+  description: Calculates tax liabilities based on categorized transactions.
+  version: 1.0.0
+paths:
+  /calculate:
+    post:
+      summary: Calculate tax for a given period
+      tags:
+        - Tax Calculation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxCalculationRequest'
+      responses:
+        '200':
+          description: The result of the tax calculation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxCalculationResult'
+        '400':
+          description: Invalid input, e.g., end date is before start date.
+  /calculate-and-submit:
+    post:
+      summary: Calculate tax and submit it to HMRC
+      tags:
+        - Tax Calculation
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaxCalculationRequest'
+      responses:
+        '202':
+          description: Submission to HMRC has been accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  submission_id:
+                    type: string
+                    format: uuid
+                  message:
+                    type: string
+        '502':
+          description: Error communicating with a downstream service.
+
+components:
+  schemas:
+    TaxCalculationRequest:
+      type: object
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        jurisdiction:
+          type: string
+          description: The tax jurisdiction (e.g., 'UK', 'US-CA').
+          example: 'UK'
+      required:
+        - start_date
+        - end_date
+        - jurisdiction
+    TaxSummaryItem:
+      type: object
+      properties:
+        category:
+          type: string
+          example: 'income'
+        total_amount:
+          type: number
+          format: float
+        taxable_amount:
+          type: number
+          format: float
+    TaxCalculationResult:
+      type: object
+      properties:
+        user_id:
+          type: string
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        total_income:
+          type: number
+          format: float
+        total_expenses:
+          type: number
+          format: float
+        estimated_tax_due:
+          type: number
+          format: float
+        summary_by_category:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaxSummaryItem'
+      required:
+        - user_id
+        - start_date
+        - end_date
+        - total_income
+        - total_expenses
+        - estimated_tax_due
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

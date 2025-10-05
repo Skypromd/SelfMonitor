@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+sqlalchemy[asyncio]
+asyncpg
+alembic
+
+# Dependencies for testing
+pytest
+pytest-asyncio
+httpx

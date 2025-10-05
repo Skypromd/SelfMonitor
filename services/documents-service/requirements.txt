@@ -1,0 +1,17 @@
+# Core application dependencies
+fastapi
+uvicorn[standard]
+pydantic
+python-multipart
+sqlalchemy[asyncio]
+asyncpg
+alembic
+boto3
+aiofiles
+celery
+redis
+httpx
+
+# Dependencies for testing
+pytest
+pytest-asyncio

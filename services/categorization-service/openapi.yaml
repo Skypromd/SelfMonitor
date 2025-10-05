@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Categorization Service
+  description: An ML-like service to automatically categorize transactions based on their description.
+  version: 1.0.0
+paths:
+  /categorize:
+    post:
+      summary: Suggest a category for a transaction
+      tags:
+        - Categorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CategorizationRequest'
+      responses:
+        '200':
+          description: Suggested category.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CategorizationResponse'
+
+components:
+  schemas:
+    CategorizationRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          example: 'TESCO STORES 321'
+      required:
+        - description
+    CategorizationResponse:
+      type: object
+      properties:
+        category:
+          type: string
+          nullable: true
+          example: 'groceries'
+      required:
+        - category

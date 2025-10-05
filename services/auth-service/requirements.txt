@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+pydantic[email]
+python-jose[cryptography]
+passlib[bcrypt]
+prometheus-fastapi-instrumentator
+pyotp
+qrcode[pil]
+
+# Dependencies for testing
+pytest
+httpx

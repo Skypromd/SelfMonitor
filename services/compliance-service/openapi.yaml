@@ -1,0 +1,97 @@
+openapi: 3.0.3
+info:
+  title: Compliance Service
+  description: >-
+    Handles compliance-related tasks, such as maintaining an immutable audit
+    log and managing data retention policies.
+  version: 1.0.0
+paths:
+  /audit-events:
+    post:
+      summary: Record an audit event
+      tags:
+        - Audit Log
+      description: >-
+        An internal endpoint for other services to record significant,
+        auditable events.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuditEventCreate'
+      responses:
+        '201':
+          description: Audit event recorded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEvent'
+    get:
+      summary: Query audit events
+      tags:
+        - Audit Log
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter events by user ID.
+        - name: entity_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter events by a related entity ID (e.g., consent_id).
+      responses:
+        '200':
+          description: A list of audit events matching the query.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEvent'
+
+components:
+  schemas:
+    AuditEventCreate:
+      type: object
+      properties:
+        user_id:
+          type: string
+          example: 'fake-user-123'
+        action:
+          type: string
+          example: 'consent.granted'
+        details:
+          type: object
+          additionalProperties: true
+          example:
+            consent_id: 'c1b2a3f4-...'
+            provider: 'true_layer'
+      required:
+        - user_id
+        - action
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        timestamp:
+          type: string
+          format: date-time
+        user_id:
+          type: string
+        action:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+      required:
+        - id
+        - timestamp
+        - user_id
+        - action

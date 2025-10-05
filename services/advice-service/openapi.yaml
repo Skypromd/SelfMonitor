@@ -1,0 +1,68 @@
+openapi: 3.0.3
+info:
+  title: Advice Service
+  description: >-
+    Provides non-regulated financial insights and advice based on a user's
+    aggregated data.
+  version: 1.0.0
+paths:
+  /generate:
+    post:
+      summary: Generate a piece of advice
+      tags:
+        - Advice
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdviceRequest'
+      responses:
+        '200':
+          description: Advice generated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdviceResponse'
+
+components:
+  schemas:
+    AdviceRequest:
+      type: object
+      properties:
+        topic:
+          type: string
+          enum: [spending_analysis, savings_potential, income_protection]
+          description: The area for which advice is requested.
+      required:
+        - topic
+    AdviceResponse:
+      type: object
+      properties:
+        topic:
+          type: string
+          enum: [spending_analysis, savings_potential, income_protection]
+        headline:
+          type: string
+          example: 'You are spending more on dining out this month.'
+        details:
+          type: string
+          example: >-
+            Your spending on restaurants and cafes is 25% higher than your
+            3-month average. Consider setting a budget for this category.
+        generated_at:
+          type: string
+          format: date-time
+      required:
+        - topic
+        - headline
+        - details
+        - generated_at
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

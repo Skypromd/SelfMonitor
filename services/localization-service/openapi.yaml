@@ -1,0 +1,69 @@
+openapi: 3.0.3
+info:
+  title: Localization Service
+  description: Provides translation strings (i18n) for different locales.
+  version: 1.0.0
+paths:
+  /translations/{locale}/all:
+    get:
+      summary: Get all translations for a locale
+      tags:
+        - Translations
+      parameters:
+        - name: locale
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 'en-GB'
+          description: The locale for the translations (e.g., 'en-GB', 'de-DE').
+      responses:
+        '200':
+          description: A nested object of all translations for the locale.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: object
+                  additionalProperties:
+                    type: string
+        '404':
+          description: Translations not found for the given locale.
+  /translations/{locale}/{component}:
+    get:
+      summary: Get translations for a component
+      deprecated: true
+      tags:
+        - Translations
+      parameters:
+        - name: locale
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 'en-GB'
+          description: The locale for the translations (e.g., 'en-GB', 'de-DE').
+        - name: component
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 'login'
+          description: The component or namespace for the translations.
+      responses:
+        '200':
+          description: A key-value map of translations.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+                example:
+                  title: 'FinTech App'
+                  description: 'Register or log in to continue'
+        '404':
+          description: Translations not found for the given locale or component.
+
+components: {}

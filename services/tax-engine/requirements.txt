@@ -1,0 +1,14 @@
+# Core application dependencies
+fastapi
+uvicorn[standard]
+pydantic
+httpx
+opentelemetry-distro
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx
+
+# Dependencies for testing
+pytest
+pytest-asyncio
+pytest-mock
+pact-python

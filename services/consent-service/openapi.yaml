@@ -1,0 +1,148 @@
+openapi: 3.0.3
+info:
+  title: Consent Service
+  description: >-
+    Manages user consents for data access, including Open Banking connections.
+    Provides an auditable trail of consent actions.
+  version: 1.0.0
+paths:
+  /consents:
+    post:
+      summary: Record a new consent
+      tags:
+        - Consents
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentCreate'
+      responses:
+        '201':
+          description: Consent recorded successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consent'
+    get:
+      summary: List all active consents for a user
+      tags:
+        - Consents
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: A list of consents.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Consent'
+
+  /consents/{consent_id}:
+    get:
+      summary: Get a specific consent
+      tags:
+        - Consents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: consent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Consent details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consent'
+        '404':
+          description: Consent not found.
+    delete:
+      summary: Revoke a consent
+      tags:
+        - Consents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: consent_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Consent revoked successfully.
+        '404':
+          description: Consent not found.
+
+components:
+  schemas:
+    ConsentCreate:
+      type: object
+      properties:
+        connection_id:
+          type: string
+          format: uuid
+          description: The ID of the banking connection this consent is for.
+        provider:
+          type: string
+          example: 'true_layer'
+          description: The provider for which consent is given.
+        scopes:
+          type: array
+          items:
+            type: string
+          description: List of permissions granted.
+          example: ['accounts', 'transactions']
+      required:
+        - connection_id
+        - provider
+        - scopes
+    Consent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        connection_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: ['active', 'revoked']
+        provider:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - connection_id
+        - status
+        - created_at
+        - updated_at
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

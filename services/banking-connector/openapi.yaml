@@ -1,0 +1,142 @@
+openapi: 3.0.3
+info:
+  title: Banking Connector Service
+  description: >
+    Service for connecting to Open Banking providers, handling user consent,
+    and fetching banking data like transactions and accounts.
+  version: 1.0.0
+paths:
+  /connections/initiate:
+    post:
+      summary: Initiate a new bank connection
+      tags:
+        - Connections
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider_id:
+                  type: string
+                  description: The ID of the Open Banking provider (e.g., 'true_layer', 'tink').
+                  example: 'true_layer'
+                redirect_uri:
+                  type: string
+                  format: uri
+                  description: The URI to redirect the user back to after consent is granted.
+                  example: 'https://yourapp.com/callback'
+              required:
+                - provider_id
+                - redirect_uri
+      responses:
+        '200':
+          description: Returns the provider's consent URL to redirect the user to.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  consent_url:
+                    type: string
+                    format: uri
+                    description: The URL for the user consent screen.
+  /connections/callback:
+    get:
+      summary: Handle provider callback
+      tags:
+        - Connections
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The authorization code provided by the bank.
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+          description: An optional state parameter to prevent CSRF attacks.
+      responses:
+        '200':
+          description: Connection successful, tokens exchanged. Returns a connection ID.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connection_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    example: 'successful'
+        '400':
+          description: Error during callback handling.
+  /accounts/{account_id}/transactions:
+    get:
+      summary: Get transactions for a bank account
+      tags:
+        - Data
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: account_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: The unique ID of the bank account.
+        - name: from_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: A list of transactions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionList'
+        '404':
+          description: Account not found.
+
+components:
+  schemas:
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        amount:
+          type: number
+          format: float
+        currency:
+          type: string
+          example: 'GBP'
+    TransactionList:
+      type: array
+      items:
+        $ref: '#/components/schemas/Transaction'
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

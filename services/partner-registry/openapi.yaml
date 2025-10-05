@@ -1,0 +1,111 @@
+openapi: 3.0.3
+info:
+  title: Partner Registry Service
+  description: Manages a registry of third-party partners (e.g., financial advisors).
+  version: 1.0.0
+paths:
+  /partners:
+    get:
+      summary: List all available partners
+      tags:
+        - Partners
+      parameters:
+        - name: service_type
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 'mortgage_advice'
+          description: Filter partners by the type of service they offer.
+      responses:
+        '200':
+          description: A list of partners.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Partner'
+  /partners/{partner_id}:
+    get:
+      summary: Get details for a specific partner
+      tags:
+        - Partners
+      parameters:
+        - name: partner_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Partner details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Partner'
+        '404':
+          description: Partner not found.
+    post:
+      summary: Initiate a handoff to a partner
+      tags:
+        - Partners
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: partner_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Handoff process initiated.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Handoff to SafeFuture Financial Advisors initiated."
+                  audit_event_id:
+                    type: string
+                    format: uuid
+        '404':
+          description: Partner not found.
+
+components:
+  schemas:
+    Partner:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: 'SafeFuture Financial Advisors'
+        description:
+          type: string
+          example: 'Independent financial advisors regulated by the FCA.'
+        services_offered:
+          type: array
+          items:
+            type: string
+          example: ['pension_advice', 'investment_management']
+        website:
+          type: string
+          format: uri
+          example: 'https://www.safefuture.example.com'
+      required:
+        - id
+        - name
+        - services_offered
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

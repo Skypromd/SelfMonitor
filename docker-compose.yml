@@ -1,0 +1,381 @@
+version: '3.8'
+
+services:
+  nginx-gateway:
+    build: ./nginx
+    container_name: nginx-gateway
+    ports:
+      - "8000:80" # The single entry point for our backend
+    depends_on:
+      - auth-service
+      - user-profile-service
+      - transactions-service
+      - compliance-service
+      - consent-service
+      - banking-connector
+      - documents-service
+      - tax-engine
+      - advice-service
+      - partner-registry
+      - integrations-service
+      - analytics-service
+      - localization-service
+      - categorization-service
+      - qna-service
+      - calendar-service
+    networks:
+      - default_network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+      - ./infra/postgres:/docker-entrypoint-initdb.d # Run init scripts
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db_user_profile
+    ports:
+      - "5432:5432" # Expose port for local inspection
+    networks:
+      - default_network
+
+  auth-service:
+    build: ./services/auth-service
+    container_name: auth-service
+    environment:
+      # This is how we pass secrets to our services in a production-like environment.
+      # In a real cloud deployment, this would come from a secret manager (like AWS Secrets Manager or HashiCorp Vault).
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
+    # ports are no longer exposed directly
+    networks:
+      - default_network
+
+  user-profile-service:
+    build: ./services/user-profile-service
+    container_name: user-profile-service
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_user_profile"
+    # Run migrations before starting the app server
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    networks:
+      - default_network
+
+  transactions-service:
+    build: ./services/transactions-service
+    container_name: transactions-service
+    depends_on:
+      - postgres
+      - categorization-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_transactions"
+      CATEGORIZATION_SERVICE_URL: "http://categorization-service/categorize"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    networks:
+      - default_network
+
+  compliance-service:
+    build: ./services/compliance-service
+    container_name: compliance-service
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_compliance"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    networks:
+      - default_network
+
+  consent-service:
+    build: ./services/consent-service
+    container_name: consent-service
+    depends_on:
+      - compliance-service
+    environment:
+      COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
+    networks:
+      - default_network
+
+  banking-connector:
+    build: ./services/banking-connector
+    container_name: banking-connector
+    depends_on:
+      - transactions-service
+      - vault
+    environment:
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service/import"
+      VAULT_ADDR: "http://vault:8200"
+      VAULT_TOKEN: "dev-root-token" # This is the default root token for Vault's dev mode
+    networks:
+      - default_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - default_network
+
+  celery-worker:
+    build: ./services/banking-connector # Use the same image as the web server
+    container_name: celery-worker
+    command: celery -A app.celery_app.celery worker --loglevel=info
+    depends_on:
+      - redis
+      - transactions-service
+    environment:
+      # Pass the same environment variables as the web server
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service/import"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+    networks:
+      - default_network
+
+  celery-worker-docs:
+    build: ./services/documents-service
+    container_name: celery-worker-docs
+    command: celery -A app.celery_app.celery worker --loglevel=info
+    depends_on:
+      - redis
+      - postgres
+      - localstack
+      - qna-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_documents"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      AWS_ENDPOINT_URL: "http://localstack:4566"
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_DEFAULT_REGION: "eu-west-2"
+      S3_BUCKET_NAME: "documents-bucket"
+      QNA_SERVICE_URL: "http://qna-service/index"
+    networks:
+      - default_network
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - "4566:4566" # Default LocalStack edge port
+    environment:
+      - SERVICES=s3
+      - AWS_DEFAULT_REGION=eu-west-2
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+    networks:
+      - default_network
+
+  aws-cli-setup:
+    image: amazon/aws-cli:2.13.25
+    container_name: aws-cli-setup
+    depends_on:
+      - localstack
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=eu-west-2
+    # This command runs once and creates the S3 bucket we need.
+    command: >
+      sh -c "
+        aws s3 mb s3://documents-bucket --endpoint-url http://localstack:4566 &&
+        echo 'Bucket created successfully.'
+      "
+    networks:
+      - default_network
+
+  documents-service:
+    build: ./services/documents-service
+    container_name: documents-service
+    depends_on:
+      - postgres
+      - localstack
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_documents"
+      AWS_ENDPOINT_URL: "http://localstack:4566" # Point to LocalStack
+      AWS_ACCESS_KEY_ID: "test"
+      AWS_SECRET_ACCESS_KEY: "test"
+      AWS_DEFAULT_REGION: "eu-west-2"
+      S3_BUCKET_NAME: "documents-bucket"
+    # No longer need local volume for uploads
+    # volumes:
+    #   - documents_data:/uploads
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    networks:
+      - default_network
+
+  tax-engine:
+    build: ./services/tax-engine
+    container_name: tax-engine
+    depends_on:
+      - transactions-service
+      - integrations-service
+      - calendar-service
+      - jaeger
+    environment:
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+      INTEGRATIONS_SERVICE_URL: "http://integrations-service/integrations/hmrc/submit-tax-return"
+      CALENDAR_SERVICE_URL: "http://calendar-service/events"
+      OTEL_SERVICE_NAME: "tax-engine"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+    networks:
+      - default_network
+
+  advice-service:
+    build: ./services/advice-service
+    container_name: advice-service
+    depends_on:
+      - transactions-service
+    environment:
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+    networks:
+      - default_network
+
+  partner-registry:
+    build: ./services/partner-registry
+    container_name: partner-registry
+    depends_on:
+      - compliance-service
+    environment:
+      COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
+    networks:
+      - default_network
+
+  integrations-service:
+    build: ./services/integrations-service
+    container_name: integrations-service
+    networks:
+      - default_network
+
+  analytics-service:
+    build: ./services/analytics-service
+    container_name: analytics-service
+    depends_on:
+      - transactions-service
+    environment:
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+    networks:
+      - default_network
+
+  localization-service:
+    build: ./services/localization-service
+    container_name: localization-service
+    networks:
+      - default_network
+
+  categorization-service:
+    build: ./services/categorization-service
+    container_name: categorization-service
+    networks:
+      - default_network
+
+  prometheus:
+    image: prom/prometheus:v2.47.2
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    networks:
+      - default_network
+
+  qna-service:
+    build: ./services/qna-service
+    container_name: qna-service
+    depends_on:
+      - weaviate
+    environment:
+      WEAVIATE_URL: "http://weaviate:8080"
+    networks:
+      - default_network
+
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: vault
+    ports:
+      - "8200:8200"
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: "dev-root-token"
+      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
+    cap_add:
+      - IPC_LOCK
+    command: "server -dev"
+    networks:
+      - default_network
+
+  grafana:
+    image: grafana/grafana:10.1.5
+    container_name: grafana
+    ports:
+      - "3001:3000" # Changed to 3001 to avoid conflict with web-portal
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - default_network
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - default_network
+
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers # Access to Docker container logs
+      - ./promtail-config.yml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - default_network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: jaeger
+    ports:
+      - "6831:6831/udp" # Agent
+      - "16686:16686" # UI
+      - "4317:4317"   # OTLP gRPC
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - default_network
+
+  calendar-service:
+    build: ./services/calendar-service
+    container_name: calendar-service
+    networks:
+      - default_network
+
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.23.7
+    container_name: weaviate
+    ports:
+      - "8080:8080"
+    restart: on-failure:0
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none' # We will generate vectors ourselves
+      CLUSTER_HOSTNAME: 'node1'
+    networks:
+      - default_network
+
+volumes:
+  postgres_data:
+
+networks:
+  default_network:
+    driver: bridge
