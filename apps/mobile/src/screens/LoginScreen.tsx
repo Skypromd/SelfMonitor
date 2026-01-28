@@ -77,9 +77,9 @@ export default function LoginScreen() {
             onChangeText={setPassword}
             secureTextEntry
           />
-          <PrimaryButton title={t('auth.login_button')} onPress={handleLogin} />
+          <PrimaryButton title={t('auth.login_button')} onPress={handleLogin} haptic="medium" />
           <View style={{ height: spacing.md }} />
-          <PrimaryButton title={t('auth.register_button')} onPress={handleRegister} variant="secondary" />
+          <PrimaryButton title={t('auth.register_button')} onPress={handleRegister} variant="secondary" haptic="medium" />
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>

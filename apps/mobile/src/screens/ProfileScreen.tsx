@@ -80,7 +80,7 @@ export default function ProfileScreen() {
             value={profile.date_of_birth}
             onChangeText={(value) => setProfile(prev => ({ ...prev, date_of_birth: value }))}
           />
-          <PrimaryButton title={t('common.save')} onPress={handleSave} />
+          <PrimaryButton title={t('common.save')} onPress={handleSave} haptic="medium" />
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>

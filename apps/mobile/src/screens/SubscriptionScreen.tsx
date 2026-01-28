@@ -109,7 +109,7 @@ export default function SubscriptionScreen() {
           <Text style={styles.info}>
             {t('subscription.period_label')}: {subscription.current_period_start || '-'} → {subscription.current_period_end || '-'}
           </Text>
-          <PrimaryButton title={t('common.save')} onPress={handleSave} />
+          <PrimaryButton title={t('common.save')} onPress={handleSave} haptic="medium" />
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>

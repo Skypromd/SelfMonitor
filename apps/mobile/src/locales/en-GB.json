@@ -49,7 +49,12 @@
     "missing_categories": "Missing categories",
     "missing_business_use": "Missing business use",
     "cashflow_trend": "30-day cash flow trend",
-    "cashflow_empty": "Forecast data not available yet."
+    "cashflow_empty": "Forecast data not available yet.",
+    "cashflow_label": "Balance",
+    "deadline_title": "Next deadline",
+    "deadline_subtitle": "Stay ready for HMRC dates.",
+    "deadline_hint": "Self Assessment filing deadline",
+    "deadline_action": "Open reports"
   },
   "transactions": {
     "title": "Transactions",
@@ -64,6 +69,7 @@
     "connect_success": "Connection successful.",
     "confirm_consent": "Confirm consent",
     "connected_badge": "Connected",
+    "offline_connect_error": "You're offline. Connect when online.",
     "recent_title": "Recent transactions",
     "recent_subtitle": "Tap a transaction to update its category.",
     "empty_title": "No transactions yet",
@@ -80,6 +86,7 @@
     "filter_income": "Income",
     "filter_expenses": "Expenses",
     "filter_missing": "Missing category",
+    "offline_queued": "queued offline",
     "csv_account_label": "Account ID",
     "csv_account_placeholder": "Paste your account ID",
     "connected_account_label": "Connected account:",
@@ -91,7 +98,8 @@
     "csv_skipped_label": "Skipped:",
     "csv_account_error": "Account ID is required.",
     "csv_select_error": "Please select a CSV file.",
-    "csv_upload_error": "CSV import failed."
+    "csv_upload_error": "CSV import failed.",
+    "offline_upload_error": "You're offline. Upload when online."
   },
   "documents": {
     "title": "Documents",
@@ -109,6 +117,7 @@
     "tip_flat_subtitle": "Ensure the whole receipt is visible.",
     "tip_notes": "Add notes later",
     "tip_notes_subtitle": "Categorise in Transactions for accuracy.",
+    "offline_error": "You're offline. Uploads will resume when online.",
     "upload_success": "Document uploaded.",
     "upload_error": "Upload failed.",
     "uploading": "Uploading...",

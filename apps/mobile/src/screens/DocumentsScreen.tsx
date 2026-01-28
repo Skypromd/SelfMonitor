@@ -15,6 +15,7 @@ import EmptyState from '../components/EmptyState';
 import FadeInView from '../components/FadeInView';
 import InfoRow from '../components/InfoRow';
 import { useTranslation } from '../hooks/useTranslation';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
@@ -40,6 +41,7 @@ type PickedFile = {
 export default function DocumentsScreen() {
   const { t } = useTranslation();
   const { token } = useAuth();
+  const { isOffline } = useNetworkStatus();
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -129,6 +131,10 @@ export default function DocumentsScreen() {
   const handleScan = async () => {
     setMessage('');
     setError('');
+    if (isOffline) {
+      setError(t('documents.offline_error'));
+      return;
+    }
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) {
       setError(t('documents.camera_error'));
@@ -149,6 +155,10 @@ export default function DocumentsScreen() {
   const handleUpload = async () => {
     setMessage('');
     setError('');
+    if (isOffline) {
+      setError(t('documents.offline_error'));
+      return;
+    }
     const result = await DocumentPicker.getDocumentAsync({
       type: ['image/*', 'application/pdf'],
     });
@@ -173,14 +183,16 @@ export default function DocumentsScreen() {
           <PrimaryButton
             title={isUploading ? t('documents.uploading') : t('documents.scan_button')}
             onPress={handleScan}
-            disabled={isUploading}
+            disabled={isUploading || isOffline}
+            haptic="medium"
           />
           <View style={styles.divider} />
           <PrimaryButton
             title={t('documents.upload_button')}
             onPress={handleUpload}
             variant="secondary"
-            disabled={isUploading}
+            disabled={isUploading || isOffline}
+            haptic="medium"
           />
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}

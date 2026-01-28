@@ -18,7 +18,7 @@ export default function WelcomeScreen() {
         <View style={styles.card}>
           <Text style={styles.title}>{t('auth.welcome_title')}</Text>
           <Text style={styles.subtitle}>{t('auth.welcome_subtitle')}</Text>
-          <PrimaryButton title={t('common.continue')} onPress={() => navigation.navigate('Login' as never)} />
+          <PrimaryButton title={t('common.continue')} onPress={() => navigation.navigate('Login' as never)} haptic="light" />
         </View>
       </FadeInView>
     </LinearGradient>

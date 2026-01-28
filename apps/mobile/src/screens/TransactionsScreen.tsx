@@ -15,7 +15,9 @@ import EmptyState from '../components/EmptyState';
 import FadeInView from '../components/FadeInView';
 import Chip from '../components/Chip';
 import { useTranslation } from '../hooks/useTranslation';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { apiRequest } from '../services/api';
+import { enqueueCategoryUpdate, flushQueue, getQueueCount } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
 
@@ -45,6 +47,7 @@ type PickedFile = {
 export default function TransactionsScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
+  const { isOffline } = useNetworkStatus();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState({ income: 0, expenses: 0 });
   const [providers, setProviders] = useState<Provider[]>([]);
@@ -62,6 +65,7 @@ export default function TransactionsScreen() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [filter, setFilter] = useState<'all' | 'income' | 'expenses' | 'needs_category'>('all');
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [queuedCount, setQueuedCount] = useState(0);
   const effectiveAccountId = manualAccountId || accountId;
 
   const categoryOptions = useMemo(() => ([
@@ -133,6 +137,26 @@ export default function TransactionsScreen() {
     fetchTransactions();
   }, [token, effectiveAccountId]);
 
+  useEffect(() => {
+    const syncQueue = async () => {
+      if (isOffline) return;
+      const result = await flushQueue(token);
+      if (result.flushed) {
+        setLastSync(new Date().toISOString());
+      }
+      setQueuedCount(result.remaining);
+    };
+    syncQueue();
+  }, [isOffline, token]);
+
+  useEffect(() => {
+    const loadQueueCount = async () => {
+      const count = await getQueueCount();
+      setQueuedCount(count);
+    };
+    loadQueueCount();
+  }, []);
+
   const providerOptions = providers.length
     ? providers
     : [{ id: 'mock_bank', display_name: t('transactions.mock_provider'), configured: 'true' }];
@@ -140,6 +164,10 @@ export default function TransactionsScreen() {
   const handleInitiate = async () => {
     setConnectMessage('');
     setConnectError('');
+    if (isOffline) {
+      setConnectError(t('transactions.offline_connect_error'));
+      return;
+    }
     try {
       const response = await apiRequest('/banking/connections/initiate', {
         method: 'POST',
@@ -193,6 +221,10 @@ export default function TransactionsScreen() {
   const handleUploadCsv = async () => {
     setCsvMessage('');
     setCsvError('');
+    if (isOffline) {
+      setCsvError(t('transactions.offline_upload_error'));
+      return;
+    }
     if (!effectiveAccountId) {
       setCsvError(t('transactions.csv_account_error'));
       return;
@@ -228,6 +260,15 @@ export default function TransactionsScreen() {
 
   const handleSelectCategory = async (newCategory: string) => {
     if (!selectedTransaction) return;
+    setTransactions((prev) =>
+      prev.map((txn) => txn.id === selectedTransaction.id ? { ...txn, category: newCategory } : txn)
+    );
+    if (isOffline) {
+      const count = await enqueueCategoryUpdate(selectedTransaction.id, newCategory);
+      setQueuedCount(count);
+      setCategoryModalOpen(false);
+      return;
+    }
     try {
       const response = await apiRequest(`/transactions/transactions/${selectedTransaction.id}`, {
         method: 'PATCH',
@@ -235,11 +276,10 @@ export default function TransactionsScreen() {
         body: JSON.stringify({ category: newCategory }),
       });
       if (!response.ok) throw new Error();
-      setTransactions((prev) =>
-        prev.map((txn) => txn.id === selectedTransaction.id ? { ...txn, category: newCategory } : txn)
-      );
       setCategoryModalOpen(false);
     } catch {
+      const count = await enqueueCategoryUpdate(selectedTransaction.id, newCategory);
+      setQueuedCount(count);
       setCategoryModalOpen(false);
     }
   };
@@ -294,9 +334,9 @@ export default function TransactionsScreen() {
               </View>
             ))}
           </View>
-          <PrimaryButton title={t('transactions.connect_bank')} onPress={handleInitiate} variant="secondary" />
+          <PrimaryButton title={t('transactions.connect_bank')} onPress={handleInitiate} variant="secondary" haptic="medium" disabled={isOffline} />
           {consentUrl ? (
-            <PrimaryButton title={t('transactions.confirm_consent')} onPress={handleGrant} style={styles.secondaryButton} />
+            <PrimaryButton title={t('transactions.confirm_consent')} onPress={handleGrant} style={styles.secondaryButton} haptic="medium" disabled={isOffline} />
           ) : null}
           {accountId ? (
             <View style={styles.connectedRow}>
@@ -322,12 +362,15 @@ export default function TransactionsScreen() {
             title={csvFile ? t('transactions.csv_change_file') : t('transactions.csv_choose_file')}
             onPress={handlePickCsv}
             variant="secondary"
+            haptic="light"
+            disabled={isOffline}
           />
           <PrimaryButton
             title={isUploading ? t('transactions.csv_uploading') : t('transactions.csv_upload_button')}
             onPress={handleUploadCsv}
             disabled={isUploading}
             style={styles.secondaryButton}
+            haptic="medium"
           />
           {csvFile ? <Text style={styles.helper}>{csvFile.name}</Text> : null}
           {csvMessage ? <Text style={styles.message}>{csvMessage}</Text> : null}
@@ -356,6 +399,11 @@ export default function TransactionsScreen() {
             <Text style={styles.syncLabel}>{t('common.last_sync')}</Text>
             <Text style={styles.syncValue}>{lastSyncLabel}</Text>
           </View>
+          {queuedCount ? (
+            <View style={styles.alertRow}>
+              <Badge label={`${queuedCount} ${t('transactions.offline_queued')}`} tone="warning" />
+            </View>
+          ) : null}
           {missingCategoryCount ? (
             <View style={styles.alertRow}>
               <Badge label={`${missingCategoryCount} ${t('transactions.needs_category')}`} tone="warning" />

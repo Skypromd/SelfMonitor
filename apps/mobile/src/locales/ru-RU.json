@@ -49,7 +49,12 @@
     "missing_categories": "Без категории",
     "missing_business_use": "Без бизнес-доли",
     "cashflow_trend": "Тренд денежных потоков (30 дней)",
-    "cashflow_empty": "Нет данных прогноза."
+    "cashflow_empty": "Нет данных прогноза.",
+    "cashflow_label": "Баланс",
+    "deadline_title": "Следующий срок",
+    "deadline_subtitle": "Будьте готовы к срокам HMRC.",
+    "deadline_hint": "Срок подачи Self Assessment",
+    "deadline_action": "Открыть отчеты"
   },
   "transactions": {
     "title": "Транзакции",
@@ -64,6 +69,7 @@
     "connect_success": "Подключение успешно.",
     "confirm_consent": "Подтвердить согласие",
     "connected_badge": "Подключено",
+    "offline_connect_error": "Нет сети. Подключите позже.",
     "recent_title": "Последние транзакции",
     "recent_subtitle": "Нажмите, чтобы обновить категорию.",
     "empty_title": "Нет транзакций",
@@ -80,6 +86,7 @@
     "filter_income": "Доходы",
     "filter_expenses": "Расходы",
     "filter_missing": "Без категории",
+    "offline_queued": "в очереди офлайн",
     "csv_account_label": "ID счета",
     "csv_account_placeholder": "Вставьте ID счета",
     "connected_account_label": "Подключенный счет:",
@@ -91,7 +98,8 @@
     "csv_skipped_label": "Пропущено:",
     "csv_account_error": "Нужен ID счета.",
     "csv_select_error": "Выберите CSV файл.",
-    "csv_upload_error": "Импорт CSV не удался."
+    "csv_upload_error": "Импорт CSV не удался.",
+    "offline_upload_error": "Нет сети. Загрузите позже."
   },
   "documents": {
     "title": "Документы",
@@ -109,6 +117,7 @@
     "tip_flat_subtitle": "Видны все края.",
     "tip_notes": "Добавляйте заметки",
     "tip_notes_subtitle": "Категоризируйте в транзакциях.",
+    "offline_error": "Нет сети. Загрузки продолжатся онлайн.",
     "upload_success": "Документ загружен.",
     "upload_error": "Не удалось загрузить.",
     "uploading": "Загрузка...",

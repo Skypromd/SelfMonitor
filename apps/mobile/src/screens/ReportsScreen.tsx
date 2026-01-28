@@ -136,7 +136,7 @@ export default function ReportsScreen() {
           <View style={styles.titleRow}>
             <Text style={styles.cardTitle}>{t('reports.monthly')}</Text>
           </View>
-          <PrimaryButton title={t('reports.monthly')} onPress={() => runReport('monthly')} disabled={isLoading} />
+          <PrimaryButton title={t('reports.monthly')} onPress={() => runReport('monthly')} disabled={isLoading} haptic="medium" />
         </Card>
       </FadeInView>
       <FadeInView delay={120}>
@@ -145,7 +145,7 @@ export default function ReportsScreen() {
             <Text style={styles.cardTitle}>{t('reports.quarterly')}</Text>
             <Badge label={t('reports.pro_badge')} tone="info" />
           </View>
-          <PrimaryButton title={t('reports.quarterly')} onPress={() => runReport('quarterly')} disabled={isLoading} />
+          <PrimaryButton title={t('reports.quarterly')} onPress={() => runReport('quarterly')} disabled={isLoading} haptic="medium" />
         </Card>
       </FadeInView>
       <FadeInView delay={160}>
@@ -154,7 +154,7 @@ export default function ReportsScreen() {
             <Text style={styles.cardTitle}>{t('reports.profit_loss')}</Text>
             <Badge label={t('reports.pro_badge')} tone="info" />
           </View>
-          <PrimaryButton title={t('reports.profit_loss')} onPress={() => runReport('profit_loss')} disabled={isLoading} />
+          <PrimaryButton title={t('reports.profit_loss')} onPress={() => runReport('profit_loss')} disabled={isLoading} haptic="medium" />
         </Card>
       </FadeInView>
       <FadeInView delay={200}>
@@ -163,7 +163,7 @@ export default function ReportsScreen() {
             <Text style={styles.cardTitle}>{t('reports.tax_year')}</Text>
             <Badge label={t('reports.pro_badge')} tone="info" />
           </View>
-          <PrimaryButton title={t('reports.tax_year')} onPress={() => runReport('tax_year')} disabled={isLoading} />
+          <PrimaryButton title={t('reports.tax_year')} onPress={() => runReport('tax_year')} disabled={isLoading} haptic="medium" />
         </Card>
       </FadeInView>
       <FadeInView delay={240}>
@@ -172,7 +172,7 @@ export default function ReportsScreen() {
             <Text style={styles.cardTitle}>{t('reports.mortgage')}</Text>
             <Badge label={t('reports.pro_badge')} tone="info" />
           </View>
-          <PrimaryButton title={t('reports.mortgage')} onPress={() => runReport('mortgage')} disabled={isLoading} />
+          <PrimaryButton title={t('reports.mortgage')} onPress={() => runReport('mortgage')} disabled={isLoading} haptic="medium" />
         </Card>
       </FadeInView>
 

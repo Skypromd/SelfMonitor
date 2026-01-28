@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, Text, StyleSheet, ViewStyle } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 import { colors, radius, spacing } from '../theme';
 
@@ -8,14 +9,39 @@ type PrimaryButtonProps = {
   onPress: () => void;
   disabled?: boolean;
   variant?: 'primary' | 'secondary';
+  haptic?: 'none' | 'light' | 'medium' | 'heavy';
   style?: ViewStyle;
 };
 
-export default function PrimaryButton({ title, onPress, disabled, variant = 'primary', style }: PrimaryButtonProps) {
+const HAPTIC_MAP = {
+  none: null,
+  light: Haptics.ImpactFeedbackStyle.Light,
+  medium: Haptics.ImpactFeedbackStyle.Medium,
+  heavy: Haptics.ImpactFeedbackStyle.Heavy,
+};
+
+export default function PrimaryButton({
+  title,
+  onPress,
+  disabled,
+  variant = 'primary',
+  haptic = 'light',
+  style,
+}: PrimaryButtonProps) {
   const isSecondary = variant === 'secondary';
+
+  const handlePress = () => {
+    if (disabled) return;
+    const styleType = HAPTIC_MAP[haptic];
+    if (styleType) {
+      Haptics.impactAsync(styleType);
+    }
+    onPress();
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.button,

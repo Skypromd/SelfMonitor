@@ -30,6 +30,7 @@ export default function MarketplaceScreen() {
           <PrimaryButton
             title={t('marketplace.request_contact')}
             onPress={() => handleRequest(t('marketplace.accounting_subject'))}
+            haptic="medium"
           />
         </Card>
       </FadeInView>
@@ -43,6 +44,7 @@ export default function MarketplaceScreen() {
           <PrimaryButton
             title={t('marketplace.request_contact')}
             onPress={() => handleRequest(t('marketplace.insurance_subject'))}
+            haptic="medium"
           />
         </Card>
       </FadeInView>
@@ -56,6 +58,7 @@ export default function MarketplaceScreen() {
           <PrimaryButton
             title={t('marketplace.request_contact')}
             onPress={() => handleRequest(t('marketplace.mortgage_subject'))}
+            haptic="medium"
           />
         </Card>
       </FadeInView>

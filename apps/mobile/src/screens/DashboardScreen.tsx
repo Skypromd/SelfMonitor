@@ -13,7 +13,8 @@ import Badge from '../components/Badge';
 import FadeInView from '../components/FadeInView';
 import InfoRow from '../components/InfoRow';
 import PulseDot from '../components/PulseDot';
-import MiniBarChart from '../components/MiniBarChart';
+import InteractiveLineChart from '../components/InteractiveLineChart';
+import GlassCard from '../components/GlassCard';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
@@ -93,6 +94,10 @@ export default function DashboardScreen() {
       ? t('dashboard.readiness_medium')
       : t('dashboard.readiness_low');
   const lastSyncLabel = lastSync ? new Date(lastSync).toLocaleString() : t('common.not_available');
+  const now = new Date();
+  const deadlineYear = now.getMonth() === 0 && now.getDate() <= 31 ? now.getFullYear() : now.getFullYear() + 1;
+  const nextDeadline = new Date(deadlineYear, 0, 31);
+  const deadlineLabel = nextDeadline.toLocaleDateString();
 
   return (
     <Screen>
@@ -131,15 +136,30 @@ export default function DashboardScreen() {
       <FadeInView delay={80}>
         <View style={styles.quickActions}>
           <View style={styles.quickActionItem}>
-            <PrimaryButton title={t('dashboard.add_expense')} onPress={() => navigation.navigate('Transactions' as never)} variant="secondary" />
+            <PrimaryButton title={t('dashboard.add_expense')} onPress={() => navigation.navigate('Transactions' as never)} variant="secondary" haptic="light" />
           </View>
           <View style={styles.quickActionItem}>
-            <PrimaryButton title={t('dashboard.scan_receipt')} onPress={() => navigation.navigate('Documents' as never)} variant="secondary" />
+            <PrimaryButton title={t('dashboard.scan_receipt')} onPress={() => navigation.navigate('Documents' as never)} variant="secondary" haptic="light" />
           </View>
           <View style={styles.quickActionItem}>
-            <PrimaryButton title={t('dashboard.generate_report')} onPress={() => navigation.navigate('Reports' as never)} variant="secondary" />
+            <PrimaryButton title={t('dashboard.generate_report')} onPress={() => navigation.navigate('Reports' as never)} variant="secondary" haptic="light" />
           </View>
         </View>
+      </FadeInView>
+
+      <SectionHeader title={t('dashboard.deadline_title')} subtitle={t('dashboard.deadline_subtitle')} />
+      <FadeInView delay={120}>
+        <GlassCard>
+          <Text style={styles.deadlineDate}>{deadlineLabel}</Text>
+          <Text style={styles.deadlineHint}>{t('dashboard.deadline_hint')}</Text>
+          <PrimaryButton
+            title={t('dashboard.deadline_action')}
+            onPress={() => navigation.navigate('Reports' as never)}
+            variant="secondary"
+            haptic="light"
+            style={styles.deadlineButton}
+          />
+        </GlassCard>
       </FadeInView>
 
       <SectionHeader title={t('dashboard.readiness_title')} subtitle={t('dashboard.data_quality_subtitle')} />
@@ -159,7 +179,12 @@ export default function DashboardScreen() {
         <Card>
           <Text style={styles.cardTitle}>{t('dashboard.cashflow_trend')}</Text>
           {forecastPoints.length ? (
-            <MiniBarChart data={forecastPoints.slice(-10)} height={70} />
+            <InteractiveLineChart
+              data={forecastPoints.slice(-14)}
+              height={120}
+              label={t('dashboard.cashflow_label')}
+              valueFormatter={(value) => `GBP ${value.toFixed(2)}`}
+            />
           ) : (
             <Text style={styles.emptyText}>{t('dashboard.cashflow_empty')}</Text>
           )}
@@ -239,6 +264,18 @@ const styles = StyleSheet.create({
   },
   quickActionItem: {
     marginBottom: spacing.md,
+  },
+  deadlineDate: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  deadlineHint: {
+    marginTop: spacing.xs,
+    color: colors.textSecondary,
+  },
+  deadlineButton: {
+    marginTop: spacing.lg,
   },
   metaCard: {
     marginTop: spacing.md,
