@@ -55,6 +55,7 @@ async def test_import_and_get_transactions(db_session):
     )
     assert import_response.status_code == 202
     assert import_response.json()["imported_count"] == 2
+    assert import_response.json()["skipped_count"] == 0
 
     # 2. Get transactions for that account
     get_response = client.get(f"/accounts/{account_id}/transactions")
@@ -140,3 +141,44 @@ async def test_get_all_my_transactions(db_session):
     descriptions = {t["description"] for t in transactions}
     assert "Coffee" in descriptions
     assert "Salary" in descriptions
+
+
+@pytest.mark.asyncio
+async def test_import_deduplicates_by_provider_id(db_session):
+    account_id = str(uuid.uuid4())
+
+    payload = {
+        "account_id": account_id,
+        "transactions": [
+            {"provider_transaction_id": "dup-1", "date": "2023-10-01", "description": "Coffee", "amount": -4.5, "currency": "GBP"}
+        ]
+    }
+
+    first_response = client.post("/import", json=payload)
+    assert first_response.status_code == 202
+    assert first_response.json()["imported_count"] == 1
+    assert first_response.json()["skipped_count"] == 0
+
+    second_response = client.post("/import", json=payload)
+    assert second_response.status_code == 202
+    assert second_response.json()["imported_count"] == 0
+    assert second_response.json()["skipped_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_partner_ingestion_endpoint(db_session):
+    account_id = str(uuid.uuid4())
+    payload = {
+        "schema_version": "1.0",
+        "source_system": "partner-app",
+        "user_reference": "partner-user-42",
+        "account_id": account_id,
+        "transactions": [
+            {"provider_transaction_id": "p-1", "date": "2023-10-01", "description": "Invoice", "amount": 1500.0, "currency": "GBP"}
+        ]
+    }
+
+    response = client.post("/ingest/partner", json=payload)
+    assert response.status_code == 202
+    assert response.json()["imported_count"] == 1
+    assert response.json()["skipped_count"] == 0

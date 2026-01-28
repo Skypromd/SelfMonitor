@@ -29,13 +29,35 @@ async def import_transactions(
     db: AsyncSession = Depends(get_db)
 ):
     """Imports a batch of transactions for an account into the database."""
-    imported_count = await crud.create_transactions(
+    imported_count, skipped_count = await crud.create_transactions(
         db, 
         user_id=user_id, 
         account_id=request.account_id, 
         transactions=request.transactions
     )
-    return {"message": "Import request accepted", "imported_count": imported_count}
+    return {"message": "Import request accepted", "imported_count": imported_count, "skipped_count": skipped_count}
+
+
+@app.post("/ingest/partner", response_model=schemas.IngestionResult, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_partner_batch(
+    request: schemas.PartnerIngestionRequest,
+    user_id: str = Depends(fake_auth_check),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Accepts a partner batch payload following the data contract and imports transactions.
+    """
+    imported_count, skipped_count = await crud.create_transactions(
+        db,
+        user_id=user_id,
+        account_id=request.account_id,
+        transactions=request.transactions
+    )
+    return schemas.IngestionResult(
+        message="Partner batch accepted",
+        imported_count=imported_count,
+        skipped_count=skipped_count
+    )
 
 @app.get("/accounts/{account_id}/transactions", response_model=List[schemas.Transaction])
 async def get_transactions_for_account(

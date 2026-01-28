@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Literal
 import uuid
 import datetime
 
@@ -40,3 +40,19 @@ class TransactionUpdateRequest(BaseModel):
         le=100.0,
         description="Business-use percentage (0-100).",
     )
+
+
+class PartnerIngestionRequest(BaseModel):
+    schema_version: Literal["1.0"] = "1.0"
+    source_system: str
+    user_reference: str
+    account_id: uuid.UUID
+    tax_year: Optional[str] = None
+    transactions: List[TransactionBase]
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class IngestionResult(BaseModel):
+    message: str
+    imported_count: int
+    skipped_count: int

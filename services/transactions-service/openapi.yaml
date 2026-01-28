@@ -34,6 +34,29 @@ paths:
                     type: string
                   imported_count:
                     type: integer
+                  skipped_count:
+                    type: integer
+  /ingest/partner:
+    post:
+      summary: Ingest a partner batch
+      tags:
+        - Transactions
+      description: Accepts a partner payload and imports transactions with de-duplication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerIngestionRequest'
+      responses:
+        '202':
+          description: Partner batch accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionResult'
   /accounts/{account_id}/transactions:
     get:
       summary: Get transactions for an account
@@ -154,6 +177,46 @@ components:
           type: number
           format: float
           example: 80
+    PartnerIngestionRequest:
+      type: object
+      required:
+        - schema_version
+        - source_system
+        - user_reference
+        - account_id
+        - transactions
+      properties:
+        schema_version:
+          type: string
+          example: '1.0'
+        source_system:
+          type: string
+          example: 'partner-app'
+        user_reference:
+          type: string
+          example: 'partner-user-42'
+        account_id:
+          type: string
+          format: uuid
+        tax_year:
+          type: string
+          example: '2023-04-06/2024-04-05'
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionBase'
+        metadata:
+          type: object
+          additionalProperties: true
+    IngestionResult:
+      type: object
+      properties:
+        message:
+          type: string
+        imported_count:
+          type: integer
+        skipped_count:
+          type: integer
     Transaction:
       allOf:
         - $ref: '#/components/schemas/TransactionBase'
