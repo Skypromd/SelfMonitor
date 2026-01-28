@@ -1,0 +1,100 @@
+{
+  "common": {
+    "continue": "Weiter",
+    "save": "Speichern",
+    "cancel": "Abbrechen",
+    "logout": "Abmelden",
+    "loading": "Wird geladen..."
+  },
+  "auth": {
+    "welcome_title": "Self-Assessment Assistent",
+    "welcome_subtitle": "Ihr monatlicher Steuerhelfer für UK.",
+    "login_title": "Anmelden",
+    "register_title": "Konto erstellen",
+    "email_placeholder": "E-Mail",
+    "password_placeholder": "Passwort",
+    "login_button": "Anmelden",
+    "register_button": "Registrieren",
+    "register_success": "Registrierung erfolgreich. Sie können sich jetzt anmelden."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "transactions": "Transaktionen",
+    "documents": "Dokumente",
+    "reports": "Berichte",
+    "more": "Mehr"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "readiness_title": "Steuerbereitschaft",
+    "readiness_subtitle": "Halten Sie Ihre Daten monatlich sauber.",
+    "cashflow_title": "Cashflow-Prognose",
+    "quick_actions": "Schnellaktionen",
+    "add_expense": "Ausgabe hinzufügen",
+    "scan_receipt": "Beleg scannen",
+    "generate_report": "Bericht erstellen"
+  },
+  "transactions": {
+    "title": "Transaktionen",
+    "subtitle": "Einnahmen und Ausgaben kategorisieren.",
+    "empty_state": "Noch keine Transaktionen.",
+    "connect_bank": "Bank verbinden",
+    "csv_import": "CSV-Import"
+  },
+  "documents": {
+    "title": "Dokumente",
+    "subtitle": "Belege scannen, hochladen und verfolgen.",
+    "scan_button": "Beleg scannen",
+    "upload_button": "Datei hochladen"
+  },
+  "reports": {
+    "title": "Berichte",
+    "subtitle": "Zusammenfassungen für Compliance und Kredite.",
+    "monthly": "Monatsübersicht",
+    "quarterly": "Quartalsübersicht (Pro)",
+    "profit_loss": "Gewinn & Verlust (Pro)",
+    "tax_year": "Steuerjahr (Pro)",
+    "mortgage": "Hypothekenbericht (Pro)",
+    "cadence_title": "Meldezyklus",
+    "cadence_turnover": "Umsatz:",
+    "cadence_threshold": "Schwelle:",
+    "cadence_quarterly_required": "Quartalsweise Berichte erforderlich.",
+    "cadence_monthly_ok": "Monatliche Berichte reichen aus.",
+    "monthly_message": "Monatsübersicht erstellt.",
+    "quarterly_message": "Quartalsübersicht erstellt.",
+    "profit_loss_message": "GuV erstellt.",
+    "tax_year_message": "Steuerjahresübersicht erstellt.",
+    "mortgage_message": "Hypothekenbericht erstellt."
+  },
+  "marketplace": {
+    "title": "Marktplatz",
+    "subtitle": "Vertrauenswürdige Partner für Versicherung und Buchhaltung."
+  },
+  "profile": {
+    "title": "Profil",
+    "subtitle": "Halten Sie Ihre Daten aktuell.",
+    "first_name": "Vorname",
+    "last_name": "Nachname",
+    "date_of_birth": "Geburtsdatum"
+  },
+  "subscription": {
+    "title": "Abonnement",
+    "subtitle": "Plan und Monatsabschluss verwalten.",
+    "plan_label": "Plan",
+    "plan_free": "Free",
+    "plan_pro": "Pro",
+    "close_day_label": "Monatlicher Abschlusstag (1-28)",
+    "status_label": "Status",
+    "cycle_label": "Abrechnungszyklus",
+    "period_label": "Aktueller Zeitraum",
+    "updated_message": "Abonnement aktualisiert."
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "subtitle": "Präferenzen und Benachrichtigungen."
+  },
+  "support": {
+    "title": "Support",
+    "subtitle": "Hilfe und Kontakt."
+  }
+}

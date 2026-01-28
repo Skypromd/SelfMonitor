@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "Self Assessment Assistant",
+    "slug": "self-assessment-assistant",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "selfmonitor",
+    "platforms": ["ios", "android"],
+    "assetBundlePatterns": ["**/*"]
+  }
+}

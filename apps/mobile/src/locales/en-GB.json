@@ -1,0 +1,100 @@
+{
+  "common": {
+    "continue": "Continue",
+    "save": "Save",
+    "cancel": "Cancel",
+    "logout": "Log Out",
+    "loading": "Loading..."
+  },
+  "auth": {
+    "welcome_title": "Self Assessment Assistant",
+    "welcome_subtitle": "Your monthly tax prep companion for the UK.",
+    "login_title": "Log In",
+    "register_title": "Create Account",
+    "email_placeholder": "Email",
+    "password_placeholder": "Password",
+    "login_button": "Log In",
+    "register_button": "Register",
+    "register_success": "Registration successful. You can now log in."
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "transactions": "Transactions",
+    "documents": "Documents",
+    "reports": "Reports",
+    "more": "More"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "readiness_title": "Tax Readiness",
+    "readiness_subtitle": "Keep your data clean each month.",
+    "cashflow_title": "Cash Flow Forecast",
+    "quick_actions": "Quick actions",
+    "add_expense": "Add expense",
+    "scan_receipt": "Scan receipt",
+    "generate_report": "Generate report"
+  },
+  "transactions": {
+    "title": "Transactions",
+    "subtitle": "Categorise and track your income and expenses.",
+    "empty_state": "No transactions yet.",
+    "connect_bank": "Connect a bank",
+    "csv_import": "CSV import"
+  },
+  "documents": {
+    "title": "Documents",
+    "subtitle": "Scan, upload, and track receipts.",
+    "scan_button": "Scan receipt",
+    "upload_button": "Upload file"
+  },
+  "reports": {
+    "title": "Reports",
+    "subtitle": "Generate summaries for compliance and lending.",
+    "monthly": "Monthly summary",
+    "quarterly": "Quarterly summary (Pro)",
+    "profit_loss": "Profit & Loss (Pro)",
+    "tax_year": "Tax year summary (Pro)",
+    "mortgage": "Mortgage report (Pro)",
+    "cadence_title": "Reporting cadence",
+    "cadence_turnover": "Turnover:",
+    "cadence_threshold": "Threshold:",
+    "cadence_quarterly_required": "Quarterly reporting required.",
+    "cadence_monthly_ok": "Monthly reporting is sufficient.",
+    "monthly_message": "Monthly summary queued.",
+    "quarterly_message": "Quarterly summary queued.",
+    "profit_loss_message": "Profit & loss queued.",
+    "tax_year_message": "Tax year summary queued.",
+    "mortgage_message": "Mortgage report queued."
+  },
+  "marketplace": {
+    "title": "Marketplace",
+    "subtitle": "Trusted partners for insurance, accounting, and more."
+  },
+  "profile": {
+    "title": "Profile",
+    "subtitle": "Keep your details up to date.",
+    "first_name": "First name",
+    "last_name": "Last name",
+    "date_of_birth": "Date of birth"
+  },
+  "subscription": {
+    "title": "Subscription",
+    "subtitle": "Manage plan and monthly close day.",
+    "plan_label": "Plan",
+    "plan_free": "Free",
+    "plan_pro": "Pro",
+    "close_day_label": "Monthly close day (1-28)",
+    "status_label": "Status",
+    "cycle_label": "Billing cycle",
+    "period_label": "Current period",
+    "updated_message": "Subscription updated."
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Preferences and notifications."
+  },
+  "support": {
+    "title": "Support",
+    "subtitle": "Get help and contact us."
+  }
+}

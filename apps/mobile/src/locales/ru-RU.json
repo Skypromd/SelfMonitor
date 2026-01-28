@@ -1,0 +1,100 @@
+{
+  "common": {
+    "continue": "Продолжить",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "logout": "Выйти",
+    "loading": "Загрузка..."
+  },
+  "auth": {
+    "welcome_title": "Self-Assessment помощник",
+    "welcome_subtitle": "Ежемесячная подготовка к налогам в UK.",
+    "login_title": "Войти",
+    "register_title": "Создать аккаунт",
+    "email_placeholder": "Email",
+    "password_placeholder": "Пароль",
+    "login_button": "Войти",
+    "register_button": "Регистрация",
+    "register_success": "Регистрация успешна. Теперь можно войти."
+  },
+  "nav": {
+    "dashboard": "Дашборд",
+    "transactions": "Транзакции",
+    "documents": "Документы",
+    "reports": "Отчеты",
+    "more": "Еще"
+  },
+  "dashboard": {
+    "title": "Дашборд",
+    "readiness_title": "Готовность к налогам",
+    "readiness_subtitle": "Поддерживайте порядок в данных каждый месяц.",
+    "cashflow_title": "Прогноз денежных потоков",
+    "quick_actions": "Быстрые действия",
+    "add_expense": "Добавить расход",
+    "scan_receipt": "Сканировать чек",
+    "generate_report": "Сформировать отчет"
+  },
+  "transactions": {
+    "title": "Транзакции",
+    "subtitle": "Категоризируйте доходы и расходы.",
+    "empty_state": "Пока нет транзакций.",
+    "connect_bank": "Подключить банк",
+    "csv_import": "CSV импорт"
+  },
+  "documents": {
+    "title": "Документы",
+    "subtitle": "Сканируйте и храните чеки.",
+    "scan_button": "Сканировать чек",
+    "upload_button": "Загрузить файл"
+  },
+  "reports": {
+    "title": "Отчеты",
+    "subtitle": "Сводки для налогов и ипотеки.",
+    "monthly": "Ежемесячная сводка",
+    "quarterly": "Квартальная сводка (Pro)",
+    "profit_loss": "Прибыль и убытки (Pro)",
+    "tax_year": "Налоговый год (Pro)",
+    "mortgage": "Отчет для ипотеки (Pro)",
+    "cadence_title": "Периодичность отчетности",
+    "cadence_turnover": "Оборот:",
+    "cadence_threshold": "Порог:",
+    "cadence_quarterly_required": "Нужна квартальная отчетность.",
+    "cadence_monthly_ok": "Достаточно ежемесячной отчетности.",
+    "monthly_message": "Ежемесячный отчет сформирован.",
+    "quarterly_message": "Квартальный отчет сформирован.",
+    "profit_loss_message": "P&L отчет сформирован.",
+    "tax_year_message": "Отчет за налоговый год сформирован.",
+    "mortgage_message": "Отчет для ипотеки сформирован."
+  },
+  "marketplace": {
+    "title": "Маркетплейс",
+    "subtitle": "Партнеры по бухгалтерии и страховке."
+  },
+  "profile": {
+    "title": "Профиль",
+    "subtitle": "Обновите личные данные.",
+    "first_name": "Имя",
+    "last_name": "Фамилия",
+    "date_of_birth": "Дата рождения"
+  },
+  "subscription": {
+    "title": "Подписка",
+    "subtitle": "Управляйте планом и датой закрытия.",
+    "plan_label": "План",
+    "plan_free": "Free",
+    "plan_pro": "Pro",
+    "close_day_label": "День закрытия месяца (1-28)",
+    "status_label": "Статус",
+    "cycle_label": "Период оплаты",
+    "period_label": "Текущий период",
+    "updated_message": "Подписка обновлена."
+  },
+  "settings": {
+    "title": "Настройки",
+    "subtitle": "Предпочтения и уведомления."
+  },
+  "support": {
+    "title": "Поддержка",
+    "subtitle": "Помощь и связь с нами."
+  }
+}
