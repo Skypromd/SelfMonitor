@@ -40,6 +40,7 @@ async def test_callback_schedules_celery_task(mocker):
     data = response.json()
     assert data['status'] == 'processing'
     assert 'task_id' in data
+    assert 'account_id' in data
 
     # Check that our mock was called
     mock_delay.assert_called_once()

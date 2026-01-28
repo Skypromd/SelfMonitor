@@ -23,6 +23,7 @@ SALTEDGE_SCOPES=accounts,transactions
 4. User completes consent in Salt Edge Connect.
 5. Salt Edge redirects to your `redirect_uri` with `connection_id`.
 6. Client calls `GET /connections/callback?provider_id=saltedge&connection_id=...`.
+7. Response includes `account_id` (internal UUID) used for transaction imports.
 
 ## Notes
 - The current implementation stores provider metadata in Vault.

@@ -91,6 +91,10 @@ paths:
                   status:
                     type: string
                     example: 'successful'
+                  account_id:
+                    type: string
+                    format: uuid
+                    description: Internal account id used for imports.
                   task_id:
                     type: string
                     description: Optional Celery task id for imports.

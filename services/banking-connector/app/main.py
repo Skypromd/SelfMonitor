@@ -54,6 +54,7 @@ class InitiateConnectionResponse(BaseModel):
 
 class CallbackResponse(BaseModel):
     connection_id: str
+    account_id: str
     status: str
     message: str
     task_id: Optional[str] = None
@@ -104,15 +105,25 @@ async def handle_provider_callback(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    save_connection_metadata(callback_result.connection_id, callback_result.metadata)
+    account_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{provider_id}:{callback_result.connection_id}"))
+    metadata = dict(callback_result.metadata)
+    metadata.update(
+        {
+            "provider_id": provider_id,
+            "connection_id": callback_result.connection_id,
+            "account_id": account_id,
+        }
+    )
+    save_connection_metadata(callback_result.connection_id, metadata)
 
     task_id = None
     if callback_result.transactions:
-        task = import_transactions_task.delay(callback_result.connection_id, callback_result.transactions)
+        task = import_transactions_task.delay(account_id, callback_result.transactions)
         task_id = task.id
 
     return CallbackResponse(
         connection_id=callback_result.connection_id,
+        account_id=account_id,
         status=callback_result.status,
         message=callback_result.message,
         task_id=task_id,

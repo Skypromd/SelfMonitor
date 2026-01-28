@@ -33,7 +33,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
       const response = await fetch(`${API_GATEWAY_URL}/banking/connections/callback?code=fake_auth_code`);
       if (!response.ok) throw new Error('Failed to complete connection');
       const data = await response.json();
-      onConnectionComplete(data.connection_id);
+      onConnectionComplete(data.account_id || data.connection_id);
     } catch (err: any) { setError(err.message); }
   };
 
