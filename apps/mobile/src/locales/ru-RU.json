@@ -7,8 +7,12 @@
     "loading": "Загрузка...",
     "offline_title": "Нет подключения",
     "offline_subtitle": "Данные могут быть устаревшими.",
+    "online_label": "Онлайн",
+    "offline_label": "Офлайн",
     "last_sync": "Последняя синхронизация",
-    "not_available": "Нет данных"
+    "not_available": "Нет данных",
+    "sync_now": "Синхронизировать",
+    "syncing": "Синхронизация..."
   },
   "auth": {
     "welcome_title": "Self-Assessment помощник",
@@ -54,7 +58,10 @@
     "deadline_title": "Следующий срок",
     "deadline_subtitle": "Будьте готовы к срокам HMRC.",
     "deadline_hint": "Срок подачи Self Assessment",
-    "deadline_action": "Открыть отчеты"
+    "deadline_action": "Открыть отчеты",
+    "sync_title": "Статус синхронизации",
+    "sync_subtitle": "Оффлайн-правки синхронизируются автоматически.",
+    "sync_pending": "ожидающих изменений"
   },
   "transactions": {
     "title": "Транзакции",
@@ -153,7 +160,10 @@
     "summary_net": "Чистая прибыль",
     "summary_count": "Транзакций",
     "summary_period": "Период",
-    "category_breakdown": "Топ категорий"
+    "category_breakdown": "Топ категорий",
+    "performance_title": "Эффективность",
+    "profit_margin": "Маржа прибыли",
+    "expense_ratio": "Доля расходов"
   },
   "marketplace": {
     "title": "Маркетплейс",
@@ -178,7 +188,8 @@
     "date_of_birth": "Дата рождения",
     "load_error": "Не удалось загрузить профиль.",
     "saved_message": "Профиль сохранен.",
-    "save_error": "Не удалось сохранить профиль."
+    "save_error": "Не удалось сохранить профиль.",
+    "saved_offline": "Сохранено офлайн. Синхронизация позже."
   },
   "subscription": {
     "title": "Подписка",
@@ -193,6 +204,7 @@
     "updated_message": "Подписка обновлена.",
     "load_error": "Не удалось загрузить подписку.",
     "save_error": "Не удалось обновить подписку.",
+    "saved_offline": "Сохранено офлайн. Синхронизация позже.",
     "active_label": "Активна"
   },
   "settings": {

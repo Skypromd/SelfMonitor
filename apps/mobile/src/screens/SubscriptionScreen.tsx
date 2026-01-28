@@ -9,6 +9,8 @@ import InputField from '../components/InputField';
 import FadeInView from '../components/FadeInView';
 import Badge from '../components/Badge';
 import { apiRequest } from '../services/api';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { enqueueSubscriptionUpdate } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, spacing } from '../theme';
@@ -16,6 +18,7 @@ import { colors, spacing } from '../theme';
 export default function SubscriptionScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
+  const { isOffline } = useNetworkStatus();
   const [subscription, setSubscription] = useState({
     subscription_plan: 'free',
     monthly_close_day: '1',
@@ -51,19 +54,26 @@ export default function SubscriptionScreen() {
   const handleSave = async () => {
     setMessage('');
     setError('');
+    const payload = {
+      subscription_plan: subscription.subscription_plan,
+      monthly_close_day: Number(subscription.monthly_close_day) || 1,
+    };
+    if (isOffline) {
+      await enqueueSubscriptionUpdate(payload);
+      setMessage(t('subscription.saved_offline'));
+      return;
+    }
     try {
       const response = await apiRequest('/profile/subscriptions/me', {
         method: 'PUT',
         token,
-        body: JSON.stringify({
-          subscription_plan: subscription.subscription_plan,
-          monthly_close_day: Number(subscription.monthly_close_day) || 1,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) throw new Error();
       setMessage(t('subscription.updated_message'));
     } catch {
-      setError(t('subscription.save_error'));
+      await enqueueSubscriptionUpdate(payload);
+      setMessage(t('subscription.saved_offline'));
     }
   };
 

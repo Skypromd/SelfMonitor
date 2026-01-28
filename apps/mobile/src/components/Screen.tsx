@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, spacing } from '../theme';
@@ -10,15 +10,30 @@ type ScreenProps = {
   children: React.ReactNode;
   style?: ViewStyle;
   showOfflineBanner?: boolean;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 };
 
-export default function Screen({ children, style, showOfflineBanner = true }: ScreenProps) {
+export default function Screen({
+  children,
+  style,
+  showOfflineBanner = true,
+  refreshing = false,
+  onRefresh,
+}: ScreenProps) {
   const { isOffline } = useNetworkStatus();
   const { t } = useTranslation();
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={[styles.content, style]}>
+      <ScrollView
+        contentContainerStyle={[styles.content, style]}
+        refreshControl={
+          onRefresh ? (
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          ) : undefined
+        }
+      >
         {showOfflineBanner && isOffline ? (
           <View style={styles.banner}>
             <Text style={styles.bannerTitle}>{t('common.offline_title')}</Text>

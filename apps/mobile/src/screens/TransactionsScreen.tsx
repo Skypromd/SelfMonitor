@@ -66,6 +66,7 @@ export default function TransactionsScreen() {
   const [filter, setFilter] = useState<'all' | 'income' | 'expenses' | 'needs_category'>('all');
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const effectiveAccountId = manualAccountId || accountId;
 
   const categoryOptions = useMemo(() => ([
@@ -77,65 +78,72 @@ export default function TransactionsScreen() {
     { value: 'other', label: t('transactions.category_other') },
   ]), [t]);
 
-  useEffect(() => {
-    const loadCached = async () => {
-      try {
-        const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
-        const cached = await AsyncStorage.getItem(cacheKey);
-        if (cached) {
-          const data = JSON.parse(cached);
-          setTransactions(data || []);
-          const income = data.filter((t: Transaction) => t.amount > 0).reduce((sum: number, t: Transaction) => sum + t.amount, 0);
-          const expenses = data.filter((t: Transaction) => t.amount < 0).reduce((sum: number, t: Transaction) => sum + Math.abs(t.amount), 0);
-          setSummary({ income, expenses });
-        }
-      } catch {
-        return;
-      }
-    };
-
-    const fetchProviders = async () => {
-      try {
-        const response = await apiRequest('/banking/providers');
-        if (!response.ok) return;
-        const data = await response.json();
-        setProviders(data || []);
-        if (data?.length) {
-          setSelectedProvider(data[0].id);
-        }
-      } catch {
-        setProviders([]);
-      }
-    };
-
-    const fetchTransactions = async () => {
-      try {
-        const path = effectiveAccountId
-          ? `/transactions/accounts/${effectiveAccountId}/transactions`
-          : '/transactions/transactions/me';
-        const response = await apiRequest(path, { token });
-        if (!response.ok) return;
-        const data = await response.json();
+  const loadCached = async () => {
+    try {
+      const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
+      const cached = await AsyncStorage.getItem(cacheKey);
+      if (cached) {
+        const data = JSON.parse(cached);
         setTransactions(data || []);
         const income = data.filter((t: Transaction) => t.amount > 0).reduce((sum: number, t: Transaction) => sum + t.amount, 0);
         const expenses = data.filter((t: Transaction) => t.amount < 0).reduce((sum: number, t: Transaction) => sum + Math.abs(t.amount), 0);
         setSummary({ income, expenses });
-        setLastSync(new Date().toISOString());
-        try {
-          const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
-          await AsyncStorage.setItem(cacheKey, JSON.stringify(data || []));
-        } catch {
-          return;
-        }
-      } catch {
-        setTransactions([]);
-        setSummary({ income: 0, expenses: 0 });
       }
-    };
+    } catch {
+      return;
+    }
+  };
+
+  const fetchProviders = async () => {
+    try {
+      const response = await apiRequest('/banking/providers');
+      if (!response.ok) return;
+      const data = await response.json();
+      setProviders(data || []);
+      if (data?.length) {
+        setSelectedProvider(data[0].id);
+      }
+    } catch {
+      setProviders([]);
+    }
+  };
+
+  const fetchTransactions = async () => {
+    try {
+      const path = effectiveAccountId
+        ? `/transactions/accounts/${effectiveAccountId}/transactions`
+        : '/transactions/transactions/me';
+      const response = await apiRequest(path, { token });
+      if (!response.ok) return;
+      const data = await response.json();
+      setTransactions(data || []);
+      const income = data.filter((t: Transaction) => t.amount > 0).reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+      const expenses = data.filter((t: Transaction) => t.amount < 0).reduce((sum: number, t: Transaction) => sum + Math.abs(t.amount), 0);
+      setSummary({ income, expenses });
+      setLastSync(new Date().toISOString());
+      try {
+        const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(data || []));
+      } catch {
+        return;
+      }
+    } catch {
+      setTransactions([]);
+      setSummary({ income: 0, expenses: 0 });
+    }
+  };
+
+  useEffect(() => {
     loadCached();
     fetchProviders();
     fetchTransactions();
   }, [token, effectiveAccountId]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([fetchProviders(), fetchTransactions()]);
+    setIsRefreshing(false);
+  };
 
   useEffect(() => {
     const syncQueue = async () => {
@@ -312,7 +320,7 @@ export default function TransactionsScreen() {
   const lastSyncLabel = lastSync ? new Date(lastSync).toLocaleString() : t('common.not_available');
 
   return (
-    <Screen>
+    <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <SectionHeader title={t('transactions.title')} subtitle={t('transactions.subtitle')} />
       <FadeInView>
         <View style={styles.statsRow}>

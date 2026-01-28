@@ -7,8 +7,12 @@
     "loading": "Loading...",
     "offline_title": "You're offline",
     "offline_subtitle": "Data may be outdated until you're back online.",
+    "online_label": "Online",
+    "offline_label": "Offline",
     "last_sync": "Last sync",
-    "not_available": "Not available"
+    "not_available": "Not available",
+    "sync_now": "Sync now",
+    "syncing": "Syncing..."
   },
   "auth": {
     "welcome_title": "Self Assessment Assistant",
@@ -54,7 +58,10 @@
     "deadline_title": "Next deadline",
     "deadline_subtitle": "Stay ready for HMRC dates.",
     "deadline_hint": "Self Assessment filing deadline",
-    "deadline_action": "Open reports"
+    "deadline_action": "Open reports",
+    "sync_title": "Sync status",
+    "sync_subtitle": "Offline edits will sync automatically.",
+    "sync_pending": "pending updates"
   },
   "transactions": {
     "title": "Transactions",
@@ -153,7 +160,10 @@
     "summary_net": "Net profit",
     "summary_count": "Transactions",
     "summary_period": "Period",
-    "category_breakdown": "Top categories"
+    "category_breakdown": "Top categories",
+    "performance_title": "Performance",
+    "profit_margin": "Profit margin",
+    "expense_ratio": "Expense ratio"
   },
   "marketplace": {
     "title": "Marketplace",
@@ -178,7 +188,8 @@
     "date_of_birth": "Date of birth",
     "load_error": "Failed to load profile.",
     "saved_message": "Profile saved.",
-    "save_error": "Failed to save profile."
+    "save_error": "Failed to save profile.",
+    "saved_offline": "Saved offline. Syncing when online."
   },
   "subscription": {
     "title": "Subscription",
@@ -193,6 +204,7 @@
     "updated_message": "Subscription updated.",
     "load_error": "Failed to load subscription.",
     "save_error": "Failed to update subscription.",
+    "saved_offline": "Saved offline. Syncing when online.",
     "active_label": "Active"
   },
   "settings": {

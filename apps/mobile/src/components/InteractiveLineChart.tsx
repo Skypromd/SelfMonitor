@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, LinearGradient, Path, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 
 import { colors, spacing } from '../theme';
 
@@ -25,6 +25,12 @@ export default function InteractiveLineChart({
 }: InteractiveLineChartProps) {
   const [width, setWidth] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(Math.max(data.length - 1, 0));
+
+  useEffect(() => {
+    if (data.length) {
+      setSelectedIndex(Math.max(data.length - 1, 0));
+    }
+  }, [data.length]);
 
   const onLayout = (event: LayoutChangeEvent) => {
     const nextWidth = event.nativeEvent.layout.width;
@@ -66,9 +72,16 @@ export default function InteractiveLineChart({
   };
 
   return (
-    <View onLayout={onLayout} style={[styles.container, { height }]}>
+    <View
+      onLayout={onLayout}
+      style={[styles.container, { height }]}
+      onStartShouldSetResponder={() => true}
+      onMoveShouldSetResponder={() => true}
+      onResponderGrant={handleTouch}
+      onResponderMove={handleTouch}
+    >
       {path ? (
-        <Svg width={width} height={height} onPressIn={handleTouch}>
+        <Svg width={width} height={height}>
           <Defs>
             <LinearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={gradientFrom} stopOpacity="1" />
@@ -77,6 +90,16 @@ export default function InteractiveLineChart({
           </Defs>
           <Path d={areaPath} fill="url(#lineGradient)" />
           <Path d={path} stroke={strokeColor} strokeWidth={3} fill="none" />
+          {selectedPoint ? (
+            <Line
+              x1={selectedPoint.x}
+              y1={0}
+              x2={selectedPoint.x}
+              y2={height}
+              stroke="rgba(148, 163, 184, 0.6)"
+              strokeDasharray="4 4"
+            />
+          ) : null}
           {selectedPoint ? (
             <Circle cx={selectedPoint.x} cy={selectedPoint.y} r={5} fill={colors.surface} stroke={strokeColor} strokeWidth={2} />
           ) : null}

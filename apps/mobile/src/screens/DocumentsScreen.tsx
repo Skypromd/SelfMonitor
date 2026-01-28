@@ -47,6 +47,7 @@ export default function DocumentsScreen() {
   const [error, setError] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const fetchDocuments = async () => {
     try {
@@ -79,6 +80,12 @@ export default function DocumentsScreen() {
     loadCached();
     fetchDocuments();
   }, [token]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchDocuments();
+    setIsRefreshing(false);
+  };
 
   const statusTone = (status: DocumentItem['status']) => {
     if (status === 'completed') return 'success';
@@ -172,7 +179,7 @@ export default function DocumentsScreen() {
   };
 
   return (
-    <Screen>
+    <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <GradientCard colors={['#0f172a', '#1e293b']}>
         <Text style={styles.heroTitle}>{t('documents.title')}</Text>
         <Text style={styles.heroSubtitle}>{t('documents.subtitle')}</Text>

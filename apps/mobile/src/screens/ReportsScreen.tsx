@@ -10,6 +10,7 @@ import InfoRow from '../components/InfoRow';
 import FadeInView from '../components/FadeInView';
 import MiniBarChart from '../components/MiniBarChart';
 import BarRow from '../components/BarRow';
+import DonutChart from '../components/DonutChart';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -45,6 +46,7 @@ export default function ReportsScreen() {
   const [error, setError] = useState('');
   const [summary, setSummary] = useState<PeriodSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const sortedCategories = summary?.summary_by_category
     ? [...summary.summary_by_category].sort((a, b) => Math.abs(b.net_total) - Math.abs(a.net_total))
@@ -52,17 +54,20 @@ export default function ReportsScreen() {
   const categoryMax = sortedCategories.length
     ? Math.max(...sortedCategories.map((item) => Math.abs(item.net_total)))
     : 0;
+  const expenseRatio = summary && summary.total_income > 0 ? summary.total_expenses / summary.total_income : 0;
+  const profitMargin = summary && summary.total_income > 0 ? summary.net_profit / summary.total_income : 0;
+
+  const fetchCadence = async () => {
+    try {
+      const response = await apiRequest('/analytics/reports/reporting-cadence', { token });
+      if (!response.ok) return;
+      setCadence(await response.json());
+    } catch {
+      setCadence(null);
+    }
+  };
 
   useEffect(() => {
-    const fetchCadence = async () => {
-      try {
-        const response = await apiRequest('/analytics/reports/reporting-cadence', { token });
-        if (!response.ok) return;
-        setCadence(await response.json());
-      } catch {
-        setCadence(null);
-      }
-    };
     fetchCadence();
   }, [token]);
 
@@ -116,8 +121,14 @@ export default function ReportsScreen() {
     }
   };
 
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchCadence();
+    setIsRefreshing(false);
+  };
+
   return (
-    <Screen>
+    <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <SectionHeader title={t('reports.title')} subtitle={t('reports.subtitle')} />
       {cadence && (
         <FadeInView>
@@ -215,6 +226,30 @@ export default function ReportsScreen() {
         </FadeInView>
       ) : null}
 
+      {summary ? (
+        <FadeInView delay={360}>
+          <Card>
+            <Text style={styles.cardTitle}>{t('reports.performance_title')}</Text>
+            <View style={styles.performanceRow}>
+              <View style={[styles.performanceItem, styles.performanceItemSpacer]}>
+                <DonutChart
+                  value={profitMargin}
+                  label={t('reports.profit_margin')}
+                  color={colors.success}
+                />
+              </View>
+              <View style={styles.performanceItem}>
+                <DonutChart
+                  value={expenseRatio}
+                  label={t('reports.expense_ratio')}
+                  color={colors.warning}
+                />
+              </View>
+            </View>
+          </Card>
+        </FadeInView>
+      ) : null}
+
       {message ? <Text style={styles.message}>{message}</Text> : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
     </Screen>
@@ -243,6 +278,16 @@ const styles = StyleSheet.create({
   },
   categoryList: {
     marginTop: spacing.md,
+  },
+  performanceRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  performanceItem: {
+    flex: 1,
+  },
+  performanceItemSpacer: {
+    marginRight: spacing.md,
   },
   warning: {
     marginTop: spacing.sm,

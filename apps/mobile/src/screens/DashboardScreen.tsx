@@ -15,7 +15,9 @@ import InfoRow from '../components/InfoRow';
 import PulseDot from '../components/PulseDot';
 import InteractiveLineChart from '../components/InteractiveLineChart';
 import GlassCard from '../components/GlassCard';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { apiRequest } from '../services/api';
+import { flushQueue, getQueueCount } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, spacing } from '../theme';
@@ -31,62 +33,87 @@ export default function DashboardScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
   const navigation = useNavigation();
+  const { isOffline } = useNetworkStatus();
   const [readinessScore, setReadinessScore] = useState(0);
   const [cashFlow, setCashFlow] = useState<number | null>(null);
   const [forecastPoints, setForecastPoints] = useState<number[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [queuedCount, setQueuedCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [readinessMeta, setReadinessMeta] = useState({
     missingCategories: 0,
     missingBusinessUse: 0,
     total: 0,
   });
 
-  useEffect(() => {
-    const loadReadiness = async () => {
-      try {
-        const response = await apiRequest('/transactions/transactions/me', { token });
-        if (!response.ok) return;
-        const data: Transaction[] = await response.json();
-        if (!data.length) {
-          setReadinessScore(0);
-          setReadinessMeta({ missingCategories: 0, missingBusinessUse: 0, total: 0 });
-          return;
-        }
-        const missingCategories = data.filter(item => !item.tax_category && !item.category).length;
-        const missingBusinessUse = data.filter(item => item.amount < 0 && item.business_use_percent == null).length;
-        const categoryScore = (data.length - missingCategories) / data.length;
-        const businessScore = (data.length - missingBusinessUse) / data.length;
-        setReadinessScore(Math.round((categoryScore * 0.6 + businessScore * 0.4) * 100));
-        setReadinessMeta({ missingCategories, missingBusinessUse, total: data.length });
-        setLastSync(new Date().toISOString());
-      } catch {
+  const loadReadiness = async () => {
+    try {
+      const response = await apiRequest('/transactions/transactions/me', { token });
+      if (!response.ok) return;
+      const data: Transaction[] = await response.json();
+      if (!data.length) {
         setReadinessScore(0);
+        setReadinessMeta({ missingCategories: 0, missingBusinessUse: 0, total: 0 });
+        return;
       }
-    };
+      const missingCategories = data.filter(item => !item.tax_category && !item.category).length;
+      const missingBusinessUse = data.filter(item => item.amount < 0 && item.business_use_percent == null).length;
+      const categoryScore = (data.length - missingCategories) / data.length;
+      const businessScore = (data.length - missingBusinessUse) / data.length;
+      setReadinessScore(Math.round((categoryScore * 0.6 + businessScore * 0.4) * 100));
+      setReadinessMeta({ missingCategories, missingBusinessUse, total: data.length });
+      setLastSync(new Date().toISOString());
+    } catch {
+      setReadinessScore(0);
+    }
+  };
 
-    const loadCashFlow = async () => {
-      try {
-        const response = await apiRequest('/analytics/forecast/cash-flow', {
-          method: 'POST',
-          token,
-          body: JSON.stringify({ days_to_forecast: 30 }),
-        });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (data.forecast?.length) {
-          const last = data.forecast[data.forecast.length - 1];
-          setCashFlow(last.balance);
-          setForecastPoints(data.forecast.map((item: { balance: number }) => item.balance));
-          setLastSync(new Date().toISOString());
-        }
-      } catch {
-        setCashFlow(null);
+  const loadCashFlow = async () => {
+    try {
+      const response = await apiRequest('/analytics/forecast/cash-flow', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({ days_to_forecast: 30 }),
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data.forecast?.length) {
+        const last = data.forecast[data.forecast.length - 1];
+        setCashFlow(last.balance);
+        setForecastPoints(data.forecast.map((item: { balance: number }) => item.balance));
+        setLastSync(new Date().toISOString());
       }
-    };
+    } catch {
+      setCashFlow(null);
+    }
+  };
 
+  const loadQueueCount = async () => {
+    const count = await getQueueCount();
+    setQueuedCount(count);
+  };
+
+  useEffect(() => {
     loadReadiness();
     loadCashFlow();
+    loadQueueCount();
   }, [token]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([loadReadiness(), loadCashFlow(), loadQueueCount()]);
+    setIsRefreshing(false);
+  };
+
+  const handleSync = async () => {
+    if (isOffline || syncing) return;
+    setSyncing(true);
+    const result = await flushQueue(token);
+    setQueuedCount(result.remaining);
+    setLastSync(new Date().toISOString());
+    setSyncing(false);
+  };
 
   const readinessLabel = readinessScore >= 80
     ? t('dashboard.readiness_good')
@@ -100,7 +127,7 @@ export default function DashboardScreen() {
   const deadlineLabel = nextDeadline.toLocaleDateString();
 
   return (
-    <Screen>
+    <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <FadeInView>
         <GradientCard colors={['#2563eb', '#1d4ed8']}>
           <View style={styles.heroHeader}>
@@ -160,6 +187,25 @@ export default function DashboardScreen() {
             style={styles.deadlineButton}
           />
         </GlassCard>
+      </FadeInView>
+
+      <SectionHeader title={t('dashboard.sync_title')} subtitle={t('dashboard.sync_subtitle')} />
+      <FadeInView delay={140}>
+        <Card>
+          <View style={styles.syncRow}>
+            <Badge label={isOffline ? t('common.offline_label') : t('common.online_label')} tone={isOffline ? 'warning' : 'success'} />
+            <Text style={styles.syncCount}>{queuedCount} {t('dashboard.sync_pending')}</Text>
+          </View>
+          <InfoRow label={t('common.last_sync')} value={lastSyncLabel} />
+          <PrimaryButton
+            title={syncing ? t('common.syncing') : t('common.sync_now')}
+            onPress={handleSync}
+            disabled={syncing || isOffline || queuedCount === 0}
+            variant="secondary"
+            haptic="light"
+            style={styles.syncButton}
+          />
+        </Card>
       </FadeInView>
 
       <SectionHeader title={t('dashboard.readiness_title')} subtitle={t('dashboard.data_quality_subtitle')} />
@@ -276,6 +322,20 @@ const styles = StyleSheet.create({
   },
   deadlineButton: {
     marginTop: spacing.lg,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  syncCount: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  syncButton: {
+    marginTop: spacing.md,
   },
   metaCard: {
     marginTop: spacing.md,

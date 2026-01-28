@@ -8,6 +8,8 @@ import Screen from '../components/Screen';
 import InputField from '../components/InputField';
 import FadeInView from '../components/FadeInView';
 import { apiRequest } from '../services/api';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { enqueueProfileUpdate } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, spacing } from '../theme';
@@ -15,6 +17,7 @@ import { colors, spacing } from '../theme';
 export default function ProfileScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
+  const { isOffline } = useNetworkStatus();
   const [profile, setProfile] = useState({ first_name: '', last_name: '', date_of_birth: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -40,6 +43,15 @@ export default function ProfileScreen() {
   const handleSave = async () => {
     setMessage('');
     setError('');
+    if (isOffline) {
+      await enqueueProfileUpdate({
+        first_name: profile.first_name,
+        last_name: profile.last_name,
+        date_of_birth: profile.date_of_birth || null,
+      });
+      setMessage(t('profile.saved_offline'));
+      return;
+    }
     try {
       const response = await apiRequest('/profile/profiles/me', {
         method: 'PUT',
@@ -53,7 +65,12 @@ export default function ProfileScreen() {
       if (!response.ok) throw new Error();
       setMessage(t('profile.saved_message'));
     } catch {
-      setError(t('profile.save_error'));
+      await enqueueProfileUpdate({
+        first_name: profile.first_name,
+        last_name: profile.last_name,
+        date_of_birth: profile.date_of_birth || null,
+      });
+      setMessage(t('profile.saved_offline'));
     }
   };
 

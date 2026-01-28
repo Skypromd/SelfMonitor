@@ -7,8 +7,12 @@
     "loading": "Wird geladen...",
     "offline_title": "Offline",
     "offline_subtitle": "Daten können veraltet sein.",
+    "online_label": "Online",
+    "offline_label": "Offline",
     "last_sync": "Letzte Synchronisierung",
-    "not_available": "Nicht verfügbar"
+    "not_available": "Nicht verfügbar",
+    "sync_now": "Jetzt synchronisieren",
+    "syncing": "Synchronisiere..."
   },
   "auth": {
     "welcome_title": "Self-Assessment Assistent",
@@ -54,7 +58,10 @@
     "deadline_title": "Nächste Frist",
     "deadline_subtitle": "Bleiben Sie HMRC-konform.",
     "deadline_hint": "Self-Assessment Abgabefrist",
-    "deadline_action": "Berichte öffnen"
+    "deadline_action": "Berichte öffnen",
+    "sync_title": "Sync-Status",
+    "sync_subtitle": "Offline-Änderungen werden automatisch synchronisiert.",
+    "sync_pending": "ausstehende Updates"
   },
   "transactions": {
     "title": "Transaktionen",
@@ -153,7 +160,10 @@
     "summary_net": "Nettoergebnis",
     "summary_count": "Transaktionen",
     "summary_period": "Zeitraum",
-    "category_breakdown": "Top Kategorien"
+    "category_breakdown": "Top Kategorien",
+    "performance_title": "Performance",
+    "profit_margin": "Gewinnmarge",
+    "expense_ratio": "Kostenquote"
   },
   "marketplace": {
     "title": "Marktplatz",
@@ -178,7 +188,8 @@
     "date_of_birth": "Geburtsdatum",
     "load_error": "Profil konnte nicht geladen werden.",
     "saved_message": "Profil gespeichert.",
-    "save_error": "Profil konnte nicht gespeichert werden."
+    "save_error": "Profil konnte nicht gespeichert werden.",
+    "saved_offline": "Offline gespeichert. Sync erfolgt online."
   },
   "subscription": {
     "title": "Abonnement",
@@ -193,6 +204,7 @@
     "updated_message": "Abonnement aktualisiert.",
     "load_error": "Abonnement konnte nicht geladen werden.",
     "save_error": "Abonnement konnte nicht aktualisiert werden.",
+    "saved_offline": "Offline gespeichert. Sync erfolgt online.",
     "active_label": "Aktiv"
   },
   "settings": {

@@ -14,7 +14,28 @@ type CategoryUpdateAction = {
   createdAt: string;
 };
 
-type OfflineAction = CategoryUpdateAction;
+type ProfileUpdateAction = {
+  id: string;
+  type: 'update_profile';
+  payload: {
+    first_name: string;
+    last_name: string;
+    date_of_birth?: string | null;
+  };
+  createdAt: string;
+};
+
+type SubscriptionUpdateAction = {
+  id: string;
+  type: 'update_subscription';
+  payload: {
+    subscription_plan: string;
+    monthly_close_day: number;
+  };
+  createdAt: string;
+};
+
+type OfflineAction = CategoryUpdateAction | ProfileUpdateAction | SubscriptionUpdateAction;
 
 const loadQueue = async (): Promise<OfflineAction[]> => {
   try {
@@ -55,6 +76,34 @@ export const enqueueCategoryUpdate = async (transactionId: string, category: str
   return filtered.length;
 };
 
+export const enqueueProfileUpdate = async (payload: ProfileUpdateAction['payload']) => {
+  const queue = await loadQueue();
+  const filtered = queue.filter((item) => item.type !== 'update_profile');
+  const next: ProfileUpdateAction = {
+    id: `profile-${Date.now()}`,
+    type: 'update_profile',
+    payload,
+    createdAt: new Date().toISOString(),
+  };
+  filtered.push(next);
+  await saveQueue(filtered);
+  return filtered.length;
+};
+
+export const enqueueSubscriptionUpdate = async (payload: SubscriptionUpdateAction['payload']) => {
+  const queue = await loadQueue();
+  const filtered = queue.filter((item) => item.type !== 'update_subscription');
+  const next: SubscriptionUpdateAction = {
+    id: `subscription-${Date.now()}`,
+    type: 'update_subscription',
+    payload,
+    createdAt: new Date().toISOString(),
+  };
+  filtered.push(next);
+  await saveQueue(filtered);
+  return filtered.length;
+};
+
 export const flushQueue = async (token: string | null) => {
   if (!token) return { flushed: 0, remaining: 0 };
   let queue = await loadQueue();
@@ -66,6 +115,32 @@ export const flushQueue = async (token: string | null) => {
         method: 'PATCH',
         token,
         body: JSON.stringify({ category: item.payload.category }),
+      });
+      if (!response.ok) {
+        break;
+      }
+      flushed += 1;
+      queue = queue.filter((entry) => entry.id !== item.id);
+      await saveQueue(queue);
+    }
+    if (item.type === 'update_profile') {
+      const response = await apiRequest('/profile/profiles/me', {
+        method: 'PUT',
+        token,
+        body: JSON.stringify(item.payload),
+      });
+      if (!response.ok) {
+        break;
+      }
+      flushed += 1;
+      queue = queue.filter((entry) => entry.id !== item.id);
+      await saveQueue(queue);
+    }
+    if (item.type === 'update_subscription') {
+      const response = await apiRequest('/profile/subscriptions/me', {
+        method: 'PUT',
+        token,
+        body: JSON.stringify(item.payload),
       });
       if (!response.ok) {
         break;
