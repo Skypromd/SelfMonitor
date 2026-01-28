@@ -10,6 +10,7 @@ from .telemetry import setup_telemetry
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
 INTEGRATIONS_SERVICE_URL = os.getenv("INTEGRATIONS_SERVICE_URL", "http://localhost:8010/integrations/hmrc/submit-tax-return")
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
+USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://localhost:8001")
 
 # UK tax configuration (defaults are 2024/25 rates; override via env for updates).
 UK_PERSONAL_ALLOWANCE = float(os.getenv("UK_PERSONAL_ALLOWANCE", "12570"))
@@ -90,6 +91,26 @@ CATEGORY_TO_SA103 = {
 # --- Placeholder Security ---
 def fake_auth_check() -> str:
     return "fake-user-123"
+
+async def get_subscription_plan(user_id: str) -> str:
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{USER_PROFILE_SERVICE_URL}/subscriptions/me",
+                headers={"Authorization": "Bearer fake-token"},
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("subscription_plan", "free")
+    except httpx.RequestError:
+        return "free"
+    return "free"
+
+async def require_pro(user_id: str):
+    plan = await get_subscription_plan(user_id)
+    if plan != "pro":
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Pro subscription required.")
 
 app = FastAPI(
     title="Tax Engine Service",
@@ -337,6 +358,7 @@ async def calculate_and_submit_tax(
     request: TaxCalculationRequest,
     user_id: str = Depends(fake_auth_check)
 ):
+    await require_pro(user_id)
     # This re-uses the logic from the calculate endpoint.
     # In a real app, this logic would be in a shared function.
     calculation_result = await calculate_tax(request, user_id)

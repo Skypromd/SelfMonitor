@@ -1,4 +1,4 @@
-from fastapi import FastAPI, status, HTTPException
+from fastapi import FastAPI, status, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict, Any, List
 import uuid
@@ -9,6 +9,7 @@ from collections import defaultdict
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
 import io
+import calendar
 
 # --- Placeholder Security ---
 def fake_auth_check() -> str:
@@ -100,6 +101,113 @@ class CashFlowResponse(BaseModel):
 class Transaction(BaseModel):
     date: datetime.date
     amount: float
+    category: Optional[str] = None
+    tax_category: Optional[str] = None
+    business_use_percent: Optional[float] = None
+
+class SummaryByCategory(BaseModel):
+    category: str
+    income_total: float
+    expense_total: float
+    net_total: float
+
+class PeriodSummary(BaseModel):
+    start_date: datetime.date
+    end_date: datetime.date
+    total_income: float
+    total_expenses: float
+    net_profit: float
+    transaction_count: int
+    summary_by_category: List[SummaryByCategory]
+
+class ReportingCadenceResponse(BaseModel):
+    cadence: Literal["monthly", "quarterly"]
+    turnover_last_12_months: float
+    threshold: float
+    quarterly_required: bool
+
+USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://localhost:8001")
+TURNOVER_QUARTERLY_THRESHOLD = float(os.getenv("TURNOVER_QUARTERLY_THRESHOLD", "50000"))
+
+async def fetch_transactions(user_id: str) -> List[Transaction]:
+    transactions_service_url = os.getenv("TRANSACTIONS_SERVICE_URL")
+    if not transactions_service_url:
+        raise HTTPException(status_code=500, detail="Transactions service URL not configured")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            headers = {"Authorization": "Bearer fake-token"}
+            response = await client.get(transactions_service_url, headers=headers, timeout=10.0)
+            response.raise_for_status()
+            return [Transaction(**t) for t in response.json()]
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+
+async def get_subscription_plan(user_id: str) -> str:
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{USER_PROFILE_SERVICE_URL}/subscriptions/me",
+                headers={"Authorization": "Bearer fake-token"},
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("subscription_plan", "free")
+    except httpx.RequestError:
+        return "free"
+    return "free"
+
+async def require_pro(user_id: str):
+    plan = await get_subscription_plan(user_id)
+    if plan != "pro":
+        raise HTTPException(status_code=402, detail="Pro subscription required.")
+
+def apply_business_use(amount: float, business_use_percent: Optional[float]) -> float:
+    if business_use_percent is None:
+        return amount
+    return amount * (max(0.0, min(100.0, business_use_percent)) / 100.0)
+
+def summarize_transactions(transactions: List[Transaction], start_date: datetime.date, end_date: datetime.date) -> PeriodSummary:
+    total_income = 0.0
+    total_expenses = 0.0
+    category_map: Dict[str, Dict[str, float]] = {}
+    count = 0
+
+    for t in transactions:
+        if not (start_date <= t.date <= end_date):
+            continue
+        count += 1
+        amount = apply_business_use(t.amount, t.business_use_percent)
+        category = t.tax_category or t.category or ("income" if amount >= 0 else "expense")
+        category_map.setdefault(category, {"income": 0.0, "expense": 0.0})
+        if amount >= 0:
+            total_income += amount
+            category_map[category]["income"] += amount
+        else:
+            total_expenses += abs(amount)
+            category_map[category]["expense"] += abs(amount)
+
+    summary_by_category = [
+        SummaryByCategory(
+            category=cat,
+            income_total=round(values["income"], 2),
+            expense_total=round(values["expense"], 2),
+            net_total=round(values["income"] - values["expense"], 2),
+        )
+        for cat, values in sorted(category_map.items())
+    ]
+
+    net_profit = total_income - total_expenses
+    return PeriodSummary(
+        start_date=start_date,
+        end_date=end_date,
+        total_income=round(total_income, 2),
+        total_expenses=round(total_expenses, 2),
+        net_profit=round(net_profit, 2),
+        transaction_count=count,
+        summary_by_category=summary_by_category,
+    )
 
 # --- Forecasting Endpoint ---
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
@@ -107,19 +215,7 @@ async def get_cash_flow_forecast(
     request: ForecastRequest,
     user_id: str = Depends(fake_auth_check)
 ):
-    TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
-    if not TRANSACTIONS_SERVICE_URL:
-        raise HTTPException(status_code=500, detail="Transactions service URL not configured")
-
-    # 1. Fetch transactions
-    try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": "Bearer fake-token"} # Pass real token in prod
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+    transactions = await fetch_transactions(user_id)
 
     if not transactions:
         return CashFlowResponse(forecast=[])
@@ -151,16 +247,8 @@ async def get_cash_flow_forecast(
 # --- PDF Report Generation ---
 @app.get("/reports/mortgage-readiness", response_class=StreamingResponse)
 async def get_mortgage_readiness_report(user_id: str = Depends(fake_auth_check)):
-    TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
-    # 1. Fetch transactions (similar to cash flow)
-    try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": "Bearer fake-token"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+    await require_pro(user_id)
+    transactions = await fetch_transactions(user_id)
 
     # 2. Analyze income over the last 12 months
     twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)
@@ -205,3 +293,97 @@ async def get_mortgage_readiness_report(user_id: str = Depends(fake_auth_check))
     return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers={
         "Content-Disposition": f"attachment; filename=mortgage_report_{datetime.date.today()}.pdf"
     })
+
+
+@app.get("/reports/monthly-summary", response_model=PeriodSummary)
+async def get_monthly_summary(
+    year: Optional[int] = None,
+    month: Optional[int] = None,
+    user_id: str = Depends(fake_auth_check)
+):
+    today = datetime.date.today()
+    target_year = year or today.year
+    target_month = month or today.month
+    last_day = calendar.monthrange(target_year, target_month)[1]
+    start_date = datetime.date(target_year, target_month, 1)
+    end_date = datetime.date(target_year, target_month, last_day)
+    transactions = await fetch_transactions(user_id)
+    return summarize_transactions(transactions, start_date, end_date)
+
+
+@app.get("/reports/quarterly-summary", response_model=PeriodSummary)
+async def get_quarterly_summary(
+    year: Optional[int] = None,
+    quarter: Optional[int] = None,
+    user_id: str = Depends(fake_auth_check)
+):
+    await require_pro(user_id)
+    today = datetime.date.today()
+    target_year = year or today.year
+    target_quarter = quarter or ((today.month - 1) // 3 + 1)
+    if target_quarter not in (1, 2, 3, 4):
+        raise HTTPException(status_code=400, detail="Quarter must be between 1 and 4.")
+
+    start_month = (target_quarter - 1) * 3 + 1
+    end_month = start_month + 2
+    last_day = calendar.monthrange(target_year, end_month)[1]
+    start_date = datetime.date(target_year, start_month, 1)
+    end_date = datetime.date(target_year, end_month, last_day)
+    transactions = await fetch_transactions(user_id)
+    return summarize_transactions(transactions, start_date, end_date)
+
+
+@app.get("/reports/profit-loss", response_model=PeriodSummary)
+async def get_profit_loss(
+    start_date: datetime.date,
+    end_date: datetime.date,
+    user_id: str = Depends(fake_auth_check)
+):
+    await require_pro(user_id)
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="start_date must be before end_date.")
+    transactions = await fetch_transactions(user_id)
+    return summarize_transactions(transactions, start_date, end_date)
+
+
+@app.get("/reports/tax-year-summary", response_model=PeriodSummary)
+async def get_tax_year_summary(
+    tax_year: Optional[str] = None,
+    user_id: str = Depends(fake_auth_check)
+):
+    await require_pro(user_id)
+    if tax_year:
+        try:
+            start_str, end_str = tax_year.split("/")
+            start_date = datetime.date.fromisoformat(start_str)
+            end_date = datetime.date.fromisoformat(end_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="tax_year must be in YYYY-MM-DD/YYYY-MM-DD format.")
+    else:
+        today = datetime.date.today()
+        start_year = today.year if today >= datetime.date(today.year, 4, 6) else today.year - 1
+        start_date = datetime.date(start_year, 4, 6)
+        end_date = datetime.date(start_year + 1, 4, 5)
+
+    transactions = await fetch_transactions(user_id)
+    return summarize_transactions(transactions, start_date, end_date)
+
+
+@app.get("/reports/reporting-cadence", response_model=ReportingCadenceResponse)
+async def get_reporting_cadence(user_id: str = Depends(fake_auth_check)):
+    transactions = await fetch_transactions(user_id)
+    cutoff = datetime.date.today() - datetime.timedelta(days=365)
+    turnover = 0.0
+    for t in transactions:
+        if t.date < cutoff:
+            continue
+        if t.amount > 0:
+            turnover += t.amount
+    quarterly_required = turnover >= TURNOVER_QUARTERLY_THRESHOLD
+    cadence = "quarterly" if quarterly_required else "monthly"
+    return ReportingCadenceResponse(
+        cadence=cadence,
+        turnover_last_12_months=round(turnover, 2),
+        threshold=TURNOVER_QUARTERLY_THRESHOLD,
+        quarterly_required=quarterly_required,
+    )

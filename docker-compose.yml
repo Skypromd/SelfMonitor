@@ -219,6 +219,7 @@ services:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
       INTEGRATIONS_SERVICE_URL: "http://integrations-service/integrations/hmrc/submit-tax-return"
       CALENDAR_SERVICE_URL: "http://calendar-service/events"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service"
       OTEL_SERVICE_NAME: "tax-engine"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
     networks:
@@ -257,6 +258,7 @@ services:
       - transactions-service
     environment:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service"
     networks:
       - default_network
 

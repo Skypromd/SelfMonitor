@@ -52,6 +52,8 @@ paths:
                     format: uuid
                   message:
                     type: string
+        '402':
+          description: Pro subscription required.
         '502':
           description: Error communicating with a downstream service.
 

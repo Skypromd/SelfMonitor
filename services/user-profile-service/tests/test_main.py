@@ -71,3 +71,29 @@ async def test_get_nonexistent_profile(db_session):
     response = client.get("/profiles/me")
     assert response.status_code == 404
     assert response.json() == {"detail": "Profile not found"}
+
+
+@pytest.mark.asyncio
+async def test_subscription_defaults(db_session):
+    response = client.get("/subscriptions/me")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["subscription_plan"] == "free"
+    assert data["subscription_status"] == "active"
+    assert data["billing_cycle"] == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_update_subscription(db_session):
+    response = client.put(
+        "/subscriptions/me",
+        json={
+            "subscription_plan": "pro",
+            "subscription_status": "active",
+            "monthly_close_day": 5
+        }
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["subscription_plan"] == "pro"
+    assert data["monthly_close_day"] == 5

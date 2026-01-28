@@ -42,3 +42,22 @@ async def create_or_update_my_profile(
     """Creates a new profile or updates an existing one for the authenticated user in the database."""
     db_profile = await crud.create_or_update_profile(db, user_id=user_id, profile=profile_update)
     return db_profile
+
+
+@app.get("/subscriptions/me", response_model=schemas.SubscriptionResponse)
+async def get_my_subscription(
+    user_id: str = Depends(fake_auth_check),
+    db: AsyncSession = Depends(get_db)
+):
+    profile = await crud.get_or_create_profile(db, user_id=user_id)
+    return profile
+
+
+@app.put("/subscriptions/me", response_model=schemas.SubscriptionResponse)
+async def update_my_subscription(
+    update: schemas.SubscriptionUpdate,
+    user_id: str = Depends(fake_auth_check),
+    db: AsyncSession = Depends(get_db)
+):
+    profile = await crud.update_subscription(db, user_id=user_id, update=update)
+    return profile
