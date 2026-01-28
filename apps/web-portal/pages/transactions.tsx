@@ -1,5 +1,6 @@
 import { useState, useEffect, ChangeEvent } from 'react';
 import styles from '../styles/Home.module.css';
+import { useTranslation } from '../hooks/useTranslation';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
@@ -10,6 +11,7 @@ type TransactionsPageProps = {
 function BankConnection({ token, onConnectionComplete }: { token: string, onConnectionComplete: (accountId: string) => void }) {
   const [consentUrl, setConsentUrl] = useState('');
   const [error, setError] = useState('');
+  const { t } = useTranslation();
 
   const handleInitiate = async () => {
     setError('');
@@ -36,13 +38,13 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
   };
 
   return (
-    <div className={styles.subContainer} style={{marginTop: 0}}>
-      <h2>Bank Connections</h2>
+    <div className={styles.subContainer} style={{ marginTop: 0 }}>
+      <h2>{t('transactions.bank_connections_title')}</h2>
       {!consentUrl ? (
-        <button onClick={handleInitiate} className={styles.button}>Connect a Bank Account</button>
+        <button onClick={handleInitiate} className={styles.button}>{t('transactions.connect_button')}</button>
       ) : (
         <div>
-          <p>Click the link to grant access at your bank:</p>
+          <p>{t('transactions.consent_prompt')}</p>
           <a href="#" onClick={handleGrant} className={styles.link}>{consentUrl}</a>
         </div>
       )}
@@ -54,6 +56,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
 function TransactionsList({ token, accountId }: { token: string, accountId: string }) {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [error, setError] = useState('');
+  const { t } = useTranslation();
 
   const availableCategories = ['groceries', 'transport', 'income', 'food_and_drink', 'subscriptions'];
 
@@ -87,14 +90,14 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   };
 
   if (!accountId) return null;
-  if (!transactions.length && !error) return <p>Loading transactions...</p>;
+  if (!transactions.length && !error) return <p>{t('transactions.loading')}</p>;
   if (error) return <p className={styles.error}>{error}</p>;
 
   return (
     <div className={styles.subContainer}>
-      <h2>Recent Transactions</h2>
+      <h2>{t('transactions.recent_title')}</h2>
       <table className={styles.table}>
-        <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th></tr></thead>
+        <thead><tr><th>{t('transactions.col_date')}</th><th>{t('transactions.col_description')}</th><th>{t('transactions.col_amount')}</th><th>{t('transactions.col_category')}</th></tr></thead>
         <tbody>
           {transactions.map(t => (
             <tr key={t.id}>
@@ -103,7 +106,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
               <td className={t.amount > 0 ? styles.positive : styles.negative}>{t.amount.toFixed(2)} {t.currency}</td>
               <td>
                 <select value={t.category || ''} onChange={(e) => handleCategoryChange(t.id, e.target.value)} className={styles.categorySelect}>
-                  <option value="" disabled>Select...</option>
+                  <option value="" disabled>{t('transactions.select_placeholder')}</option>
                   {availableCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
               </td>
@@ -116,13 +119,14 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
 }
 
 export default function TransactionsPage({ token }: TransactionsPageProps) {
-    const [connectedAccountId, setConnectedAccountId] = useState('');
-    return (
-        <div>
-            <h1>Transactions</h1>
-            <p>Connect your bank account to import and categorize your transactions.</p>
-            <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />
-            <TransactionsList token={token} accountId={connectedAccountId} />
-        </div>
-    );
+  const [connectedAccountId, setConnectedAccountId] = useState('');
+  const { t } = useTranslation();
+  return (
+    <div>
+      <h1>{t('transactions.title')}</h1>
+      <p>{t('transactions.description')}</p>
+      <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />
+      <TransactionsList token={token} accountId={connectedAccountId} />
+    </div>
+  );
 }
