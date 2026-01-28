@@ -118,15 +118,99 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   );
 }
 
+function CsvImport({
+  token,
+  accountId,
+  onAccountChange,
+}: {
+  token: string;
+  accountId: string;
+  onAccountChange: (value: string) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const { t } = useTranslation();
+
+  const handleUpload = async () => {
+    setMessage('');
+    setError('');
+    if (!accountId) {
+      setError(t('transactions.csv_account_error'));
+      return;
+    }
+    if (!file) {
+      setError(t('transactions.csv_select_error'));
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('account_id', accountId);
+    formData.append('file', file);
+
+    try {
+      setIsUploading(true);
+      const response = await fetch(`${API_GATEWAY_URL}/transactions/import/csv`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || 'CSV import failed');
+      setMessage(
+        `${t('transactions.csv_success')} ${data.imported_count}. ${t('transactions.csv_skipped_label')} ${data.skipped_count}.`
+      );
+      setFile(null);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  return (
+    <div className={styles.subContainer}>
+      <h2>{t('transactions.csv_title')}</h2>
+      <p>{t('transactions.csv_description')}</p>
+      <div style={{ marginBottom: '1rem' }}>
+        <div style={{ marginBottom: '0.5rem', color: '#4a5568' }}>{t('transactions.csv_account_label')}</div>
+        <input
+          type="text"
+          value={accountId}
+          onChange={(e) => onAccountChange(e.target.value)}
+          placeholder={t('transactions.csv_account_placeholder')}
+          className={styles.input}
+        />
+      </div>
+      <div className={styles.fileInputContainer}>
+        <input type="file" accept=".csv,text/csv" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+        <button type="button" className={styles.button} disabled={isUploading} onClick={handleUpload}>
+          {isUploading ? t('transactions.csv_uploading') : t('transactions.csv_upload_button')}
+        </button>
+      </div>
+      {message && <p className={styles.message}>{message}</p>}
+      {error && <p className={styles.error}>{error}</p>}
+    </div>
+  );
+}
+
 export default function TransactionsPage({ token }: TransactionsPageProps) {
   const [connectedAccountId, setConnectedAccountId] = useState('');
+  const [manualAccountId, setManualAccountId] = useState('');
   const { t } = useTranslation();
+  const effectiveAccountId = manualAccountId || connectedAccountId;
   return (
     <div>
       <h1>{t('transactions.title')}</h1>
       <p>{t('transactions.description')}</p>
       <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />
-      <TransactionsList token={token} accountId={connectedAccountId} />
+      <CsvImport
+        token={token}
+        accountId={effectiveAccountId}
+        onAccountChange={setManualAccountId}
+      />
+      <TransactionsList token={token} accountId={effectiveAccountId} />
     </div>
   );
 }

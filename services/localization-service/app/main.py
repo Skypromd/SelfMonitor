@@ -90,7 +90,17 @@ fake_translations_db = {
             "col_description": "Description",
             "col_amount": "Amount",
             "col_category": "Category",
-            "select_placeholder": "Select..."
+            "select_placeholder": "Select...",
+            "csv_title": "CSV Import",
+            "csv_description": "Upload a CSV file if your bank is not supported.",
+            "csv_account_label": "Account ID",
+            "csv_account_placeholder": "Paste account UUID",
+            "csv_upload_button": "Upload CSV",
+            "csv_uploading": "Uploading...",
+            "csv_success": "CSV import accepted. Imported:",
+            "csv_skipped_label": "Skipped:",
+            "csv_select_error": "Please select a CSV file.",
+            "csv_account_error": "Account ID is required."
         },
         "documents": {
             "description": "Upload and manage your receipts and invoices.",
@@ -230,7 +240,17 @@ fake_translations_db = {
             "col_description": "Beschreibung",
             "col_amount": "Betrag",
             "col_category": "Kategorie",
-            "select_placeholder": "Auswählen..."
+            "select_placeholder": "Auswählen...",
+            "csv_title": "CSV-Import",
+            "csv_description": "Laden Sie eine CSV-Datei hoch, wenn Ihre Bank nicht unterstützt wird.",
+            "csv_account_label": "Konto-ID",
+            "csv_account_placeholder": "Konto-UUID einfügen",
+            "csv_upload_button": "CSV hochladen",
+            "csv_uploading": "Wird hochgeladen...",
+            "csv_success": "CSV-Import akzeptiert. Importiert:",
+            "csv_skipped_label": "Übersprungen:",
+            "csv_select_error": "Bitte wählen Sie eine CSV-Datei aus.",
+            "csv_account_error": "Konto-ID ist erforderlich."
         },
         "documents": {
             "description": "Laden Sie Ihre Belege und Rechnungen hoch und verwalten Sie sie.",
@@ -370,7 +390,17 @@ fake_translations_db = {
             "col_description": "Описание",
             "col_amount": "Сумма",
             "col_category": "Категория",
-            "select_placeholder": "Выбрать..."
+            "select_placeholder": "Выбрать...",
+            "csv_title": "CSV импорт",
+            "csv_description": "Загрузите CSV, если банк не поддерживается.",
+            "csv_account_label": "Account ID",
+            "csv_account_placeholder": "Вставьте UUID счета",
+            "csv_upload_button": "Загрузить CSV",
+            "csv_uploading": "Загружаем...",
+            "csv_success": "CSV импорт принят. Импортировано:",
+            "csv_skipped_label": "Пропущено:",
+            "csv_select_error": "Выберите CSV файл.",
+            "csv_account_error": "Нужен Account ID."
         },
         "documents": {
             "description": "Загружайте и храните чеки и счета.",

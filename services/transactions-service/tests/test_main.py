@@ -144,6 +144,34 @@ async def test_get_all_my_transactions(db_session):
 
 
 @pytest.mark.asyncio
+async def test_import_csv_transactions(db_session):
+    account_id = str(uuid.uuid4())
+    csv_content = (
+        "date,description,amount,currency\n"
+        "2023-10-01,Coffee,-3.50,GBP\n"
+        "2023-10-02,Salary,2500,GBP\n"
+    )
+
+    response = client.post(
+        "/import/csv",
+        data={"account_id": account_id},
+        files={"file": ("transactions.csv", csv_content, "text/csv")},
+    )
+    assert response.status_code == 202
+    assert response.json()["imported_count"] == 2
+    assert response.json()["skipped_count"] == 0
+
+    repeat_response = client.post(
+        "/import/csv",
+        data={"account_id": account_id},
+        files={"file": ("transactions.csv", csv_content, "text/csv")},
+    )
+    assert repeat_response.status_code == 202
+    assert repeat_response.json()["imported_count"] == 0
+    assert repeat_response.json()["skipped_count"] == 2
+
+
+@pytest.mark.asyncio
 async def test_import_deduplicates_by_provider_id(db_session):
     account_id = str(uuid.uuid4())
 

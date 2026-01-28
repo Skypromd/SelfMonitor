@@ -36,6 +36,37 @@ paths:
                     type: integer
                   skipped_count:
                     type: integer
+  /import/csv:
+    post:
+      summary: Import transactions from CSV
+      tags:
+        - Transactions
+      description: Uploads a CSV file and imports transactions with de-duplication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - account_id
+                - file
+              properties:
+                account_id:
+                  type: string
+                  format: uuid
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: CSV import accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionResult'
   /ingest/partner:
     post:
       summary: Ingest a partner batch
