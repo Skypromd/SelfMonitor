@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 import uuid
 import datetime
@@ -9,6 +9,13 @@ class TransactionBase(BaseModel):
     description: str
     amount: float
     currency: str
+    tax_category: Optional[str] = None
+    business_use_percent: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Business-use percentage (0-100).",
+    )
 
 class Transaction(TransactionBase):
     id: uuid.UUID
@@ -25,4 +32,11 @@ class TransactionImportRequest(BaseModel):
     transactions: List[TransactionBase]
 
 class TransactionUpdateRequest(BaseModel):
-    category: str
+    category: Optional[str] = None
+    tax_category: Optional[str] = None
+    business_use_percent: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Business-use percentage (0-100).",
+    )

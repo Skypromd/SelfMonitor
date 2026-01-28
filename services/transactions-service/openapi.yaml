@@ -121,6 +121,13 @@ components:
         currency:
           type: string
           example: 'GBP'
+        tax_category:
+          type: string
+          description: Optional SA103 tax category override.
+        business_use_percent:
+          type: number
+          format: float
+          description: Business-use percentage (0-100).
     TransactionImportRequest:
       type: object
       properties:
@@ -140,6 +147,13 @@ components:
         category:
           type: string
           example: 'groceries'
+        tax_category:
+          type: string
+          example: 'travel'
+        business_use_percent:
+          type: number
+          format: float
+          example: 80
     Transaction:
       allOf:
         - $ref: '#/components/schemas/TransactionBase'

@@ -18,5 +18,7 @@ class Transaction(Base):
     currency = Column(String(3), nullable=False)
 
     category = Column(String, nullable=True)
+    tax_category = Column(String, nullable=True)
+    business_use_percent = Column(Float, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

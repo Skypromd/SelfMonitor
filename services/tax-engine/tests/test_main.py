@@ -46,12 +46,19 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
 
     # Check the calculation logic
     # Total income = 3000
-    # Total deductible expenses = 150 (transport) + 50 (office_supplies) = 200
+    # Allowable expenses = 150 (transport) + 50 (office_supplies) = 200
+    # Disallowable expenses = 80 (groceries)
     # Taxable profit = 3000 - 200 = 2800
     # Personal allowance = 12570. Since 2800 < 12570, taxable amount is 0.
     # Estimated tax = 0
     assert data["total_income"] == 3000.0
     assert data["total_expenses"] == 200.0
+    assert data["total_allowable_expenses"] == 200.0
+    assert data["total_disallowable_expenses"] == 80.0
+    assert data["taxable_profit"] == 2800.0
+    assert data["income_tax_due"] == 0.0
+    assert data["class2_nic"] == 0.0
+    assert data["class4_nic"] == 0.0
     assert data["estimated_tax_due"] == 0.0
 
 @pytest.mark.asyncio

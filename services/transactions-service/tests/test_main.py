@@ -94,9 +94,22 @@ async def test_update_transaction_category(db_session):
     assert updated_transaction["category"] == "groceries"
     assert updated_transaction["description"] == "Tesco"
 
-    # 4. Verify the update is persisted
+    # 4. Update tax fields
+    update_tax_response = client.patch(
+        f"/transactions/{transaction_id}",
+        json={"tax_category": "travel", "business_use_percent": 80}
+    )
+    assert update_tax_response.status_code == 200
+    updated_tax = update_tax_response.json()
+    assert updated_tax["tax_category"] == "travel"
+    assert updated_tax["business_use_percent"] == 80.0
+
+    # 5. Verify the updates are persisted
     get_response_after_update = client.get(f"/accounts/{account_id}/transactions")
-    assert get_response_after_update.json()[0]["category"] == "groceries"
+    fetched = get_response_after_update.json()[0]
+    assert fetched["category"] == "groceries"
+    assert fetched["tax_category"] == "travel"
+    assert fetched["business_use_percent"] == 80.0
 
 @pytest.mark.asyncio
 async def test_update_nonexistent_transaction(db_session):

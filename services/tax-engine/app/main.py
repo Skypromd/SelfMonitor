@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Depends, HTTPException, status
-from pydantic import BaseModel
-from typing import List, Optional
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict
 import datetime
 import os
 import httpx
@@ -10,9 +10,82 @@ from .telemetry import setup_telemetry
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
 INTEGRATIONS_SERVICE_URL = os.getenv("INTEGRATIONS_SERVICE_URL", "http://localhost:8010/integrations/hmrc/submit-tax-return")
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
-DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"}
-UK_PERSONAL_ALLOWANCE = 12570.0
-UK_BASIC_TAX_RATE = 0.20
+
+# UK tax configuration (defaults are 2024/25 rates; override via env for updates).
+UK_PERSONAL_ALLOWANCE = float(os.getenv("UK_PERSONAL_ALLOWANCE", "12570"))
+UK_PERSONAL_ALLOWANCE_TAPER_START = float(os.getenv("UK_PERSONAL_ALLOWANCE_TAPER_START", "100000"))
+UK_BASIC_RATE_LIMIT = float(os.getenv("UK_BASIC_RATE_LIMIT", "37700"))
+UK_HIGHER_RATE_LIMIT = float(os.getenv("UK_HIGHER_RATE_LIMIT", "125140"))
+UK_BASIC_TAX_RATE = float(os.getenv("UK_BASIC_TAX_RATE", "0.20"))
+UK_HIGHER_TAX_RATE = float(os.getenv("UK_HIGHER_TAX_RATE", "0.40"))
+UK_ADDITIONAL_TAX_RATE = float(os.getenv("UK_ADDITIONAL_TAX_RATE", "0.45"))
+
+UK_CLASS2_WEEKLY = float(os.getenv("UK_CLASS2_WEEKLY", "3.45"))
+UK_CLASS2_SMALL_PROFITS_THRESHOLD = float(os.getenv("UK_CLASS2_SMALL_PROFITS_THRESHOLD", "6725"))
+UK_CLASS4_LOWER_PROFITS_LIMIT = float(os.getenv("UK_CLASS4_LOWER_PROFITS_LIMIT", "12570"))
+UK_CLASS4_UPPER_PROFITS_LIMIT = float(os.getenv("UK_CLASS4_UPPER_PROFITS_LIMIT", "50270"))
+UK_CLASS4_MAIN_RATE = float(os.getenv("UK_CLASS4_MAIN_RATE", "0.09"))
+UK_CLASS4_ADDITIONAL_RATE = float(os.getenv("UK_CLASS4_ADDITIONAL_RATE", "0.02"))
+UK_TAX_WEEKS_IN_YEAR = int(os.getenv("UK_TAX_WEEKS_IN_YEAR", "52"))
+
+INCOME_CATEGORIES = {"turnover", "other_business_income"}
+DISALLOWABLE_CATEGORIES = {"disallowable", "personal", "private_use", "client_entertainment"}
+DEFAULT_EXPENSE_CATEGORY = "other_expenses"
+DEFAULT_INCOME_CATEGORY = "turnover"
+SA103_CATEGORIES = {
+    "turnover",
+    "other_business_income",
+    "cost_of_goods",
+    "premises",
+    "repairs",
+    "travel",
+    "vehicle",
+    "wages",
+    "subcontractors",
+    "legal_professional",
+    "advertising",
+    "office",
+    "bank_charges",
+    "other_expenses",
+    "capital_allowances",
+    "disallowable",
+}
+
+CATEGORY_TO_SA103 = {
+    "income": "turnover",
+    "salary": "turnover",
+    "sales": "turnover",
+    "bank_interest": "other_business_income",
+    "interest": "other_business_income",
+    "transport": "travel",
+    "travel": "travel",
+    "subsistence": "travel",
+    "vehicle": "vehicle",
+    "fuel": "vehicle",
+    "office_supplies": "office",
+    "office": "office",
+    "subscriptions": "office",
+    "software": "office",
+    "rent": "premises",
+    "utilities": "premises",
+    "repairs": "repairs",
+    "maintenance": "repairs",
+    "advertising": "advertising",
+    "marketing": "advertising",
+    "legal": "legal_professional",
+    "accounting": "legal_professional",
+    "bank_fees": "bank_charges",
+    "charges": "bank_charges",
+    "wages": "wages",
+    "payroll": "wages",
+    "subcontractors": "subcontractors",
+    "capital": "capital_allowances",
+    "other": "other_expenses",
+    "groceries": "disallowable",
+    "food_and_drink": "disallowable",
+    "entertainment": "disallowable",
+    "personal": "disallowable",
+}
 
 # --- Placeholder Security ---
 def fake_auth_check() -> str:
@@ -31,17 +104,40 @@ setup_telemetry(app)
 class Transaction(BaseModel):
     date: datetime.date
     amount: float
+    description: Optional[str] = None
     category: Optional[str] = None
+    tax_category: Optional[str] = None
+    business_use_percent: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Business-use percentage (0-100).",
+    )
+
+
+class ManualAdjustment(BaseModel):
+    date: Optional[datetime.date] = None
+    description: Optional[str] = None
+    amount: float
+    tax_category: Optional[str] = None
+    business_use_percent: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+        description="Business-use percentage (0-100).",
+    )
 
 class TaxCalculationRequest(BaseModel):
     start_date: datetime.date
     end_date: datetime.date
     jurisdiction: str
+    manual_adjustments: Optional[List[ManualAdjustment]] = None
 
 class TaxSummaryItem(BaseModel):
     category: str
     total_amount: float
-    taxable_amount: float
+    allowable_amount: float
+    disallowable_amount: float
 
 class TaxCalculationResult(BaseModel):
     user_id: str
@@ -49,8 +145,83 @@ class TaxCalculationResult(BaseModel):
     end_date: datetime.date
     total_income: float
     total_expenses: float
+    total_allowable_expenses: float
+    total_disallowable_expenses: float
+    taxable_profit: float
+    income_tax_due: float
+    class2_nic: float
+    class4_nic: float
     estimated_tax_due: float
     summary_by_category: List[TaxSummaryItem]
+
+
+def normalize_category(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    cleaned = value.strip().lower()
+    return cleaned or None
+
+
+def resolve_tax_category(record: Transaction) -> str:
+    explicit_category = normalize_category(record.tax_category)
+    if explicit_category:
+        return explicit_category
+
+    category = normalize_category(record.category)
+    if category:
+        mapped = CATEGORY_TO_SA103.get(category)
+        if mapped:
+            return mapped
+        return category
+
+    if record.amount >= 0:
+        return DEFAULT_INCOME_CATEGORY
+    return DEFAULT_EXPENSE_CATEGORY
+
+
+def normalize_business_use_percent(value: Optional[float]) -> float:
+    if value is None:
+        return 1.0
+    return max(0.0, min(100.0, value)) / 100.0
+
+
+def calculate_personal_allowance(profit: float) -> float:
+    if profit <= UK_PERSONAL_ALLOWANCE_TAPER_START:
+        return UK_PERSONAL_ALLOWANCE
+    reduction = (profit - UK_PERSONAL_ALLOWANCE_TAPER_START) / 2.0
+    return max(0.0, UK_PERSONAL_ALLOWANCE - reduction)
+
+
+def calculate_income_tax(taxable_profit: float) -> float:
+    allowance = calculate_personal_allowance(taxable_profit)
+    taxable_after_allowance = max(0.0, taxable_profit - allowance)
+
+    basic_band = min(taxable_after_allowance, UK_BASIC_RATE_LIMIT)
+    higher_band = min(
+        max(taxable_after_allowance - UK_BASIC_RATE_LIMIT, 0.0),
+        max(UK_HIGHER_RATE_LIMIT - UK_BASIC_RATE_LIMIT, 0.0),
+    )
+    additional_band = max(taxable_after_allowance - UK_HIGHER_RATE_LIMIT, 0.0)
+
+    return (
+        basic_band * UK_BASIC_TAX_RATE
+        + higher_band * UK_HIGHER_TAX_RATE
+        + additional_band * UK_ADDITIONAL_TAX_RATE
+    )
+
+
+def calculate_class2_nic(taxable_profit: float) -> float:
+    if taxable_profit < UK_CLASS2_SMALL_PROFITS_THRESHOLD:
+        return 0.0
+    return UK_CLASS2_WEEKLY * UK_TAX_WEEKS_IN_YEAR
+
+
+def calculate_class4_nic(taxable_profit: float) -> float:
+    if taxable_profit <= UK_CLASS4_LOWER_PROFITS_LIMIT:
+        return 0.0
+    main_band = min(taxable_profit, UK_CLASS4_UPPER_PROFITS_LIMIT) - UK_CLASS4_LOWER_PROFITS_LIMIT
+    additional_band = max(taxable_profit - UK_CLASS4_UPPER_PROFITS_LIMIT, 0.0)
+    return (main_band * UK_CLASS4_MAIN_RATE) + (additional_band * UK_CLASS4_ADDITIONAL_RATE)
 
 # --- Endpoints ---
 @app.post("/calculate", response_model=TaxCalculationResult)
@@ -76,30 +247,73 @@ async def calculate_tax(
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not connect to transactions-service: {e}")
 
     # 2. Filter transactions by date and calculate totals
+    records: List[Transaction] = [
+        t for t in transactions if request.start_date <= t.date <= request.end_date
+    ]
+
+    if request.manual_adjustments:
+        for adjustment in request.manual_adjustments:
+            if adjustment.date and not (request.start_date <= adjustment.date <= request.end_date):
+                continue
+            records.append(
+                Transaction(
+                    date=adjustment.date or request.start_date,
+                    amount=adjustment.amount,
+                    description=adjustment.description,
+                    tax_category=adjustment.tax_category,
+                    business_use_percent=adjustment.business_use_percent,
+                )
+            )
+
     total_income = 0.0
-    total_expenses = 0.0
-    summary_map = {}
+    total_allowable_expenses = 0.0
+    total_disallowable_expenses = 0.0
+    summary_map: Dict[str, Dict[str, float]] = {}
 
-    for t in transactions:
-        if request.start_date <= t.date <= request.end_date:
-            if t.amount > 0:
-                total_income += t.amount
-            elif t.category in DEDUCTIBLE_EXPENSE_CATEGORIES:
-                total_expenses += abs(t.amount)
+    def ensure_summary(category: str) -> Dict[str, float]:
+        summary_map.setdefault(category, {"total": 0.0, "allowable": 0.0, "disallowable": 0.0})
+        return summary_map[category]
 
-            category = t.category or "uncategorized"
-            summary_map.setdefault(category, 0.0)
-            summary_map[category] += t.amount
+    for record in records:
+        tax_category = resolve_tax_category(record)
+        business_ratio = normalize_business_use_percent(record.business_use_percent)
+        effective_amount = record.amount * business_ratio
 
-    # 3. Apply simplified UK tax rules
-    taxable_profit = total_income - total_expenses
-    taxable_amount_after_allowance = max(0, taxable_profit - UK_PERSONAL_ALLOWANCE)
-    estimated_tax = taxable_amount_after_allowance * UK_BASIC_TAX_RATE
+        if tax_category not in SA103_CATEGORIES:
+            tax_category = DEFAULT_INCOME_CATEGORY if effective_amount >= 0 else DEFAULT_EXPENSE_CATEGORY
+
+        if effective_amount >= 0:
+            income_category = tax_category if tax_category in INCOME_CATEGORIES else DEFAULT_INCOME_CATEGORY
+            total_income += effective_amount
+            summary = ensure_summary(income_category)
+            summary["total"] += effective_amount
+        else:
+            expense_amount = abs(effective_amount)
+            summary = ensure_summary(tax_category)
+            summary["total"] += expense_amount
+            if tax_category in DISALLOWABLE_CATEGORIES:
+                total_disallowable_expenses += expense_amount
+                summary["disallowable"] += expense_amount
+            else:
+                total_allowable_expenses += expense_amount
+                summary["allowable"] += expense_amount
+
+    # 3. Apply UK tax rules
+    taxable_profit = total_income - total_allowable_expenses
+    income_tax_due = calculate_income_tax(taxable_profit)
+    class2_nic = calculate_class2_nic(taxable_profit)
+    class4_nic = calculate_class4_nic(taxable_profit)
+    estimated_tax = income_tax_due + class2_nic + class4_nic
 
     # 4. Prepare summary
     summary_by_category = [
-        TaxSummaryItem(category=cat, total_amount=round(amount, 2), taxable_amount=round(amount, 2)) # Simplified
-        for cat, amount in summary_map.items()
+        TaxSummaryItem(
+            category=cat,
+            total_amount=round(values["total"], 2),
+            allowable_amount=round(values["allowable"], 2),
+            disallowable_amount=round(values["disallowable"], 2),
+        )
+        for cat, values in sorted(summary_map.items())
     ]
 
     return TaxCalculationResult(
@@ -107,7 +321,13 @@ async def calculate_tax(
         start_date=request.start_date,
         end_date=request.end_date,
         total_income=round(total_income, 2),
-        total_expenses=round(total_expenses, 2),
+        total_expenses=round(total_allowable_expenses, 2),
+        total_allowable_expenses=round(total_allowable_expenses, 2),
+        total_disallowable_expenses=round(total_disallowable_expenses, 2),
+        taxable_profit=round(taxable_profit, 2),
+        income_tax_due=round(income_tax_due, 2),
+        class2_nic=round(class2_nic, 2),
+        class4_nic=round(class4_nic, 2),
         estimated_tax_due=round(estimated_tax, 2),
         summary_by_category=summary_by_category,
     )

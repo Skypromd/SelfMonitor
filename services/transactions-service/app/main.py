@@ -57,18 +57,28 @@ async def get_all_my_transactions(
     return transactions
 
 @app.patch("/transactions/{transaction_id}", response_model=schemas.Transaction)
-async def update_transaction_category(
+async def update_transaction(
     transaction_id: uuid.UUID,
     update_request: schemas.TransactionUpdateRequest,
     user_id: str = Depends(fake_auth_check),
     db: AsyncSession = Depends(get_db)
 ):
-    """Updates the category of a single transaction in the database."""
-    updated_transaction = await crud.update_transaction_category(
+    """Updates the category/tax fields of a single transaction in the database."""
+    if (
+        update_request.category is None
+        and update_request.tax_category is None
+        and update_request.business_use_percent is None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one field must be provided for update.",
+        )
+
+    updated_transaction = await crud.update_transaction(
         db, 
         user_id=user_id, 
         transaction_id=transaction_id, 
-        category=update_request.category
+        update_request=update_request
     )
     if not updated_transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")

@@ -62,8 +62,8 @@ async def get_transactions_by_user(db: AsyncSession, user_id: str):
     )
     return result.scalars().all()
 
-async def update_transaction_category(db: AsyncSession, user_id: str, transaction_id: uuid.UUID, category: str):
-    """Updates the category of a single transaction."""
+async def update_transaction(db: AsyncSession, user_id: str, transaction_id: uuid.UUID, update_request: schemas.TransactionUpdateRequest):
+    """Updates the category/tax fields of a single transaction."""
     result = await db.execute(
         select(models.Transaction)
         .filter(models.Transaction.id == transaction_id, models.Transaction.user_id == user_id)
@@ -71,7 +71,12 @@ async def update_transaction_category(db: AsyncSession, user_id: str, transactio
     db_transaction = result.scalars().first()
 
     if db_transaction:
-        db_transaction.category = category
+        if update_request.category is not None:
+            db_transaction.category = update_request.category
+        if update_request.tax_category is not None:
+            db_transaction.tax_category = update_request.tax_category
+        if update_request.business_use_percent is not None:
+            db_transaction.business_use_percent = update_request.business_use_percent
         await db.commit()
         await db.refresh(db_transaction)
 
