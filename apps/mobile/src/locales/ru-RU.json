@@ -35,7 +35,15 @@
     "quick_actions": "Быстрые действия",
     "add_expense": "Добавить расход",
     "scan_receipt": "Сканировать чек",
-    "generate_report": "Сформировать отчет"
+    "generate_report": "Сформировать отчет",
+    "readiness_good": "Все хорошо",
+    "readiness_medium": "Нужно проверить",
+    "readiness_low": "Требует действий",
+    "live_label": "Синхронизация",
+    "data_quality_subtitle": "Завершите категоризацию перед сдачей.",
+    "total_transactions": "Всего транзакций",
+    "missing_categories": "Без категории",
+    "missing_business_use": "Без бизнес-доли"
   },
   "transactions": {
     "title": "Транзакции",
@@ -44,13 +52,52 @@
     "connect_bank": "Подключить банк",
     "csv_import": "CSV импорт",
     "income_label": "Доход",
-    "expense_label": "Расходы"
+    "expense_label": "Расходы",
+    "mock_provider": "Тестовый банк",
+    "connect_error": "Не удалось подключить банк.",
+    "connect_success": "Подключение успешно.",
+    "confirm_consent": "Подтвердить согласие",
+    "recent_title": "Последние транзакции",
+    "recent_subtitle": "Нажмите, чтобы обновить категорию.",
+    "empty_title": "Нет транзакций",
+    "needs_category": "Нужна категория",
+    "category_modal_title": "Выберите категорию",
+    "category_missing": "Без категории",
+    "category_income": "Доход",
+    "category_groceries": "Продукты",
+    "category_transport": "Транспорт",
+    "category_food": "Еда и напитки",
+    "category_subscriptions": "Подписки",
+    "category_other": "Другое",
+    "csv_account_label": "ID счета",
+    "csv_account_placeholder": "Вставьте ID счета",
+    "connected_account_label": "Подключенный счет:",
+    "csv_choose_file": "Выбрать CSV",
+    "csv_change_file": "Сменить CSV",
+    "csv_upload_button": "Загрузить CSV",
+    "csv_uploading": "Загрузка...",
+    "csv_success": "Импортировано:",
+    "csv_skipped_label": "Пропущено:",
+    "csv_account_error": "Нужен ID счета.",
+    "csv_select_error": "Выберите CSV файл.",
+    "csv_upload_error": "Импорт CSV не удался."
   },
   "documents": {
     "title": "Документы",
     "subtitle": "Сканируйте и храните чеки.",
     "scan_button": "Сканировать чек",
-    "upload_button": "Загрузить файл"
+    "upload_button": "Загрузить файл",
+    "recent_title": "Недавние загрузки",
+    "recent_subtitle": "OCR обновляет статусы.",
+    "empty_title": "Нет документов",
+    "empty_subtitle": "Загрузите чеки для отчетов.",
+    "upload_success": "Документ загружен.",
+    "upload_error": "Не удалось загрузить.",
+    "uploading": "Загрузка...",
+    "camera_error": "Нужен доступ к камере.",
+    "status_processing": "В обработке",
+    "status_completed": "Готово",
+    "status_failed": "Ошибка"
   },
   "reports": {
     "title": "Отчеты",
@@ -60,6 +107,9 @@
     "profit_loss": "Прибыль и убытки (Pro)",
     "tax_year": "Налоговый год (Pro)",
     "mortgage": "Отчет для ипотеки (Pro)",
+    "pro_badge": "Pro",
+    "pro_required": "Нужен Pro доступ.",
+    "request_failed": "Не удалось получить отчет.",
     "cadence_title": "Периодичность отчетности",
     "cadence_turnover": "Оборот:",
     "cadence_threshold": "Порог:",
@@ -69,7 +119,12 @@
     "quarterly_message": "Квартальный отчет сформирован.",
     "profit_loss_message": "P&L отчет сформирован.",
     "tax_year_message": "Отчет за налоговый год сформирован.",
-    "mortgage_message": "Отчет для ипотеки сформирован."
+    "mortgage_message": "Отчет для ипотеки сформирован.",
+    "summary_title": "Последняя сводка",
+    "summary_income": "Доход всего",
+    "summary_expenses": "Расходы всего",
+    "summary_net": "Чистая прибыль",
+    "summary_count": "Транзакций"
   },
   "marketplace": {
     "title": "Маркетплейс",
@@ -80,7 +135,11 @@
     "insurance_title": "Страхование",
     "insurance_subtitle": "Защита дохода и ответственности.",
     "mortgage_title": "Ипотечные консультанты",
-    "mortgage_subtitle": "Специалисты по самозанятым."
+    "mortgage_subtitle": "Специалисты по самозанятым.",
+    "featured_label": "Рекомендуем",
+    "accounting_subject": "Запрос партнера: бухгалтерия и налоги",
+    "insurance_subject": "Запрос партнера: страхование",
+    "mortgage_subject": "Запрос партнера: ипотека"
   },
   "profile": {
     "title": "Профиль",
@@ -104,12 +163,20 @@
     "period_label": "Текущий период",
     "updated_message": "Подписка обновлена.",
     "load_error": "Не удалось загрузить подписку.",
-    "save_error": "Не удалось обновить подписку."
+    "save_error": "Не удалось обновить подписку.",
+    "active_label": "Активна"
   },
   "settings": {
     "title": "Настройки",
     "subtitle": "Предпочтения и уведомления.",
-    "language_label": "Язык"
+    "language_label": "Язык",
+    "notifications_title": "Уведомления",
+    "push_label": "Push уведомления",
+    "push_helper": "Новые транзакции и синхронизация.",
+    "tax_label": "Налоговые напоминания",
+    "tax_helper": "Закрытие месяца и квартальные сроки.",
+    "digest_label": "Ежемесячный дайджест",
+    "digest_helper": "Сводка доходов и расходов."
   },
   "support": {
     "title": "Поддержка",

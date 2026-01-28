@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import PrimaryButton from '../components/PrimaryButton';
 import Card from '../components/Card';
+import InputField from '../components/InputField';
+import FadeInView from '../components/FadeInView';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../services/api';
 import { useTranslation } from '../hooks/useTranslation';
@@ -59,29 +61,29 @@ export default function LoginScreen() {
 
   return (
     <LinearGradient colors={['#eff6ff', '#f8fafc']} style={styles.container}>
-      <Card>
-        <Text style={styles.title}>{t('auth.login_title')}</Text>
-        <TextInput
-          placeholder={t('auth.email_placeholder')}
-          value={email}
-          onChangeText={setEmail}
-          autoCapitalize="none"
-          keyboardType="email-address"
-          style={styles.input}
-        />
-        <TextInput
-          placeholder={t('auth.password_placeholder')}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          style={styles.input}
-        />
-        <PrimaryButton title={t('auth.login_button')} onPress={handleLogin} />
-        <View style={{ height: spacing.md }} />
-        <PrimaryButton title={t('auth.register_button')} onPress={handleRegister} variant="secondary" />
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </Card>
+      <FadeInView>
+        <Card>
+          <Text style={styles.title}>{t('auth.login_title')}</Text>
+          <InputField
+            placeholder={t('auth.email_placeholder')}
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+          <InputField
+            placeholder={t('auth.password_placeholder')}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          <PrimaryButton title={t('auth.login_button')} onPress={handleLogin} />
+          <View style={{ height: spacing.md }} />
+          <PrimaryButton title={t('auth.register_button')} onPress={handleRegister} variant="secondary" />
+          {message ? <Text style={styles.message}>{message}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+        </Card>
+      </FadeInView>
     </LinearGradient>
   );
 }
@@ -97,14 +99,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.textPrimary,
     marginBottom: spacing.lg,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
   },
   message: {
     marginTop: spacing.md,

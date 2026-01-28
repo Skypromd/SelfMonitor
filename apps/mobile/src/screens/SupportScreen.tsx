@@ -1,11 +1,12 @@
 import React from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { Linking } from 'react-native';
 
 import SectionHeader from '../components/SectionHeader';
 import Card from '../components/Card';
 import Screen from '../components/Screen';
+import ListItem from '../components/ListItem';
+import FadeInView from '../components/FadeInView';
 import { useTranslation } from '../hooks/useTranslation';
-import { colors, spacing } from '../theme';
 
 export default function SupportScreen() {
   const { t } = useTranslation();
@@ -13,24 +14,23 @@ export default function SupportScreen() {
   return (
     <Screen>
       <SectionHeader title={t('support.title')} subtitle={t('support.subtitle')} />
-      <Card>
-        <Text style={styles.label}>{t('support.email_label')}</Text>
-        <Text style={styles.value}>support@selfmonitor.app</Text>
-        <Text style={styles.label}>{t('support.help_label')}</Text>
-        <Text style={styles.value}>selfmonitor.app/help</Text>
-      </Card>
+      <FadeInView>
+        <Card>
+          <ListItem
+            title={t('support.email_label')}
+            subtitle="support@selfmonitor.app"
+            icon="mail-outline"
+            onPress={() => Linking.openURL('mailto:support@selfmonitor.app')}
+          />
+          <ListItem
+            title={t('support.help_label')}
+            subtitle="selfmonitor.app/help"
+            icon="globe-outline"
+            onPress={() => Linking.openURL('https://selfmonitor.app/help')}
+          />
+        </Card>
+      </FadeInView>
     </Screen>
   );
 }
 
-const styles = StyleSheet.create({
-  label: {
-    color: colors.textSecondary,
-    marginBottom: spacing.xs,
-  },
-  value: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-    marginBottom: spacing.sm,
-  },
-});

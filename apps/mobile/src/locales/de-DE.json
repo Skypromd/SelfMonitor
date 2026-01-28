@@ -35,7 +35,15 @@
     "quick_actions": "Schnellaktionen",
     "add_expense": "Ausgabe hinzufügen",
     "scan_receipt": "Beleg scannen",
-    "generate_report": "Bericht erstellen"
+    "generate_report": "Bericht erstellen",
+    "readiness_good": "Auf Kurs",
+    "readiness_medium": "Prüfen",
+    "readiness_low": "Handeln",
+    "live_label": "Live-Sync",
+    "data_quality_subtitle": "Kategorisieren Sie vor der Abgabe.",
+    "total_transactions": "Transaktionen gesamt",
+    "missing_categories": "Fehlende Kategorien",
+    "missing_business_use": "Fehlender Geschäftsanteil"
   },
   "transactions": {
     "title": "Transaktionen",
@@ -44,13 +52,52 @@
     "connect_bank": "Bank verbinden",
     "csv_import": "CSV-Import",
     "income_label": "Einnahmen",
-    "expense_label": "Ausgaben"
+    "expense_label": "Ausgaben",
+    "mock_provider": "Testbank",
+    "connect_error": "Bankverbindung fehlgeschlagen.",
+    "connect_success": "Verbindung erfolgreich.",
+    "confirm_consent": "Zustimmung bestätigen",
+    "recent_title": "Letzte Transaktionen",
+    "recent_subtitle": "Tippen Sie, um Kategorien zu ändern.",
+    "empty_title": "Noch keine Transaktionen",
+    "needs_category": "Kategorie fehlt",
+    "category_modal_title": "Kategorie wählen",
+    "category_missing": "Nicht kategorisiert",
+    "category_income": "Einnahmen",
+    "category_groceries": "Lebensmittel",
+    "category_transport": "Transport",
+    "category_food": "Essen & Trinken",
+    "category_subscriptions": "Abos",
+    "category_other": "Sonstiges",
+    "csv_account_label": "Konto-ID",
+    "csv_account_placeholder": "Konto-ID einfügen",
+    "connected_account_label": "Verbundenes Konto:",
+    "csv_choose_file": "CSV auswählen",
+    "csv_change_file": "CSV ändern",
+    "csv_upload_button": "CSV hochladen",
+    "csv_uploading": "Wird hochgeladen...",
+    "csv_success": "Importiert:",
+    "csv_skipped_label": "Übersprungen:",
+    "csv_account_error": "Konto-ID erforderlich.",
+    "csv_select_error": "Bitte CSV auswählen.",
+    "csv_upload_error": "CSV-Import fehlgeschlagen."
   },
   "documents": {
     "title": "Dokumente",
     "subtitle": "Belege scannen, hochladen und verfolgen.",
     "scan_button": "Beleg scannen",
-    "upload_button": "Datei hochladen"
+    "upload_button": "Datei hochladen",
+    "recent_title": "Letzte Uploads",
+    "recent_subtitle": "OCR aktualisiert die Dokumente.",
+    "empty_title": "Noch keine Dokumente",
+    "empty_subtitle": "Laden Sie Belege hoch.",
+    "upload_success": "Dokument hochgeladen.",
+    "upload_error": "Upload fehlgeschlagen.",
+    "uploading": "Wird hochgeladen...",
+    "camera_error": "Kameraberechtigung erforderlich.",
+    "status_processing": "In Bearbeitung",
+    "status_completed": "Abgeschlossen",
+    "status_failed": "Fehlgeschlagen"
   },
   "reports": {
     "title": "Berichte",
@@ -60,6 +107,9 @@
     "profit_loss": "Gewinn & Verlust (Pro)",
     "tax_year": "Steuerjahr (Pro)",
     "mortgage": "Hypothekenbericht (Pro)",
+    "pro_badge": "Pro",
+    "pro_required": "Upgrade auf Pro erforderlich.",
+    "request_failed": "Bericht fehlgeschlagen.",
     "cadence_title": "Meldezyklus",
     "cadence_turnover": "Umsatz:",
     "cadence_threshold": "Schwelle:",
@@ -69,7 +119,12 @@
     "quarterly_message": "Quartalsübersicht erstellt.",
     "profit_loss_message": "GuV erstellt.",
     "tax_year_message": "Steuerjahresübersicht erstellt.",
-    "mortgage_message": "Hypothekenbericht erstellt."
+    "mortgage_message": "Hypothekenbericht erstellt.",
+    "summary_title": "Letzte Zusammenfassung",
+    "summary_income": "Gesamteinnahmen",
+    "summary_expenses": "Gesamtausgaben",
+    "summary_net": "Nettoergebnis",
+    "summary_count": "Transaktionen"
   },
   "marketplace": {
     "title": "Marktplatz",
@@ -80,7 +135,11 @@
     "insurance_title": "Versicherung",
     "insurance_subtitle": "Einkommensschutz und Haftpflicht.",
     "mortgage_title": "Hypothekenberater",
-    "mortgage_subtitle": "Spezialisten für Selbstständige."
+    "mortgage_subtitle": "Spezialisten für Selbstständige.",
+    "featured_label": "Empfohlen",
+    "accounting_subject": "Partneranfrage: Buchhaltung & Steuer",
+    "insurance_subject": "Partneranfrage: Versicherung",
+    "mortgage_subject": "Partneranfrage: Hypothekenberatung"
   },
   "profile": {
     "title": "Profil",
@@ -104,12 +163,20 @@
     "period_label": "Aktueller Zeitraum",
     "updated_message": "Abonnement aktualisiert.",
     "load_error": "Abonnement konnte nicht geladen werden.",
-    "save_error": "Abonnement konnte nicht aktualisiert werden."
+    "save_error": "Abonnement konnte nicht aktualisiert werden.",
+    "active_label": "Aktiv"
   },
   "settings": {
     "title": "Einstellungen",
     "subtitle": "Präferenzen und Benachrichtigungen.",
-    "language_label": "Sprache"
+    "language_label": "Sprache",
+    "notifications_title": "Benachrichtigungen",
+    "push_label": "Push-Benachrichtigungen",
+    "push_helper": "Neue Transaktionen und Sync-Updates.",
+    "tax_label": "Steuererinnerungen",
+    "tax_helper": "Monatsabschluss und Quartalstermine.",
+    "digest_label": "Monatlicher Digest",
+    "digest_helper": "Zusammenfassung von Einnahmen und Ausgaben."
   },
   "support": {
     "title": "Support",

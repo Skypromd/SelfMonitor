@@ -1,5 +1,6 @@
-import React from 'react';
-import { StyleSheet, Text, Pressable, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, Pressable, Switch, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import SectionHeader from '../components/SectionHeader';
 import Card from '../components/Card';
@@ -9,10 +10,39 @@ import { useI18n } from '../context/I18nContext';
 import { colors, spacing } from '../theme';
 
 const LOCALES = ['en-GB', 'de-DE', 'ru-RU'];
+const PREFS_KEY = 'settings.preferences.v1';
 
 export default function SettingsScreen() {
   const { t } = useTranslation();
   const { locale, setLocale } = useI18n();
+  const [prefs, setPrefs] = useState({
+    push: true,
+    taxReminders: true,
+    monthlyDigest: false,
+  });
+
+  useEffect(() => {
+    const loadPrefs = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(PREFS_KEY);
+        if (stored) {
+          setPrefs(JSON.parse(stored));
+        }
+      } catch {
+        return;
+      }
+    };
+    loadPrefs();
+  }, []);
+
+  const updatePrefs = async (next: typeof prefs) => {
+    setPrefs(next);
+    try {
+      await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
+    } catch {
+      return;
+    }
+  };
 
   return (
     <Screen>
@@ -21,16 +51,53 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>{t('settings.language_label')}</Text>
         <View style={styles.localeRow}>
           {LOCALES.map((item) => (
-            <Pressable
-              key={item}
-              onPress={() => setLocale(item)}
-              style={[styles.localePill, locale === item && styles.localePillActive]}
-            >
-              <Text style={[styles.localeText, locale === item && styles.localeTextActive]}>
-                {item.split('-')[0].toUpperCase()}
-              </Text>
-            </Pressable>
+            <View key={item} style={styles.localeItem}>
+              <Pressable
+                onPress={() => setLocale(item)}
+                style={[styles.localePill, locale === item && styles.localePillActive]}
+              >
+                <Text style={[styles.localeText, locale === item && styles.localeTextActive]}>
+                  {item.split('-')[0].toUpperCase()}
+                </Text>
+              </Pressable>
+            </View>
           ))}
+        </View>
+      </Card>
+      <Card>
+        <Text style={styles.sectionTitle}>{t('settings.notifications_title')}</Text>
+        <View style={styles.toggleRow}>
+          <View>
+            <Text style={styles.toggleLabel}>{t('settings.push_label')}</Text>
+            <Text style={styles.toggleHelper}>{t('settings.push_helper')}</Text>
+          </View>
+          <Switch
+            value={prefs.push}
+            onValueChange={(value) => updatePrefs({ ...prefs, push: value })}
+            trackColor={{ true: colors.primary, false: colors.border }}
+          />
+        </View>
+        <View style={styles.toggleRow}>
+          <View>
+            <Text style={styles.toggleLabel}>{t('settings.tax_label')}</Text>
+            <Text style={styles.toggleHelper}>{t('settings.tax_helper')}</Text>
+          </View>
+          <Switch
+            value={prefs.taxReminders}
+            onValueChange={(value) => updatePrefs({ ...prefs, taxReminders: value })}
+            trackColor={{ true: colors.primary, false: colors.border }}
+          />
+        </View>
+        <View style={styles.toggleRow}>
+          <View>
+            <Text style={styles.toggleLabel}>{t('settings.digest_label')}</Text>
+            <Text style={styles.toggleHelper}>{t('settings.digest_helper')}</Text>
+          </View>
+          <Switch
+            value={prefs.monthlyDigest}
+            onValueChange={(value) => updatePrefs({ ...prefs, monthlyDigest: value })}
+            trackColor={{ true: colors.primary, false: colors.border }}
+          />
         </View>
       </Card>
     </Screen>
@@ -46,7 +113,11 @@ const styles = StyleSheet.create({
   },
   localeRow: {
     flexDirection: 'row',
-    gap: spacing.md,
+    flexWrap: 'wrap',
+  },
+  localeItem: {
+    marginRight: spacing.md,
+    marginBottom: spacing.sm,
   },
   localePill: {
     paddingVertical: spacing.sm,
@@ -65,5 +136,22 @@ const styles = StyleSheet.create({
   },
   localeTextActive: {
     color: colors.primaryDark,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  toggleLabel: {
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  toggleHelper: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: spacing.xs,
   },
 });

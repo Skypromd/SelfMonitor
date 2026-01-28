@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, TextInput, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import PrimaryButton from '../components/PrimaryButton';
 import Screen from '../components/Screen';
+import InputField from '../components/InputField';
+import FadeInView from '../components/FadeInView';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
@@ -58,42 +60,36 @@ export default function ProfileScreen() {
   return (
     <Screen>
       <SectionHeader title={t('profile.title')} subtitle={t('profile.subtitle')} />
-      <Card>
-        <TextInput
-          style={styles.input}
-          placeholder={t('profile.first_name')}
-          value={profile.first_name}
-          onChangeText={(value) => setProfile(prev => ({ ...prev, first_name: value }))}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder={t('profile.last_name')}
-          value={profile.last_name}
-          onChangeText={(value) => setProfile(prev => ({ ...prev, last_name: value }))}
-        />
-        <TextInput
-          style={styles.input}
-          placeholder={t('profile.date_of_birth')}
-          value={profile.date_of_birth}
-          onChangeText={(value) => setProfile(prev => ({ ...prev, date_of_birth: value }))}
-        />
-        <PrimaryButton title={t('common.save')} onPress={handleSave} />
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </Card>
+      <FadeInView>
+        <Card>
+          <InputField
+            label={t('profile.first_name')}
+            placeholder={t('profile.first_name')}
+            value={profile.first_name}
+            onChangeText={(value) => setProfile(prev => ({ ...prev, first_name: value }))}
+          />
+          <InputField
+            label={t('profile.last_name')}
+            placeholder={t('profile.last_name')}
+            value={profile.last_name}
+            onChangeText={(value) => setProfile(prev => ({ ...prev, last_name: value }))}
+          />
+          <InputField
+            label={t('profile.date_of_birth')}
+            placeholder={t('profile.date_of_birth')}
+            value={profile.date_of_birth}
+            onChangeText={(value) => setProfile(prev => ({ ...prev, date_of_birth: value }))}
+          />
+          <PrimaryButton title={t('common.save')} onPress={handleSave} />
+          {message ? <Text style={styles.message}>{message}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+        </Card>
+      </FadeInView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  input: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 12,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
-  },
   message: {
     marginTop: spacing.md,
     color: colors.success,

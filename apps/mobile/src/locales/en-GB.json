@@ -35,7 +35,15 @@
     "quick_actions": "Quick actions",
     "add_expense": "Add expense",
     "scan_receipt": "Scan receipt",
-    "generate_report": "Generate report"
+    "generate_report": "Generate report",
+    "readiness_good": "On track",
+    "readiness_medium": "Needs review",
+    "readiness_low": "Action needed",
+    "live_label": "Live sync",
+    "data_quality_subtitle": "Finish categorisation before submission.",
+    "total_transactions": "Total transactions",
+    "missing_categories": "Missing categories",
+    "missing_business_use": "Missing business use"
   },
   "transactions": {
     "title": "Transactions",
@@ -44,13 +52,52 @@
     "connect_bank": "Connect a bank",
     "csv_import": "CSV import",
     "income_label": "Income",
-    "expense_label": "Expenses"
+    "expense_label": "Expenses",
+    "mock_provider": "Mock Bank",
+    "connect_error": "Failed to connect bank.",
+    "connect_success": "Connection successful.",
+    "confirm_consent": "Confirm consent",
+    "recent_title": "Recent transactions",
+    "recent_subtitle": "Tap a transaction to update its category.",
+    "empty_title": "No transactions yet",
+    "needs_category": "Needs category",
+    "category_modal_title": "Choose a category",
+    "category_missing": "Uncategorised",
+    "category_income": "Income",
+    "category_groceries": "Groceries",
+    "category_transport": "Transport",
+    "category_food": "Food & drink",
+    "category_subscriptions": "Subscriptions",
+    "category_other": "Other",
+    "csv_account_label": "Account ID",
+    "csv_account_placeholder": "Paste your account ID",
+    "connected_account_label": "Connected account:",
+    "csv_choose_file": "Choose CSV file",
+    "csv_change_file": "Change CSV file",
+    "csv_upload_button": "Upload CSV",
+    "csv_uploading": "Uploading...",
+    "csv_success": "Imported:",
+    "csv_skipped_label": "Skipped:",
+    "csv_account_error": "Account ID is required.",
+    "csv_select_error": "Please select a CSV file.",
+    "csv_upload_error": "CSV import failed."
   },
   "documents": {
     "title": "Documents",
     "subtitle": "Scan, upload, and track receipts.",
     "scan_button": "Scan receipt",
-    "upload_button": "Upload file"
+    "upload_button": "Upload file",
+    "recent_title": "Recent uploads",
+    "recent_subtitle": "Documents update as OCR finishes.",
+    "empty_title": "No documents yet",
+    "empty_subtitle": "Upload receipts to speed up reporting.",
+    "upload_success": "Document uploaded.",
+    "upload_error": "Upload failed.",
+    "uploading": "Uploading...",
+    "camera_error": "Camera permission is required.",
+    "status_processing": "Processing",
+    "status_completed": "Completed",
+    "status_failed": "Failed"
   },
   "reports": {
     "title": "Reports",
@@ -60,6 +107,9 @@
     "profit_loss": "Profit & Loss (Pro)",
     "tax_year": "Tax year summary (Pro)",
     "mortgage": "Mortgage report (Pro)",
+    "pro_badge": "Pro",
+    "pro_required": "Upgrade to Pro to access this report.",
+    "request_failed": "Report request failed.",
     "cadence_title": "Reporting cadence",
     "cadence_turnover": "Turnover:",
     "cadence_threshold": "Threshold:",
@@ -69,7 +119,12 @@
     "quarterly_message": "Quarterly summary queued.",
     "profit_loss_message": "Profit & loss queued.",
     "tax_year_message": "Tax year summary queued.",
-    "mortgage_message": "Mortgage report queued."
+    "mortgage_message": "Mortgage report queued.",
+    "summary_title": "Latest summary",
+    "summary_income": "Total income",
+    "summary_expenses": "Total expenses",
+    "summary_net": "Net profit",
+    "summary_count": "Transactions"
   },
   "marketplace": {
     "title": "Marketplace",
@@ -80,7 +135,11 @@
     "insurance_title": "Insurance",
     "insurance_subtitle": "Income protection and liability cover.",
     "mortgage_title": "Mortgage advisors",
-    "mortgage_subtitle": "Specialists in self-employed applications."
+    "mortgage_subtitle": "Specialists in self-employed applications.",
+    "featured_label": "Featured",
+    "accounting_subject": "Partner request: Accounting & Tax",
+    "insurance_subject": "Partner request: Insurance",
+    "mortgage_subject": "Partner request: Mortgage advisors"
   },
   "profile": {
     "title": "Profile",
@@ -104,12 +163,20 @@
     "period_label": "Current period",
     "updated_message": "Subscription updated.",
     "load_error": "Failed to load subscription.",
-    "save_error": "Failed to update subscription."
+    "save_error": "Failed to update subscription.",
+    "active_label": "Active"
   },
   "settings": {
     "title": "Settings",
     "subtitle": "Preferences and notifications.",
-    "language_label": "Language"
+    "language_label": "Language",
+    "notifications_title": "Notifications",
+    "push_label": "Push notifications",
+    "push_helper": "New transactions and sync updates.",
+    "tax_label": "Tax reminders",
+    "tax_helper": "Monthly close and quarterly deadlines.",
+    "digest_label": "Monthly digest",
+    "digest_helper": "Summary of income, expenses, and tax."
   },
   "support": {
     "title": "Support",

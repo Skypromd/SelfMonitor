@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import PrimaryButton from '../components/PrimaryButton';
+import FadeInView from '../components/FadeInView';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, spacing } from '../theme';
 
@@ -13,11 +14,13 @@ export default function WelcomeScreen() {
 
   return (
     <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
-      <View style={styles.card}>
-        <Text style={styles.title}>{t('auth.welcome_title')}</Text>
-        <Text style={styles.subtitle}>{t('auth.welcome_subtitle')}</Text>
-        <PrimaryButton title={t('common.continue')} onPress={() => navigation.navigate('Login' as never)} />
-      </View>
+      <FadeInView>
+        <View style={styles.card}>
+          <Text style={styles.title}>{t('auth.welcome_title')}</Text>
+          <Text style={styles.subtitle}>{t('auth.welcome_subtitle')}</Text>
+          <PrimaryButton title={t('common.continue')} onPress={() => navigation.navigate('Login' as never)} />
+        </View>
+      </FadeInView>
     </LinearGradient>
   );
 }

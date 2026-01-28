@@ -8,17 +8,18 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { I18nProvider } from './src/context/I18nContext';
 import AuthStack from './src/navigation/AuthStack';
 import MainTabs from './src/navigation/MainTabs';
+import { colors } from './src/theme';
 
 const AppTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
-    primary: '#2563eb',
-    background: '#f8fafc',
-    card: '#ffffff',
-    text: '#0f172a',
-    border: '#e2e8f0',
-    notification: '#2563eb',
+    primary: colors.primary,
+    background: colors.background,
+    card: colors.surface,
+    text: colors.textPrimary,
+    border: colors.border,
+    notification: colors.primary,
   },
 };
 

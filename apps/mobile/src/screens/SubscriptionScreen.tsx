@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, Pressable, View } from 'react-native';
+import { StyleSheet, Text, Pressable, View } from 'react-native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import PrimaryButton from '../components/PrimaryButton';
 import Screen from '../components/Screen';
+import InputField from '../components/InputField';
+import FadeInView from '../components/FadeInView';
+import Badge from '../components/Badge';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
@@ -67,43 +70,50 @@ export default function SubscriptionScreen() {
   return (
     <Screen>
       <SectionHeader title={t('subscription.title')} subtitle={t('subscription.subtitle')} />
-      <Card>
-        <Text style={styles.label}>{t('subscription.plan_label')}</Text>
-        <View style={styles.planRow}>
-          {['free', 'pro'].map(plan => (
-            <Pressable
-              key={plan}
-              onPress={() => setSubscription(prev => ({ ...prev, subscription_plan: plan }))}
-              style={[
-                styles.planOption,
-                subscription.subscription_plan === plan && styles.planOptionActive
-              ]}
-            >
-              <Text style={[
-                styles.planText,
-                subscription.subscription_plan === plan && styles.planTextActive
-              ]}>
-                {plan === 'free' ? t('subscription.plan_free') : t('subscription.plan_pro')}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <Text style={styles.label}>{t('subscription.close_day_label')}</Text>
-        <TextInput
-          style={styles.input}
-          value={subscription.monthly_close_day}
-          onChangeText={(value) => setSubscription(prev => ({ ...prev, monthly_close_day: value }))}
-          keyboardType="number-pad"
-        />
-        <Text style={styles.info}>{t('subscription.status_label')}: {subscription.subscription_status}</Text>
-        <Text style={styles.info}>{t('subscription.cycle_label')}: {subscription.billing_cycle}</Text>
-        <Text style={styles.info}>
-          {t('subscription.period_label')}: {subscription.current_period_start || '-'} → {subscription.current_period_end || '-'}
-        </Text>
-        <PrimaryButton title={t('common.save')} onPress={handleSave} />
-        {message ? <Text style={styles.message}>{message}</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </Card>
+      <FadeInView>
+        <Card>
+          <Text style={styles.label}>{t('subscription.plan_label')}</Text>
+          <View style={styles.planRow}>
+            {['free', 'pro'].map((plan, index) => (
+              <View key={plan} style={[styles.planItem, index === 1 && styles.planItemLast]}>
+                <Pressable
+                  onPress={() => setSubscription(prev => ({ ...prev, subscription_plan: plan }))}
+                  style={[
+                    styles.planOption,
+                    subscription.subscription_plan === plan && styles.planOptionActive
+                  ]}
+                >
+                  <Text style={[
+                    styles.planText,
+                    subscription.subscription_plan === plan && styles.planTextActive
+                  ]}>
+                    {plan === 'free' ? t('subscription.plan_free') : t('subscription.plan_pro')}
+                  </Text>
+                  {subscription.subscription_plan === plan ? (
+                    <View style={styles.planBadge}>
+                      <Badge label={t('subscription.active_label')} tone="info" />
+                    </View>
+                  ) : null}
+                </Pressable>
+              </View>
+            ))}
+          </View>
+          <InputField
+            label={t('subscription.close_day_label')}
+            value={subscription.monthly_close_day}
+            onChangeText={(value) => setSubscription(prev => ({ ...prev, monthly_close_day: value }))}
+            keyboardType="number-pad"
+          />
+          <Text style={styles.info}>{t('subscription.status_label')}: {subscription.subscription_status}</Text>
+          <Text style={styles.info}>{t('subscription.cycle_label')}: {subscription.billing_cycle}</Text>
+          <Text style={styles.info}>
+            {t('subscription.period_label')}: {subscription.current_period_start || '-'} → {subscription.current_period_end || '-'}
+          </Text>
+          <PrimaryButton title={t('common.save')} onPress={handleSave} />
+          {message ? <Text style={styles.message}>{message}</Text> : null}
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+        </Card>
+      </FadeInView>
     </Screen>
   );
 }
@@ -112,19 +122,18 @@ const styles = StyleSheet.create({
   label: {
     color: colors.textSecondary,
     marginBottom: spacing.xs,
-  },
-  input: {
-    backgroundColor: colors.surfaceAlt,
-    borderRadius: 12,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: spacing.md,
+    fontWeight: '600',
   },
   planRow: {
     flexDirection: 'row',
-    gap: spacing.md,
     marginBottom: spacing.md,
+  },
+  planItem: {
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  planItemLast: {
+    marginRight: 0,
   },
   planOption: {
     flex: 1,
@@ -134,6 +143,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     alignItems: 'center',
     backgroundColor: colors.surface,
+  },
+  planBadge: {
+    marginTop: spacing.xs,
   },
   planOptionActive: {
     borderColor: colors.primary,
