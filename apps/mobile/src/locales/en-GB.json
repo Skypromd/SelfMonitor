@@ -4,7 +4,11 @@
     "save": "Save",
     "cancel": "Cancel",
     "logout": "Log Out",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "offline_title": "You're offline",
+    "offline_subtitle": "Data may be outdated until you're back online.",
+    "last_sync": "Last sync",
+    "not_available": "Not available"
   },
   "auth": {
     "welcome_title": "Self Assessment Assistant",
@@ -43,7 +47,9 @@
     "data_quality_subtitle": "Finish categorisation before submission.",
     "total_transactions": "Total transactions",
     "missing_categories": "Missing categories",
-    "missing_business_use": "Missing business use"
+    "missing_business_use": "Missing business use",
+    "cashflow_trend": "30-day cash flow trend",
+    "cashflow_empty": "Forecast data not available yet."
   },
   "transactions": {
     "title": "Transactions",
@@ -57,6 +63,7 @@
     "connect_error": "Failed to connect bank.",
     "connect_success": "Connection successful.",
     "confirm_consent": "Confirm consent",
+    "connected_badge": "Connected",
     "recent_title": "Recent transactions",
     "recent_subtitle": "Tap a transaction to update its category.",
     "empty_title": "No transactions yet",
@@ -69,6 +76,10 @@
     "category_food": "Food & drink",
     "category_subscriptions": "Subscriptions",
     "category_other": "Other",
+    "filter_all": "All",
+    "filter_income": "Income",
+    "filter_expenses": "Expenses",
+    "filter_missing": "Missing category",
     "csv_account_label": "Account ID",
     "csv_account_placeholder": "Paste your account ID",
     "connected_account_label": "Connected account:",
@@ -91,6 +102,13 @@
     "recent_subtitle": "Documents update as OCR finishes.",
     "empty_title": "No documents yet",
     "empty_subtitle": "Upload receipts to speed up reporting.",
+    "tips_title": "Tips for better OCR",
+    "tip_light": "Use natural light",
+    "tip_light_subtitle": "Avoid shadows and glare.",
+    "tip_flat": "Keep receipts flat",
+    "tip_flat_subtitle": "Ensure the whole receipt is visible.",
+    "tip_notes": "Add notes later",
+    "tip_notes_subtitle": "Categorise in Transactions for accuracy.",
     "upload_success": "Document uploaded.",
     "upload_error": "Upload failed.",
     "uploading": "Uploading...",
@@ -124,7 +142,9 @@
     "summary_income": "Total income",
     "summary_expenses": "Total expenses",
     "summary_net": "Net profit",
-    "summary_count": "Transactions"
+    "summary_count": "Transactions",
+    "summary_period": "Period",
+    "category_breakdown": "Top categories"
   },
   "marketplace": {
     "title": "Marketplace",

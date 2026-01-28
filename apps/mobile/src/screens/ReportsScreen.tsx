@@ -8,6 +8,8 @@ import Screen from '../components/Screen';
 import Badge from '../components/Badge';
 import InfoRow from '../components/InfoRow';
 import FadeInView from '../components/FadeInView';
+import MiniBarChart from '../components/MiniBarChart';
+import BarRow from '../components/BarRow';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -43,6 +45,13 @@ export default function ReportsScreen() {
   const [error, setError] = useState('');
   const [summary, setSummary] = useState<PeriodSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const sortedCategories = summary?.summary_by_category
+    ? [...summary.summary_by_category].sort((a, b) => Math.abs(b.net_total) - Math.abs(a.net_total))
+    : [];
+  const categoryMax = sortedCategories.length
+    ? Math.max(...sortedCategories.map((item) => Math.abs(item.net_total)))
+    : 0;
 
   useEffect(() => {
     const fetchCadence = async () => {
@@ -175,13 +184,33 @@ export default function ReportsScreen() {
             <InfoRow label={t('reports.summary_expenses')} value={`GBP ${summary.total_expenses.toFixed(2)}`} />
             <InfoRow label={t('reports.summary_net')} value={`GBP ${summary.net_profit.toFixed(2)}`} />
             <InfoRow label={t('reports.summary_count')} value={`${summary.transaction_count}`} />
-            {summary.summary_by_category?.slice(0, 3).map((item) => (
-              <InfoRow
-                key={item.category}
-                label={item.category}
-                value={`GBP ${item.net_total.toFixed(2)}`}
-              />
-            ))}
+            <InfoRow label={t('reports.summary_period')} value={`${summary.start_date} → ${summary.end_date}`} />
+          </Card>
+        </FadeInView>
+      ) : null}
+
+      {sortedCategories.length ? (
+        <FadeInView delay={320}>
+          <Card>
+            <Text style={styles.cardTitle}>{t('reports.category_breakdown')}</Text>
+            <MiniBarChart
+              data={sortedCategories.slice(0, 8).map((item) => item.net_total)}
+              height={60}
+              positiveColor={colors.success}
+              negativeColor={colors.warning}
+            />
+            <View style={styles.categoryList}>
+              {sortedCategories.slice(0, 5).map((item) => (
+                <BarRow
+                  key={item.category}
+                  label={item.category}
+                  value={item.net_total}
+                  maxValue={categoryMax}
+                  valueLabel={`GBP ${item.net_total.toFixed(2)}`}
+                  tone={item.net_total >= 0 ? 'success' : 'warning'}
+                />
+              ))}
+            </View>
           </Card>
         </FadeInView>
       ) : null}
@@ -211,6 +240,9 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.md,
     color: colors.danger,
+  },
+  categoryList: {
+    marginTop: spacing.md,
   },
   warning: {
     marginTop: spacing.sm,

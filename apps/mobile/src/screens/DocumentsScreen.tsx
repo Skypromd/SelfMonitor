@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
@@ -12,6 +13,7 @@ import ListItem from '../components/ListItem';
 import Badge from '../components/Badge';
 import EmptyState from '../components/EmptyState';
 import FadeInView from '../components/FadeInView';
+import InfoRow from '../components/InfoRow';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -42,6 +44,7 @@ export default function DocumentsScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
 
   const fetchDocuments = async () => {
     try {
@@ -49,12 +52,29 @@ export default function DocumentsScreen() {
       if (!response.ok) return;
       const data = await response.json();
       setDocuments(data || []);
+      setLastSync(new Date().toISOString());
+      try {
+        await AsyncStorage.setItem('documents.cache', JSON.stringify(data || []));
+      } catch {
+        return;
+      }
     } catch {
       setDocuments([]);
     }
   };
 
   useEffect(() => {
+    const loadCached = async () => {
+      try {
+        const cached = await AsyncStorage.getItem('documents.cache');
+        if (cached) {
+          setDocuments(JSON.parse(cached));
+        }
+      } catch {
+        return;
+      }
+    };
+    loadCached();
     fetchDocuments();
   }, [token]);
 
@@ -76,6 +96,9 @@ export default function DocumentsScreen() {
     }
     return doc.filename;
   };
+  const lastSyncLabel = lastSync ? new Date(lastSync).toLocaleString() : t('common.not_available');
+  const processingCount = documents.filter((doc) => doc.status === 'processing').length;
+  const failedCount = documents.filter((doc) => doc.status === 'failed').length;
 
   const uploadFile = async (file: PickedFile) => {
     setMessage('');
@@ -164,9 +187,45 @@ export default function DocumentsScreen() {
         </Card>
       </FadeInView>
 
+      <FadeInView delay={80}>
+        <Card>
+          <Text style={styles.cardTitle}>{t('documents.tips_title')}</Text>
+          <ListItem
+            title={t('documents.tip_light')}
+            subtitle={t('documents.tip_light_subtitle')}
+            icon="sunny-outline"
+          />
+          <ListItem
+            title={t('documents.tip_flat')}
+            subtitle={t('documents.tip_flat_subtitle')}
+            icon="scan-outline"
+          />
+          <ListItem
+            title={t('documents.tip_notes')}
+            subtitle={t('documents.tip_notes_subtitle')}
+            icon="bookmark-outline"
+          />
+        </Card>
+      </FadeInView>
+
       <SectionHeader title={t('documents.recent_title')} subtitle={t('documents.recent_subtitle')} />
       <FadeInView delay={120}>
         <Card>
+          <View style={styles.summaryRow}>
+            <InfoRow label={t('common.last_sync')} value={lastSyncLabel} />
+          </View>
+          <View style={styles.badgeRow}>
+            {processingCount ? (
+              <View style={styles.badgeItem}>
+                <Badge label={`${processingCount} ${t('documents.status_processing')}`} tone="warning" />
+              </View>
+            ) : null}
+            {failedCount ? (
+              <View style={styles.badgeItem}>
+                <Badge label={`${failedCount} ${t('documents.status_failed')}`} tone="danger" />
+              </View>
+            ) : null}
+          </View>
           {documents.length === 0 ? (
             <EmptyState
               title={t('documents.empty_title')}
@@ -206,6 +265,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: spacing.sm,
     color: colors.textPrimary,
+  },
+  summaryRow: {
+    marginBottom: spacing.sm,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: spacing.sm,
+  },
+  badgeItem: {
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
   },
   divider: {
     height: spacing.md,

@@ -4,7 +4,11 @@
     "save": "Сохранить",
     "cancel": "Отмена",
     "logout": "Выйти",
-    "loading": "Загрузка..."
+    "loading": "Загрузка...",
+    "offline_title": "Нет подключения",
+    "offline_subtitle": "Данные могут быть устаревшими.",
+    "last_sync": "Последняя синхронизация",
+    "not_available": "Нет данных"
   },
   "auth": {
     "welcome_title": "Self-Assessment помощник",
@@ -43,7 +47,9 @@
     "data_quality_subtitle": "Завершите категоризацию перед сдачей.",
     "total_transactions": "Всего транзакций",
     "missing_categories": "Без категории",
-    "missing_business_use": "Без бизнес-доли"
+    "missing_business_use": "Без бизнес-доли",
+    "cashflow_trend": "Тренд денежных потоков (30 дней)",
+    "cashflow_empty": "Нет данных прогноза."
   },
   "transactions": {
     "title": "Транзакции",
@@ -57,6 +63,7 @@
     "connect_error": "Не удалось подключить банк.",
     "connect_success": "Подключение успешно.",
     "confirm_consent": "Подтвердить согласие",
+    "connected_badge": "Подключено",
     "recent_title": "Последние транзакции",
     "recent_subtitle": "Нажмите, чтобы обновить категорию.",
     "empty_title": "Нет транзакций",
@@ -69,6 +76,10 @@
     "category_food": "Еда и напитки",
     "category_subscriptions": "Подписки",
     "category_other": "Другое",
+    "filter_all": "Все",
+    "filter_income": "Доходы",
+    "filter_expenses": "Расходы",
+    "filter_missing": "Без категории",
     "csv_account_label": "ID счета",
     "csv_account_placeholder": "Вставьте ID счета",
     "connected_account_label": "Подключенный счет:",
@@ -91,6 +102,13 @@
     "recent_subtitle": "OCR обновляет статусы.",
     "empty_title": "Нет документов",
     "empty_subtitle": "Загрузите чеки для отчетов.",
+    "tips_title": "Советы для OCR",
+    "tip_light": "Снимайте при хорошем свете",
+    "tip_light_subtitle": "Без бликов и теней.",
+    "tip_flat": "Держите чек ровно",
+    "tip_flat_subtitle": "Видны все края.",
+    "tip_notes": "Добавляйте заметки",
+    "tip_notes_subtitle": "Категоризируйте в транзакциях.",
     "upload_success": "Документ загружен.",
     "upload_error": "Не удалось загрузить.",
     "uploading": "Загрузка...",
@@ -124,7 +142,9 @@
     "summary_income": "Доход всего",
     "summary_expenses": "Расходы всего",
     "summary_net": "Чистая прибыль",
-    "summary_count": "Транзакций"
+    "summary_count": "Транзакций",
+    "summary_period": "Период",
+    "category_breakdown": "Топ категорий"
   },
   "marketplace": {
     "title": "Маркетплейс",

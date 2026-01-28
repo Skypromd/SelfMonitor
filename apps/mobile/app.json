@@ -6,6 +6,15 @@
     "orientation": "portrait",
     "scheme": "selfmonitor",
     "platforms": ["ios", "android"],
-    "assetBundlePatterns": ["**/*"]
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "We use the camera to scan receipts.",
+        "NSPhotoLibraryUsageDescription": "We access your photos to upload receipts."
+      }
+    },
+    "android": {
+      "permissions": ["CAMERA"]
+    }
   }
 }

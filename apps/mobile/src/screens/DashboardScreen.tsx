@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 import SectionHeader from '../components/SectionHeader';
+import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
 import GradientCard from '../components/GradientCard';
 import StatCard from '../components/StatCard';
@@ -12,6 +13,7 @@ import Badge from '../components/Badge';
 import FadeInView from '../components/FadeInView';
 import InfoRow from '../components/InfoRow';
 import PulseDot from '../components/PulseDot';
+import MiniBarChart from '../components/MiniBarChart';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
@@ -30,6 +32,8 @@ export default function DashboardScreen() {
   const navigation = useNavigation();
   const [readinessScore, setReadinessScore] = useState(0);
   const [cashFlow, setCashFlow] = useState<number | null>(null);
+  const [forecastPoints, setForecastPoints] = useState<number[]>([]);
+  const [lastSync, setLastSync] = useState<string | null>(null);
   const [readinessMeta, setReadinessMeta] = useState({
     missingCategories: 0,
     missingBusinessUse: 0,
@@ -53,6 +57,7 @@ export default function DashboardScreen() {
         const businessScore = (data.length - missingBusinessUse) / data.length;
         setReadinessScore(Math.round((categoryScore * 0.6 + businessScore * 0.4) * 100));
         setReadinessMeta({ missingCategories, missingBusinessUse, total: data.length });
+        setLastSync(new Date().toISOString());
       } catch {
         setReadinessScore(0);
       }
@@ -70,6 +75,8 @@ export default function DashboardScreen() {
         if (data.forecast?.length) {
           const last = data.forecast[data.forecast.length - 1];
           setCashFlow(last.balance);
+          setForecastPoints(data.forecast.map((item: { balance: number }) => item.balance));
+          setLastSync(new Date().toISOString());
         }
       } catch {
         setCashFlow(null);
@@ -85,6 +92,7 @@ export default function DashboardScreen() {
     : readinessScore >= 50
       ? t('dashboard.readiness_medium')
       : t('dashboard.readiness_low');
+  const lastSyncLabel = lastSync ? new Date(lastSync).toLocaleString() : t('common.not_available');
 
   return (
     <Screen>
@@ -148,6 +156,15 @@ export default function DashboardScreen() {
           icon="pulse-outline"
           tone="primary"
         />
+        <Card>
+          <Text style={styles.cardTitle}>{t('dashboard.cashflow_trend')}</Text>
+          {forecastPoints.length ? (
+            <MiniBarChart data={forecastPoints.slice(-10)} height={70} />
+          ) : (
+            <Text style={styles.emptyText}>{t('dashboard.cashflow_empty')}</Text>
+          )}
+          <InfoRow label={t('common.last_sync')} value={lastSyncLabel} />
+        </Card>
         <View style={styles.metaCard}>
           <InfoRow label={t('dashboard.total_transactions')} value={`${readinessMeta.total}`} />
           <InfoRow label={t('dashboard.missing_categories')} value={`${readinessMeta.missingCategories}`} />
@@ -203,6 +220,16 @@ const styles = StyleSheet.create({
     color: '#dbeafe',
     marginTop: spacing.xs,
     fontSize: 12,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  emptyText: {
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
   },
   progressRow: {
     marginTop: spacing.md,

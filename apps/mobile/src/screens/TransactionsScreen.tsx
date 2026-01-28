@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Linking, Modal, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
@@ -59,6 +60,8 @@ export default function TransactionsScreen() {
   const [connectError, setConnectError] = useState('');
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [filter, setFilter] = useState<'all' | 'income' | 'expenses' | 'needs_category'>('all');
+  const [lastSync, setLastSync] = useState<string | null>(null);
   const effectiveAccountId = manualAccountId || accountId;
 
   const categoryOptions = useMemo(() => ([
@@ -71,6 +74,22 @@ export default function TransactionsScreen() {
   ]), [t]);
 
   useEffect(() => {
+    const loadCached = async () => {
+      try {
+        const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
+        const cached = await AsyncStorage.getItem(cacheKey);
+        if (cached) {
+          const data = JSON.parse(cached);
+          setTransactions(data || []);
+          const income = data.filter((t: Transaction) => t.amount > 0).reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+          const expenses = data.filter((t: Transaction) => t.amount < 0).reduce((sum: number, t: Transaction) => sum + Math.abs(t.amount), 0);
+          setSummary({ income, expenses });
+        }
+      } catch {
+        return;
+      }
+    };
+
     const fetchProviders = async () => {
       try {
         const response = await apiRequest('/banking/providers');
@@ -97,11 +116,19 @@ export default function TransactionsScreen() {
         const income = data.filter((t: Transaction) => t.amount > 0).reduce((sum: number, t: Transaction) => sum + t.amount, 0);
         const expenses = data.filter((t: Transaction) => t.amount < 0).reduce((sum: number, t: Transaction) => sum + Math.abs(t.amount), 0);
         setSummary({ income, expenses });
+        setLastSync(new Date().toISOString());
+        try {
+          const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
+          await AsyncStorage.setItem(cacheKey, JSON.stringify(data || []));
+        } catch {
+          return;
+        }
       } catch {
         setTransactions([]);
         setSummary({ income: 0, expenses: 0 });
       }
     };
+    loadCached();
     fetchProviders();
     fetchTransactions();
   }, [token, effectiveAccountId]);
@@ -229,6 +256,21 @@ export default function TransactionsScreen() {
     return match ? match.label : category;
   };
 
+  const missingCategoryCount = transactions.filter((txn) => !txn.tax_category && !txn.category).length;
+  const filteredTransactions = useMemo(() => {
+    if (filter === 'income') {
+      return transactions.filter((txn) => txn.amount > 0);
+    }
+    if (filter === 'expenses') {
+      return transactions.filter((txn) => txn.amount < 0);
+    }
+    if (filter === 'needs_category') {
+      return transactions.filter((txn) => !txn.tax_category && !txn.category);
+    }
+    return transactions;
+  }, [filter, transactions]);
+  const lastSyncLabel = lastSync ? new Date(lastSync).toLocaleString() : t('common.not_available');
+
   return (
     <Screen>
       <SectionHeader title={t('transactions.title')} subtitle={t('transactions.subtitle')} />
@@ -255,6 +297,12 @@ export default function TransactionsScreen() {
           <PrimaryButton title={t('transactions.connect_bank')} onPress={handleInitiate} variant="secondary" />
           {consentUrl ? (
             <PrimaryButton title={t('transactions.confirm_consent')} onPress={handleGrant} style={styles.secondaryButton} />
+          ) : null}
+          {accountId ? (
+            <View style={styles.connectedRow}>
+              <Badge label={t('transactions.connected_badge')} tone="success" />
+              <Text style={styles.connectedText}>{accountId}</Text>
+            </View>
           ) : null}
           {connectMessage ? <Text style={styles.message}>{connectMessage}</Text> : null}
           {connectError ? <Text style={styles.error}>{connectError}</Text> : null}
@@ -290,14 +338,37 @@ export default function TransactionsScreen() {
       <SectionHeader title={t('transactions.recent_title')} subtitle={t('transactions.recent_subtitle')} />
       <FadeInView delay={200}>
         <Card>
-          {transactions.length === 0 ? (
+          <View style={styles.filterRow}>
+            <View style={styles.filterChip}>
+              <Chip label={t('transactions.filter_all')} selected={filter === 'all'} onPress={() => setFilter('all')} />
+            </View>
+            <View style={styles.filterChip}>
+              <Chip label={t('transactions.filter_income')} selected={filter === 'income'} onPress={() => setFilter('income')} />
+            </View>
+            <View style={styles.filterChip}>
+              <Chip label={t('transactions.filter_expenses')} selected={filter === 'expenses'} onPress={() => setFilter('expenses')} />
+            </View>
+            <View style={styles.filterChip}>
+              <Chip label={t('transactions.filter_missing')} selected={filter === 'needs_category'} onPress={() => setFilter('needs_category')} />
+            </View>
+          </View>
+          <View style={styles.syncRow}>
+            <Text style={styles.syncLabel}>{t('common.last_sync')}</Text>
+            <Text style={styles.syncValue}>{lastSyncLabel}</Text>
+          </View>
+          {missingCategoryCount ? (
+            <View style={styles.alertRow}>
+              <Badge label={`${missingCategoryCount} ${t('transactions.needs_category')}`} tone="warning" />
+            </View>
+          ) : null}
+          {filteredTransactions.length === 0 ? (
             <EmptyState
               title={t('transactions.empty_title')}
               subtitle={t('transactions.empty_state')}
               icon="card-outline"
             />
           ) : (
-            transactions.map(txn => (
+            filteredTransactions.map(txn => (
               <ListItem
                 key={txn.id}
                 title={txn.description}
@@ -358,6 +429,16 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm,
     marginBottom: spacing.sm,
   },
+  connectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  connectedText: {
+    marginLeft: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
   secondaryButton: {
     marginTop: spacing.sm,
   },
@@ -372,6 +453,32 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.sm,
     color: colors.danger,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: spacing.md,
+  },
+  filterChip: {
+    marginRight: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  syncRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  syncLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  syncValue: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  alertRow: {
+    marginBottom: spacing.sm,
   },
   modalBackdrop: {
     flex: 1,

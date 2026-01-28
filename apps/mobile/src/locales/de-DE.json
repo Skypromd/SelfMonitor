@@ -4,7 +4,11 @@
     "save": "Speichern",
     "cancel": "Abbrechen",
     "logout": "Abmelden",
-    "loading": "Wird geladen..."
+    "loading": "Wird geladen...",
+    "offline_title": "Offline",
+    "offline_subtitle": "Daten können veraltet sein.",
+    "last_sync": "Letzte Synchronisierung",
+    "not_available": "Nicht verfügbar"
   },
   "auth": {
     "welcome_title": "Self-Assessment Assistent",
@@ -43,7 +47,9 @@
     "data_quality_subtitle": "Kategorisieren Sie vor der Abgabe.",
     "total_transactions": "Transaktionen gesamt",
     "missing_categories": "Fehlende Kategorien",
-    "missing_business_use": "Fehlender Geschäftsanteil"
+    "missing_business_use": "Fehlender Geschäftsanteil",
+    "cashflow_trend": "Cashflow-Trend (30 Tage)",
+    "cashflow_empty": "Noch keine Forecast-Daten."
   },
   "transactions": {
     "title": "Transaktionen",
@@ -57,6 +63,7 @@
     "connect_error": "Bankverbindung fehlgeschlagen.",
     "connect_success": "Verbindung erfolgreich.",
     "confirm_consent": "Zustimmung bestätigen",
+    "connected_badge": "Verbunden",
     "recent_title": "Letzte Transaktionen",
     "recent_subtitle": "Tippen Sie, um Kategorien zu ändern.",
     "empty_title": "Noch keine Transaktionen",
@@ -69,6 +76,10 @@
     "category_food": "Essen & Trinken",
     "category_subscriptions": "Abos",
     "category_other": "Sonstiges",
+    "filter_all": "Alle",
+    "filter_income": "Einnahmen",
+    "filter_expenses": "Ausgaben",
+    "filter_missing": "Ohne Kategorie",
     "csv_account_label": "Konto-ID",
     "csv_account_placeholder": "Konto-ID einfügen",
     "connected_account_label": "Verbundenes Konto:",
@@ -91,6 +102,13 @@
     "recent_subtitle": "OCR aktualisiert die Dokumente.",
     "empty_title": "Noch keine Dokumente",
     "empty_subtitle": "Laden Sie Belege hoch.",
+    "tips_title": "Tipps für bessere OCR",
+    "tip_light": "Natürliches Licht nutzen",
+    "tip_light_subtitle": "Vermeiden Sie Schatten und Spiegelungen.",
+    "tip_flat": "Belege flach halten",
+    "tip_flat_subtitle": "Alles sichtbar aufnehmen.",
+    "tip_notes": "Später kategorisieren",
+    "tip_notes_subtitle": "In Transaktionen präzise zuordnen.",
     "upload_success": "Dokument hochgeladen.",
     "upload_error": "Upload fehlgeschlagen.",
     "uploading": "Wird hochgeladen...",
@@ -124,7 +142,9 @@
     "summary_income": "Gesamteinnahmen",
     "summary_expenses": "Gesamtausgaben",
     "summary_net": "Nettoergebnis",
-    "summary_count": "Transaktionen"
+    "summary_count": "Transaktionen",
+    "summary_period": "Zeitraum",
+    "category_breakdown": "Top Kategorien"
   },
   "marketplace": {
     "title": "Marktplatz",
