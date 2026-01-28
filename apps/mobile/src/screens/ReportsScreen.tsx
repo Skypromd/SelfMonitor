@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import PrimaryButton from '../components/PrimaryButton';
+import Screen from '../components/Screen';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { colors, spacing } from '../theme';
 
 type Cadence = {
   cadence: string;
@@ -35,13 +37,13 @@ export default function ReportsScreen() {
   }, [token]);
 
   return (
-    <ScrollView style={styles.container}>
+    <Screen>
       <SectionHeader title={t('reports.title')} subtitle={t('reports.subtitle')} />
       {cadence && (
         <Card>
           <Text style={styles.cardTitle}>{t('reports.cadence_title')}</Text>
-          <Text>{t('reports.cadence_turnover')} £{cadence.turnover_last_12_months.toFixed(2)}</Text>
-          <Text>{t('reports.cadence_threshold')} £{cadence.threshold.toFixed(2)}</Text>
+          <Text>{t('reports.cadence_turnover')} GBP {cadence.turnover_last_12_months.toFixed(2)}</Text>
+          <Text>{t('reports.cadence_threshold')} GBP {cadence.threshold.toFixed(2)}</Text>
           <Text style={cadence.quarterly_required ? styles.warning : styles.ok}>
             {cadence.quarterly_required ? t('reports.cadence_quarterly_required') : t('reports.cadence_monthly_ok')}
           </Text>
@@ -68,33 +70,29 @@ export default function ReportsScreen() {
         <PrimaryButton title={t('reports.mortgage')} onPress={() => setMessage(t('reports.mortgage_message'))} />
       </Card>
       {message ? <Text style={styles.message}>{message}</Text> : null}
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   cardTitle: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 12,
-    color: '#0f172a',
+    color: colors.textPrimary,
   },
   message: {
-    marginTop: 12,
-    color: '#16a34a',
+    marginTop: spacing.md,
+    color: colors.success,
   },
   warning: {
-    marginTop: 8,
-    color: '#dc2626',
+    marginTop: spacing.sm,
+    color: colors.danger,
     fontWeight: '600',
   },
   ok: {
-    marginTop: 8,
-    color: '#16a34a',
+    marginTop: spacing.sm,
+    color: colors.success,
     fontWeight: '600',
   },
 });

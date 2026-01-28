@@ -24,6 +24,9 @@
     "reports": "Отчеты",
     "more": "Еще"
   },
+  "more": {
+    "subtitle": "Управление аккаунтом и инструментами."
+  },
   "dashboard": {
     "title": "Дашборд",
     "readiness_title": "Готовность к налогам",
@@ -39,7 +42,9 @@
     "subtitle": "Категоризируйте доходы и расходы.",
     "empty_state": "Пока нет транзакций.",
     "connect_bank": "Подключить банк",
-    "csv_import": "CSV импорт"
+    "csv_import": "CSV импорт",
+    "income_label": "Доход",
+    "expense_label": "Расходы"
   },
   "documents": {
     "title": "Документы",
@@ -68,14 +73,24 @@
   },
   "marketplace": {
     "title": "Маркетплейс",
-    "subtitle": "Партнеры по бухгалтерии и страховке."
+    "subtitle": "Партнеры по бухгалтерии и страховке.",
+    "request_contact": "Запросить контакт",
+    "accounting_title": "Бухгалтерия и налоги",
+    "accounting_subtitle": "Сертифицированные партнеры по Self-Assessment.",
+    "insurance_title": "Страхование",
+    "insurance_subtitle": "Защита дохода и ответственности.",
+    "mortgage_title": "Ипотечные консультанты",
+    "mortgage_subtitle": "Специалисты по самозанятым."
   },
   "profile": {
     "title": "Профиль",
     "subtitle": "Обновите личные данные.",
     "first_name": "Имя",
     "last_name": "Фамилия",
-    "date_of_birth": "Дата рождения"
+    "date_of_birth": "Дата рождения",
+    "load_error": "Не удалось загрузить профиль.",
+    "saved_message": "Профиль сохранен.",
+    "save_error": "Не удалось сохранить профиль."
   },
   "subscription": {
     "title": "Подписка",
@@ -87,14 +102,19 @@
     "status_label": "Статус",
     "cycle_label": "Период оплаты",
     "period_label": "Текущий период",
-    "updated_message": "Подписка обновлена."
+    "updated_message": "Подписка обновлена.",
+    "load_error": "Не удалось загрузить подписку.",
+    "save_error": "Не удалось обновить подписку."
   },
   "settings": {
     "title": "Настройки",
-    "subtitle": "Предпочтения и уведомления."
+    "subtitle": "Предпочтения и уведомления.",
+    "language_label": "Язык"
   },
   "support": {
     "title": "Поддержка",
-    "subtitle": "Помощь и связь с нами."
+    "subtitle": "Помощь и связь с нами.",
+    "email_label": "Email",
+    "help_label": "Центр помощи"
   }
 }

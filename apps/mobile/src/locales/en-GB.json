@@ -24,6 +24,9 @@
     "reports": "Reports",
     "more": "More"
   },
+  "more": {
+    "subtitle": "Manage your account and tools."
+  },
   "dashboard": {
     "title": "Dashboard",
     "readiness_title": "Tax Readiness",
@@ -39,7 +42,9 @@
     "subtitle": "Categorise and track your income and expenses.",
     "empty_state": "No transactions yet.",
     "connect_bank": "Connect a bank",
-    "csv_import": "CSV import"
+    "csv_import": "CSV import",
+    "income_label": "Income",
+    "expense_label": "Expenses"
   },
   "documents": {
     "title": "Documents",
@@ -68,14 +73,24 @@
   },
   "marketplace": {
     "title": "Marketplace",
-    "subtitle": "Trusted partners for insurance, accounting, and more."
+    "subtitle": "Trusted partners for insurance, accounting, and more.",
+    "request_contact": "Request contact",
+    "accounting_title": "Accounting & Tax",
+    "accounting_subtitle": "Certified partners for Self-Assessment submissions.",
+    "insurance_title": "Insurance",
+    "insurance_subtitle": "Income protection and liability cover.",
+    "mortgage_title": "Mortgage advisors",
+    "mortgage_subtitle": "Specialists in self-employed applications."
   },
   "profile": {
     "title": "Profile",
     "subtitle": "Keep your details up to date.",
     "first_name": "First name",
     "last_name": "Last name",
-    "date_of_birth": "Date of birth"
+    "date_of_birth": "Date of birth",
+    "load_error": "Failed to load profile.",
+    "saved_message": "Profile saved.",
+    "save_error": "Failed to save profile."
   },
   "subscription": {
     "title": "Subscription",
@@ -87,14 +102,19 @@
     "status_label": "Status",
     "cycle_label": "Billing cycle",
     "period_label": "Current period",
-    "updated_message": "Subscription updated."
+    "updated_message": "Subscription updated.",
+    "load_error": "Failed to load subscription.",
+    "save_error": "Failed to update subscription."
   },
   "settings": {
     "title": "Settings",
-    "subtitle": "Preferences and notifications."
+    "subtitle": "Preferences and notifications.",
+    "language_label": "Language"
   },
   "support": {
     "title": "Support",
-    "subtitle": "Get help and contact us."
+    "subtitle": "Get help and contact us.",
+    "email_label": "Email",
+    "help_label": "Help Center"
   }
 }

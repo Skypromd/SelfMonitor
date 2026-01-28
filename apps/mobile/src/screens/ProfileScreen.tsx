@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, Text } from 'react-native';
+import { StyleSheet, TextInput, Text } from 'react-native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import PrimaryButton from '../components/PrimaryButton';
+import Screen from '../components/Screen';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
+import { colors, spacing } from '../theme';
 
 export default function ProfileScreen() {
   const { token } = useAuth();
@@ -27,7 +29,7 @@ export default function ProfileScreen() {
           date_of_birth: data.date_of_birth || '',
         });
       } catch {
-      setError('Failed to load profile.');
+        setError(t('profile.load_error'));
       }
     };
     fetchProfile();
@@ -47,14 +49,14 @@ export default function ProfileScreen() {
         }),
       });
       if (!response.ok) throw new Error();
-      setMessage(t('common.save'));
+      setMessage(t('profile.saved_message'));
     } catch {
-      setError('Failed to save profile.');
+      setError(t('profile.save_error'));
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <Screen>
       <SectionHeader title={t('profile.title')} subtitle={t('profile.subtitle')} />
       <Card>
         <TextInput
@@ -79,29 +81,25 @@ export default function ProfileScreen() {
         {message ? <Text style={styles.message}>{message}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </Card>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 12,
-    padding: 12,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 12,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
   },
   message: {
-    marginTop: 12,
-    color: '#16a34a',
+    marginTop: spacing.md,
+    color: colors.success,
   },
   error: {
-    marginTop: 12,
-    color: '#dc2626',
+    marginTop: spacing.md,
+    color: colors.danger,
   },
 });

@@ -1,6 +1,8 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
+import { colors, spacing } from '../theme';
+
 type InfoRowProps = {
   label: string;
   value: string;
@@ -19,13 +21,13 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   label: {
-    color: '#64748b',
+    color: colors.textSecondary,
   },
   value: {
-    color: '#0f172a',
+    color: colors.textPrimary,
     fontWeight: '600',
   },
 });

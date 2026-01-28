@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
-import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import PrimaryButton from '../components/PrimaryButton';
+import GradientCard from '../components/GradientCard';
+import StatCard from '../components/StatCard';
+import Screen from '../components/Screen';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
+import { colors, spacing } from '../theme';
 
 type Transaction = {
   amount: number;
@@ -64,56 +67,79 @@ export default function DashboardScreen() {
   }, [token]);
 
   return (
-    <ScrollView style={styles.container}>
-      <SectionHeader title={t('dashboard.title')} subtitle={t('dashboard.readiness_subtitle')} />
-
-      <Card>
-        <Text style={styles.cardTitle}>{t('dashboard.readiness_title')}</Text>
-        <Text style={styles.score}>{readinessScore}%</Text>
-        <Text style={styles.caption}>{t('dashboard.readiness_subtitle')}</Text>
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>{t('dashboard.cashflow_title')}</Text>
-        <Text style={styles.score}>
-          {cashFlow === null ? t('common.loading') : `£${cashFlow.toFixed(2)}`}
-        </Text>
-        <Text style={styles.caption}>{t('dashboard.cashflow_title')}</Text>
-      </Card>
-
-      <Card>
-        <Text style={styles.cardTitle}>{t('dashboard.quick_actions')}</Text>
-        <View style={styles.buttonStack}>
-          <PrimaryButton title={t('dashboard.add_expense')} onPress={() => {}} />
-          <PrimaryButton title={t('dashboard.scan_receipt')} onPress={() => {}} />
-          <PrimaryButton title={t('dashboard.generate_report')} onPress={() => {}} />
+    <Screen>
+      <GradientCard colors={['#2563eb', '#1d4ed8']}>
+        <Text style={styles.heroTitle}>{t('dashboard.title')}</Text>
+        <Text style={styles.heroSubtitle}>{t('dashboard.readiness_subtitle')}</Text>
+        <View style={styles.heroStats}>
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatValue}>{readinessScore}%</Text>
+            <Text style={styles.heroStatLabel}>{t('dashboard.readiness_title')}</Text>
+          </View>
+          <View style={styles.heroStat}>
+            <Text style={styles.heroStatValue}>
+              {cashFlow === null ? t('common.loading') : `GBP ${cashFlow.toFixed(2)}`}
+            </Text>
+            <Text style={styles.heroStatLabel}>{t('dashboard.cashflow_title')}</Text>
+          </View>
         </View>
-      </Card>
-    </ScrollView>
+      </GradientCard>
+
+      <SectionHeader title={t('dashboard.quick_actions')} subtitle={t('dashboard.readiness_subtitle')} />
+      <View style={styles.quickActions}>
+        <PrimaryButton title={t('dashboard.add_expense')} onPress={() => {}} variant="secondary" />
+        <PrimaryButton title={t('dashboard.scan_receipt')} onPress={() => {}} variant="secondary" />
+        <PrimaryButton title={t('dashboard.generate_report')} onPress={() => {}} variant="secondary" />
+      </View>
+
+      <SectionHeader title={t('dashboard.readiness_title')} subtitle={t('dashboard.readiness_subtitle')} />
+      <StatCard
+        label={t('dashboard.readiness_title')}
+        value={`${readinessScore}%`}
+        icon="sparkles-outline"
+        tone="success"
+      />
+      <StatCard
+        label={t('dashboard.cashflow_title')}
+        value={cashFlow === null ? t('common.loading') : `GBP ${cashFlow.toFixed(2)}`}
+        icon="pulse-outline"
+        tone="primary"
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 8,
-  },
-  score: {
+  heroTitle: {
+    color: colors.surface,
     fontSize: 28,
     fontWeight: '700',
-    color: '#2563eb',
   },
-  caption: {
-    marginTop: 8,
-    color: '#64748b',
+  heroSubtitle: {
+    color: '#dbeafe',
+    marginTop: spacing.xs,
+    fontSize: 14,
   },
-  buttonStack: {
-    gap: 12,
+  heroStats: {
+    marginTop: spacing.lg,
+    gap: spacing.md,
+  },
+  heroStat: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    padding: spacing.md,
+    borderRadius: 14,
+  },
+  heroStatValue: {
+    color: colors.surface,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  heroStatLabel: {
+    color: '#dbeafe',
+    marginTop: spacing.xs,
+    fontSize: 12,
+  },
+  quickActions: {
+    gap: spacing.md,
   },
 });

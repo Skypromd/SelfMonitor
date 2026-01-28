@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TextInput, Pressable, View } from 'react-native';
+import { StyleSheet, Text, TextInput, Pressable, View } from 'react-native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import PrimaryButton from '../components/PrimaryButton';
+import Screen from '../components/Screen';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
+import { colors, spacing } from '../theme';
 
 export default function SubscriptionScreen() {
   const { token } = useAuth();
@@ -37,7 +39,7 @@ export default function SubscriptionScreen() {
           current_period_end: data.current_period_end || '',
         });
       } catch {
-        setError('Failed to load subscription.');
+        setError(t('subscription.load_error'));
       }
     };
     fetchSubscription();
@@ -58,12 +60,12 @@ export default function SubscriptionScreen() {
       if (!response.ok) throw new Error();
       setMessage(t('subscription.updated_message'));
     } catch {
-      setError('Failed to update subscription.');
+      setError(t('subscription.save_error'));
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <Screen>
       <SectionHeader title={t('subscription.title')} subtitle={t('subscription.subtitle')} />
       <Card>
         <Text style={styles.label}>{t('subscription.plan_label')}</Text>
@@ -102,62 +104,58 @@ export default function SubscriptionScreen() {
         {message ? <Text style={styles.message}>{message}</Text> : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </Card>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   label: {
-    color: '#64748b',
-    marginBottom: 6,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
   },
   input: {
-    backgroundColor: '#f8fafc',
+    backgroundColor: colors.surfaceAlt,
     borderRadius: 12,
-    padding: 12,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 12,
+    borderColor: colors.border,
+    marginBottom: spacing.md,
   },
   planRow: {
     flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
   planOption: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
     borderRadius: 12,
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
   },
   planOptionActive: {
-    borderColor: '#2563eb',
+    borderColor: colors.primary,
     backgroundColor: '#eff6ff',
   },
   planText: {
-    color: '#64748b',
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   planTextActive: {
-    color: '#1d4ed8',
+    color: colors.primaryDark,
   },
   info: {
-    color: '#0f172a',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   message: {
-    marginTop: 12,
-    color: '#16a34a',
+    marginTop: spacing.md,
+    color: colors.success,
   },
   error: {
-    marginTop: 12,
-    color: '#dc2626',
+    marginTop: spacing.md,
+    color: colors.danger,
   },
 });

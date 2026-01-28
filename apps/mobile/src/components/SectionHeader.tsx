@@ -1,6 +1,8 @@
 import React from 'react';
 import { Text, StyleSheet, View } from 'react-native';
 
+import { colors, spacing } from '../theme';
+
 type SectionHeaderProps = {
   title: string;
   subtitle?: string;
@@ -17,16 +19,16 @@ export default function SectionHeader({ title, subtitle }: SectionHeaderProps) {
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 16,
+    marginBottom: spacing.lg,
   },
   title: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '700',
-    color: '#0f172a',
+    color: colors.textPrimary,
   },
   subtitle: {
-    marginTop: 4,
-    fontSize: 14,
-    color: '#64748b',
+    marginTop: spacing.xs,
+    fontSize: 15,
+    color: colors.textSecondary,
   },
 });

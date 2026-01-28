@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { I18nProvider } from './src/context/I18nContext';
@@ -39,10 +40,12 @@ export default function App() {
   return (
     <AuthProvider>
       <I18nProvider>
-        <NavigationContainer theme={AppTheme}>
-          <StatusBar style="dark" />
-          <RootNavigator />
-        </NavigationContainer>
+        <SafeAreaProvider>
+          <NavigationContainer theme={AppTheme}>
+            <StatusBar style="dark" />
+            <RootNavigator />
+          </NavigationContainer>
+        </SafeAreaProvider>
       </I18nProvider>
     </AuthProvider>
   );

@@ -1,41 +1,49 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
 import PrimaryButton from '../components/PrimaryButton';
+import GradientCard from '../components/GradientCard';
+import Screen from '../components/Screen';
 import { useTranslation } from '../hooks/useTranslation';
+import { colors, spacing } from '../theme';
 
 export default function DocumentsScreen() {
   const { t } = useTranslation();
 
   return (
-    <ScrollView style={styles.container}>
-      <SectionHeader title={t('documents.title')} subtitle={t('documents.subtitle')} />
+    <Screen>
+      <GradientCard colors={['#0f172a', '#1e293b']}>
+        <Text style={styles.heroTitle}>{t('documents.title')}</Text>
+        <Text style={styles.heroSubtitle}>{t('documents.subtitle')}</Text>
+      </GradientCard>
       <Card>
-        <Text style={styles.cardTitle}>{t('documents.title')}</Text>
+        <Text style={styles.cardTitle}>{t('documents.scan_button')}</Text>
         <PrimaryButton title={t('documents.scan_button')} onPress={() => {}} />
-        <Text style={styles.divider}>or</Text>
-        <PrimaryButton title={t('documents.upload_button')} onPress={() => {}} />
       </Card>
-    </ScrollView>
+      <Card>
+        <Text style={styles.cardTitle}>{t('documents.upload_button')}</Text>
+        <PrimaryButton title={t('documents.upload_button')} onPress={() => {}} variant="secondary" />
+      </Card>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
+  heroTitle: {
+    color: colors.surface,
+    fontSize: 26,
+    fontWeight: '700',
+  },
+  heroSubtitle: {
+    color: '#cbd5f5',
+    marginTop: spacing.xs,
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 12,
-    color: '#0f172a',
-  },
-  divider: {
-    textAlign: 'center',
-    color: '#94a3b8',
-    marginVertical: 12,
+    marginBottom: spacing.sm,
+    color: colors.textPrimary,
   },
 });

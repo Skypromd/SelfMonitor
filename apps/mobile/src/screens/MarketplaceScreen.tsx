@@ -1,49 +1,47 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import SectionHeader from '../components/SectionHeader';
 import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
+import Screen from '../components/Screen';
 import { useTranslation } from '../hooks/useTranslation';
+import { colors, spacing } from '../theme';
 
 export default function MarketplaceScreen() {
   const { t } = useTranslation();
 
   return (
-    <ScrollView style={styles.container}>
+    <Screen>
       <SectionHeader title={t('marketplace.title')} subtitle={t('marketplace.subtitle')} />
       <Card>
-        <Text style={styles.partnerTitle}>Accounting & Tax</Text>
-        <Text style={styles.partnerSubtitle}>Certified partners for Self-Assessment submissions.</Text>
-        <PrimaryButton title="Request contact" onPress={() => {}} />
+        <Text style={styles.partnerTitle}>{t('marketplace.accounting_title')}</Text>
+        <Text style={styles.partnerSubtitle}>{t('marketplace.accounting_subtitle')}</Text>
+        <PrimaryButton title={t('marketplace.request_contact')} onPress={() => {}} />
       </Card>
       <Card>
-        <Text style={styles.partnerTitle}>Insurance</Text>
-        <Text style={styles.partnerSubtitle}>Income protection and liability cover.</Text>
-        <PrimaryButton title="Request contact" onPress={() => {}} />
+        <Text style={styles.partnerTitle}>{t('marketplace.insurance_title')}</Text>
+        <Text style={styles.partnerSubtitle}>{t('marketplace.insurance_subtitle')}</Text>
+        <PrimaryButton title={t('marketplace.request_contact')} onPress={() => {}} />
       </Card>
       <Card>
-        <Text style={styles.partnerTitle}>Mortgage Advisors</Text>
-        <Text style={styles.partnerSubtitle}>Specialists in self-employed applications.</Text>
-        <PrimaryButton title="Request contact" onPress={() => {}} />
+        <Text style={styles.partnerTitle}>{t('marketplace.mortgage_title')}</Text>
+        <Text style={styles.partnerSubtitle}>{t('marketplace.mortgage_subtitle')}</Text>
+        <PrimaryButton title={t('marketplace.request_contact')} onPress={() => {}} />
       </Card>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   partnerTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#0f172a',
-    marginBottom: 4,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   partnerSubtitle: {
-    color: '#64748b',
-    marginBottom: 12,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
   },
 });

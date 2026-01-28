@@ -1,38 +1,36 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import SectionHeader from '../components/SectionHeader';
 import Card from '../components/Card';
+import Screen from '../components/Screen';
 import { useTranslation } from '../hooks/useTranslation';
+import { colors, spacing } from '../theme';
 
 export default function SupportScreen() {
   const { t } = useTranslation();
 
   return (
-    <ScrollView style={styles.container}>
+    <Screen>
       <SectionHeader title={t('support.title')} subtitle={t('support.subtitle')} />
       <Card>
-        <Text style={styles.label}>Email</Text>
+        <Text style={styles.label}>{t('support.email_label')}</Text>
         <Text style={styles.value}>support@selfmonitor.app</Text>
-        <Text style={styles.label}>Help Center</Text>
+        <Text style={styles.label}>{t('support.help_label')}</Text>
         <Text style={styles.value}>selfmonitor.app/help</Text>
       </Card>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   label: {
-    color: '#64748b',
-    marginBottom: 4,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
   },
   value: {
-    color: '#0f172a',
+    color: colors.textPrimary,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
   },
 });

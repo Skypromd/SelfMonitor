@@ -4,8 +4,10 @@ import { useNavigation } from '@react-navigation/native';
 
 import SectionHeader from '../components/SectionHeader';
 import Card from '../components/Card';
+import Screen from '../components/Screen';
 import { useTranslation } from '../hooks/useTranslation';
 import { useAuth } from '../context/AuthContext';
+import { colors, spacing } from '../theme';
 
 type ItemProps = {
   label: string;
@@ -26,8 +28,8 @@ export default function MoreScreen() {
   const { signOut } = useAuth();
 
   return (
-    <View style={styles.container}>
-      <SectionHeader title={t('nav.more')} subtitle="Manage your account and tools." />
+    <Screen>
+      <SectionHeader title={t('nav.more')} subtitle={t('more.subtitle')} />
       <Card>
         <MoreItem label={t('profile.title')} onPress={() => navigation.navigate('Profile' as never)} />
         <MoreItem label={t('subscription.title')} onPress={() => navigation.navigate('Subscription' as never)} />
@@ -36,23 +38,19 @@ export default function MoreScreen() {
         <MoreItem label={t('support.title')} onPress={() => navigation.navigate('Support' as never)} />
         <MoreItem label={t('common.logout')} onPress={() => signOut()} />
       </Card>
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   item: {
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: colors.border,
   },
   itemText: {
     fontSize: 16,
-    color: '#0f172a',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
 });

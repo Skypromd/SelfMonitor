@@ -7,6 +7,8 @@ import SubscriptionScreen from '../screens/SubscriptionScreen';
 import MarketplaceScreen from '../screens/MarketplaceScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SupportScreen from '../screens/SupportScreen';
+import { useTranslation } from '../hooks/useTranslation';
+import { colors } from '../theme';
 
 export type MoreStackParamList = {
   MoreHome: undefined;
@@ -20,14 +22,22 @@ export type MoreStackParamList = {
 const Stack = createNativeStackNavigator<MoreStackParamList>();
 
 export default function MoreStack() {
+  const { t } = useTranslation();
   return (
-    <Stack.Navigator>
-      <Stack.Screen name="MoreHome" component={MoreScreen} options={{ title: 'More' }} />
-      <Stack.Screen name="Profile" component={ProfileScreen} />
-      <Stack.Screen name="Subscription" component={SubscriptionScreen} />
-      <Stack.Screen name="Marketplace" component={MarketplaceScreen} />
-      <Stack.Screen name="Settings" component={SettingsScreen} />
-      <Stack.Screen name="Support" component={SupportScreen} />
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: colors.surface },
+        headerTitleStyle: { color: colors.textPrimary },
+        headerTintColor: colors.textPrimary,
+        contentStyle: { backgroundColor: colors.background },
+      }}
+    >
+      <Stack.Screen name="MoreHome" component={MoreScreen} options={{ headerShown: false, title: t('nav.more') }} />
+      <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: t('profile.title') }} />
+      <Stack.Screen name="Subscription" component={SubscriptionScreen} options={{ title: t('subscription.title') }} />
+      <Stack.Screen name="Marketplace" component={MarketplaceScreen} options={{ title: t('marketplace.title') }} />
+      <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: t('settings.title') }} />
+      <Stack.Screen name="Support" component={SupportScreen} options={{ title: t('support.title') }} />
     </Stack.Navigator>
   );
 }

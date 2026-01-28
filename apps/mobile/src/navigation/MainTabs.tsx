@@ -8,6 +8,7 @@ import DocumentsScreen from '../screens/DocumentsScreen';
 import ReportsScreen from '../screens/ReportsScreen';
 import MoreStack from './MoreStack';
 import { useTranslation } from '../hooks/useTranslation';
+import { colors } from '../theme';
 
 export type MainTabParamList = {
   Dashboard: undefined;
@@ -26,6 +27,19 @@ export default function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
+        tabBarStyle: {
+          borderTopColor: colors.border,
+          backgroundColor: colors.surface,
+          height: 64,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: {
+          fontSize: 12,
+          fontWeight: '600',
+        },
         tabBarIcon: ({ color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'home-outline';
           switch (route.name) {

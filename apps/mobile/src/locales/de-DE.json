@@ -24,6 +24,9 @@
     "reports": "Berichte",
     "more": "Mehr"
   },
+  "more": {
+    "subtitle": "Konto und Tools verwalten."
+  },
   "dashboard": {
     "title": "Dashboard",
     "readiness_title": "Steuerbereitschaft",
@@ -39,7 +42,9 @@
     "subtitle": "Einnahmen und Ausgaben kategorisieren.",
     "empty_state": "Noch keine Transaktionen.",
     "connect_bank": "Bank verbinden",
-    "csv_import": "CSV-Import"
+    "csv_import": "CSV-Import",
+    "income_label": "Einnahmen",
+    "expense_label": "Ausgaben"
   },
   "documents": {
     "title": "Dokumente",
@@ -68,14 +73,24 @@
   },
   "marketplace": {
     "title": "Marktplatz",
-    "subtitle": "Vertrauenswürdige Partner für Versicherung und Buchhaltung."
+    "subtitle": "Vertrauenswürdige Partner für Versicherung und Buchhaltung.",
+    "request_contact": "Kontakt anfragen",
+    "accounting_title": "Buchhaltung & Steuer",
+    "accounting_subtitle": "Zertifizierte Partner für Self-Assessment.",
+    "insurance_title": "Versicherung",
+    "insurance_subtitle": "Einkommensschutz und Haftpflicht.",
+    "mortgage_title": "Hypothekenberater",
+    "mortgage_subtitle": "Spezialisten für Selbstständige."
   },
   "profile": {
     "title": "Profil",
     "subtitle": "Halten Sie Ihre Daten aktuell.",
     "first_name": "Vorname",
     "last_name": "Nachname",
-    "date_of_birth": "Geburtsdatum"
+    "date_of_birth": "Geburtsdatum",
+    "load_error": "Profil konnte nicht geladen werden.",
+    "saved_message": "Profil gespeichert.",
+    "save_error": "Profil konnte nicht gespeichert werden."
   },
   "subscription": {
     "title": "Abonnement",
@@ -87,14 +102,19 @@
     "status_label": "Status",
     "cycle_label": "Abrechnungszyklus",
     "period_label": "Aktueller Zeitraum",
-    "updated_message": "Abonnement aktualisiert."
+    "updated_message": "Abonnement aktualisiert.",
+    "load_error": "Abonnement konnte nicht geladen werden.",
+    "save_error": "Abonnement konnte nicht aktualisiert werden."
   },
   "settings": {
     "title": "Einstellungen",
-    "subtitle": "Präferenzen und Benachrichtigungen."
+    "subtitle": "Präferenzen und Benachrichtigungen.",
+    "language_label": "Sprache"
   },
   "support": {
     "title": "Support",
-    "subtitle": "Hilfe und Kontakt."
+    "subtitle": "Hilfe und Kontakt.",
+    "email_label": "E-Mail",
+    "help_label": "Hilfe-Center"
   }
 }

@@ -1,10 +1,12 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, Pressable, View } from 'react-native';
+import { StyleSheet, Text, Pressable, View } from 'react-native';
 
 import SectionHeader from '../components/SectionHeader';
 import Card from '../components/Card';
+import Screen from '../components/Screen';
 import { useTranslation } from '../hooks/useTranslation';
 import { useI18n } from '../context/I18nContext';
+import { colors, spacing } from '../theme';
 
 const LOCALES = ['en-GB', 'de-DE', 'ru-RU'];
 
@@ -13,10 +15,10 @@ export default function SettingsScreen() {
   const { locale, setLocale } = useI18n();
 
   return (
-    <ScrollView style={styles.container}>
+    <Screen>
       <SectionHeader title={t('settings.title')} subtitle={t('settings.subtitle')} />
       <Card>
-        <Text style={styles.sectionTitle}>Language</Text>
+        <Text style={styles.sectionTitle}>{t('settings.language_label')}</Text>
         <View style={styles.localeRow}>
           {LOCALES.map((item) => (
             <Pressable
@@ -31,41 +33,37 @@ export default function SettingsScreen() {
           ))}
         </View>
       </Card>
-    </ScrollView>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 16,
-  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 12,
-    color: '#0f172a',
+    marginBottom: spacing.md,
+    color: colors.textPrimary,
   },
   localeRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.md,
   },
   localePill: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: colors.border,
   },
   localePillActive: {
-    borderColor: '#2563eb',
+    borderColor: colors.primary,
     backgroundColor: '#eff6ff',
   },
   localeText: {
-    color: '#64748b',
+    color: colors.textSecondary,
     fontWeight: '600',
   },
   localeTextActive: {
-    color: '#1d4ed8',
+    color: colors.primaryDark,
   },
 });
