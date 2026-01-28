@@ -6,6 +6,7 @@ import datetime
 import os
 import hvac
 from .celery_app import import_transactions_task
+from .providers import get_provider, list_providers
 
 # --- Vault Client Setup ---
 VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
@@ -18,15 +19,15 @@ else:
     print("Error: Could not authenticate with Vault.")
 
 
-def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
-    """Saves sensitive tokens to Vault."""
+def save_connection_metadata(connection_id: str, metadata: dict):
+    """Saves provider metadata to Vault."""
     secret_path = f"kv/banking-connections/{connection_id}"
     try:
         vault_client.secrets.kv.v2.create_or_update_secret(
             path=secret_path,
-            secret=dict(access_token=access_token, refresh_token=refresh_token),
+            secret=metadata,
         )
-        print(f"Tokens for connection {connection_id} securely stored in Vault.")
+        print(f"Metadata for connection {connection_id} securely stored in Vault.")
     except Exception as e:
         print(f"Error storing tokens in Vault: {e}")
 
@@ -49,12 +50,18 @@ class InitiateConnectionRequest(BaseModel):
 
 class InitiateConnectionResponse(BaseModel):
     consent_url: HttpUrl
+    state: Optional[str] = None
 
 class CallbackResponse(BaseModel):
-    connection_id: uuid.UUID
+    connection_id: str
     status: str
     message: str
-    task_id: str
+    task_id: Optional[str] = None
+
+class ProviderInfo(BaseModel):
+    id: str
+    display_name: str
+    configured: str
 
 class Transaction(BaseModel):
     provider_transaction_id: str
@@ -70,43 +77,51 @@ async def initiate_connection(
     auth_user: dict = Depends(fake_auth_check)
 ):
     print(f"User {auth_user['user_id']} is initiating connection with {request.provider_id}")
-    consent_url = f"https://fake-bank-provider.com/consent?client_id={request.provider_id}&redirect_uri={request.redirect_uri}&scope=transactions"
-    return InitiateConnectionResponse(consent_url=consent_url)
+    try:
+        provider = get_provider(request.provider_id)
+        result = await provider.initiate(auth_user["user_id"], str(request.redirect_uri))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return InitiateConnectionResponse(consent_url=result.consent_url, state=result.state)
 
 @app.get("/connections/callback", response_model=CallbackResponse)
 async def handle_provider_callback(
-    code: str,
+    provider_id: str = "mock_bank",
+    code: Optional[str] = None,
+    connection_id: Optional[str] = None,
     state: Optional[str] = None,
+    auth_user: dict = Depends(fake_auth_check),
 ):
-    if not code:
-        raise HTTPException(status_code=400, detail="Authorization code is missing")
+    try:
+        provider = get_provider(provider_id)
+        callback_result = await provider.handle_callback(
+            user_id=auth_user["user_id"],
+            code=code,
+            connection_id=connection_id,
+            state=state,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
-    print(f"Exchanging code '{code}' for an access token. State: {state}")
-    connection_id = uuid.uuid4()
+    save_connection_metadata(callback_result.connection_id, callback_result.metadata)
 
-    # 1. Simulate receiving sensitive tokens from the bank
-    mock_access_token = f"acc-tok-{uuid.uuid4()}"
-    mock_refresh_token = f"ref-tok-{uuid.uuid4()}"
-
-    # 2. Securely store these tokens in Vault instead of our own database
-    save_tokens_to_vault(str(connection_id), mock_access_token, mock_refresh_token)
-
-    # 3. Simulate fetching transactions after successful connection
-    mock_transactions = [
-        Transaction(provider_transaction_id="provider-txn-1", date=datetime.date.today(), description="Tesco", amount=-25.50, currency="GBP"),
-        Transaction(provider_transaction_id="provider-txn-2", date=datetime.date.today() - datetime.timedelta(days=1), description="Amazon", amount=-12.99, currency="GBP"),
-    ]
-
-    # Dispatch the task to the Celery queue.
-    # We convert Pydantic models to dicts as Celery works best with simple data types.
-    task = import_transactions_task.delay(str(connection_id), [t.dict() for t in mock_transactions])
+    task_id = None
+    if callback_result.transactions:
+        task = import_transactions_task.delay(callback_result.connection_id, callback_result.transactions)
+        task_id = task.id
 
     return CallbackResponse(
-        connection_id=connection_id,
-        status="processing",
-        message="Connection established. Transaction import has been dispatched to a background worker.",
-        task_id=task.id
+        connection_id=callback_result.connection_id,
+        status=callback_result.status,
+        message=callback_result.message,
+        task_id=task_id,
     )
+
+
+@app.get("/providers", response_model=List[ProviderInfo])
+async def list_available_providers():
+    return [ProviderInfo(**provider) for provider in list_providers()]
 
 @app.get("/accounts/{account_id}/transactions", response_model=List[Transaction], deprecated=True)
 async def get_transactions(account_id: uuid.UUID):

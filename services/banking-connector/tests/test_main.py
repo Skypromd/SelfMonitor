@@ -55,3 +55,12 @@ async def test_callback_schedules_celery_task(mocker):
     assert isinstance(transactions_data, list)
     assert len(transactions_data) == 2
     assert transactions_data[0]['description'] == "Tesco"
+
+
+def test_list_providers():
+    response = client.get("/providers")
+    assert response.status_code == 200
+    providers = response.json()
+    provider_ids = {provider["id"] for provider in providers}
+    assert "mock_bank" in provider_ids
+    assert "saltedge" in provider_ids
