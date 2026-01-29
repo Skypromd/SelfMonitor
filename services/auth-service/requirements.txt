@@ -3,6 +3,7 @@ uvicorn[standard]
 pydantic[email]
 python-jose[cryptography]
 passlib[bcrypt]
+bcrypt<4
 prometheus-fastapi-instrumentator
 pyotp
 qrcode[pil]

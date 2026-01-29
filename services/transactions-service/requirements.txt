@@ -12,4 +12,4 @@ opentelemetry-instrumentation-fastapi
 # Dependencies for testing
 pytest
 pytest-asyncio
-pact-python
+pact-python==2.3.3
