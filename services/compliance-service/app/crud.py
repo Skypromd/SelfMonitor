@@ -4,7 +4,7 @@ from . import models, schemas
 from typing import List, Optional
 
 async def create_audit_event(db: AsyncSession, event: schemas.AuditEventCreate) -> models.AuditEvent:
-    db_event = models.AuditEvent(**event.dict())
+    db_event = models.AuditEvent(**event.model_dump())
     db.add(db_event)
     await db.commit()
     await db.refresh(db_event)

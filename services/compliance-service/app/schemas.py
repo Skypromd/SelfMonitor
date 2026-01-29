@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 import uuid
 import datetime
@@ -12,5 +12,4 @@ class AuditEvent(AuditEventCreate):
     id: uuid.UUID
     timestamp: datetime.datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

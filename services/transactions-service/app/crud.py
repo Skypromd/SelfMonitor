@@ -54,7 +54,7 @@ async def create_transactions(db: AsyncSession, user_id: str, account_id: uuid.U
                 user_id=user_id,
                 account_id=account_id,
                 category=category,
-                **t.dict()
+                **t.model_dump()
             )
         )
 

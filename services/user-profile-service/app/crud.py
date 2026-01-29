@@ -49,7 +49,7 @@ async def get_or_create_profile(db: AsyncSession, user_id: str):
 async def create_or_update_profile(db: AsyncSession, user_id: str, profile: schemas.UserProfileUpdate):
     """Creates or updates a user profile in the database."""
     existing_profile = await get_profile_by_user_id(db, user_id)
-    update_data = profile.dict(exclude_unset=True)
+    update_data = profile.model_dump(exclude_unset=True)
 
     if existing_profile:
         # Update existing profile
@@ -58,7 +58,7 @@ async def create_or_update_profile(db: AsyncSession, user_id: str, profile: sche
         db_profile = existing_profile
     else:
         # Create new profile
-        db_profile = models.UserProfile(**profile.dict(exclude_unset=True), user_id=user_id)
+        db_profile = models.UserProfile(**profile.model_dump(exclude_unset=True), user_id=user_id)
         db.add(db_profile)
 
     _apply_subscription_defaults(db_profile)
@@ -68,7 +68,7 @@ async def create_or_update_profile(db: AsyncSession, user_id: str, profile: sche
 
 async def update_subscription(db: AsyncSession, user_id: str, update: schemas.SubscriptionUpdate):
     profile = await get_or_create_profile(db, user_id)
-    update_data = update.dict(exclude_unset=True)
+    update_data = update.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(profile, key, value)
 
