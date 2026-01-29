@@ -9,7 +9,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useI18n } from '../context/I18nContext';
 import { colors, spacing } from '../theme';
 
-const LOCALES = ['en-GB', 'de-DE', 'ru-RU'];
+const LOCALES = ['en-GB', 'de-DE', 'ru-RU', 'ro-MD', 'uk-UA', 'pl-PL'];
 const PREFS_KEY = 'settings.preferences.v1';
 
 export default function SettingsScreen() {

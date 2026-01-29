@@ -4,6 +4,9 @@ import * as Localization from 'expo-localization';
 import enGB from '../locales/en-GB.json';
 import deDE from '../locales/de-DE.json';
 import ruRU from '../locales/ru-RU.json';
+import roMD from '../locales/ro-MD.json';
+import ukUA from '../locales/uk-UA.json';
+import plPL from '../locales/pl-PL.json';
 
 type Translations = Record<string, Record<string, string>>;
 
@@ -17,6 +20,9 @@ const fallbackTranslations: Record<string, Translations> = {
   'en-GB': enGB,
   'de-DE': deDE,
   'ru-RU': ruRU,
+  'ro-MD': roMD,
+  'uk-UA': ukUA,
+  'pl-PL': plPL,
 };
 
 const I18nContext = createContext<I18nContextValue>({
