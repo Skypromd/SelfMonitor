@@ -41,6 +41,53 @@ paths:
                 $ref: '#/components/schemas/UserProfile'
         '400':
           description: Invalid input.
+  /subscriptions/me:
+    get:
+      summary: Get the current user's subscription
+      tags:
+        - Subscriptions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Subscription details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+    put:
+      summary: Update the current user's subscription
+      tags:
+        - Subscriptions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionUpdate'
+      responses:
+        '200':
+          description: Subscription updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+  /billing/webhook:
+    post:
+      summary: Stripe webhook receiver
+      tags:
+        - Billing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook received.
 
 components:
   schemas:
@@ -84,6 +131,46 @@ components:
         - user_id
         - created_at
         - updated_at
+    SubscriptionUpdate:
+      type: object
+      properties:
+        subscription_plan:
+          type: string
+        subscription_status:
+          type: string
+        billing_cycle:
+          type: string
+        current_period_start:
+          type: string
+          format: date
+        current_period_end:
+          type: string
+          format: date
+        monthly_close_day:
+          type: integer
+          minimum: 1
+          maximum: 28
+    SubscriptionResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+        subscription_plan:
+          type: string
+        subscription_status:
+          type: string
+        billing_cycle:
+          type: string
+        current_period_start:
+          type: string
+          format: date
+        current_period_end:
+          type: string
+          format: date
+        monthly_close_day:
+          type: integer
+      required:
+        - user_id
 
   securitySchemes:
     bearerAuth:
