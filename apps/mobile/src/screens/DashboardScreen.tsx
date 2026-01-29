@@ -19,6 +19,7 @@ import SyncAnimation from '../components/SyncAnimation';
 import ListItem from '../components/ListItem';
 import Chip from '../components/Chip';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
 import { apiRequest } from '../services/api';
 import { flushQueue, getQueueCount } from '../services/offlineQueue';
 import { getSyncLogEntries, SyncLogEntry } from '../services/syncLog';
@@ -38,10 +39,12 @@ export default function DashboardScreen() {
   const { t } = useTranslation();
   const navigation = useNavigation();
   const { isOffline } = useNetworkStatus();
+  const { plan } = useSubscriptionPlan();
   const [readinessScore, setReadinessScore] = useState(0);
   const [cashFlow, setCashFlow] = useState<number | null>(null);
   const [forecastPoints, setForecastPoints] = useState<number[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [estimatedTax, setEstimatedTax] = useState<number | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -51,6 +54,7 @@ export default function DashboardScreen() {
     missingCategories: 0,
     missingBusinessUse: 0,
     total: 0,
+    uncategorizedExpenses: 0,
   });
 
   const loadReadiness = async () => {
@@ -65,10 +69,18 @@ export default function DashboardScreen() {
       }
       const missingCategories = data.filter(item => !item.tax_category && !item.category).length;
       const missingBusinessUse = data.filter(item => item.amount < 0 && item.business_use_percent == null).length;
+      const uncategorizedExpenses = data
+        .filter(item => item.amount < 0 && !item.tax_category && !item.category)
+        .reduce((sum, item) => sum + Math.abs(item.amount), 0);
       const categoryScore = (data.length - missingCategories) / data.length;
       const businessScore = (data.length - missingBusinessUse) / data.length;
       setReadinessScore(Math.round((categoryScore * 0.6 + businessScore * 0.4) * 100));
-      setReadinessMeta({ missingCategories, missingBusinessUse, total: data.length });
+      setReadinessMeta({
+        missingCategories,
+        missingBusinessUse,
+        total: data.length,
+        uncategorizedExpenses,
+      });
       setLastSync(new Date().toISOString());
     } catch {
       setReadinessScore(0);
@@ -100,6 +112,30 @@ export default function DashboardScreen() {
     setQueuedCount(count);
   };
 
+  const loadEstimatedTax = async () => {
+    try {
+      const today = new Date();
+      const year = today.getFullYear();
+      const startThisYear = new Date(year, 3, 6);
+      const start = today >= startThisYear ? new Date(year, 3, 6) : new Date(year - 1, 3, 6);
+      const end = today >= startThisYear ? new Date(year + 1, 3, 5) : new Date(year, 3, 5);
+      const response = await apiRequest('/tax/calculate', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          start_date: start.toISOString().slice(0, 10),
+          end_date: end.toISOString().slice(0, 10),
+          jurisdiction: 'UK',
+        }),
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      setEstimatedTax(data.estimated_tax_due || 0);
+    } catch {
+      setEstimatedTax(null);
+    }
+  };
+
   const loadSyncLog = async () => {
     const entries = await getSyncLogEntries(4);
     setSyncLog(entries);
@@ -109,12 +145,13 @@ export default function DashboardScreen() {
     loadReadiness();
     loadCashFlow();
     loadQueueCount();
+    loadEstimatedTax();
     loadSyncLog();
   }, [token]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([loadReadiness(), loadCashFlow(), loadQueueCount(), loadSyncLog()]);
+    await Promise.all([loadReadiness(), loadCashFlow(), loadQueueCount(), loadEstimatedTax(), loadSyncLog()]);
     setIsRefreshing(false);
   };
 
@@ -138,6 +175,10 @@ export default function DashboardScreen() {
   const deadlineYear = now.getMonth() === 0 && now.getDate() <= 31 ? now.getFullYear() : now.getFullYear() + 1;
   const nextDeadline = new Date(deadlineYear, 0, 31);
   const deadlineLabel = nextDeadline.toLocaleDateString();
+  const daysToDeadline = Math.max(1, Math.ceil((nextDeadline.getTime() - now.getTime()) / 86400000));
+  const monthlySetAside = estimatedTax ? estimatedTax / Math.max(Math.ceil(daysToDeadline / 30), 1) : null;
+  const safeToSpend = cashFlow !== null && estimatedTax !== null ? cashFlow - estimatedTax : null;
+  const potentialSavings = readinessMeta.uncategorizedExpenses * 0.2;
 
   return (
     <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
@@ -201,6 +242,47 @@ export default function DashboardScreen() {
           />
         </GlassCard>
       </FadeInView>
+
+      <SectionHeader title={t('dashboard.tax_pot_title')} subtitle={t('dashboard.tax_pot_subtitle')} />
+      <FadeInView delay={130}>
+        <Card>
+          <InfoRow
+            label={t('dashboard.tax_pot_target')}
+            value={estimatedTax !== null ? `GBP ${estimatedTax.toFixed(2)}` : t('common.not_available')}
+          />
+          <InfoRow
+            label={t('dashboard.tax_pot_set_aside')}
+            value={monthlySetAside !== null ? `GBP ${monthlySetAside.toFixed(2)}` : t('common.not_available')}
+          />
+          <InfoRow
+            label={t('dashboard.safe_to_spend')}
+            value={safeToSpend !== null ? `GBP ${safeToSpend.toFixed(2)}` : t('common.not_available')}
+          />
+        </Card>
+      </FadeInView>
+
+      {plan === 'free' ? (
+        <FadeInView delay={150}>
+          <Card>
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{t('dashboard.pro_value_title')}</Text>
+              <Badge label={t('reports.pro_badge')} tone="info" />
+            </View>
+            <Text style={styles.proSubtitle}>{t('dashboard.pro_value_subtitle')}</Text>
+            <InfoRow
+              label={t('dashboard.potential_savings')}
+              value={`GBP ${potentialSavings.toFixed(2)}`}
+            />
+            <PrimaryButton
+              title={t('upgrade.cta')}
+              onPress={() => navigation.navigate('Upgrade' as never)}
+              variant="secondary"
+              haptic="light"
+              style={styles.secondaryButton}
+            />
+          </Card>
+        </FadeInView>
+      ) : null}
 
       <SectionHeader title={t('dashboard.sync_title')} subtitle={t('dashboard.sync_subtitle')} />
       <FadeInView delay={140}>
@@ -355,6 +437,13 @@ const styles = StyleSheet.create({
   rangeChip: {
     marginRight: spacing.sm,
     marginBottom: spacing.sm,
+  },
+  proSubtitle: {
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  secondaryButton: {
+    marginTop: spacing.sm,
   },
   progressRow: {
     marginTop: spacing.md,

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, Pressable, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
@@ -19,6 +20,7 @@ export default function SubscriptionScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
   const { isOffline } = useNetworkStatus();
+  const navigation = useNavigation();
   const [subscription, setSubscription] = useState({
     subscription_plan: 'free',
     monthly_close_day: '1',
@@ -120,6 +122,15 @@ export default function SubscriptionScreen() {
             {t('subscription.period_label')}: {subscription.current_period_start || '-'} → {subscription.current_period_end || '-'}
           </Text>
           <PrimaryButton title={t('common.save')} onPress={handleSave} haptic="medium" />
+          {subscription.subscription_plan === 'free' ? (
+            <PrimaryButton
+              title={t('upgrade.cta')}
+              onPress={() => navigation.navigate('Upgrade' as never)}
+              variant="secondary"
+              haptic="light"
+              style={styles.secondaryButton}
+            />
+          ) : null}
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>
@@ -175,6 +186,9 @@ const styles = StyleSheet.create({
   message: {
     marginTop: spacing.md,
     color: colors.success,
+  },
+  secondaryButton: {
+    marginTop: spacing.sm,
   },
   error: {
     marginTop: spacing.md,

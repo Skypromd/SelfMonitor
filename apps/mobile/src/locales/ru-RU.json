@@ -64,7 +64,15 @@
     "deadline_action": "Открыть отчеты",
     "sync_title": "Статус синхронизации",
     "sync_subtitle": "Оффлайн-правки синхронизируются автоматически.",
-    "sync_pending": "ожидающих изменений"
+    "sync_pending": "ожидающих изменений",
+    "tax_pot_title": "Налоговый резерв",
+    "tax_pot_subtitle": "Отложите деньги для HMRC.",
+    "tax_pot_target": "Оценка налога",
+    "tax_pot_set_aside": "Откладывать в месяц",
+    "safe_to_spend": "Можно тратить",
+    "pro_value_title": "Pro дает выгоду",
+    "pro_value_subtitle": "Апгрейд для авто‑отчетов и HMRC.",
+    "potential_savings": "Потенциальная экономия"
   },
   "tax": {
     "title": "Налоговая сводка",
@@ -93,7 +101,31 @@
     "class4": "Class 4 NIC",
     "estimated_tax": "Оценка налога",
     "export_csv": "Экспорт CSV",
-    "category_breakdown": "Категории SA103"
+    "category_breakdown": "Категории SA103",
+    "pro_note": "Отправка в HMRC доступна в Pro."
+  },
+  "upgrade": {
+    "title": "Апгрейд на Pro",
+    "subtitle": "Авто‑налоги, отчеты и HMRC.",
+    "cta": "Включить Pro",
+    "plan_title": "План Pro",
+    "badge_best": "Лучшее",
+    "price_label": "От",
+    "price_hint": "Можно отменить в любой момент.",
+    "feature_reports": "Месячные, квартальные, P&L, ипотечные отчеты",
+    "feature_hmrc": "Отправка в HMRC",
+    "feature_mortgage": "Пакет для ипотеки",
+    "feature_sync": "Приоритетная синхронизация",
+    "current_plan": "У вас Pro",
+    "savings_title": "Калькулятор выгоды",
+    "revenue_label": "Выручка в месяц",
+    "expenses_label": "Расходы в месяц",
+    "estimated_savings": "Оценка выгоды",
+    "net_value": "Чистая выгода",
+    "disclaimer": "Оценки ориентировочные.",
+    "upgraded": "Pro активирован.",
+    "upgrade_error": "Не удалось активировать Pro.",
+    "offline_error": "Нет сети. Апгрейд онлайн."
   },
   "mileage": {
     "title": "Пробег",

@@ -64,7 +64,15 @@
     "deadline_action": "Berichte öffnen",
     "sync_title": "Sync-Status",
     "sync_subtitle": "Offline-Änderungen werden automatisch synchronisiert.",
-    "sync_pending": "ausstehende Updates"
+    "sync_pending": "ausstehende Updates",
+    "tax_pot_title": "Steuerreserve",
+    "tax_pot_subtitle": "Für HMRC zurücklegen.",
+    "tax_pot_target": "Geschätzte Steuer",
+    "tax_pot_set_aside": "Monatlich zurücklegen",
+    "safe_to_spend": "Sicher verfügbar",
+    "pro_value_title": "Pro lohnt sich",
+    "pro_value_subtitle": "Upgrade für Automatisierung und HMRC.",
+    "potential_savings": "Potenzielle Ersparnis"
   },
   "tax": {
     "title": "Steuerübersicht",
@@ -93,7 +101,31 @@
     "class4": "Class 4 NIC",
     "estimated_tax": "Geschätzte Steuer",
     "export_csv": "CSV exportieren",
-    "category_breakdown": "SA103-Kategorien"
+    "category_breakdown": "SA103-Kategorien",
+    "pro_note": "HMRC-Einreichung nur mit Pro."
+  },
+  "upgrade": {
+    "title": "Upgrade auf Pro",
+    "subtitle": "Automatisierte Steuern, Berichte und HMRC.",
+    "cta": "Pro starten",
+    "plan_title": "Pro-Plan",
+    "badge_best": "Beste Wahl",
+    "price_label": "Ab",
+    "price_hint": "Jederzeit kündbar.",
+    "feature_reports": "Monatlich, quartal, GuV, Hypothekenberichte",
+    "feature_hmrc": "HMRC-Einreichung",
+    "feature_mortgage": "Mortgage-Report Paket",
+    "feature_sync": "Priorisierte Automatisierung",
+    "current_plan": "Du bist Pro",
+    "savings_title": "Ersparnis-Rechner",
+    "revenue_label": "Monatsumsatz",
+    "expenses_label": "Monatsausgaben",
+    "estimated_savings": "Geschätzte Ersparnis",
+    "net_value": "Netto-Vorteil",
+    "disclaimer": "Schätzungen sind unverbindlich.",
+    "upgraded": "Du bist auf Pro.",
+    "upgrade_error": "Upgrade fehlgeschlagen.",
+    "offline_error": "Offline. Upgrade online."
   },
   "mileage": {
     "title": "Fahrtenbuch",

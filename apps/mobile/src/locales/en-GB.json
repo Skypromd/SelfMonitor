@@ -64,7 +64,15 @@
     "deadline_action": "Open reports",
     "sync_title": "Sync status",
     "sync_subtitle": "Offline edits will sync automatically.",
-    "sync_pending": "pending updates"
+    "sync_pending": "pending updates",
+    "tax_pot_title": "Tax pot",
+    "tax_pot_subtitle": "Set aside money for HMRC.",
+    "tax_pot_target": "Estimated tax",
+    "tax_pot_set_aside": "Set aside per month",
+    "safe_to_spend": "Safe to spend",
+    "pro_value_title": "Unlock Pro value",
+    "pro_value_subtitle": "Upgrade to automate reports and HMRC submit.",
+    "potential_savings": "Potential savings"
   },
   "tax": {
     "title": "Tax summary",
@@ -93,7 +101,31 @@
     "class4": "Class 4 NIC",
     "estimated_tax": "Estimated tax due",
     "export_csv": "Export CSV",
-    "category_breakdown": "SA103 categories"
+    "category_breakdown": "SA103 categories",
+    "pro_note": "HMRC submission requires Pro."
+  },
+  "upgrade": {
+    "title": "Upgrade to Pro",
+    "subtitle": "Automate tax, reports, and HMRC filing.",
+    "cta": "Start Pro",
+    "plan_title": "Pro plan",
+    "badge_best": "Best value",
+    "price_label": "From",
+    "price_hint": "Cancel anytime. No hidden fees.",
+    "feature_reports": "Monthly, quarterly, P&L, mortgage reports",
+    "feature_hmrc": "HMRC submission workflow",
+    "feature_mortgage": "Mortgage‑ready report pack",
+    "feature_sync": "Priority sync and automation",
+    "current_plan": "You're on Pro",
+    "savings_title": "Savings calculator",
+    "revenue_label": "Monthly revenue",
+    "expenses_label": "Monthly expenses",
+    "estimated_savings": "Estimated savings",
+    "net_value": "Net value vs Pro",
+    "disclaimer": "Estimates are indicative. Actual savings may vary.",
+    "upgraded": "You're upgraded to Pro.",
+    "upgrade_error": "Upgrade failed.",
+    "offline_error": "You're offline. Upgrade when online."
   },
   "mileage": {
     "title": "Mileage log",

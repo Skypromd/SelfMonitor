@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Share, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
 import Screen from '../components/Screen';
 import SectionHeader from '../components/SectionHeader';
@@ -15,6 +16,7 @@ import { apiRequest } from '../services/api';
 import { toCsv } from '../utils/csv';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
+import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
 import { colors, spacing } from '../theme';
 
 type TaxSummaryItem = {
@@ -67,6 +69,8 @@ const getPreviousTaxYearRange = (today: Date) => {
 export default function TaxSummaryScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
+  const { plan } = useSubscriptionPlan();
+  const navigation = useNavigation();
   const [startDate, setStartDate] = useState(getTaxYearRange(new Date()).start);
   const [endDate, setEndDate] = useState(getTaxYearRange(new Date()).end);
   const [result, setResult] = useState<TaxResult | null>(null);
@@ -167,7 +171,26 @@ export default function TaxSummaryScreen() {
           <InputField label={t('tax.start_date')} value={startDate} onChangeText={setStartDate} />
           <InputField label={t('tax.end_date')} value={endDate} onChangeText={setEndDate} />
           <PrimaryButton title={isLoading ? t('common.loading') : t('tax.calculate')} onPress={calculateTax} haptic="medium" />
-          <PrimaryButton title={t('tax.submit')} onPress={submitToHmrc} haptic="medium" variant="secondary" style={styles.secondaryButton} disabled={isSubmitting} />
+          <PrimaryButton
+            title={t('tax.submit')}
+            onPress={submitToHmrc}
+            haptic="medium"
+            variant="secondary"
+            style={styles.secondaryButton}
+            disabled={isSubmitting || plan === 'free'}
+          />
+          {plan === 'free' ? (
+            <>
+              <Text style={styles.proNote}>{t('tax.pro_note')}</Text>
+              <PrimaryButton
+                title={t('upgrade.cta')}
+                onPress={() => navigation.navigate('Upgrade' as never)}
+                variant="secondary"
+                haptic="light"
+                style={styles.secondaryButton}
+              />
+            </>
+          ) : null}
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>
@@ -241,6 +264,11 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.sm,
     color: colors.danger,
+  },
+  proNote: {
+    marginTop: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   titleRow: {
     flexDirection: 'row',

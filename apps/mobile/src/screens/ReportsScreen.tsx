@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Card from '../components/Card';
@@ -13,6 +14,7 @@ import MiniBarChart from '../components/MiniBarChart';
 import BarRow from '../components/BarRow';
 import DonutChart from '../components/DonutChart';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { enqueueReportRequest, flushQueue, getQueuedReportRequests } from '../services/offlineQueue';
@@ -45,6 +47,8 @@ export default function ReportsScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
   const { isOffline } = useNetworkStatus();
+  const { plan } = useSubscriptionPlan();
+  const navigation = useNavigation();
   const [cadence, setCadence] = useState<Cadence | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -200,6 +204,23 @@ export default function ReportsScreen() {
   return (
     <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <SectionHeader title={t('reports.title')} subtitle={t('reports.subtitle')} />
+      {plan === 'free' ? (
+        <FadeInView>
+          <Card>
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{t('upgrade.title')}</Text>
+              <Badge label={t('reports.pro_badge')} tone="info" />
+            </View>
+            <Text style={styles.queueSubtitle}>{t('upgrade.subtitle')}</Text>
+            <PrimaryButton
+              title={t('upgrade.cta')}
+              onPress={() => navigation.navigate('Upgrade' as never)}
+              variant="secondary"
+              haptic="light"
+            />
+          </Card>
+        </FadeInView>
+      ) : null}
       {cadence && (
         <FadeInView>
           <Card>
