@@ -9,6 +9,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import SupportScreen from '../screens/SupportScreen';
 import SyncCenterScreen from '../screens/SyncCenterScreen';
 import TaxSummaryScreen from '../screens/TaxSummaryScreen';
+import MileageLogScreen from '../screens/MileageLogScreen';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors } from '../theme';
 
@@ -21,6 +22,7 @@ export type MoreStackParamList = {
   Support: undefined;
   SyncCenter: undefined;
   TaxSummary: undefined;
+  MileageLog: undefined;
 };
 
 const Stack = createNativeStackNavigator<MoreStackParamList>();
@@ -44,6 +46,7 @@ export default function MoreStack() {
       <Stack.Screen name="Support" component={SupportScreen} options={{ title: t('support.title') }} />
       <Stack.Screen name="SyncCenter" component={SyncCenterScreen} options={{ title: t('sync.center_title') }} />
       <Stack.Screen name="TaxSummary" component={TaxSummaryScreen} options={{ title: t('tax.title') }} />
+      <Stack.Screen name="MileageLog" component={MileageLogScreen} options={{ title: t('mileage.title') }} />
     </Stack.Navigator>
   );
 }

@@ -95,6 +95,28 @@
     "export_csv": "Экспорт CSV",
     "category_breakdown": "Категории SA103"
   },
+  "mileage": {
+    "title": "Пробег",
+    "subtitle": "Учет бизнес‑поездок по ставкам HMRC.",
+    "add_trip": "Добавить поездку",
+    "date": "Дата (YYYY-MM-DD)",
+    "distance": "Дистанция",
+    "purpose": "Цель",
+    "unit_miles": "мили",
+    "unit_km": "км",
+    "save_trip": "Сохранить",
+    "saved": "Поездка сохранена.",
+    "invalid_distance": "Введите корректную дистанцию.",
+    "default_purpose": "Бизнес‑поездка",
+    "summary_title": "Сводка",
+    "total_miles": "Пробег всего",
+    "allowance": "Оценка вычета",
+    "export_csv": "Экспорт CSV",
+    "log_title": "Поездки",
+    "log_subtitle": "Недавние поездки.",
+    "empty": "Пока нет поездок.",
+    "business_badge": "Бизнес"
+  },
   "transactions": {
     "title": "Транзакции",
     "subtitle": "Категоризируйте доходы и расходы.",

@@ -95,6 +95,28 @@
     "export_csv": "Export CSV",
     "category_breakdown": "SA103 categories"
   },
+  "mileage": {
+    "title": "Mileage log",
+    "subtitle": "Track business travel and claim HMRC rates.",
+    "add_trip": "Add trip",
+    "date": "Date (YYYY-MM-DD)",
+    "distance": "Distance",
+    "purpose": "Purpose",
+    "unit_miles": "miles",
+    "unit_km": "km",
+    "save_trip": "Save trip",
+    "saved": "Trip saved.",
+    "invalid_distance": "Enter a valid distance.",
+    "default_purpose": "Business travel",
+    "summary_title": "Mileage summary",
+    "total_miles": "Total miles",
+    "allowance": "Estimated allowance",
+    "export_csv": "Export CSV",
+    "log_title": "Trips",
+    "log_subtitle": "Recent mileage entries.",
+    "empty": "No mileage yet.",
+    "business_badge": "Business"
+  },
   "transactions": {
     "title": "Transactions",
     "subtitle": "Categorise and track your income and expenses.",

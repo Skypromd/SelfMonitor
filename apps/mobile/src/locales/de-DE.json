@@ -95,6 +95,28 @@
     "export_csv": "CSV exportieren",
     "category_breakdown": "SA103-Kategorien"
   },
+  "mileage": {
+    "title": "Fahrtenbuch",
+    "subtitle": "Geschäftliche Fahrten nach HMRC-Satz.",
+    "add_trip": "Fahrt hinzufügen",
+    "date": "Datum (YYYY-MM-DD)",
+    "distance": "Distanz",
+    "purpose": "Zweck",
+    "unit_miles": "Meilen",
+    "unit_km": "km",
+    "save_trip": "Fahrt speichern",
+    "saved": "Fahrt gespeichert.",
+    "invalid_distance": "Bitte Distanz eingeben.",
+    "default_purpose": "Geschäftliche Fahrt",
+    "summary_title": "Übersicht",
+    "total_miles": "Meilen gesamt",
+    "allowance": "Geschätzte Pauschale",
+    "export_csv": "CSV exportieren",
+    "log_title": "Fahrten",
+    "log_subtitle": "Letzte Einträge.",
+    "empty": "Noch keine Fahrten.",
+    "business_badge": "Geschäftlich"
+  },
   "transactions": {
     "title": "Transaktionen",
     "subtitle": "Einnahmen und Ausgaben kategorisieren.",
