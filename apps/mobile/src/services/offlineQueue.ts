@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { apiRequest } from './api';
+import { notifyReportReady } from './notifications';
 import { addSyncLogEntry } from './syncLog';
 
 const QUEUE_KEY = 'offline.queue.v1';
@@ -42,6 +43,9 @@ type ReportRequestAction = {
   payload: {
     reportType: string;
     path: string;
+    displayName: string;
+    notificationTitle: string;
+    notificationBody: string;
   };
   createdAt: string;
 };
@@ -69,6 +73,11 @@ const saveQueue = async (queue: OfflineAction[]) => {
 export const getQueueCount = async () => {
   const queue = await loadQueue();
   return queue.length;
+};
+
+export const getQueuedReportRequests = async () => {
+  const queue = await loadQueue();
+  return queue.filter((item) => item.type === 'report_request') as ReportRequestAction[];
 };
 
 export const enqueueCategoryUpdate = async (transactionId: string, category: string) => {
@@ -118,7 +127,13 @@ export const enqueueSubscriptionUpdate = async (payload: SubscriptionUpdateActio
   return filtered.length;
 };
 
-export const enqueueReportRequest = async (reportType: string, path: string) => {
+export const enqueueReportRequest = async (
+  reportType: string,
+  path: string,
+  displayName: string,
+  notificationTitle: string,
+  notificationBody: string
+) => {
   const queue = await loadQueue();
   const filtered = queue.filter(
     (item) => !(item.type === 'report_request' && item.payload.reportType === reportType)
@@ -126,7 +141,13 @@ export const enqueueReportRequest = async (reportType: string, path: string) => 
   const next: ReportRequestAction = {
     id: `report-${reportType}-${Date.now()}`,
     type: 'report_request',
-    payload: { reportType, path },
+    payload: {
+      reportType,
+      path,
+      displayName,
+      notificationTitle,
+      notificationBody,
+    },
     createdAt: new Date().toISOString(),
   };
   filtered.push(next);
@@ -210,6 +231,7 @@ export const flushQueue = async (token: string | null) => {
       }
       flushed += 1;
       await addSyncLogEntry('report', 'synced');
+      await notifyReportReady(item.payload.notificationTitle, `${item.payload.notificationBody} ${item.payload.displayName}`);
       queue = queue.filter((entry) => entry.id !== item.id);
       await saveQueue(queue);
     }

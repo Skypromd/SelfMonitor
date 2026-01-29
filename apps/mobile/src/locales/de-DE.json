@@ -55,6 +55,9 @@
     "cashflow_trend": "Cashflow-Trend (30 Tage)",
     "cashflow_empty": "Noch keine Forecast-Daten.",
     "cashflow_label": "Kontostand",
+    "range_7d": "7T",
+    "range_14d": "14T",
+    "range_30d": "30T",
     "deadline_title": "Nächste Frist",
     "deadline_subtitle": "Bleiben Sie HMRC-konform.",
     "deadline_hint": "Self-Assessment Abgabefrist",
@@ -167,7 +170,12 @@
     "offline_error": "Offline. Berichte online erstellen.",
     "offline_queued": "Für Sync vorgemerkt.",
     "cached_badge": "Zwischengespeichert",
-    "cached_notice": "Zwischengespeichert am"
+    "cached_notice": "Zwischengespeichert am",
+    "notification_title": "Bericht bereit",
+    "notification_body": "Ihr Bericht ist bereit:",
+    "offline_queue_title": "Geplante Berichte",
+    "offline_queue_subtitle": "Diese starten, sobald Sie online sind.",
+    "offline_queue_status": "In Warteschlange"
   },
   "sync": {
     "center_title": "Sync-Zentrum",
@@ -179,6 +187,8 @@
     "action_profile": "Profil-Update",
     "action_subscription": "Abo-Update",
     "action_report": "Berichtsanfrage",
+    "retry_failed": "Fehlgeschlagene erneut",
+    "failed_label": "fehlgeschlagen",
     "status_queued": "In Warteschlange",
     "status_synced": "Synchronisiert",
     "status_failed": "Fehlgeschlagen"

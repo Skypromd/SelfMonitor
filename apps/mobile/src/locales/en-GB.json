@@ -55,6 +55,9 @@
     "cashflow_trend": "30-day cash flow trend",
     "cashflow_empty": "Forecast data not available yet.",
     "cashflow_label": "Balance",
+    "range_7d": "7d",
+    "range_14d": "14d",
+    "range_30d": "30d",
     "deadline_title": "Next deadline",
     "deadline_subtitle": "Stay ready for HMRC dates.",
     "deadline_hint": "Self Assessment filing deadline",
@@ -167,7 +170,12 @@
     "offline_error": "You're offline. Generate reports when online.",
     "offline_queued": "Queued for sync when online.",
     "cached_badge": "Cached",
-    "cached_notice": "Cached summary from"
+    "cached_notice": "Cached summary from",
+    "notification_title": "Report ready",
+    "notification_body": "Your report is ready:",
+    "offline_queue_title": "Queued reports",
+    "offline_queue_subtitle": "These will run when you are back online.",
+    "offline_queue_status": "Queued"
   },
   "sync": {
     "center_title": "Sync Center",
@@ -179,6 +187,8 @@
     "action_profile": "Profile update",
     "action_subscription": "Subscription update",
     "action_report": "Report request",
+    "retry_failed": "Retry failed",
+    "failed_label": "failed",
     "status_queued": "Queued",
     "status_synced": "Synced",
     "status_failed": "Failed"

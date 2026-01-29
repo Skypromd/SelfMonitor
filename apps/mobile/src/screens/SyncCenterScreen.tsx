@@ -58,6 +58,8 @@ export default function SyncCenterScreen() {
     return latest ? new Date(latest.createdAt).toLocaleString() : t('common.not_available');
   }, [logEntries, t]);
 
+  const failedCount = logEntries.filter((entry) => entry.status === 'failed').length;
+
   return (
     <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <SectionHeader title={t('sync.center_title')} subtitle={t('sync.center_subtitle')} />
@@ -68,6 +70,9 @@ export default function SyncCenterScreen() {
         </View>
         <InfoRow label={t('common.last_sync')} value={lastSyncedAt} />
         <Text style={styles.pendingText}>{queuedCount} {t('dashboard.sync_pending')}</Text>
+        {failedCount ? (
+          <Text style={styles.failedText}>{failedCount} {t('sync.failed_label')}</Text>
+        ) : null}
         <PrimaryButton
           title={syncing ? t('common.syncing') : t('common.sync_now')}
           onPress={handleSyncNow}
@@ -75,6 +80,13 @@ export default function SyncCenterScreen() {
           variant="secondary"
           haptic="light"
           style={styles.syncButton}
+        />
+        <PrimaryButton
+          title={t('sync.retry_failed')}
+          onPress={handleSyncNow}
+          disabled={syncing || isOffline || failedCount === 0}
+          variant="secondary"
+          haptic="medium"
         />
       </Card>
 
@@ -106,6 +118,12 @@ const styles = StyleSheet.create({
   pendingText: {
     marginTop: spacing.xs,
     color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  failedText: {
+    marginTop: spacing.xs,
+    color: colors.danger,
     fontSize: 12,
     fontWeight: '600',
   },

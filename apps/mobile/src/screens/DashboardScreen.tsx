@@ -17,6 +17,7 @@ import InteractiveLineChart from '../components/InteractiveLineChart';
 import GlassCard from '../components/GlassCard';
 import SyncAnimation from '../components/SyncAnimation';
 import ListItem from '../components/ListItem';
+import Chip from '../components/Chip';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { apiRequest } from '../services/api';
 import { flushQueue, getQueueCount } from '../services/offlineQueue';
@@ -45,6 +46,7 @@ export default function DashboardScreen() {
   const [syncing, setSyncing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
+  const [rangeDays, setRangeDays] = useState(14);
   const [readinessMeta, setReadinessMeta] = useState({
     missingCategories: 0,
     missingBusinessUse: 0,
@@ -256,7 +258,7 @@ export default function DashboardScreen() {
           <Text style={styles.cardTitle}>{t('dashboard.cashflow_trend')}</Text>
           {forecastPoints.length ? (
             <InteractiveLineChart
-              data={forecastPoints.slice(-14)}
+              data={forecastPoints.slice(-rangeDays)}
               height={120}
               label={t('dashboard.cashflow_label')}
               valueFormatter={(value) => `GBP ${value.toFixed(2)}`}
@@ -265,6 +267,17 @@ export default function DashboardScreen() {
           ) : (
             <Text style={styles.emptyText}>{t('dashboard.cashflow_empty')}</Text>
           )}
+          <View style={styles.rangeRow}>
+            <View style={styles.rangeChip}>
+              <Chip label={t('dashboard.range_7d')} selected={rangeDays === 7} onPress={() => setRangeDays(7)} />
+            </View>
+            <View style={styles.rangeChip}>
+              <Chip label={t('dashboard.range_14d')} selected={rangeDays === 14} onPress={() => setRangeDays(14)} />
+            </View>
+            <View style={styles.rangeChip}>
+              <Chip label={t('dashboard.range_30d')} selected={rangeDays === 30} onPress={() => setRangeDays(30)} />
+            </View>
+          </View>
           <InfoRow label={t('common.last_sync')} value={lastSyncLabel} />
         </Card>
         <View style={styles.metaCard}>
@@ -331,6 +344,16 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  rangeChip: {
+    marginRight: spacing.sm,
     marginBottom: spacing.sm,
   },
   progressRow: {

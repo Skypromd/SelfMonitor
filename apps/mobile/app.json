@@ -15,6 +15,7 @@
     },
     "android": {
       "permissions": ["CAMERA"]
-    }
+    },
+    "plugins": ["expo-notifications"]
   }
 }

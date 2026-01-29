@@ -15,7 +15,7 @@ import DonutChart from '../components/DonutChart';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
-import { enqueueReportRequest } from '../services/offlineQueue';
+import { enqueueReportRequest, flushQueue, getQueuedReportRequests } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
 
@@ -53,6 +53,7 @@ export default function ReportsScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isCached, setIsCached] = useState(false);
   const [cachedAt, setCachedAt] = useState<string | null>(null);
+  const [queuedReports, setQueuedReports] = useState<string[]>([]);
 
   const sortedCategories = summary?.summary_by_category
     ? [...summary.summary_by_category].sort((a, b) => Math.abs(b.net_total) - Math.abs(a.net_total))
@@ -90,7 +91,22 @@ export default function ReportsScreen() {
       }
     };
     loadCachedSummary();
+    const loadQueued = async () => {
+      const queued = await getQueuedReportRequests();
+      setQueuedReports(queued.map((item) => item.payload.displayName));
+    };
+    loadQueued();
   }, [token]);
+
+  useEffect(() => {
+    const flushQueuedReports = async () => {
+      if (isOffline || !token) return;
+      await flushQueue(token);
+      const queued = await getQueuedReportRequests();
+      setQueuedReports(queued.map((item) => item.payload.displayName));
+    };
+    flushQueuedReports();
+  }, [isOffline, token]);
 
   const runReport = async (type: 'monthly' | 'quarterly' | 'profit_loss' | 'tax_year' | 'mortgage') => {
     setMessage('');
@@ -112,9 +128,23 @@ export default function ReportsScreen() {
         tax_year: `/analytics/reports/tax-year-summary?tax_year=${taxYearStart}/${taxYearEnd}`,
         mortgage: '/analytics/reports/mortgage-readiness',
       };
+      const labelMap = {
+        monthly: t('reports.monthly'),
+        quarterly: t('reports.quarterly'),
+        profit_loss: t('reports.profit_loss'),
+        tax_year: t('reports.tax_year'),
+        mortgage: t('reports.mortgage'),
+      };
 
       if (isOffline) {
-        await enqueueReportRequest(type, pathMap[type]);
+        await enqueueReportRequest(
+          type,
+          pathMap[type],
+          labelMap[type],
+          t('reports.notification_title'),
+          t('reports.notification_body')
+        );
+        setQueuedReports((prev) => Array.from(new Set([...prev, labelMap[type]])));
         setMessage(t('reports.offline_queued'));
         return;
       }
@@ -163,7 +193,7 @@ export default function ReportsScreen() {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await fetchCadence();
+    await Promise.all([fetchCadence(), getQueuedReportRequests().then((queued) => setQueuedReports(queued.map((item) => item.payload.displayName)))]);
     setIsRefreshing(false);
   };
 
@@ -182,6 +212,20 @@ export default function ReportsScreen() {
           </Card>
         </FadeInView>
       )}
+      {queuedReports.length ? (
+        <FadeInView delay={60}>
+          <Card>
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{t('reports.offline_queue_title')}</Text>
+              <Badge label={`${queuedReports.length}`} tone="warning" />
+            </View>
+            <Text style={styles.queueSubtitle}>{t('reports.offline_queue_subtitle')}</Text>
+            {queuedReports.map((label) => (
+              <InfoRow key={label} label={label} value={t('reports.offline_queue_status')} />
+            ))}
+          </Card>
+        </FadeInView>
+      ) : null}
       <FadeInView delay={80}>
         <Card>
           <View style={styles.titleRow}>
@@ -319,6 +363,11 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.md,
     color: colors.danger,
+  },
+  queueSubtitle: {
+    marginBottom: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   cachedNotice: {
     marginTop: spacing.sm,
