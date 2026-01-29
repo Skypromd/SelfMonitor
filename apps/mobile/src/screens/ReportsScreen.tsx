@@ -116,6 +116,12 @@ export default function ReportsScreen() {
     setMessage('');
     setError('');
     try {
+      const proReports = ['quarterly', 'profit_loss', 'tax_year', 'mortgage'];
+      if (plan === 'free' && proReports.includes(type)) {
+        setError(t('reports.pro_required'));
+        navigation.navigate('Upgrade' as never);
+        return;
+      }
       const now = new Date();
       const year = now.getFullYear();
       const month = now.getMonth() + 1;

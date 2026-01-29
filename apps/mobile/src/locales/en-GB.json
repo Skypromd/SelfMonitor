@@ -72,7 +72,10 @@
     "safe_to_spend": "Safe to spend",
     "pro_value_title": "Unlock Pro value",
     "pro_value_subtitle": "Upgrade to automate reports and HMRC submit.",
-    "potential_savings": "Potential savings"
+    "potential_savings": "Potential savings",
+    "trial_title": "Trial active",
+    "trial_badge": "Trial",
+    "trial_subtitle": "Your Pro trial ends in"
   },
   "tax": {
     "title": "Tax summary",
@@ -114,6 +117,10 @@
     "annual": "Annual",
     "price_label": "From",
     "price_hint": "Cancel anytime. No hidden fees.",
+    "annual_savings": "Annual savings",
+    "trial_offer": "Start with a 7‑day free trial.",
+    "trial_active": "Trial ends in",
+    "days_left": "days",
     "feature_reports": "Monthly, quarterly, P&L, mortgage reports",
     "feature_hmrc": "HMRC submission workflow",
     "feature_mortgage": "Mortgage‑ready report pack",
@@ -443,7 +450,8 @@
     "load_error": "Failed to load subscription.",
     "save_error": "Failed to update subscription.",
     "saved_offline": "Saved offline. Syncing when online.",
-    "active_label": "Active"
+    "active_label": "Active",
+    "trial_left": "Trial ends in"
   },
   "settings": {
     "title": "Settings",

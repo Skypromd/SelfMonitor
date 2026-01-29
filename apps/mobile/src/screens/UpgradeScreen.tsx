@@ -24,7 +24,7 @@ export default function UpgradeScreen() {
   const { t } = useTranslation();
   const { token } = useAuth();
   const { isOffline } = useNetworkStatus();
-  const { plan, refresh } = useSubscriptionPlan();
+  const { plan, status, trialDaysLeft, refresh } = useSubscriptionPlan();
   const [revenue, setRevenue] = useState('');
   const [expenses, setExpenses] = useState('');
   const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
@@ -40,6 +40,7 @@ export default function UpgradeScreen() {
   }, [expenses]);
 
   const price = cycle === 'annual' ? PRO_PRICE_ANNUAL : PRO_PRICE_MONTHLY;
+  const annualSavings = PRO_PRICE_MONTHLY * 12 - PRO_PRICE_ANNUAL;
   const netValue = savings - price;
 
   const handleUpgrade = async () => {
@@ -117,7 +118,15 @@ export default function UpgradeScreen() {
             />
           </View>
           <Text style={styles.price}>{t('upgrade.price_label')} GBP {price.toFixed(2)}</Text>
+          {cycle === 'annual' ? (
+            <Text style={styles.priceHint}>{t('upgrade.annual_savings')} GBP {annualSavings.toFixed(2)}</Text>
+          ) : null}
           <Text style={styles.priceHint}>{t('upgrade.price_hint')}</Text>
+          {status === 'trialing' && trialDaysLeft !== null ? (
+            <Text style={styles.trialText}>{t('upgrade.trial_active')} {trialDaysLeft} {t('upgrade.days_left')}</Text>
+          ) : (
+            <Text style={styles.trialText}>{t('upgrade.trial_offer')}</Text>
+          )}
           <ListItem title={t('upgrade.feature_reports')} icon="checkmark-circle-outline" />
           <ListItem title={t('upgrade.feature_hmrc')} icon="checkmark-circle-outline" />
           <ListItem title={t('upgrade.feature_mortgage')} icon="checkmark-circle-outline" />
@@ -209,6 +218,11 @@ const styles = StyleSheet.create({
   priceHint: {
     marginBottom: spacing.sm,
     color: colors.textSecondary,
+  },
+  trialText: {
+    marginBottom: spacing.sm,
+    color: colors.info,
+    fontWeight: '600',
   },
   ctaButton: {
     marginTop: spacing.sm,

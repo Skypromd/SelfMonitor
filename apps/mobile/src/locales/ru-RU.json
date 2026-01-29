@@ -72,7 +72,10 @@
     "safe_to_spend": "Можно тратить",
     "pro_value_title": "Pro дает выгоду",
     "pro_value_subtitle": "Апгрейд для авто‑отчетов и HMRC.",
-    "potential_savings": "Потенциальная экономия"
+    "potential_savings": "Потенциальная экономия",
+    "trial_title": "Пробный период",
+    "trial_badge": "Триал",
+    "trial_subtitle": "Пробный период истекает через"
   },
   "tax": {
     "title": "Налоговая сводка",
@@ -114,6 +117,10 @@
     "annual": "Ежегодно",
     "price_label": "От",
     "price_hint": "Можно отменить в любой момент.",
+    "annual_savings": "Экономия за год",
+    "trial_offer": "7 дней бесплатно.",
+    "trial_active": "Пробный период истекает через",
+    "days_left": "дней",
     "feature_reports": "Месячные, квартальные, P&L, ипотечные отчеты",
     "feature_hmrc": "Отправка в HMRC",
     "feature_mortgage": "Пакет для ипотеки",
@@ -443,7 +450,8 @@
     "load_error": "Не удалось загрузить подписку.",
     "save_error": "Не удалось обновить подписку.",
     "saved_offline": "Сохранено офлайн. Синхронизация позже.",
-    "active_label": "Активна"
+    "active_label": "Активна",
+    "trial_left": "Пробный период истекает через"
   },
   "settings": {
     "title": "Настройки",

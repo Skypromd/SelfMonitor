@@ -39,7 +39,7 @@ export default function DashboardScreen() {
   const { t } = useTranslation();
   const navigation = useNavigation();
   const { isOffline } = useNetworkStatus();
-  const { plan } = useSubscriptionPlan();
+  const { plan, status, trialDaysLeft } = useSubscriptionPlan();
   const [readinessScore, setReadinessScore] = useState(0);
   const [cashFlow, setCashFlow] = useState<number | null>(null);
   const [forecastPoints, setForecastPoints] = useState<number[]>([]);
@@ -280,6 +280,16 @@ export default function DashboardScreen() {
               haptic="light"
               style={styles.secondaryButton}
             />
+          </Card>
+        </FadeInView>
+      ) : status === 'trialing' && trialDaysLeft !== null ? (
+        <FadeInView delay={150}>
+          <Card>
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{t('dashboard.trial_title')}</Text>
+              <Badge label={t('dashboard.trial_badge')} tone="warning" />
+            </View>
+            <Text style={styles.proSubtitle}>{t('dashboard.trial_subtitle')} {trialDaysLeft} {t('upgrade.days_left')}</Text>
           </Card>
         </FadeInView>
       ) : null}

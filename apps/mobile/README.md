@@ -33,3 +33,5 @@ Set these before running (optional):
 - Reports (monthly/quarterly/P&L/tax year/mortgage)
 - Profile & Subscription
 - Marketplace, Settings, Support
+- Tax summary, Mileage log, Invoices, Deadlines
+- Upgrade, Sync Center, Accountant share, Assistant, Smart rules

@@ -72,7 +72,10 @@
     "safe_to_spend": "Sicher verfügbar",
     "pro_value_title": "Pro lohnt sich",
     "pro_value_subtitle": "Upgrade für Automatisierung und HMRC.",
-    "potential_savings": "Potenzielle Ersparnis"
+    "potential_savings": "Potenzielle Ersparnis",
+    "trial_title": "Testphase aktiv",
+    "trial_badge": "Test",
+    "trial_subtitle": "Dein Test endet in"
   },
   "tax": {
     "title": "Steuerübersicht",
@@ -114,6 +117,10 @@
     "annual": "Jährlich",
     "price_label": "Ab",
     "price_hint": "Jederzeit kündbar.",
+    "annual_savings": "Jahresersparnis",
+    "trial_offer": "Starte mit 7 Tagen gratis.",
+    "trial_active": "Test endet in",
+    "days_left": "Tagen",
     "feature_reports": "Monatlich, quartal, GuV, Hypothekenberichte",
     "feature_hmrc": "HMRC-Einreichung",
     "feature_mortgage": "Mortgage-Report Paket",
@@ -443,7 +450,8 @@
     "load_error": "Abonnement konnte nicht geladen werden.",
     "save_error": "Abonnement konnte nicht aktualisiert werden.",
     "saved_offline": "Offline gespeichert. Sync erfolgt online.",
-    "active_label": "Aktiv"
+    "active_label": "Aktiv",
+    "trial_left": "Test endet in"
   },
   "settings": {
     "title": "Einstellungen",

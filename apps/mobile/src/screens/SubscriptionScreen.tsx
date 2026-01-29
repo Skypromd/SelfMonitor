@@ -93,6 +93,13 @@ export default function SubscriptionScreen() {
     }
   };
 
+  const trialDaysLeft = (() => {
+    if (subscription.subscription_status !== 'trialing' || !subscription.current_period_end) return null;
+    const end = new Date(subscription.current_period_end);
+    const days = Math.ceil((end.getTime() - Date.now()) / 86400000);
+    return Math.max(days, 0);
+  })();
+
   return (
     <Screen>
       <SectionHeader title={t('subscription.title')} subtitle={t('subscription.subtitle')} />
@@ -135,6 +142,9 @@ export default function SubscriptionScreen() {
           <Text style={styles.info}>
             {t('subscription.period_label')}: {subscription.current_period_start || '-'} → {subscription.current_period_end || '-'}
           </Text>
+          {trialDaysLeft !== null ? (
+            <Text style={styles.trial}>{t('subscription.trial_left')} {trialDaysLeft} {t('upgrade.days_left')}</Text>
+          ) : null}
           <PrimaryButton title={t('common.save')} onPress={handleSave} haptic="medium" />
           {subscription.subscription_plan === 'free' ? (
             <PrimaryButton
@@ -211,6 +221,11 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     marginTop: spacing.sm,
+  },
+  trial: {
+    marginTop: spacing.sm,
+    color: colors.warning,
+    fontWeight: '600',
   },
   error: {
     marginTop: spacing.md,
