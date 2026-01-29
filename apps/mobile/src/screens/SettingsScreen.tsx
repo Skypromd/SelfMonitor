@@ -10,12 +10,12 @@ import { useI18n } from '../context/I18nContext';
 import { colors, spacing } from '../theme';
 
 const LOCALES = [
-  { code: 'en-GB', label: 'English (UK)' },
-  { code: 'de-DE', label: 'German' },
-  { code: 'ru-RU', label: 'Russian' },
-  { code: 'ro-MD', label: 'Romanian (MD)' },
-  { code: 'uk-UA', label: 'Ukrainian' },
-  { code: 'pl-PL', label: 'Polish' },
+  { code: 'en-GB', labelKey: 'settings.language_en_gb', fallback: 'English (UK)' },
+  { code: 'de-DE', labelKey: 'settings.language_de_de', fallback: 'Deutsch' },
+  { code: 'ru-RU', labelKey: 'settings.language_ru_ru', fallback: 'Russian' },
+  { code: 'ro-MD', labelKey: 'settings.language_ro_md', fallback: 'Romanian (MD)' },
+  { code: 'uk-UA', labelKey: 'settings.language_uk_ua', fallback: 'Ukrainian' },
+  { code: 'pl-PL', labelKey: 'settings.language_pl_pl', fallback: 'Polish' },
 ];
 const PREFS_KEY = 'settings.preferences.v1';
 
@@ -57,18 +57,22 @@ export default function SettingsScreen() {
       <Card>
         <Text style={styles.sectionTitle}>{t('settings.language_label')}</Text>
         <View style={styles.localeRow}>
-          {LOCALES.map((item) => (
+          {LOCALES.map((item) => {
+            const label = t(item.labelKey);
+            const displayLabel = label === item.labelKey ? item.fallback : label;
+            return (
             <View key={item.code} style={styles.localeItem}>
               <Pressable
                 onPress={() => setLocale(item.code)}
                 style={[styles.localePill, locale === item.code && styles.localePillActive]}
               >
                 <Text style={[styles.localeText, locale === item.code && styles.localeTextActive]}>
-                  {item.label}
+                  {displayLabel}
                 </Text>
               </Pressable>
             </View>
-          ))}
+          );
+          })}
         </View>
       </Card>
       <Card>

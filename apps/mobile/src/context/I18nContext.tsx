@@ -53,6 +53,15 @@ const normalizeLocale = (tag?: string) => {
   return aliasMap[base] || 'en-GB';
 };
 
+const mergeTranslations = (fallback: Translations, remote?: Translations) => {
+  if (!remote) return fallback;
+  const merged: Translations = { ...fallback };
+  Object.keys(remote).forEach((namespace) => {
+    merged[namespace] = { ...(fallback[namespace] || {}), ...(remote[namespace] || {}) };
+  });
+  return merged;
+};
+
 const I18nContext = createContext<I18nContextValue>({
   locale: 'en-GB',
   translations: enGB,
@@ -102,7 +111,7 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
         const response = await fetch(`${LOCALIZATION_URL}/translations/${locale}/all`);
         if (response.ok) {
           const data = await response.json();
-          setTranslations(data);
+          setTranslations(mergeTranslations(fallback, data));
         }
       } catch {
         setTranslations(fallback);
