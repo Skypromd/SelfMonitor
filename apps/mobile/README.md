@@ -22,6 +22,10 @@ You can also target a platform:
 npm run android
 npm run ios
 ```
+Typecheck:
+```
+npm run typecheck
+```
 
 ## Environment variables
 Set these before running (optional):
