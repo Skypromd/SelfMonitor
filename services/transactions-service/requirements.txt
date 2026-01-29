@@ -1,5 +1,6 @@
 # Core application dependencies
 fastapi
+python-multipart
 uvicorn[standard]
 pydantic
 sqlalchemy[asyncio]
@@ -13,3 +14,4 @@ opentelemetry-instrumentation-fastapi
 pytest
 pytest-asyncio
 pact-python==2.3.3
+aiosqlite
