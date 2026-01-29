@@ -8,7 +8,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 for module_name in list(sys.modules):
     if module_name == "app" or module_name.startswith("app."):
         sys.modules.pop(module_name, None)
-from app.main import app, fake_consents_db
+import app.main as consent_main
+from app.main import app, fake_consents_db, Consent
 
 client = TestClient(app)
 
@@ -23,7 +24,7 @@ def test_record_consent_triggers_audit(mocker):
     Test that creating a consent successfully calls the audit log function.
     """
     # Mock the async function that calls the compliance service
-    mock_log_audit = mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock)
+    mock_log_audit = mocker.patch.object(consent_main, "log_audit_event", new_callable=mocker.AsyncMock)
 
     connection_id = str(uuid.uuid4())
     response = client.post(
@@ -51,7 +52,7 @@ def test_revoke_consent_triggers_audit(mocker):
     # 1. First, create a consent directly in our fake DB
     consent_id = uuid.uuid4()
     user_id = "fake-user-123"
-    fake_consents_db[consent_id] = app.main.Consent(
+    fake_consents_db[consent_id] = Consent(
         id=consent_id,
         user_id=user_id,
         connection_id=uuid.uuid4(),
@@ -60,7 +61,7 @@ def test_revoke_consent_triggers_audit(mocker):
     )
 
     # 2. Mock the audit log function
-    mock_log_audit = mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock)
+    mock_log_audit = mocker.patch.object(consent_main, "log_audit_event", new_callable=mocker.AsyncMock)
 
     # 3. Call the endpoint to revoke the consent
     response = client.delete(f"/consents/{consent_id}")
