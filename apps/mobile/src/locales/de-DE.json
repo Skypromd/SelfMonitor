@@ -173,6 +173,19 @@
     "paper_title": "Papierfrist",
     "paper_note": "Papierabgabe bis 31. Oktober."
   },
+  "accountant": {
+    "title": "Export für Steuerberater",
+    "subtitle": "Daten für den Steuerberater exportieren.",
+    "exports_title": "Exporte",
+    "export_transactions": "Transaktionen exportieren",
+    "export_tax": "Steuerübersicht exportieren",
+    "export_documents": "Dokumente exportieren",
+    "exported_transactions": "Transaktionen exportiert.",
+    "exported_tax": "Steuerübersicht exportiert.",
+    "exported_documents": "Dokumente exportiert.",
+    "export_error": "Export fehlgeschlagen.",
+    "offline_error": "Offline. Export online."
+  },
   "transactions": {
     "title": "Transaktionen",
     "subtitle": "Einnahmen und Ausgaben kategorisieren.",

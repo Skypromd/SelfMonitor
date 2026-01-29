@@ -12,6 +12,7 @@ import TaxSummaryScreen from '../screens/TaxSummaryScreen';
 import MileageLogScreen from '../screens/MileageLogScreen';
 import InvoicesScreen from '../screens/InvoicesScreen';
 import DeadlinesScreen from '../screens/DeadlinesScreen';
+import AccountantShareScreen from '../screens/AccountantShareScreen';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors } from '../theme';
 
@@ -27,6 +28,7 @@ export type MoreStackParamList = {
   MileageLog: undefined;
   Invoices: undefined;
   Deadlines: undefined;
+  AccountantShare: undefined;
 };
 
 const Stack = createNativeStackNavigator<MoreStackParamList>();
@@ -53,6 +55,7 @@ export default function MoreStack() {
       <Stack.Screen name="MileageLog" component={MileageLogScreen} options={{ title: t('mileage.title') }} />
       <Stack.Screen name="Invoices" component={InvoicesScreen} options={{ title: t('invoices.title') }} />
       <Stack.Screen name="Deadlines" component={DeadlinesScreen} options={{ title: t('deadlines.title') }} />
+      <Stack.Screen name="AccountantShare" component={AccountantShareScreen} options={{ title: t('accountant.title') }} />
     </Stack.Navigator>
   );
 }

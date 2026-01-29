@@ -173,6 +173,19 @@
     "paper_title": "Paper filing deadline",
     "paper_note": "Paper return due by 31 October."
   },
+  "accountant": {
+    "title": "Accountant share",
+    "subtitle": "Export key data for your accountant.",
+    "exports_title": "Exports",
+    "export_transactions": "Export transactions",
+    "export_tax": "Export tax summary",
+    "export_documents": "Export documents",
+    "exported_transactions": "Transactions exported.",
+    "exported_tax": "Tax summary exported.",
+    "exported_documents": "Documents exported.",
+    "export_error": "Export failed.",
+    "offline_error": "You're offline. Export when online."
+  },
   "transactions": {
     "title": "Transactions",
     "subtitle": "Categorise and track your income and expenses.",

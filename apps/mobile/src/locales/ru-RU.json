@@ -173,6 +173,19 @@
     "paper_title": "Срок бумажной подачи",
     "paper_note": "Бумажная форма до 31 октября."
   },
+  "accountant": {
+    "title": "Экспорт для бухгалтера",
+    "subtitle": "Экспорт ключевых данных.",
+    "exports_title": "Экспорт",
+    "export_transactions": "Экспорт транзакций",
+    "export_tax": "Экспорт налоговой сводки",
+    "export_documents": "Экспорт документов",
+    "exported_transactions": "Транзакции экспортированы.",
+    "exported_tax": "Сводка экспортирована.",
+    "exported_documents": "Документы экспортированы.",
+    "export_error": "Ошибка экспорта.",
+    "offline_error": "Нет сети. Экспорт онлайн."
+  },
   "transactions": {
     "title": "Транзакции",
     "subtitle": "Категоризируйте доходы и расходы.",
