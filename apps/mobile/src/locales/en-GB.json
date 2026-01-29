@@ -186,6 +186,27 @@
     "export_error": "Export failed.",
     "offline_error": "You're offline. Export when online."
   },
+  "assistant": {
+    "title": "AI assistant",
+    "subtitle": "Insights and guidance for your taxes.",
+    "welcome": "Hi! I can explain your numbers and suggest next steps.",
+    "insights_title": "Your insights",
+    "insights_income": "Income",
+    "insights_expenses": "Expenses",
+    "insights_ratio": "Expense ratio",
+    "insights_missing": "Missing categories",
+    "insights_tax": "Estimated tax",
+    "quick_prompts": "Quick prompts",
+    "prompt_tax": "Why is my tax high?",
+    "prompt_expenses": "How are my expenses?",
+    "prompt_missing": "What is missing?",
+    "response_tax": "Estimated tax due is about",
+    "response_expenses": "Your expense ratio is",
+    "response_missing": "Missing categories:",
+    "response_generic": "Keep categorising and attach receipts for better accuracy.",
+    "input_placeholder": "Ask a question…",
+    "ask_button": "Ask"
+  },
   "transactions": {
     "title": "Transactions",
     "subtitle": "Categorise and track your income and expenses.",

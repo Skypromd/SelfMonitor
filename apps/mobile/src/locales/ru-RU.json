@@ -186,6 +186,27 @@
     "export_error": "Ошибка экспорта.",
     "offline_error": "Нет сети. Экспорт онлайн."
   },
+  "assistant": {
+    "title": "AI помощник",
+    "subtitle": "Инсайты и подсказки по налогам.",
+    "welcome": "Привет! Могу объяснить цифры и подсказать шаги.",
+    "insights_title": "Ваши инсайты",
+    "insights_income": "Доход",
+    "insights_expenses": "Расходы",
+    "insights_ratio": "Доля расходов",
+    "insights_missing": "Без категории",
+    "insights_tax": "Оценка налога",
+    "quick_prompts": "Быстрые вопросы",
+    "prompt_tax": "Почему налог высокий?",
+    "prompt_expenses": "Как мои расходы?",
+    "prompt_missing": "Что не заполнено?",
+    "response_tax": "Оценка налога примерно",
+    "response_expenses": "Доля расходов около",
+    "response_missing": "Без категории:",
+    "response_generic": "Категоризируйте и добавьте чеки.",
+    "input_placeholder": "Задайте вопрос…",
+    "ask_button": "Спросить"
+  },
   "transactions": {
     "title": "Транзакции",
     "subtitle": "Категоризируйте доходы и расходы.",

@@ -186,6 +186,27 @@
     "export_error": "Export fehlgeschlagen.",
     "offline_error": "Offline. Export online."
   },
+  "assistant": {
+    "title": "KI-Assistent",
+    "subtitle": "Einblicke und Hilfe für Steuern.",
+    "welcome": "Hi! Ich erkläre dir Zahlen und nächste Schritte.",
+    "insights_title": "Deine Insights",
+    "insights_income": "Einnahmen",
+    "insights_expenses": "Ausgaben",
+    "insights_ratio": "Kostenquote",
+    "insights_missing": "Fehlende Kategorien",
+    "insights_tax": "Steuerschätzung",
+    "quick_prompts": "Schnellfragen",
+    "prompt_tax": "Warum ist meine Steuer hoch?",
+    "prompt_expenses": "Wie sind meine Ausgaben?",
+    "prompt_missing": "Was fehlt noch?",
+    "response_tax": "Geschätzte Steuer ist",
+    "response_expenses": "Deine Kostenquote ist",
+    "response_missing": "Fehlende Kategorien:",
+    "response_generic": "Kategorisieren und Belege hinzufügen hilft.",
+    "input_placeholder": "Stelle eine Frage…",
+    "ask_button": "Fragen"
+  },
   "transactions": {
     "title": "Transaktionen",
     "subtitle": "Einnahmen und Ausgaben kategorisieren.",
