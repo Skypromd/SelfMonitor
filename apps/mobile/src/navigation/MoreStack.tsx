@@ -15,6 +15,7 @@ import DeadlinesScreen from '../screens/DeadlinesScreen';
 import AccountantShareScreen from '../screens/AccountantShareScreen';
 import AssistantScreen from '../screens/AssistantScreen';
 import UpgradeScreen from '../screens/UpgradeScreen';
+import RulesScreen from '../screens/RulesScreen';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors } from '../theme';
 
@@ -33,6 +34,7 @@ export type MoreStackParamList = {
   AccountantShare: undefined;
   Assistant: undefined;
   Upgrade: undefined;
+  Rules: undefined;
 };
 
 const Stack = createNativeStackNavigator<MoreStackParamList>();
@@ -62,6 +64,7 @@ export default function MoreStack() {
       <Stack.Screen name="AccountantShare" component={AccountantShareScreen} options={{ title: t('accountant.title') }} />
       <Stack.Screen name="Assistant" component={AssistantScreen} options={{ title: t('assistant.title') }} />
       <Stack.Screen name="Upgrade" component={UpgradeScreen} options={{ title: t('upgrade.title') }} />
+      <Stack.Screen name="Rules" component={RulesScreen} options={{ title: t('rules.title') }} />
     </Stack.Navigator>
   );
 }
