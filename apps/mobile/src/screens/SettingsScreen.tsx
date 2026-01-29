@@ -9,7 +9,14 @@ import { useTranslation } from '../hooks/useTranslation';
 import { useI18n } from '../context/I18nContext';
 import { colors, spacing } from '../theme';
 
-const LOCALES = ['en-GB', 'de-DE', 'ru-RU', 'ro-MD', 'uk-UA', 'pl-PL'];
+const LOCALES = [
+  { code: 'en-GB', label: 'English (UK)' },
+  { code: 'de-DE', label: 'German' },
+  { code: 'ru-RU', label: 'Russian' },
+  { code: 'ro-MD', label: 'Romanian (MD)' },
+  { code: 'uk-UA', label: 'Ukrainian' },
+  { code: 'pl-PL', label: 'Polish' },
+];
 const PREFS_KEY = 'settings.preferences.v1';
 
 export default function SettingsScreen() {
@@ -51,13 +58,13 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>{t('settings.language_label')}</Text>
         <View style={styles.localeRow}>
           {LOCALES.map((item) => (
-            <View key={item} style={styles.localeItem}>
+            <View key={item.code} style={styles.localeItem}>
               <Pressable
-                onPress={() => setLocale(item)}
-                style={[styles.localePill, locale === item && styles.localePillActive]}
+                onPress={() => setLocale(item.code)}
+                style={[styles.localePill, locale === item.code && styles.localePillActive]}
               >
-                <Text style={[styles.localeText, locale === item && styles.localeTextActive]}>
-                  {item.split('-')[0].toUpperCase()}
+                <Text style={[styles.localeText, locale === item.code && styles.localeTextActive]}>
+                  {item.label}
                 </Text>
               </Pressable>
             </View>

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import * as Localization from 'expo-localization';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import enGB from '../locales/en-GB.json';
 import deDE from '../locales/de-DE.json';
@@ -25,6 +26,33 @@ const fallbackTranslations: Record<string, Translations> = {
   'pl-PL': plPL,
 };
 
+const LOCALE_STORAGE_KEY = 'settings.locale.v1';
+
+const normalizeLocale = (tag?: string) => {
+  if (!tag) return 'en-GB';
+  if (fallbackTranslations[tag]) return tag;
+  const lower = tag.toLowerCase();
+  const aliasMap: Record<string, string> = {
+    en: 'en-GB',
+    'en-gb': 'en-GB',
+    'en-us': 'en-GB',
+    de: 'de-DE',
+    'de-de': 'de-DE',
+    ru: 'ru-RU',
+    'ru-ru': 'ru-RU',
+    ro: 'ro-MD',
+    'ro-ro': 'ro-MD',
+    'ro-md': 'ro-MD',
+    uk: 'uk-UA',
+    'uk-ua': 'uk-UA',
+    pl: 'pl-PL',
+    'pl-pl': 'pl-PL',
+  };
+  if (aliasMap[lower]) return aliasMap[lower];
+  const base = lower.split('-')[0];
+  return aliasMap[base] || 'en-GB';
+};
+
 const I18nContext = createContext<I18nContextValue>({
   locale: 'en-GB',
   translations: enGB,
@@ -36,9 +64,35 @@ const LOCALIZATION_URL = process.env.EXPO_PUBLIC_LOCALIZATION_SERVICE_URL || `${
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   const deviceLocale = Localization.getLocales()[0]?.languageTag || 'en-GB';
-  const initialLocale = fallbackTranslations[deviceLocale] ? deviceLocale : 'en-GB';
-  const [locale, setLocale] = useState(initialLocale);
+  const initialLocale = normalizeLocale(deviceLocale);
+  const [locale, setLocaleState] = useState(initialLocale);
   const [translations, setTranslations] = useState<Translations>(fallbackTranslations[initialLocale]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadStoredLocale = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(LOCALE_STORAGE_KEY);
+        if (!mounted || !stored) return;
+        const normalized = normalizeLocale(stored);
+        setLocaleState(normalized);
+      } catch {
+        return;
+      }
+    };
+    loadStoredLocale();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const setLocale = (nextLocale: string) => {
+    const normalized = normalizeLocale(nextLocale);
+    setLocaleState(normalized);
+    AsyncStorage.setItem(LOCALE_STORAGE_KEY, normalized).catch(() => {
+      return;
+    });
+  };
 
   useEffect(() => {
     const loadTranslations = async () => {

@@ -17,6 +17,11 @@ npm install
 ```
 npm start
 ```
+You can also target a platform:
+```
+npm run android
+npm run ios
+```
 
 ## Environment variables
 Set these before running (optional):
@@ -25,6 +30,10 @@ Set these before running (optional):
 - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (Stripe Checkout link)
 - `EXPO_PUBLIC_STRIPE_CHECKOUT_ANNUAL_URL` (optional annual link)
 - `EXPO_PUBLIC_STRIPE_PORTAL_URL` (billing portal link)
+Tip: copy `.env.example` to `.env` and fill values.
+
+## Languages
+- en-GB, de-DE, ru-RU, ro-MD, uk-UA, pl-PL
 
 ## Screens
 - Dashboard (Tax Readiness + Cash Flow)
