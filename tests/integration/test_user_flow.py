@@ -2,9 +2,18 @@ import httpx
 import uuid
 import time
 import os
+import pytest
 
 # URL'ы наших сервисов, как они доступны снаружи Docker через API Gateway
 API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:8000/api")
+
+def _ensure_integration_ready():
+    if os.getenv("RUN_INTEGRATION_TESTS") != "1":
+        pytest.skip("Integration tests disabled. Set RUN_INTEGRATION_TESTS=1 to run.")
+    try:
+        httpx.get(API_GATEWAY_URL, timeout=2.0)
+    except Exception:
+        pytest.skip("API Gateway not reachable.")
 
 def test_user_registration_and_profile_creation():
     """
@@ -16,9 +25,10 @@ def test_user_registration_and_profile_creation():
     password = "a_strong_password"
 
     # 1. Register a new user in auth-service
+    _ensure_integration_ready()
     reg_response = httpx.post(
         f"{API_GATEWAY_URL}/auth/register",
-        json={"email": unique_email, "password": password}
+        data={"username": unique_email, "password": password}
     )
     assert reg_response.status_code == 201
     print(f"User {unique_email} registered successfully.")
@@ -69,12 +79,13 @@ def test_full_transaction_import_flow():
     5. The final, categorized data is written to the database.
     """
     # 1. Trigger the flow by calling the banking-connector callback
+    _ensure_integration_ready()
     callback_response = httpx.get(
         f"{API_GATEWAY_URL}/banking/connections/callback?code=integration-test-code"
     )
     assert callback_response.status_code == 200
     callback_data = callback_response.json()
-    account_id = callback_data["connection_id"]
+    account_id = callback_data["account_id"]
     print(f"Callback successful. Account ID: {account_id}. Celery task ID: {callback_data['task_id']}")
 
     # 2. Wait for the asynchronous processing to complete.

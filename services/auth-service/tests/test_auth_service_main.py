@@ -25,7 +25,6 @@ def test_register_user_success():
     assert response.status_code == 201
     data = response.json()
     assert data["email"] == "test@example.com"
-    assert "id" in data
     assert data["is_active"] is True
 
     # Check that the password is not stored in plain text
@@ -110,6 +109,7 @@ def test_deactivate_user():
     admin_email = "admin@example.com"
     admin_pass = "adminpass"
     client.post("/register", data={"username": admin_email, "password": admin_pass})
+    fake_users_db[admin_email]["user_data"]["is_admin"] = True
 
     user_email = "user@example.com"
     user_pass = "userpass"

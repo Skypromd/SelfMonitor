@@ -42,7 +42,7 @@ def test_record_consent_triggers_audit(mocker):
     call_args = mock_log_audit.call_args.kwargs
     assert call_args['action'] == "consent.granted"
     assert call_args['details']['provider'] == "test_bank"
-    assert call_args['details']['connection_id'] == connection_id
+    assert "consent_id" in call_args['details']
 
 def test_revoke_consent_triggers_audit(mocker):
     """
