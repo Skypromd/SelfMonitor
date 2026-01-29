@@ -11,16 +11,27 @@ from .providers import get_provider, list_providers
 # --- Vault Client Setup ---
 VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "dev-root-token")
+VAULT_DISABLED = os.getenv("VAULT_DISABLED", "").lower() in {"1", "true", "yes"}
 
-vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
-if vault_client.is_authenticated():
-    print("Successfully authenticated with Vault.")
+vault_client = None
+if VAULT_DISABLED:
+    print("Vault disabled. Skipping Vault initialization.")
 else:
-    print("Error: Could not authenticate with Vault.")
+    vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
+    try:
+        if vault_client.is_authenticated():
+            print("Successfully authenticated with Vault.")
+        else:
+            print("Error: Could not authenticate with Vault.")
+    except Exception as exc:
+        print(f"Vault unavailable: {exc}")
 
 
 def save_connection_metadata(connection_id: str, metadata: dict):
     """Saves provider metadata to Vault."""
+    if not vault_client:
+        print("Vault client unavailable. Skipping metadata storage.")
+        return
     secret_path = f"kv/banking-connections/{connection_id}"
     try:
         vault_client.secrets.kv.v2.create_or_update_secret(
