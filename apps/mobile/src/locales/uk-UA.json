@@ -12,7 +12,9 @@
     "last_sync": "Остання синхронізація",
     "not_available": "Недоступно",
     "sync_now": "Синхронізувати зараз",
-    "syncing": "Синхронізація..."
+    "syncing": "Синхронізація...",
+    "cached_label": "Кеш",
+    "cached_notice": "Показано кешовані дані."
   },
   "auth": {
     "welcome_title": "Асистент Self Assessment",

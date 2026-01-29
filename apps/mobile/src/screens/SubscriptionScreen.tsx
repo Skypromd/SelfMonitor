@@ -32,12 +32,17 @@ export default function SubscriptionScreen() {
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [isCached, setIsCached] = useState(false);
 
   useEffect(() => {
     const fetchSubscription = async () => {
       try {
-        const response = await apiRequest('/profile/subscriptions/me', { token });
-        if (!response.ok) return;
+        const response = await apiRequest('/profile/subscriptions/me', { token, cacheKey: 'subscription.me' });
+        if (!response.ok) {
+          setError(t('subscription.load_error'));
+          return;
+        }
+        setIsCached(Boolean((response as Response & { cached?: boolean }).cached));
         const data = await response.json();
         setSubscription({
           subscription_plan: data.subscription_plan || 'free',
@@ -105,6 +110,12 @@ export default function SubscriptionScreen() {
       <SectionHeader title={t('subscription.title')} subtitle={t('subscription.subtitle')} />
       <FadeInView>
         <Card>
+          {isCached ? (
+            <View style={styles.cachedRow}>
+              <Badge label={t('common.cached_label')} tone="info" />
+              <Text style={styles.cachedText}>{t('common.cached_notice')}</Text>
+            </View>
+          ) : null}
           <Text style={styles.label}>{t('subscription.plan_label')}</Text>
           <View style={styles.planRow}>
             {['free', 'pro'].map((plan, index) => (
@@ -180,6 +191,16 @@ const styles = StyleSheet.create({
   planRow: {
     flexDirection: 'row',
     marginBottom: spacing.md,
+  },
+  cachedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  cachedText: {
+    marginLeft: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   planItem: {
     flex: 1,

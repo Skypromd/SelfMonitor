@@ -13,13 +13,15 @@ export const useSubscriptionPlan = () => {
   const [billingCycle, setBillingCycle] = useState<string>('monthly');
   const [currentPeriodEnd, setCurrentPeriodEnd] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isCached, setIsCached] = useState(false);
 
   const refresh = async () => {
     if (!token) return;
     setIsLoading(true);
     try {
-      const response = await apiRequest('/profile/subscriptions/me', { token });
+      const response = await apiRequest('/profile/subscriptions/me', { token, cacheKey: 'subscription.me' });
       if (!response.ok) return;
+      setIsCached(Boolean((response as Response & { cached?: boolean }).cached));
       const data = await response.json();
       setPlan((data.subscription_plan || 'free') as SubscriptionPlan);
       setStatus((data.subscription_status || 'active') as SubscriptionStatus);
@@ -43,5 +45,5 @@ export const useSubscriptionPlan = () => {
     return Math.max(days, 0);
   })();
 
-  return { plan, status, billingCycle, currentPeriodEnd, trialDaysLeft, isLoading, refresh };
+  return { plan, status, billingCycle, currentPeriodEnd, trialDaysLeft, isLoading, isCached, refresh };
 };

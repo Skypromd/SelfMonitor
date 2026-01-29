@@ -12,7 +12,9 @@
     "last_sync": "Последняя синхронизация",
     "not_available": "Нет данных",
     "sync_now": "Синхронизировать",
-    "syncing": "Синхронизация..."
+    "syncing": "Синхронизация...",
+    "cached_label": "Кэш",
+    "cached_notice": "Показаны данные из кэша."
   },
   "auth": {
     "welcome_title": "Self-Assessment помощник",

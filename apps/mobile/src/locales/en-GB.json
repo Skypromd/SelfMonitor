@@ -12,7 +12,9 @@
     "last_sync": "Last sync",
     "not_available": "Not available",
     "sync_now": "Sync now",
-    "syncing": "Syncing..."
+    "syncing": "Syncing...",
+    "cached_label": "Cached",
+    "cached_notice": "Showing cached data."
   },
   "auth": {
     "welcome_title": "Self Assessment Assistant",

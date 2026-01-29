@@ -36,7 +36,7 @@ type Transaction = {
 
 export default function DashboardScreen() {
   const { token } = useAuth();
-  const { t } = useTranslation();
+  const { t, tDynamic } = useTranslation();
   const navigation = useNavigation();
   const { isOffline } = useNetworkStatus();
   const { plan, status, trialDaysLeft } = useSubscriptionPlan();
@@ -320,8 +320,8 @@ export default function DashboardScreen() {
               {syncLog.map((entry) => (
                 <ListItem
                   key={entry.id}
-                  title={t(`sync.action_${entry.action}`)}
-                  subtitle={`${t(`sync.status_${entry.status}`)} · ${new Date(entry.createdAt).toLocaleTimeString()}`}
+                  title={tDynamic(`sync.action_${entry.action}`)}
+                  subtitle={`${tDynamic(`sync.status_${entry.status}`)} · ${new Date(entry.createdAt).toLocaleTimeString()}`}
                   icon={entry.status === 'synced' ? 'checkmark-circle-outline' : entry.status === 'failed' ? 'alert-circle-outline' : 'time-outline'}
                 />
               ))}

@@ -7,9 +7,10 @@ import Card from '../components/Card';
 import Screen from '../components/Screen';
 import { useTranslation } from '../hooks/useTranslation';
 import { useI18n } from '../context/I18nContext';
+import type { TranslationKey } from '../locales/translationKeys';
 import { colors, spacing } from '../theme';
 
-const LOCALES = [
+const LOCALES: { code: string; labelKey: TranslationKey; fallback: string }[] = [
   { code: 'en-GB', labelKey: 'settings.language_en_gb', fallback: 'English (UK)' },
   { code: 'de-DE', labelKey: 'settings.language_de_de', fallback: 'Deutsch' },
   { code: 'ru-RU', labelKey: 'settings.language_ru_ru', fallback: 'Russian' },

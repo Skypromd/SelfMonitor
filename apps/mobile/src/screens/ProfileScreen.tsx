@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
@@ -7,6 +7,7 @@ import PrimaryButton from '../components/PrimaryButton';
 import Screen from '../components/Screen';
 import InputField from '../components/InputField';
 import FadeInView from '../components/FadeInView';
+import Badge from '../components/Badge';
 import { apiRequest } from '../services/api';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { enqueueProfileUpdate } from '../services/offlineQueue';
@@ -21,12 +22,17 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState({ first_name: '', last_name: '', date_of_birth: '' });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [isCached, setIsCached] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const response = await apiRequest('/profile/profiles/me', { token });
-        if (!response.ok) return;
+        const response = await apiRequest('/profile/profiles/me', { token, cacheKey: 'profile.me' });
+        if (!response.ok) {
+          setError(t('profile.load_error'));
+          return;
+        }
+        setIsCached(Boolean((response as Response & { cached?: boolean }).cached));
         const data = await response.json();
         setProfile({
           first_name: data.first_name || '',
@@ -79,6 +85,12 @@ export default function ProfileScreen() {
       <SectionHeader title={t('profile.title')} subtitle={t('profile.subtitle')} />
       <FadeInView>
         <Card>
+          {isCached ? (
+            <View style={styles.cachedRow}>
+              <Badge label={t('common.cached_label')} tone="info" />
+              <Text style={styles.cachedText}>{t('common.cached_notice')}</Text>
+            </View>
+          ) : null}
           <InputField
             label={t('profile.first_name')}
             placeholder={t('profile.first_name')}
@@ -110,6 +122,16 @@ const styles = StyleSheet.create({
   message: {
     marginTop: spacing.md,
     color: colors.success,
+  },
+  cachedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  cachedText: {
+    marginLeft: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   error: {
     marginTop: spacing.md,

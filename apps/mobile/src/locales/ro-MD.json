@@ -12,7 +12,9 @@
     "last_sync": "Ultima sincronizare",
     "not_available": "Indisponibil",
     "sync_now": "Sincronizează acum",
-    "syncing": "Se sincronizează..."
+    "syncing": "Se sincronizează...",
+    "cached_label": "Cache",
+    "cached_notice": "Se afișează datele din cache."
   },
   "auth": {
     "welcome_title": "Asistent Self Assessment",

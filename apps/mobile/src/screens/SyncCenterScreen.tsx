@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
 
 export default function SyncCenterScreen() {
-  const { t } = useTranslation();
+  const { t, tDynamic } = useTranslation();
   const { isOffline } = useNetworkStatus();
   const { token } = useAuth();
   const [queuedCount, setQueuedCount] = useState(0);
@@ -96,8 +96,8 @@ export default function SyncCenterScreen() {
           logEntries.map((entry) => (
             <ListItem
               key={entry.id}
-              title={t(`sync.action_${entry.action}`)}
-              subtitle={`${t(`sync.status_${entry.status}`)} · ${new Date(entry.createdAt).toLocaleString()}`}
+              title={tDynamic(`sync.action_${entry.action}`)}
+              subtitle={`${tDynamic(`sync.status_${entry.status}`)} · ${new Date(entry.createdAt).toLocaleString()}`}
               icon={entry.status === 'synced' ? 'checkmark-circle-outline' : entry.status === 'failed' ? 'alert-circle-outline' : 'time-outline'}
             />
           ))

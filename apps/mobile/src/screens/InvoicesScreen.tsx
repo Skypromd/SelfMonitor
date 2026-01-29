@@ -34,7 +34,7 @@ const CLIENTS_KEY = 'invoices.clients.v1';
 const INVOICES_KEY = 'invoices.list.v1';
 
 export default function InvoicesScreen() {
-  const { t } = useTranslation();
+  const { t, tDynamic } = useTranslation();
   const [tab, setTab] = useState<'invoices' | 'clients'>('invoices');
   const [clients, setClients] = useState<Client[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -201,7 +201,7 @@ export default function InvoicesScreen() {
                     title={`${invoice.clientName} · GBP ${invoice.amount.toFixed(2)}`}
                     subtitle={`${invoice.dueDate}`}
                     icon="receipt-outline"
-                    badge={<Badge label={t(`invoices.status_${invoice.status}`)} tone={invoice.status === 'paid' ? 'success' : 'warning'} />}
+                    badge={<Badge label={tDynamic(`invoices.status_${invoice.status}`)} tone={invoice.status === 'paid' ? 'success' : 'warning'} />}
                     onPress={() => togglePaid(invoice)}
                   />
                 ))
