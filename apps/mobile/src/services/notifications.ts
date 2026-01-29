@@ -34,3 +34,27 @@ export const notifyReportReady = async (title: string, body: string) => {
     return;
   }
 };
+
+export const scheduleReminder = async (title: string, body: string, date: Date) => {
+  const allowed = await ensureNotificationPermission();
+  if (!allowed) return;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title,
+        body,
+      },
+      trigger: date,
+    });
+  } catch {
+    return;
+  }
+};
+
+export const cancelAllScheduled = async () => {
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch {
+    return;
+  }
+};
