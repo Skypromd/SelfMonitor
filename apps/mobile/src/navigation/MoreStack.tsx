@@ -7,6 +7,7 @@ import SubscriptionScreen from '../screens/SubscriptionScreen';
 import MarketplaceScreen from '../screens/MarketplaceScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import SupportScreen from '../screens/SupportScreen';
+import SyncCenterScreen from '../screens/SyncCenterScreen';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors } from '../theme';
 
@@ -17,6 +18,7 @@ export type MoreStackParamList = {
   Marketplace: undefined;
   Settings: undefined;
   Support: undefined;
+  SyncCenter: undefined;
 };
 
 const Stack = createNativeStackNavigator<MoreStackParamList>();
@@ -38,6 +40,7 @@ export default function MoreStack() {
       <Stack.Screen name="Marketplace" component={MarketplaceScreen} options={{ title: t('marketplace.title') }} />
       <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: t('settings.title') }} />
       <Stack.Screen name="Support" component={SupportScreen} options={{ title: t('support.title') }} />
+      <Stack.Screen name="SyncCenter" component={SyncCenterScreen} options={{ title: t('sync.center_title') }} />
     </Stack.Navigator>
   );
 }

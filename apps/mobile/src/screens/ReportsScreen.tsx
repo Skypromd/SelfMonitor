@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
@@ -14,6 +15,7 @@ import DonutChart from '../components/DonutChart';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
+import { enqueueReportRequest } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
 
@@ -49,6 +51,8 @@ export default function ReportsScreen() {
   const [summary, setSummary] = useState<PeriodSummary | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCached, setIsCached] = useState(false);
+  const [cachedAt, setCachedAt] = useState<string | null>(null);
 
   const sortedCategories = summary?.summary_by_category
     ? [...summary.summary_by_category].sort((a, b) => Math.abs(b.net_total) - Math.abs(a.net_total))
@@ -58,6 +62,7 @@ export default function ReportsScreen() {
     : 0;
   const expenseRatio = summary && summary.total_income > 0 ? summary.total_expenses / summary.total_income : 0;
   const profitMargin = summary && summary.total_income > 0 ? summary.net_profit / summary.total_income : 0;
+  const cachedLabel = cachedAt ? new Date(cachedAt).toLocaleString() : t('common.not_available');
 
   const fetchCadence = async () => {
     try {
@@ -71,17 +76,25 @@ export default function ReportsScreen() {
 
   useEffect(() => {
     fetchCadence();
+    const loadCachedSummary = async () => {
+      try {
+        const cached = await AsyncStorage.getItem('reports.cache.latest');
+        if (cached) {
+          const data = JSON.parse(cached);
+          setSummary(data.summary);
+          setIsCached(true);
+          setCachedAt(data.updatedAt);
+        }
+      } catch {
+        return;
+      }
+    };
+    loadCachedSummary();
   }, [token]);
 
   const runReport = async (type: 'monthly' | 'quarterly' | 'profit_loss' | 'tax_year' | 'mortgage') => {
     setMessage('');
     setError('');
-    setSummary(null);
-    if (isOffline) {
-      setError(t('reports.offline_error'));
-      return;
-    }
-    setIsLoading(true);
     try {
       const now = new Date();
       const year = now.getFullYear();
@@ -100,6 +113,16 @@ export default function ReportsScreen() {
         mortgage: '/analytics/reports/mortgage-readiness',
       };
 
+      if (isOffline) {
+        await enqueueReportRequest(type, pathMap[type]);
+        setMessage(t('reports.offline_queued'));
+        return;
+      }
+
+      setSummary(null);
+      setIsCached(false);
+      setIsLoading(true);
+
       const response = await apiRequest(pathMap[type], { token });
       if (response.status === 402) {
         setError(t('reports.pro_required'));
@@ -112,6 +135,17 @@ export default function ReportsScreen() {
       }
       const data = await response.json();
       setSummary(data);
+      setIsCached(false);
+      setCachedAt(new Date().toISOString());
+      try {
+        await AsyncStorage.setItem('reports.cache.latest', JSON.stringify({
+          summary: data,
+          updatedAt: new Date().toISOString(),
+          type,
+        }));
+      } catch {
+        return;
+      }
       const messageMap = {
         monthly: t('reports.monthly_message'),
         quarterly: t('reports.quarterly_message'),
@@ -196,12 +230,16 @@ export default function ReportsScreen() {
       {summary ? (
         <FadeInView delay={280}>
           <Card>
-            <Text style={styles.cardTitle}>{t('reports.summary_title')}</Text>
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{t('reports.summary_title')}</Text>
+              {isCached ? <Badge label={t('reports.cached_badge')} tone="info" /> : null}
+            </View>
             <InfoRow label={t('reports.summary_income')} value={`GBP ${summary.total_income.toFixed(2)}`} />
             <InfoRow label={t('reports.summary_expenses')} value={`GBP ${summary.total_expenses.toFixed(2)}`} />
             <InfoRow label={t('reports.summary_net')} value={`GBP ${summary.net_profit.toFixed(2)}`} />
             <InfoRow label={t('reports.summary_count')} value={`${summary.transaction_count}`} />
             <InfoRow label={t('reports.summary_period')} value={`${summary.start_date} → ${summary.end_date}`} />
+            {isCached ? <Text style={styles.cachedNotice}>{t('reports.cached_notice')} {cachedLabel}</Text> : null}
           </Card>
         </FadeInView>
       ) : null}
@@ -281,6 +319,11 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.md,
     color: colors.danger,
+  },
+  cachedNotice: {
+    marginTop: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   categoryList: {
     marginTop: spacing.md,

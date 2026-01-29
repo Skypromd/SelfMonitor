@@ -164,13 +164,21 @@
     "performance_title": "Performance",
     "profit_margin": "Gewinnmarge",
     "expense_ratio": "Kostenquote",
-    "offline_error": "Offline. Berichte online erstellen."
+    "offline_error": "Offline. Berichte online erstellen.",
+    "offline_queued": "Für Sync vorgemerkt.",
+    "cached_badge": "Zwischengespeichert",
+    "cached_notice": "Zwischengespeichert am"
   },
   "sync": {
+    "center_title": "Sync-Zentrum",
+    "center_subtitle": "Offline-Änderungen und Sync-Verlauf.",
+    "activity_title": "Letzte Sync-Aktivität",
+    "activity_subtitle": "Zuletzt wartende und synchronisierte Änderungen.",
     "empty": "Noch keine Sync-Aktivität.",
     "action_category": "Kategorisierung",
     "action_profile": "Profil-Update",
     "action_subscription": "Abo-Update",
+    "action_report": "Berichtsanfrage",
     "status_queued": "In Warteschlange",
     "status_synced": "Synchronisiert",
     "status_failed": "Fehlgeschlagen"

@@ -164,13 +164,21 @@
     "performance_title": "Performance",
     "profit_margin": "Profit margin",
     "expense_ratio": "Expense ratio",
-    "offline_error": "You're offline. Generate reports when online."
+    "offline_error": "You're offline. Generate reports when online.",
+    "offline_queued": "Queued for sync when online.",
+    "cached_badge": "Cached",
+    "cached_notice": "Cached summary from"
   },
   "sync": {
+    "center_title": "Sync Center",
+    "center_subtitle": "Track offline updates and sync history.",
+    "activity_title": "Recent sync activity",
+    "activity_subtitle": "Latest queued and synced changes.",
     "empty": "No sync activity yet.",
     "action_category": "Category update",
     "action_profile": "Profile update",
     "action_subscription": "Subscription update",
+    "action_report": "Report request",
     "status_queued": "Queued",
     "status_synced": "Synced",
     "status_failed": "Failed"

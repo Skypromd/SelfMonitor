@@ -164,13 +164,21 @@
     "performance_title": "Эффективность",
     "profit_margin": "Маржа прибыли",
     "expense_ratio": "Доля расходов",
-    "offline_error": "Нет сети. Отчеты доступны онлайн."
+    "offline_error": "Нет сети. Отчеты доступны онлайн.",
+    "offline_queued": "Поставлено в очередь синка.",
+    "cached_badge": "Кэш",
+    "cached_notice": "Кэшировано"
   },
   "sync": {
+    "center_title": "Центр синхронизации",
+    "center_subtitle": "Оффлайн-изменения и история синка.",
+    "activity_title": "Последние синки",
+    "activity_subtitle": "Очередь и успешно синхронизированные.",
     "empty": "Нет событий синхронизации.",
     "action_category": "Категория",
     "action_profile": "Профиль",
     "action_subscription": "Подписка",
+    "action_report": "Отчет",
     "status_queued": "В очереди",
     "status_synced": "Синхронизировано",
     "status_failed": "Ошибка"

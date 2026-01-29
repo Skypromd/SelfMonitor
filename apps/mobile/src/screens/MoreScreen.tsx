@@ -21,6 +21,7 @@ export default function MoreScreen() {
         <Card>
           <ListItem title={t('profile.title')} icon="person-outline" onPress={() => navigation.navigate('Profile' as never)} />
           <ListItem title={t('subscription.title')} icon="ribbon-outline" onPress={() => navigation.navigate('Subscription' as never)} />
+          <ListItem title={t('sync.center_title')} icon="sync-outline" onPress={() => navigation.navigate('SyncCenter' as never)} />
           <ListItem title={t('marketplace.title')} icon="grid-outline" onPress={() => navigation.navigate('Marketplace' as never)} />
           <ListItem title={t('settings.title')} icon="settings-outline" onPress={() => navigation.navigate('Settings' as never)} />
           <ListItem title={t('support.title')} icon="help-circle-outline" onPress={() => navigation.navigate('Support' as never)} />

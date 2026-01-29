@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
@@ -19,6 +20,7 @@ type InteractiveLineChartProps = {
   label?: string;
   valueFormatter?: (value: number) => string;
   enableZoom?: boolean;
+  showTooltip?: boolean;
 };
 
 export default function InteractiveLineChart({
@@ -30,6 +32,7 @@ export default function InteractiveLineChart({
   label,
   valueFormatter,
   enableZoom = false,
+  showTooltip = true,
 }: InteractiveLineChartProps) {
   const [width, setWidth] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(Math.max(data.length - 1, 0));
@@ -81,10 +84,22 @@ export default function InteractiveLineChart({
   const displayLabel = typeof displayValue === 'number'
     ? (valueFormatter ? valueFormatter(displayValue) : displayValue.toFixed(2))
     : '--';
+  const tooltipWidth = 120;
+  const tooltipHeight = 36;
+  const tooltipLeft = selectedPoint
+    ? Math.min(Math.max(selectedPoint.x - tooltipWidth / 2, 0), Math.max(width - tooltipWidth, 0))
+    : 0;
+  const tooltipTop = selectedPoint ? Math.max(selectedPoint.y - tooltipHeight - 8, 0) : 0;
 
   const handleTouch = (event: any) => {
     if (!width || data.length <= 1) return;
     const x = event.nativeEvent.locationX;
+    const index = Math.round((x / width) * (data.length - 1));
+    setSelectedIndex(Math.max(0, Math.min(data.length - 1, index)));
+  };
+
+  const selectIndexFromX = (x: number) => {
+    if (!width || data.length <= 1) return;
     const index = Math.round((x / width) * (data.length - 1));
     setSelectedIndex(Math.max(0, Math.min(data.length - 1, index)));
   };
@@ -125,6 +140,10 @@ export default function InteractiveLineChart({
       translateY.value = clamp(startY.value + event.translationY, -maxTranslateY.value, maxTranslateY.value);
     });
 
+  const tapGesture = Gesture.Tap().onStart((event) => {
+    runOnJS(selectIndexFromX)(event.x);
+  });
+
   const chartStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
@@ -137,14 +156,14 @@ export default function InteractiveLineChart({
     <View
       onLayout={onLayout}
       style={[styles.container, { height }]}
-      onStartShouldSetResponder={() => true}
-      onMoveShouldSetResponder={() => true}
+      onStartShouldSetResponder={() => !enableZoom}
+      onMoveShouldSetResponder={() => !enableZoom}
       onResponderGrant={enableZoom ? undefined : handleTouch}
       onResponderMove={enableZoom ? undefined : handleTouch}
     >
       {path ? (
         enableZoom ? (
-          <GestureDetector gesture={Gesture.Simultaneous(pinchGesture, panGesture)}>
+          <GestureDetector gesture={Gesture.Simultaneous(pinchGesture, panGesture, tapGesture)}>
             <Animated.View style={chartStyle}>
               <Svg width={width} height={height}>
                 <Defs>
@@ -201,6 +220,14 @@ export default function InteractiveLineChart({
       ) : (
         <View style={styles.placeholder} />
       )}
+      {showTooltip && selectedPoint ? (
+        <View
+          pointerEvents="none"
+          style={[styles.tooltip, { width: tooltipWidth, top: tooltipTop, left: tooltipLeft }]}
+        >
+          <Text style={styles.tooltipText}>{displayLabel}</Text>
+        </View>
+      ) : null}
       <View style={styles.labelRow}>
         {label ? <Text style={styles.label}>{label}</Text> : null}
         <Text style={styles.value}>{displayLabel ?? '--'}</Text>
@@ -239,5 +266,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     color: colors.textSecondary,
     fontSize: 11,
+  },
+  tooltip: {
+    position: 'absolute',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  tooltipText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '600',
   },
 });

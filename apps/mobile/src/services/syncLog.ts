@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const LOG_KEY = 'sync.log.v1';
 
-export type SyncAction = 'category' | 'profile' | 'subscription';
+export type SyncAction = 'category' | 'profile' | 'subscription' | 'report';
 export type SyncStatus = 'queued' | 'synced' | 'failed';
 
 export type SyncLogEntry = {

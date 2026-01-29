@@ -36,7 +36,17 @@ type SubscriptionUpdateAction = {
   createdAt: string;
 };
 
-type OfflineAction = CategoryUpdateAction | ProfileUpdateAction | SubscriptionUpdateAction;
+type ReportRequestAction = {
+  id: string;
+  type: 'report_request';
+  payload: {
+    reportType: string;
+    path: string;
+  };
+  createdAt: string;
+};
+
+type OfflineAction = CategoryUpdateAction | ProfileUpdateAction | SubscriptionUpdateAction | ReportRequestAction;
 
 const loadQueue = async (): Promise<OfflineAction[]> => {
   try {
@@ -108,6 +118,23 @@ export const enqueueSubscriptionUpdate = async (payload: SubscriptionUpdateActio
   return filtered.length;
 };
 
+export const enqueueReportRequest = async (reportType: string, path: string) => {
+  const queue = await loadQueue();
+  const filtered = queue.filter(
+    (item) => !(item.type === 'report_request' && item.payload.reportType === reportType)
+  );
+  const next: ReportRequestAction = {
+    id: `report-${reportType}-${Date.now()}`,
+    type: 'report_request',
+    payload: { reportType, path },
+    createdAt: new Date().toISOString(),
+  };
+  filtered.push(next);
+  await saveQueue(filtered);
+  await addSyncLogEntry('report', 'queued');
+  return filtered.length;
+};
+
 export const flushQueue = async (token: string | null) => {
   if (!token) return { flushed: 0, remaining: 0 };
   let queue = await loadQueue();
@@ -156,6 +183,33 @@ export const flushQueue = async (token: string | null) => {
       }
       flushed += 1;
       await addSyncLogEntry('subscription', 'synced');
+      queue = queue.filter((entry) => entry.id !== item.id);
+      await saveQueue(queue);
+    }
+    if (item.type === 'report_request') {
+      const response = await apiRequest(item.payload.path, { token });
+      if (!response.ok) {
+        await addSyncLogEntry('report', 'failed');
+        break;
+      }
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        try {
+          const data = await response.json();
+          await AsyncStorage.setItem(
+            'reports.cache.latest',
+            JSON.stringify({
+              summary: data,
+              updatedAt: new Date().toISOString(),
+              type: item.payload.reportType,
+            })
+          );
+        } catch {
+          return { flushed, remaining: queue.length };
+        }
+      }
+      flushed += 1;
+      await addSyncLogEntry('report', 'synced');
       queue = queue.filter((entry) => entry.id !== item.id);
       await saveQueue(queue);
     }
