@@ -15,9 +15,12 @@ import InfoRow from '../components/InfoRow';
 import PulseDot from '../components/PulseDot';
 import InteractiveLineChart from '../components/InteractiveLineChart';
 import GlassCard from '../components/GlassCard';
+import SyncAnimation from '../components/SyncAnimation';
+import ListItem from '../components/ListItem';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { apiRequest } from '../services/api';
 import { flushQueue, getQueueCount } from '../services/offlineQueue';
+import { getSyncLogEntries, SyncLogEntry } from '../services/syncLog';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, spacing } from '../theme';
@@ -41,6 +44,7 @@ export default function DashboardScreen() {
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [syncLog, setSyncLog] = useState<SyncLogEntry[]>([]);
   const [readinessMeta, setReadinessMeta] = useState({
     missingCategories: 0,
     missingBusinessUse: 0,
@@ -94,15 +98,21 @@ export default function DashboardScreen() {
     setQueuedCount(count);
   };
 
+  const loadSyncLog = async () => {
+    const entries = await getSyncLogEntries(4);
+    setSyncLog(entries);
+  };
+
   useEffect(() => {
     loadReadiness();
     loadCashFlow();
     loadQueueCount();
+    loadSyncLog();
   }, [token]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([loadReadiness(), loadCashFlow(), loadQueueCount()]);
+    await Promise.all([loadReadiness(), loadCashFlow(), loadQueueCount(), loadSyncLog()]);
     setIsRefreshing(false);
   };
 
@@ -112,6 +122,7 @@ export default function DashboardScreen() {
     const result = await flushQueue(token);
     setQueuedCount(result.remaining);
     setLastSync(new Date().toISOString());
+    await loadSyncLog();
     setSyncing(false);
   };
 
@@ -194,9 +205,14 @@ export default function DashboardScreen() {
         <Card>
           <View style={styles.syncRow}>
             <Badge label={isOffline ? t('common.offline_label') : t('common.online_label')} tone={isOffline ? 'warning' : 'success'} />
-            <Text style={styles.syncCount}>{queuedCount} {t('dashboard.sync_pending')}</Text>
+            {syncing || queuedCount ? (
+              <View style={styles.syncIndicator}>
+                <SyncAnimation size={48} />
+              </View>
+            ) : null}
           </View>
           <InfoRow label={t('common.last_sync')} value={lastSyncLabel} />
+          <Text style={styles.syncCount}>{queuedCount} {t('dashboard.sync_pending')}</Text>
           <PrimaryButton
             title={syncing ? t('common.syncing') : t('common.sync_now')}
             onPress={handleSync}
@@ -205,6 +221,20 @@ export default function DashboardScreen() {
             haptic="light"
             style={styles.syncButton}
           />
+          {syncLog.length ? (
+            <View style={styles.syncLog}>
+              {syncLog.map((entry) => (
+                <ListItem
+                  key={entry.id}
+                  title={t(`sync.action_${entry.action}`)}
+                  subtitle={`${t(`sync.status_${entry.status}`)} · ${new Date(entry.createdAt).toLocaleTimeString()}`}
+                  icon={entry.status === 'synced' ? 'checkmark-circle-outline' : entry.status === 'failed' ? 'alert-circle-outline' : 'time-outline'}
+                />
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.syncEmpty}>{t('sync.empty')}</Text>
+          )}
         </Card>
       </FadeInView>
 
@@ -230,6 +260,7 @@ export default function DashboardScreen() {
               height={120}
               label={t('dashboard.cashflow_label')}
               valueFormatter={(value) => `GBP ${value.toFixed(2)}`}
+              enableZoom
             />
           ) : (
             <Text style={styles.emptyText}>{t('dashboard.cashflow_empty')}</Text>
@@ -329,13 +360,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing.sm,
   },
+  syncIndicator: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   syncCount: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
+    marginTop: spacing.xs,
   },
   syncButton: {
     marginTop: spacing.md,
+  },
+  syncLog: {
+    marginTop: spacing.md,
+  },
+  syncEmpty: {
+    marginTop: spacing.md,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   metaCard: {
     marginTop: spacing.md,

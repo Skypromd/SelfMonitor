@@ -163,7 +163,17 @@
     "category_breakdown": "Top Kategorien",
     "performance_title": "Performance",
     "profit_margin": "Gewinnmarge",
-    "expense_ratio": "Kostenquote"
+    "expense_ratio": "Kostenquote",
+    "offline_error": "Offline. Berichte online erstellen."
+  },
+  "sync": {
+    "empty": "Noch keine Sync-Aktivität.",
+    "action_category": "Kategorisierung",
+    "action_profile": "Profil-Update",
+    "action_subscription": "Abo-Update",
+    "status_queued": "In Warteschlange",
+    "status_synced": "Synchronisiert",
+    "status_failed": "Fehlgeschlagen"
   },
   "marketplace": {
     "title": "Marktplatz",

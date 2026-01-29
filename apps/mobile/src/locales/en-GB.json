@@ -163,7 +163,17 @@
     "category_breakdown": "Top categories",
     "performance_title": "Performance",
     "profit_margin": "Profit margin",
-    "expense_ratio": "Expense ratio"
+    "expense_ratio": "Expense ratio",
+    "offline_error": "You're offline. Generate reports when online."
+  },
+  "sync": {
+    "empty": "No sync activity yet.",
+    "action_category": "Category update",
+    "action_profile": "Profile update",
+    "action_subscription": "Subscription update",
+    "status_queued": "Queued",
+    "status_synced": "Synced",
+    "status_failed": "Failed"
   },
   "marketplace": {
     "title": "Marketplace",

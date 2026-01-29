@@ -163,7 +163,17 @@
     "category_breakdown": "Топ категорий",
     "performance_title": "Эффективность",
     "profit_margin": "Маржа прибыли",
-    "expense_ratio": "Доля расходов"
+    "expense_ratio": "Доля расходов",
+    "offline_error": "Нет сети. Отчеты доступны онлайн."
+  },
+  "sync": {
+    "empty": "Нет событий синхронизации.",
+    "action_category": "Категория",
+    "action_profile": "Профиль",
+    "action_subscription": "Подписка",
+    "status_queued": "В очереди",
+    "status_synced": "Синхронизировано",
+    "status_failed": "Ошибка"
   },
   "marketplace": {
     "title": "Маркетплейс",

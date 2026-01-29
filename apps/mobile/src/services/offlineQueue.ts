@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { apiRequest } from './api';
+import { addSyncLogEntry } from './syncLog';
 
 const QUEUE_KEY = 'offline.queue.v1';
 
@@ -73,6 +74,7 @@ export const enqueueCategoryUpdate = async (transactionId: string, category: str
   };
   filtered.push(next);
   await saveQueue(filtered);
+  await addSyncLogEntry('category', 'queued');
   return filtered.length;
 };
 
@@ -87,6 +89,7 @@ export const enqueueProfileUpdate = async (payload: ProfileUpdateAction['payload
   };
   filtered.push(next);
   await saveQueue(filtered);
+  await addSyncLogEntry('profile', 'queued');
   return filtered.length;
 };
 
@@ -101,6 +104,7 @@ export const enqueueSubscriptionUpdate = async (payload: SubscriptionUpdateActio
   };
   filtered.push(next);
   await saveQueue(filtered);
+  await addSyncLogEntry('subscription', 'queued');
   return filtered.length;
 };
 
@@ -117,9 +121,11 @@ export const flushQueue = async (token: string | null) => {
         body: JSON.stringify({ category: item.payload.category }),
       });
       if (!response.ok) {
+        await addSyncLogEntry('category', 'failed');
         break;
       }
       flushed += 1;
+      await addSyncLogEntry('category', 'synced');
       queue = queue.filter((entry) => entry.id !== item.id);
       await saveQueue(queue);
     }
@@ -130,9 +136,11 @@ export const flushQueue = async (token: string | null) => {
         body: JSON.stringify(item.payload),
       });
       if (!response.ok) {
+        await addSyncLogEntry('profile', 'failed');
         break;
       }
       flushed += 1;
+      await addSyncLogEntry('profile', 'synced');
       queue = queue.filter((entry) => entry.id !== item.id);
       await saveQueue(queue);
     }
@@ -143,9 +151,11 @@ export const flushQueue = async (token: string | null) => {
         body: JSON.stringify(item.payload),
       });
       if (!response.ok) {
+        await addSyncLogEntry('subscription', 'failed');
         break;
       }
       flushed += 1;
+      await addSyncLogEntry('subscription', 'synced');
       queue = queue.filter((entry) => entry.id !== item.id);
       await saveQueue(queue);
     }

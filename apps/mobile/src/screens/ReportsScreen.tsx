@@ -11,6 +11,7 @@ import FadeInView from '../components/FadeInView';
 import MiniBarChart from '../components/MiniBarChart';
 import BarRow from '../components/BarRow';
 import DonutChart from '../components/DonutChart';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +42,7 @@ type PeriodSummary = {
 export default function ReportsScreen() {
   const { token } = useAuth();
   const { t } = useTranslation();
+  const { isOffline } = useNetworkStatus();
   const [cadence, setCadence] = useState<Cadence | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -75,6 +77,10 @@ export default function ReportsScreen() {
     setMessage('');
     setError('');
     setSummary(null);
+    if (isOffline) {
+      setError(t('reports.offline_error'));
+      return;
+    }
     setIsLoading(true);
     try {
       const now = new Date();

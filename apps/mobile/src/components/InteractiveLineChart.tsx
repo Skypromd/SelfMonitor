@@ -1,5 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useDerivedValue,
+  useSharedValue,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Svg, { Circle, Defs, LinearGradient, Line, Path, Stop } from 'react-native-svg';
 
 import { colors, spacing } from '../theme';
@@ -12,6 +18,7 @@ type InteractiveLineChartProps = {
   gradientTo?: string;
   label?: string;
   valueFormatter?: (value: number) => string;
+  enableZoom?: boolean;
 };
 
 export default function InteractiveLineChart({
@@ -22,9 +29,18 @@ export default function InteractiveLineChart({
   gradientTo = 'rgba(37, 99, 235, 0.0)',
   label,
   valueFormatter,
+  enableZoom = false,
 }: InteractiveLineChartProps) {
   const [width, setWidth] = useState(0);
   const [selectedIndex, setSelectedIndex] = useState(Math.max(data.length - 1, 0));
+  const scale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const containerWidth = useSharedValue(0);
+  const containerHeight = useSharedValue(0);
+  const startScale = useSharedValue(1);
+  const startX = useSharedValue(0);
+  const startY = useSharedValue(0);
 
   useEffect(() => {
     if (data.length) {
@@ -37,6 +53,8 @@ export default function InteractiveLineChart({
     if (nextWidth !== width) {
       setWidth(nextWidth);
     }
+    containerWidth.value = nextWidth;
+    containerHeight.value = event.nativeEvent.layout.height;
   };
 
   const { path, areaPath, points, min, max } = useMemo(() => {
@@ -71,39 +89,115 @@ export default function InteractiveLineChart({
     setSelectedIndex(Math.max(0, Math.min(data.length - 1, index)));
   };
 
+  const maxTranslateX = useDerivedValue(() => (containerWidth.value * (scale.value - 1)) / 2);
+  const maxTranslateY = useDerivedValue(() => (containerHeight.value * (scale.value - 1)) / 2);
+
+  const clamp = (value: number, min: number, max: number) => {
+    'worklet';
+    return Math.min(Math.max(value, min), max);
+  };
+
+  const pinchGesture = Gesture.Pinch()
+    .onBegin(() => {
+      startScale.value = scale.value;
+    })
+    .onUpdate((event) => {
+      const nextScale = clamp(startScale.value * event.scale, 1, 2.5);
+      scale.value = nextScale;
+      translateX.value = clamp(translateX.value, -maxTranslateX.value, maxTranslateX.value);
+      translateY.value = clamp(translateY.value, -maxTranslateY.value, maxTranslateY.value);
+    })
+    .onEnd(() => {
+      if (scale.value < 1) {
+        scale.value = 1;
+        translateX.value = 0;
+        translateY.value = 0;
+      }
+    });
+
+  const panGesture = Gesture.Pan()
+    .onBegin(() => {
+      startX.value = translateX.value;
+      startY.value = translateY.value;
+    })
+    .onUpdate((event) => {
+      translateX.value = clamp(startX.value + event.translationX, -maxTranslateX.value, maxTranslateX.value);
+      translateY.value = clamp(startY.value + event.translationY, -maxTranslateY.value, maxTranslateY.value);
+    });
+
+  const chartStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+  }));
+
   return (
     <View
       onLayout={onLayout}
       style={[styles.container, { height }]}
       onStartShouldSetResponder={() => true}
       onMoveShouldSetResponder={() => true}
-      onResponderGrant={handleTouch}
-      onResponderMove={handleTouch}
+      onResponderGrant={enableZoom ? undefined : handleTouch}
+      onResponderMove={enableZoom ? undefined : handleTouch}
     >
       {path ? (
-        <Svg width={width} height={height}>
-          <Defs>
-            <LinearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={gradientFrom} stopOpacity="1" />
-              <Stop offset="1" stopColor={gradientTo} stopOpacity="1" />
-            </LinearGradient>
-          </Defs>
-          <Path d={areaPath} fill="url(#lineGradient)" />
-          <Path d={path} stroke={strokeColor} strokeWidth={3} fill="none" />
-          {selectedPoint ? (
-            <Line
-              x1={selectedPoint.x}
-              y1={0}
-              x2={selectedPoint.x}
-              y2={height}
-              stroke="rgba(148, 163, 184, 0.6)"
-              strokeDasharray="4 4"
-            />
-          ) : null}
-          {selectedPoint ? (
-            <Circle cx={selectedPoint.x} cy={selectedPoint.y} r={5} fill={colors.surface} stroke={strokeColor} strokeWidth={2} />
-          ) : null}
-        </Svg>
+        enableZoom ? (
+          <GestureDetector gesture={Gesture.Simultaneous(pinchGesture, panGesture)}>
+            <Animated.View style={chartStyle}>
+              <Svg width={width} height={height}>
+                <Defs>
+                  <LinearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor={gradientFrom} stopOpacity="1" />
+                    <Stop offset="1" stopColor={gradientTo} stopOpacity="1" />
+                  </LinearGradient>
+                </Defs>
+                <Path d={areaPath} fill="url(#lineGradient)" />
+                <Path d={path} stroke={strokeColor} strokeWidth={3} fill="none" />
+                {selectedPoint ? (
+                  <Line
+                    x1={selectedPoint.x}
+                    y1={0}
+                    x2={selectedPoint.x}
+                    y2={height}
+                    stroke="rgba(148, 163, 184, 0.6)"
+                    strokeDasharray="4 4"
+                  />
+                ) : null}
+                {selectedPoint ? (
+                  <Circle cx={selectedPoint.x} cy={selectedPoint.y} r={5} fill={colors.surface} stroke={strokeColor} strokeWidth={2} />
+                ) : null}
+              </Svg>
+            </Animated.View>
+          </GestureDetector>
+        ) : (
+          <View>
+            <Svg width={width} height={height}>
+              <Defs>
+                <LinearGradient id="lineGradient" x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0" stopColor={gradientFrom} stopOpacity="1" />
+                  <Stop offset="1" stopColor={gradientTo} stopOpacity="1" />
+                </LinearGradient>
+              </Defs>
+              <Path d={areaPath} fill="url(#lineGradient)" />
+              <Path d={path} stroke={strokeColor} strokeWidth={3} fill="none" />
+              {selectedPoint ? (
+                <Line
+                  x1={selectedPoint.x}
+                  y1={0}
+                  x2={selectedPoint.x}
+                  y2={height}
+                  stroke="rgba(148, 163, 184, 0.6)"
+                  strokeDasharray="4 4"
+                />
+              ) : null}
+              {selectedPoint ? (
+                <Circle cx={selectedPoint.x} cy={selectedPoint.y} r={5} fill={colors.surface} stroke={strokeColor} strokeWidth={2} />
+              ) : null}
+            </Svg>
+          </View>
+        )
       ) : (
         <View style={styles.placeholder} />
       )}
