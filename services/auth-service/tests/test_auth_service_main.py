@@ -20,7 +20,7 @@ def test_register_user_success():
     """
     response = client.post(
         "/register",
-        json={"email": "test@example.com", "password": "averysecurepassword"},
+        data={"username": "test@example.com", "password": "averysecurepassword"},
     )
     assert response.status_code == 201
     data = response.json()
@@ -39,12 +39,12 @@ def test_register_user_already_exists():
     # First, create the user
     client.post(
         "/register",
-        json={"email": "existing@example.com", "password": "averysecurepassword"},
+        data={"username": "existing@example.com", "password": "averysecurepassword"},
     )
     # Then, try to create it again
     response = client.post(
         "/register",
-        json={"email": "existing@example.com", "password": "anotherpassword"},
+        data={"username": "existing@example.com", "password": "anotherpassword"},
     )
     assert response.status_code == 400
     assert response.json() == {"detail": "Email already registered"}
@@ -56,7 +56,7 @@ def test_login_and_get_me():
     # 1. Register user
     email = "login-test@example.com"
     password = "averysecurepassword"
-    register_response = client.post("/register", json={"email": email, "password": password})
+    register_response = client.post("/register", data={"username": email, "password": password})
     assert register_response.status_code == 201
 
     # 2. Log in to get token
@@ -85,7 +85,7 @@ def test_login_wrong_password():
     """
     email = "wrong-pass@example.com"
     password = "averysecurepassword"
-    client.post("/register", json={"email": email, "password": password})
+    client.post("/register", data={"username": email, "password": password})
 
     response = client.post(
         "/token",
@@ -109,11 +109,11 @@ def test_deactivate_user():
     # 1. Register an admin and a regular user
     admin_email = "admin@example.com"
     admin_pass = "adminpass"
-    client.post("/register", json={"email": admin_email, "password": admin_pass})
+    client.post("/register", data={"username": admin_email, "password": admin_pass})
 
     user_email = "user@example.com"
     user_pass = "userpass"
-    client.post("/register", json={"email": user_email, "password": user_pass})
+    client.post("/register", data={"username": user_email, "password": user_pass})
 
     # 2. Admin logs in
     admin_login_response = client.post("/token", data={"username": admin_email, "password": admin_pass})
@@ -138,11 +138,11 @@ def test_deactivate_user():
 def test_non_admin_cannot_deactivate():
     # 1. Register two users
     user1_email = "user1@example.com"
-    client.post("/register", json={"email": user1_email, "password": "password1"})
+    client.post("/register", data={"username": user1_email, "password": "password1"})
 
     user2_email = "user2@example.com"
     user2_pass = "password2"
-    client.post("/register", json={"email": user2_email, "password": user2_pass})
+    client.post("/register", data={"username": user2_email, "password": user2_pass})
 
     # 2. User 2 logs in
     user2_login_response = client.post("/token", data={"username": user2_email, "password": user2_pass})
