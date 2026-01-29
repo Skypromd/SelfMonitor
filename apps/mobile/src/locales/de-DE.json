@@ -110,6 +110,8 @@
     "cta": "Pro starten",
     "plan_title": "Pro-Plan",
     "badge_best": "Beste Wahl",
+    "monthly": "Monatlich",
+    "annual": "Jährlich",
     "price_label": "Ab",
     "price_hint": "Jederzeit kündbar.",
     "feature_reports": "Monatlich, quartal, GuV, Hypothekenberichte",
@@ -117,6 +119,7 @@
     "feature_mortgage": "Mortgage-Report Paket",
     "feature_sync": "Priorisierte Automatisierung",
     "current_plan": "Du bist Pro",
+    "manage_billing": "Abo verwalten",
     "savings_title": "Ersparnis-Rechner",
     "revenue_label": "Monatsumsatz",
     "expenses_label": "Monatsausgaben",
@@ -125,7 +128,11 @@
     "disclaimer": "Schätzungen sind unverbindlich.",
     "upgraded": "Du bist auf Pro.",
     "upgrade_error": "Upgrade fehlgeschlagen.",
-    "offline_error": "Offline. Upgrade online."
+    "offline_error": "Offline. Upgrade online.",
+    "billing_notice": "Billing nicht konfiguriert. Demo-Upgrade.",
+    "checkout_opened": "Checkout im Browser geöffnet.",
+    "checkout_error": "Checkout konnte nicht geöffnet werden.",
+    "portal_error": "Billing-Portal nicht verfügbar."
   },
   "mileage": {
     "title": "Fahrtenbuch",

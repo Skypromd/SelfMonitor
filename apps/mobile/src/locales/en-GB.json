@@ -110,6 +110,8 @@
     "cta": "Start Pro",
     "plan_title": "Pro plan",
     "badge_best": "Best value",
+    "monthly": "Monthly",
+    "annual": "Annual",
     "price_label": "From",
     "price_hint": "Cancel anytime. No hidden fees.",
     "feature_reports": "Monthly, quarterly, P&L, mortgage reports",
@@ -117,6 +119,7 @@
     "feature_mortgage": "Mortgage‑ready report pack",
     "feature_sync": "Priority sync and automation",
     "current_plan": "You're on Pro",
+    "manage_billing": "Manage subscription",
     "savings_title": "Savings calculator",
     "revenue_label": "Monthly revenue",
     "expenses_label": "Monthly expenses",
@@ -125,7 +128,11 @@
     "disclaimer": "Estimates are indicative. Actual savings may vary.",
     "upgraded": "You're upgraded to Pro.",
     "upgrade_error": "Upgrade failed.",
-    "offline_error": "You're offline. Upgrade when online."
+    "offline_error": "You're offline. Upgrade when online.",
+    "billing_notice": "Billing links not configured. Demo upgrade only.",
+    "checkout_opened": "Checkout opened in browser.",
+    "checkout_error": "Could not open checkout.",
+    "portal_error": "Billing portal not available."
   },
   "mileage": {
     "title": "Mileage log",

@@ -22,6 +22,9 @@ npm start
 Set these before running (optional):
 - `EXPO_PUBLIC_API_GATEWAY_URL` (default: http://localhost:8000/api)
 - `EXPO_PUBLIC_LOCALIZATION_SERVICE_URL` (optional override)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (Stripe Checkout link)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_ANNUAL_URL` (optional annual link)
+- `EXPO_PUBLIC_STRIPE_PORTAL_URL` (billing portal link)
 
 ## Screens
 - Dashboard (Tax Readiness + Cash Flow)

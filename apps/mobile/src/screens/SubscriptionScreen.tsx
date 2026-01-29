@@ -10,6 +10,7 @@ import InputField from '../components/InputField';
 import FadeInView from '../components/FadeInView';
 import Badge from '../components/Badge';
 import { apiRequest } from '../services/api';
+import { openBillingPortal } from '../services/billing';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { enqueueSubscriptionUpdate } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
@@ -79,6 +80,19 @@ export default function SubscriptionScreen() {
     }
   };
 
+  const handleManageBilling = async () => {
+    setMessage('');
+    setError('');
+    if (isOffline) {
+      setError(t('upgrade.offline_error'));
+      return;
+    }
+    const opened = await openBillingPortal();
+    if (!opened) {
+      setError(t('upgrade.portal_error'));
+    }
+  };
+
   return (
     <Screen>
       <SectionHeader title={t('subscription.title')} subtitle={t('subscription.subtitle')} />
@@ -130,7 +144,15 @@ export default function SubscriptionScreen() {
               haptic="light"
               style={styles.secondaryButton}
             />
-          ) : null}
+          ) : (
+            <PrimaryButton
+              title={t('upgrade.manage_billing')}
+              onPress={handleManageBilling}
+              variant="secondary"
+              haptic="light"
+              style={styles.secondaryButton}
+            />
+          )}
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>

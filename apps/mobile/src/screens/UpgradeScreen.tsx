@@ -10,6 +10,7 @@ import Badge from '../components/Badge';
 import ListItem from '../components/ListItem';
 import FadeInView from '../components/FadeInView';
 import { apiRequest } from '../services/api';
+import { hasBillingCheckout, openBillingPortal, openCheckout } from '../services/billing';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
 import { useTranslation } from '../hooks/useTranslation';
@@ -17,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
 
 const PRO_PRICE_MONTHLY = 12.99;
+const PRO_PRICE_ANNUAL = 119.88;
 
 export default function UpgradeScreen() {
   const { t } = useTranslation();
@@ -25,9 +27,11 @@ export default function UpgradeScreen() {
   const { plan, refresh } = useSubscriptionPlan();
   const [revenue, setRevenue] = useState('');
   const [expenses, setExpenses] = useState('');
+  const [cycle, setCycle] = useState<'monthly' | 'annual'>('monthly');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isUpgrading, setIsUpgrading] = useState(false);
+  const billingAvailable = hasBillingCheckout();
 
   const savings = useMemo(() => {
     const expenseValue = Number(expenses);
@@ -35,13 +39,23 @@ export default function UpgradeScreen() {
     return expenseValue * 0.15;
   }, [expenses]);
 
-  const netValue = savings - PRO_PRICE_MONTHLY;
+  const price = cycle === 'annual' ? PRO_PRICE_ANNUAL : PRO_PRICE_MONTHLY;
+  const netValue = savings - price;
 
   const handleUpgrade = async () => {
     setMessage('');
     setError('');
     if (isOffline) {
       setError(t('upgrade.offline_error'));
+      return;
+    }
+    if (billingAvailable) {
+      const opened = await openCheckout(cycle);
+      if (opened) {
+        setMessage(t('upgrade.checkout_opened'));
+        return;
+      }
+      setError(t('upgrade.checkout_error'));
       return;
     }
     setIsUpgrading(true);
@@ -64,6 +78,19 @@ export default function UpgradeScreen() {
     }
   };
 
+  const handleManageBilling = async () => {
+    setMessage('');
+    setError('');
+    if (isOffline) {
+      setError(t('upgrade.offline_error'));
+      return;
+    }
+    const opened = await openBillingPortal();
+    if (!opened) {
+      setError(t('upgrade.portal_error'));
+    }
+  };
+
   return (
     <Screen>
       <SectionHeader title={t('upgrade.title')} subtitle={t('upgrade.subtitle')} />
@@ -73,7 +100,23 @@ export default function UpgradeScreen() {
             <Text style={styles.cardTitle}>{t('upgrade.plan_title')}</Text>
             <Badge label={t('upgrade.badge_best')} tone="info" />
           </View>
-          <Text style={styles.price}>{t('upgrade.price_label')} GBP {PRO_PRICE_MONTHLY.toFixed(2)}</Text>
+          <View style={styles.cycleRow}>
+            <PrimaryButton
+              title={t('upgrade.monthly')}
+              onPress={() => setCycle('monthly')}
+              variant={cycle === 'monthly' ? 'primary' : 'secondary'}
+              haptic="light"
+              style={styles.cycleButton}
+            />
+            <PrimaryButton
+              title={t('upgrade.annual')}
+              onPress={() => setCycle('annual')}
+              variant={cycle === 'annual' ? 'primary' : 'secondary'}
+              haptic="light"
+              style={styles.cycleButtonLast}
+            />
+          </View>
+          <Text style={styles.price}>{t('upgrade.price_label')} GBP {price.toFixed(2)}</Text>
           <Text style={styles.priceHint}>{t('upgrade.price_hint')}</Text>
           <ListItem title={t('upgrade.feature_reports')} icon="checkmark-circle-outline" />
           <ListItem title={t('upgrade.feature_hmrc')} icon="checkmark-circle-outline" />
@@ -86,6 +129,18 @@ export default function UpgradeScreen() {
             haptic="medium"
             style={styles.ctaButton}
           />
+          {plan === 'pro' ? (
+            <PrimaryButton
+              title={t('upgrade.manage_billing')}
+              onPress={handleManageBilling}
+              variant="secondary"
+              haptic="light"
+              style={styles.secondaryButton}
+            />
+          ) : null}
+          {!billingAvailable ? (
+            <Text style={styles.notice}>{t('upgrade.billing_notice')}</Text>
+          ) : null}
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>
@@ -135,6 +190,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  cycleRow: {
+    flexDirection: 'row',
+    marginBottom: spacing.sm,
+  },
+  cycleButton: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  cycleButtonLast: {
+    flex: 1,
+  },
   price: {
     fontSize: 24,
     fontWeight: '700',
@@ -146,6 +212,14 @@ const styles = StyleSheet.create({
   },
   ctaButton: {
     marginTop: spacing.sm,
+  },
+  secondaryButton: {
+    marginTop: spacing.sm,
+  },
+  notice: {
+    marginTop: spacing.sm,
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   message: {
     marginTop: spacing.sm,

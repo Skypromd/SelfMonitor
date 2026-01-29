@@ -110,6 +110,8 @@
     "cta": "Включить Pro",
     "plan_title": "План Pro",
     "badge_best": "Лучшее",
+    "monthly": "Ежемесячно",
+    "annual": "Ежегодно",
     "price_label": "От",
     "price_hint": "Можно отменить в любой момент.",
     "feature_reports": "Месячные, квартальные, P&L, ипотечные отчеты",
@@ -117,6 +119,7 @@
     "feature_mortgage": "Пакет для ипотеки",
     "feature_sync": "Приоритетная синхронизация",
     "current_plan": "У вас Pro",
+    "manage_billing": "Управлять подпиской",
     "savings_title": "Калькулятор выгоды",
     "revenue_label": "Выручка в месяц",
     "expenses_label": "Расходы в месяц",
@@ -125,7 +128,11 @@
     "disclaimer": "Оценки ориентировочные.",
     "upgraded": "Pro активирован.",
     "upgrade_error": "Не удалось активировать Pro.",
-    "offline_error": "Нет сети. Апгрейд онлайн."
+    "offline_error": "Нет сети. Апгрейд онлайн.",
+    "billing_notice": "Платежи не настроены. Демо-апгрейд.",
+    "checkout_opened": "Оплата открыта в браузере.",
+    "checkout_error": "Не удалось открыть оплату.",
+    "portal_error": "Портал биллинга недоступен."
   },
   "mileage": {
     "title": "Пробег",
