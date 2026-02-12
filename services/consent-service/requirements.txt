@@ -5,3 +5,4 @@ httpx
 
 # Dependencies for testing
 pytest
+pytest-mock
