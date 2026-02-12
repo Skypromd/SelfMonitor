@@ -30,5 +30,5 @@ _Last updated: 2026-02-12_
 
 ## Current focus
 
-1. Implement real provider-state handlers for Pact verification
-2. Add optional full docker-compose end-to-end nightly workflow
+1. Add optional full docker-compose end-to-end nightly workflow
+2. Expand broker-based Pact publishing/verification strategy
