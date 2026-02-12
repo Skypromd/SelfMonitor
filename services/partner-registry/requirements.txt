@@ -5,6 +5,7 @@ python-jose[cryptography]
 sqlalchemy[asyncio]
 asyncpg
 httpx
+alembic
 
 # Dependencies for testing
 pytest

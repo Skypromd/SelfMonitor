@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+os.environ["AUTO_CREATE_SCHEMA"] = "true"
 
 from app import crud
 from app.database import Base, get_db
@@ -26,8 +27,20 @@ engine = create_async_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
 
 
-def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
-    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+def get_auth_headers(
+    user_id: str = TEST_USER_ID,
+    *,
+    scopes: list[str] | None = None,
+    roles: list[str] | None = None,
+    is_admin: bool = False,
+) -> dict[str, str]:
+    payload: dict[str, object] = {"sub": user_id}
+    if scopes is not None:
+        payload["scopes"] = scopes
+    if roles is not None:
+        payload["roles"] = roles
+    payload["is_admin"] = is_admin
+    token = jwt.encode(payload, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -117,7 +130,10 @@ def test_lead_report_aggregates_by_partner(mocker):
     assert client.post(f"/partners/{partner_a}/handoff", headers=get_auth_headers("user-b@example.com")).status_code == 202
     assert client.post(f"/partners/{partner_b}/handoff", headers=get_auth_headers("user-a@example.com")).status_code == 202
 
-    report_response = client.get("/leads/report", headers=get_auth_headers("billing-admin@example.com"))
+    report_response = client.get(
+        "/leads/report",
+        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
+    )
     assert report_response.status_code == 200
     payload = report_response.json()
 
@@ -142,7 +158,7 @@ def test_lead_report_supports_partner_filter(mocker):
 
     report_response = client.get(
         f"/leads/report?partner_id={partner_a}",
-        headers=get_auth_headers("billing-admin@example.com"),
+        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
     )
     assert report_response.status_code == 200
     payload = report_response.json()
@@ -156,7 +172,7 @@ def test_lead_report_supports_partner_filter(mocker):
 def test_lead_report_rejects_invalid_date_range():
     response = client.get(
         "/leads/report?start_date=2026-01-10&end_date=2026-01-01",
-        headers=get_auth_headers("billing-admin@example.com"),
+        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "start_date cannot be after end_date"
@@ -177,7 +193,10 @@ def test_lead_report_csv_export(mocker):
         headers=get_auth_headers("user-b@example.com"),
     ).status_code == 202
 
-    response = client.get("/leads/report.csv", headers=get_auth_headers("billing-admin@example.com"))
+    response = client.get(
+        "/leads/report.csv",
+        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
+    )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert "attachment; filename=\"lead_report_" in response.headers["content-disposition"]
@@ -204,9 +223,27 @@ def test_lead_report_csv_via_format_query(mocker):
 
     response = client.get(
         "/leads/report?format=csv",
-        headers=get_auth_headers("billing-admin@example.com"),
+        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert "row_type,period_start,period_end,partner_id,partner_name,leads_count,unique_users" in response.text
+
+
+def test_lead_report_requires_billing_scope():
+    response = client.get("/leads/report", headers=get_auth_headers("user-no-scope@example.com"))
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Insufficient permissions for lead reports"
+
+
+def test_lead_report_allows_admin_claim_without_scope(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    assert client.post(
+        f"/partners/{partner_id}/handoff",
+        headers=get_auth_headers("user-a@example.com"),
+    ).status_code == 202
+
+    response = client.get("/leads/report", headers=get_auth_headers("admin@example.com", is_admin=True))
+    assert response.status_code == 200
 

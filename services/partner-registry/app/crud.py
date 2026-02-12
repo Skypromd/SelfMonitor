@@ -1,7 +1,8 @@
 import datetime
+import hashlib
 from typing import List, Optional
 
-from sqlalchemy import Select, distinct, func
+from sqlalchemy import Select, distinct, func, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -80,6 +81,60 @@ async def create_handoff_lead(db: AsyncSession, user_id: str, partner_id: str) -
     await db.commit()
     await db.refresh(lead)
     return lead
+
+
+def _dedupe_lock_key(user_id: str, partner_id: str) -> int:
+    digest = hashlib.blake2b(f"{user_id}:{partner_id}".encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big", signed=False) & 0x7FFF_FFFF_FFFF_FFFF
+
+
+async def _acquire_dedupe_lock_if_postgres(db: AsyncSession, user_id: str, partner_id: str) -> None:
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": _dedupe_lock_key(user_id=user_id, partner_id=partner_id)},
+    )
+
+
+async def create_or_get_handoff_lead(
+    db: AsyncSession,
+    user_id: str,
+    partner_id: str,
+    dedupe_window_hours: int = 24,
+) -> tuple[models.HandoffLead, bool]:
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=dedupe_window_hours)
+
+    async with db.begin():
+        await _acquire_dedupe_lock_if_postgres(db, user_id=user_id, partner_id=partner_id)
+
+        recent_lead_query = (
+            select(models.HandoffLead)
+            .filter(
+                models.HandoffLead.user_id == user_id,
+                models.HandoffLead.partner_id == partner_id,
+                models.HandoffLead.created_at >= cutoff,
+            )
+            .order_by(models.HandoffLead.created_at.desc())
+        )
+
+        bind = db.get_bind()
+        if bind and bind.dialect.name == "postgresql":
+            recent_lead_query = recent_lead_query.with_for_update()
+
+        result = await db.execute(recent_lead_query)
+        existing_lead = result.scalars().first()
+        if existing_lead:
+            await db.refresh(existing_lead)
+            return existing_lead, True
+
+        lead = models.HandoffLead(user_id=user_id, partner_id=partner_id, status="initiated")
+        db.add(lead)
+        await db.flush()
+        await db.refresh(lead)
+        return lead, False
 
 
 def _apply_lead_filters(

@@ -32,3 +32,6 @@ _Last updated: 2026-02-12_
 
 1. Add optional full docker-compose end-to-end nightly workflow
 2. Expand broker-based Pact publishing/verification strategy
+3. [x] Enforce RBAC on monetization lead reports (`billing:read` scope / admin role)
+4. [x] Make lead deduplication race-safe in PostgreSQL (advisory lock + transactional insert)
+5. [x] Introduce Alembic baseline for `partner-registry` and migration-ready schema checks

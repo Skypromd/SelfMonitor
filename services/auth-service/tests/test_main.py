@@ -1,9 +1,10 @@
 from fastapi.testclient import TestClient
+from jose import jwt
 # We need to adjust the path to import the app from the parent directory
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from app.main import app, fake_users_db, get_password_hash
+from app.main import ALGORITHM, SECRET_KEY, app, fake_users_db, get_password_hash
 
 client = TestClient(app)
 
@@ -155,3 +156,33 @@ def test_non_admin_cannot_deactivate():
     deactivate_response = client.post(f"/users/{user1_email}/deactivate", headers=user2_auth_headers)
     assert deactivate_response.status_code == 403
     assert deactivate_response.json()["detail"] == "Admin access required"
+
+
+def test_admin_token_contains_billing_claims():
+    login_response = client.post("/token", data={"username": "admin@example.com", "password": "admin_password"})
+    assert login_response.status_code == 200
+
+    token = login_response.json()["access_token"]
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+    assert payload["sub"] == "admin@example.com"
+    assert payload["is_admin"] is True
+    assert "admin" in payload["roles"]
+    assert "billing:read" in payload["scopes"]
+
+
+def test_regular_user_token_has_no_billing_scope():
+    email = "regular@example.com"
+    password = "regular-password"
+    client.post("/register", data={"username": email, "password": password})
+
+    login_response = client.post("/token", data={"username": email, "password": password})
+    assert login_response.status_code == 200
+
+    token = login_response.json()["access_token"]
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
+    assert payload["sub"] == email
+    assert payload["is_admin"] is False
+    assert payload["roles"] == ["user"]
+    assert payload["scopes"] == []

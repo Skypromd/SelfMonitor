@@ -49,6 +49,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+
+def build_access_claims(user: "User") -> dict:
+    roles = ["user"]
+    scopes: list[str] = []
+    if user.is_admin:
+        roles.append("admin")
+        scopes.append("billing:read")
+    return {"roles": roles, "scopes": scopes, "is_admin": user.is_admin}
+
 # --- Models ---
 
 class UserCreate(BaseModel):
@@ -187,7 +196,8 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, **build_access_claims(user)},
+        expires_delta=access_token_expires,
     )
     return {"access_token": access_token, "token_type": "bearer"}
 

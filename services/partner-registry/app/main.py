@@ -10,12 +10,15 @@ from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
 
 from . import crud, schemas
 from .database import AsyncSessionLocal, Base, engine, get_db
 
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
+AUTO_CREATE_SCHEMA = os.getenv("AUTO_CREATE_SCHEMA", "false").lower() == "true"
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "libs").exists():
@@ -24,16 +27,86 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
-from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.jwt_fastapi import (
+    DEFAULT_ALGORITHM,
+    DEFAULT_SECRET_KEY,
+    build_jwt_auth_dependencies,
+)
 from libs.shared_http.retry import post_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", DEFAULT_SECRET_KEY)
+AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", DEFAULT_ALGORITHM)
+BILLING_REPORT_ALLOWED_USERS = {
+    item.strip()
+    for item in os.getenv("BILLING_REPORT_ALLOWED_USERS", "").split(",")
+    if item.strip()
+}
+BILLING_REPORT_ALLOWED_SCOPES = {
+    item.strip()
+    for item in os.getenv("BILLING_REPORT_ALLOWED_SCOPES", "billing:read").split(",")
+    if item.strip()
+}
+BILLING_REPORT_ALLOWED_ROLES = {
+    item.strip()
+    for item in os.getenv("BILLING_REPORT_ALLOWED_ROLES", "admin,billing_admin").split(",")
+    if item.strip()
+}
+
+
+def _claims_to_set(value: Any) -> set[str]:
+    if isinstance(value, str):
+        return {item.strip() for item in value.replace(",", " ").split() if item.strip()}
+    if isinstance(value, (list, tuple, set)):
+        return {str(item).strip() for item in value if str(item).strip()}
+    return set()
+
+
+def require_billing_report_access(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+
+    if user_id in BILLING_REPORT_ALLOWED_USERS:
+        return str(user_id)
+
+    scopes = _claims_to_set(payload.get("scopes"))
+    roles = _claims_to_set(payload.get("roles"))
+    is_admin = payload.get("is_admin") is True
+
+    if is_admin or scopes.intersection(BILLING_REPORT_ALLOWED_SCOPES) or roles.intersection(BILLING_REPORT_ALLOWED_ROLES):
+        return str(user_id)
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Insufficient permissions for lead reports",
+    )
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
+    if AUTO_CREATE_SCHEMA:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
     async with AsyncSessionLocal() as db:
+        if not AUTO_CREATE_SCHEMA:
+            try:
+                await db.execute(text("SELECT 1 FROM partners LIMIT 1"))
+            except Exception as exc:
+                raise RuntimeError(
+                    "Partner Registry schema is not initialized. "
+                    "Run `alembic upgrade head` or set AUTO_CREATE_SCHEMA=true for local bootstrapping."
+                ) from exc
         await crud.seed_partners_if_empty(db)
     yield
 
@@ -206,23 +279,18 @@ async def initiate_handoff(
     partner_db_id = str(partner.id)
     partner_name = partner.name
 
-    existing_lead = await crud.get_recent_handoff_lead(
+    lead, duplicated = await crud.create_or_get_handoff_lead(
         db,
         user_id=user_id,
         partner_id=partner_db_id,
     )
-    if existing_lead:
+
+    if duplicated:
         return schemas.HandoffResponse(
             message=f"Handoff to {partner_name} already initiated recently.",
-            lead_id=uuid.UUID(str(existing_lead.id)),
+            lead_id=uuid.UUID(str(lead.id)),
             duplicated=True,
         )
-
-    lead = await crud.create_handoff_lead(
-        db,
-        user_id=user_id,
-        partner_id=partner_db_id,
-    )
 
     audit_event_id = await log_audit_event(
         user_id=user_id,
@@ -247,7 +315,7 @@ async def get_lead_report(
     partner_id: Optional[uuid.UUID] = Query(default=None),
     start_date: Optional[datetime.date] = Query(default=None),
     end_date: Optional[datetime.date] = Query(default=None),
-    _user_id: str = Depends(get_current_user_id),
+    _billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
     report = await _load_lead_report(
@@ -266,7 +334,7 @@ async def export_lead_report_csv(
     partner_id: Optional[uuid.UUID] = Query(default=None),
     start_date: Optional[datetime.date] = Query(default=None),
     end_date: Optional[datetime.date] = Query(default=None),
-    _user_id: str = Depends(get_current_user_id),
+    _billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
     report = await _load_lead_report(

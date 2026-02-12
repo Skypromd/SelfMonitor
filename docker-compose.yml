@@ -253,6 +253,9 @@ services:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_partner}"
       COMPLIANCE_SERVICE_URL: "${PARTNER_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
+      AUTO_CREATE_SCHEMA: "${PARTNER_AUTO_CREATE_SCHEMA:-true}"
+      BILLING_REPORT_ALLOWED_SCOPES: "${PARTNER_BILLING_REPORT_ALLOWED_SCOPES:-billing:read}"
+      BILLING_REPORT_ALLOWED_ROLES: "${PARTNER_BILLING_REPORT_ALLOWED_ROLES:-admin,billing_admin}"
     networks:
       - default_network
 
