@@ -41,14 +41,15 @@ export default function Layout({ children, onLogout, userEmail }: LayoutProps) {
         <h1 className={styles.logo}>FinTech</h1>
         <nav className={styles.nav}>
           {navItems.map(({ href, label }) => (
-            <Link href={href} key={href} locale={router.locale}>
-              <span className={router.pathname === href ? styles.active : ''}>
+            <Link href={href} key={href} locale={router.locale} className={styles.navLink}>
+              <span className={`${styles.navLabel} ${router.pathname === href ? styles.active : ''}`}>
                 {label}
               </span>
             </Link>
           ))}
         </nav>
         <div className={styles.sidebarFooter}>
+          {userEmail && <p className={styles.userEmail}>{userEmail}</p>}
           <div className={styles.langSwitcher}>
             {locales?.map(locale => (
               <Link href={router.pathname} key={locale} locale={locale}>

@@ -100,7 +100,7 @@ export default function HomePage({ onLoginSuccess }: LoginPageProps) {
               value={password}
             />
             <div className={styles.buttonGroup}>
-              <button className={styles.button} disabled={isLoading} onClick={handleRegister}>
+              <button className={`${styles.button} ${styles.secondaryButton}`} disabled={isLoading} onClick={handleRegister}>
                 Register
               </button>
               <button className={styles.button} disabled={isLoading} onClick={handleLogin}>

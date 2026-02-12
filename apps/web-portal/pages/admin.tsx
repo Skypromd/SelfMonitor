@@ -37,7 +37,7 @@ export default function AdminPage({ token }: AdminPageProps) {
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('nav.admin')}</h1>
       <p>{t('admin.description')}</p>
       <div className={styles.subContainer}>

@@ -152,7 +152,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('nav.documents')}</h1>
       <p>{t('documents.description')}</p>
       <div className={styles.subContainer}>

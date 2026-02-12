@@ -42,7 +42,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('nav.reports')}</h1>
       <p>{t('reports.description')}</p>
       <div className={styles.subContainer}>

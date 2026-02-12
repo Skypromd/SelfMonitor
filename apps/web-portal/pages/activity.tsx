@@ -58,7 +58,7 @@ export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('nav.activity')}</h1>
       <p>{t('activity.description')}</p>
       {error && <p className={styles.error}>{error}</p>}

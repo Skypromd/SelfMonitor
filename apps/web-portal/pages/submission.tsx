@@ -49,7 +49,7 @@ export default function SubmissionPage({ token }: SubmissionPageProps) {
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('nav.submission')}</h1>
       <p>{t('submission.description')}</p>
       <div className={styles.subContainer}>

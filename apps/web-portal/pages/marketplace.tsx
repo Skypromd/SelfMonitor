@@ -71,6 +71,7 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
 
   const handleHandoff = async (partnerId: string, partnerName: string) => {
     setMessage('');
+    setError('');
     try {
       const response = await fetch(`${PARTNER_REGISTRY_URL}/partners/${partnerId}/handoff`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -82,16 +83,21 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
       }
       setMessage(payload.message || `Your request has been sent to ${partnerName}. They will be in touch shortly.`);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Unexpected error');
+      setError(err instanceof Error ? err.message : 'Unexpected error');
     }
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('nav.marketplace')}</h1>
       <p>{t('marketplace.description')}</p>
       {message && <p className={styles.message}>{message}</p>}
       {error && <p className={styles.error}>{error}</p>}
+      {partners.length === 0 && !error && (
+        <div className={styles.subContainer}>
+          <p>No partner services are available yet. Please check back shortly.</p>
+        </div>
+      )}
 
       {Object.entries(groupedByTitle).map(([title, groupedPartners]) => (
         <div key={title} className={styles.subContainer}>
@@ -101,10 +107,10 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
               <div key={partner.id} className={styles.partnerItem}>
                 <strong>{partner.name}</strong>
                 <p>{partner.description}</p>
-                <a href={partner.website} rel="noopener noreferrer" target="_blank">
+                <a className={styles.link} href={partner.website} rel="noopener noreferrer" target="_blank">
                   Visit website
                 </a>
-                <button className={styles.button} onClick={() => handleHandoff(partner.id, partner.name)}>
+                <button className={styles.button} onClick={() => handleHandoff(partner.id, partner.name)} type="button">
                   Request Contact
                 </button>
               </div>

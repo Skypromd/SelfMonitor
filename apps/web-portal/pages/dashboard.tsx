@@ -186,7 +186,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
   const { t } = useTranslation();
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
       <ActionCenter token={token} />

@@ -38,14 +38,16 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
   };
 
   return (
-    <div className={styles.subContainer} style={{marginTop: 0}}>
+    <div className={styles.subContainer}>
       <h2>Bank Connections</h2>
       {!consentUrl ? (
         <button onClick={handleInitiate} className={styles.button}>Connect a Bank Account</button>
       ) : (
         <div>
           <p>Click the link to grant access at your bank:</p>
-          <a href="#" onClick={handleGrant} className={styles.link}>{consentUrl}</a>
+          <button className={styles.inlineLinkButton} onClick={handleGrant} type="button">
+            {consentUrl}
+          </button>
         </div>
       )}
       {error && <p className={styles.error}>{error}</p>}
@@ -120,7 +122,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
 export default function TransactionsPage({ token }: TransactionsPageProps) {
     const [connectedAccountId, setConnectedAccountId] = useState('');
     return (
-        <div>
+        <div className={styles.dashboard}>
             <h1>Transactions</h1>
             <p>Connect your bank account to import and categorize your transactions.</p>
             <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />

@@ -83,7 +83,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('profile.title')}</h1>
       <p>Fetch and update your profile data from a protected endpoint.</p>
       <div className={styles.subContainer}>
