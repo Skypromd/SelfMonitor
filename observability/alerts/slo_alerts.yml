@@ -1,0 +1,41 @@
+groups:
+  - name: fintech-service-availability
+    rules:
+      - alert: FintechServiceDown
+        expr: up{job="fintech-app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service target is down"
+          description: "Instance {{ $labels.instance }} has been unreachable for more than 2 minutes."
+
+  - name: fintech-api-slo
+    rules:
+      - alert: FintechApiHighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="fintech-app",status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total{job="fintech-app"}[5m]))
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "5xx error budget burn is too high"
+          description: "5xx responses are above 5% during a 10-minute window."
+
+      - alert: FintechApiHighP95Latency
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="fintech-app"}[5m])) by (le)
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency is above SLO"
+          description: "P95 latency has been above 800ms for 10 minutes."
+

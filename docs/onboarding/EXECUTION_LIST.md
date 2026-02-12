@@ -23,12 +23,12 @@ _Last updated: 2026-02-12_
 
 ## Sprint 3 (Weeks 5-6) - Release Readiness
 
-- [ ] Add stable smoke/integration pipeline in CI
-- [ ] Enforce quality gates (coverage + required checks)
-- [ ] Define observability SLO dashboards and alerts
-- [ ] Add release checklist (migration, rollback, dependency security)
+- [x] Add stable smoke/integration pipeline in CI
+- [x] Enforce quality gates (coverage + required checks)
+- [x] Define observability SLO dashboards and alerts
+- [x] Add release checklist (migration, rollback, dependency security)
 
 ## Current focus
 
-1. Add stable smoke/integration pipeline in CI
-2. Enforce quality gates (coverage + required checks)
+1. Post-release hardening backlog (Pydantic v2 deprecations, FastAPI lifespan migration)
+2. Expand contract/integration automation across remaining services

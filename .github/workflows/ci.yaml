@@ -85,15 +85,14 @@ jobs:
 
       - name: Run smoke tests for core user flow
         run: |
-          pytest -q \
-            services/auth-service/tests/test_main.py::test_register_and_login \
-            services/user-profile-service/tests/test_main.py::test_create_and_get_profile \
-            services/transactions-service/tests/test_main.py::test_import_and_get_transactions \
-            --cov=services/auth-service/app \
-            --cov=services/user-profile-service/app \
-            --cov=services/transactions-service/app \
-            --cov-report=term \
-            --cov-fail-under=25
+          coverage erase
+          pytest -q services/auth-service/tests/test_main.py::test_login_and_get_me \
+            --cov=services/auth-service/app --cov-append --cov-report=
+          pytest -q services/user-profile-service/tests/test_main.py::test_create_and_get_profile \
+            --cov=services/user-profile-service/app --cov-append --cov-report=
+          pytest -q services/transactions-service/tests/test_main.py::test_import_and_get_transactions \
+            --cov=services/transactions-service/app --cov-append --cov-report=
+          coverage report --fail-under=25
 
   web-portal:
     name: Web portal checks
