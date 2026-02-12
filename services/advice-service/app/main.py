@@ -20,6 +20,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import get_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -56,13 +57,15 @@ async def generate_advice(
 
     # --- Fetch transactions once for all topics that need them ---
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {bearer_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {exc}") from exc
 
     # --- Topic-specific logic ---
     if request.topic == 'income_protection':

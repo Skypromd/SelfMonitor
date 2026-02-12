@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict, Any, List
 import uuid
@@ -20,6 +20,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import get_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -123,13 +124,15 @@ async def get_cash_flow_forecast(
 
     # 1. Fetch transactions
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {bearer_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {exc}") from exc
 
     if not transactions:
         return CashFlowResponse(forecast=[])
@@ -167,13 +170,15 @@ async def get_mortgage_readiness_report(
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
     # 1. Fetch transactions (similar to cash flow)
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {bearer_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {exc}") from exc
 
     # 2. Analyze income over the last 12 months
     twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)

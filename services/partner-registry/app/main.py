@@ -21,6 +21,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import post_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -43,15 +44,13 @@ async def startup() -> None:
 
 async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]) -> str | None:
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                COMPLIANCE_SERVICE_URL,
-                json={"user_id": user_id, "action": action, "details": details},
-                timeout=5.0,
-            )
-            response.raise_for_status()
-            return response.json().get("id")
-    except httpx.RequestError as exc:
+        response_data = await post_json_with_retry(
+            COMPLIANCE_SERVICE_URL,
+            json_body={"user_id": user_id, "action": action, "details": details},
+            timeout=5.0,
+        )
+        return response_data.get("id") if isinstance(response_data, dict) else None
+    except httpx.HTTPError as exc:
         print(f"Error: Could not log audit event to compliance service: {exc}")
         return None
 

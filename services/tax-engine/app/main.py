@@ -25,6 +25,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import get_json_with_retry, post_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -76,14 +77,18 @@ async def calculate_tax(
 
     # 1. Fetch all transactions for the user from the transactions-service
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {bearer_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions_data = response.json()
-            transactions = [Transaction(**t) for t in transactions_data]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not connect to transactions-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to transactions-service: {exc}",
+        ) from exc
 
     # 2. Filter transactions by date and calculate totals
     total_income = 0.0
@@ -134,32 +139,43 @@ async def calculate_and_submit_tax(
 
     # 5. Submit the calculated tax to the integrations service
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {bearer_token}"}
-            submission_payload = {
-                "tax_period_start": request.start_date.isoformat(),
-                "tax_period_end": request.end_date.isoformat(),
-                "tax_due": calculation_result.estimated_tax_due,
-            }
-            response = await client.post(INTEGRATIONS_SERVICE_URL, headers=headers, json=submission_payload, timeout=15.0)
-            response.raise_for_status()
-            submission_data = response.json()
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not connect to integrations-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        submission_payload = {
+            "tax_period_start": request.start_date.isoformat(),
+            "tax_period_end": request.end_date.isoformat(),
+            "tax_due": calculation_result.estimated_tax_due,
+        }
+        submission_data = await post_json_with_retry(
+            INTEGRATIONS_SERVICE_URL,
+            headers=headers,
+            json_body=submission_payload,
+            timeout=15.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to integrations-service: {exc}",
+        ) from exc
 
     # 6. Create a calendar event for the payment deadline
     try:
-        async with httpx.AsyncClient() as client:
-            # UK Self Assessment payment deadline is 31st Jan of the next year
-            deadline_year = request.end_date.year + 1
-            deadline = datetime.date(deadline_year, 1, 31)
-            await client.post(CALENDAR_SERVICE_URL, json={
+        # UK Self Assessment payment deadline is 31st Jan of the next year
+        deadline_year = request.end_date.year + 1
+        deadline = datetime.date(deadline_year, 1, 31)
+        await post_json_with_retry(
+            CALENDAR_SERVICE_URL,
+            json_body={
                 "user_id": user_id,
                 "event_title": "UK Self Assessment Tax Payment Due",
                 "event_date": deadline.isoformat(),
-                "notes": f"Estimated tax due: £{calculation_result.estimated_tax_due}. Submission ID: {submission_data.get('submission_id')}"
-            })
-    except httpx.RequestError:
+                "notes": (
+                    f"Estimated tax due: £{calculation_result.estimated_tax_due}. "
+                    f"Submission ID: {submission_data.get('submission_id')}"
+                ),
+            },
+            expect_json=False,
+        )
+    except httpx.HTTPError:
         # This is a non-critical step, so we don't fail the whole request if it fails.
         print("Warning: Could not create calendar event.")
 
