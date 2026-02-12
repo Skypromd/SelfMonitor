@@ -34,7 +34,11 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
     ]
 
     # 2. Mock the httpx.AsyncClient.get call
-    mock_response = httpx.Response(200, json=mock_transactions)
+    mock_response = httpx.Response(
+        200,
+        json=mock_transactions,
+        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+    )
     mock_get = mocker.patch(
         "httpx.AsyncClient.get",
         return_value=mock_response
