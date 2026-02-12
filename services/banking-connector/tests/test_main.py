@@ -41,6 +41,7 @@ async def test_callback_schedules_celery_task(mocker):
     """
     # Mock the .delay() method of our Celery task
     mock_delay = mocker.patch.object(import_transactions_task, 'delay')
+    mock_delay.return_value.id = "task-123"
 
     # Use a dummy code to trigger the endpoint
     auth_code = "test-auth-code"
@@ -50,6 +51,7 @@ async def test_callback_schedules_celery_task(mocker):
     data = response.json()
     assert data['status'] == 'processing'
     assert 'task_id' in data
+    assert data['task_id'] == "task-123"
 
     # Check that our mock was called
     mock_delay.assert_called_once()
