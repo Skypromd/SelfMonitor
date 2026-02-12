@@ -30,5 +30,5 @@ _Last updated: 2026-02-12_
 
 ## Current focus
 
-1. Post-release hardening backlog (Pydantic v2 deprecations, FastAPI lifespan migration)
-2. Expand contract/integration automation across remaining services
+1. Implement real provider-state handlers for Pact verification
+2. Add optional full docker-compose end-to-end nightly workflow
