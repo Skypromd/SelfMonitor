@@ -18,8 +18,8 @@ _Last updated: 2026-02-12_
 - [x] Replace `fake_auth_check` in critical services
 - [x] Centralize JWT validation in shared library
 - [x] Propagate real user identity across inter-service requests
-- [ ] Migrate critical in-memory stores to persistent storage
-- [ ] Standardize error handling/retries for inter-service calls
+- [x] Migrate critical in-memory stores to persistent storage
+- [x] Standardize error handling/retries for inter-service calls
 
 ## Sprint 3 (Weeks 5-6) - Release Readiness
 
@@ -30,5 +30,5 @@ _Last updated: 2026-02-12_
 
 ## Current focus
 
-1. Replacing in-memory stores in consent/partner services
-2. Release-readiness quality gates
+1. Add stable smoke/integration pipeline in CI
+2. Enforce quality gates (coverage + required checks)
