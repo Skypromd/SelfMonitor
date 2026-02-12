@@ -12,4 +12,5 @@ opentelemetry-instrumentation-fastapi
 # Dependencies for testing
 pytest
 pytest-asyncio
+aiosqlite
 pact-python

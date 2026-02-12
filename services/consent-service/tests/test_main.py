@@ -5,7 +5,7 @@ import uuid
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from app.main import app, fake_consents_db
+from app.main import app, fake_consents_db, Consent
 
 client = TestClient(app)
 
@@ -48,7 +48,7 @@ def test_revoke_consent_triggers_audit(mocker):
     # 1. First, create a consent directly in our fake DB
     consent_id = uuid.uuid4()
     user_id = "fake-user-123"
-    fake_consents_db[consent_id] = app.main.Consent(
+    fake_consents_db[consent_id] = Consent(
         id=consent_id,
         user_id=user_id,
         connection_id=uuid.uuid4(),

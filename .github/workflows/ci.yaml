@@ -1,50 +1,84 @@
-name: Python Service CI
+name: Monorepo CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
-      - 'services/**'
+      - "services/**"
+      - "apps/web-portal/**"
+      - ".github/workflows/ci.yaml"
 
 jobs:
-  lint-and-test:
-    # This job runs for each Python service that has been changed.
-    # In a real monorepo, you'd use path filtering to determine which services to run on.
+  python-services:
+    name: Python checks (${{ matrix.service }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        # This list would be dynamically generated in a more advanced setup
-        service: [ 'auth-service', 'transactions-service', 'documents-service' ]
+        service:
+          - auth-service
+          - banking-connector
+          - compliance-service
+          - consent-service
+          - tax-engine
+          - transactions-service
+          - user-profile-service
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.12'
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Install dependencies for ${{ matrix.service }}
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r services/${{ matrix.service }}/requirements.txt
-        pip install flake8 pytest # Install test and lint dependencies
+      - name: Install dependencies for ${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/${{ matrix.service }}/requirements.txt
+          pip install flake8
 
-    - name: Lint with flake8
-      working-directory: ./services/${{ matrix.service }}
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Lint with flake8
+        working-directory: ./services/${{ matrix.service }}
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
-    - name: Run tests with pytest
-      working-directory: ./services/${{ matrix.service }}
-      run: |
-        # This is a placeholder for running actual tests.
-        # You would create a `tests/` directory inside each service.
-        echo "Pytest would run here if 'tests/' directory existed."
-        # pytest
+      - name: Run tests with pytest
+        working-directory: ./services/${{ matrix.service }}
+        run: |
+          if [ -d tests ]; then
+            pytest -q
+          else
+            echo "No tests directory found; skipping."
+          fi
+
+  web-portal:
+    name: Web portal checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./apps/web-portal
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web-portal/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build

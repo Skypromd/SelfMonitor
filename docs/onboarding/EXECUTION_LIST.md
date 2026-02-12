@@ -7,10 +7,10 @@ _Last updated: 2026-02-12_
 - [x] Create execution list and start implementation
 - [x] Fix broken Next.js/TypeScript pages in `apps/web-portal/pages/*`
 - [x] Ensure `npx tsc --noEmit` passes in `apps/web-portal`
-- [ ] Resolve auth-service dependency/runtime break in local test setup
-- [ ] Replace CI test placeholder with real `pytest` execution
-- [ ] Expand CI coverage beyond 3 hardcoded services
-- [ ] Add frontend checks (`typecheck`, `lint`, `build`) to CI
+- [x] Resolve auth-service dependency/runtime break in local test setup
+- [x] Replace CI test placeholder with real `pytest` execution
+- [x] Expand CI coverage beyond 3 hardcoded services
+- [x] Add frontend checks (`typecheck`, `lint`, `build`) to CI
 - [ ] Move dev secrets from hardcoded compose values to env-based setup
 
 ## Sprint 2 (Weeks 3-4) - Auth/Security Hardening
