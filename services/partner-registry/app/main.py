@@ -6,7 +6,7 @@ import sys
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
@@ -121,6 +121,56 @@ async def _load_lead_report(
     )
 
 
+def _build_csv_report(report: schemas.LeadReportResponse) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "row_type",
+            "period_start",
+            "period_end",
+            "partner_id",
+            "partner_name",
+            "leads_count",
+            "unique_users",
+        ]
+    )
+    writer.writerow(
+        [
+            "SUMMARY",
+            report.period_start.isoformat() if report.period_start else "",
+            report.period_end.isoformat() if report.period_end else "",
+            "",
+            "ALL_PARTNERS",
+            report.total_leads,
+            report.unique_users,
+        ]
+    )
+    for row in report.by_partner:
+        writer.writerow(
+            [
+                "PARTNER",
+                report.period_start.isoformat() if report.period_start else "",
+                report.period_end.isoformat() if report.period_end else "",
+                str(row.partner_id),
+                row.partner_name,
+                row.leads_count,
+                row.unique_users,
+            ]
+        )
+    return output.getvalue()
+
+
+def _csv_response(report: schemas.LeadReportResponse) -> Response:
+    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
+    filename = f"lead_report_{timestamp}.csv"
+    return Response(
+        content=_build_csv_report(report),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/partners", response_model=List[schemas.Partner])
 async def list_partners(
     service_type: Optional[str] = Query(None),
@@ -193,18 +243,22 @@ async def initiate_handoff(
 
 @app.get("/leads/report", response_model=schemas.LeadReportResponse)
 async def get_lead_report(
+    report_format: Literal["json", "csv"] = Query(default="json", alias="format"),
     partner_id: Optional[uuid.UUID] = Query(default=None),
     start_date: Optional[datetime.date] = Query(default=None),
     end_date: Optional[datetime.date] = Query(default=None),
     _user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _load_lead_report(
+    report = await _load_lead_report(
         db=db,
         partner_id=partner_id,
         start_date=start_date,
         end_date=end_date,
     )
+    if report_format == "csv":
+        return _csv_response(report)
+    return report
 
 
 @app.get("/leads/report.csv")
@@ -221,49 +275,5 @@ async def export_lead_report_csv(
         start_date=start_date,
         end_date=end_date,
     )
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(
-        [
-            "row_type",
-            "period_start",
-            "period_end",
-            "partner_id",
-            "partner_name",
-            "leads_count",
-            "unique_users",
-        ]
-    )
-    writer.writerow(
-        [
-            "SUMMARY",
-            report.period_start.isoformat() if report.period_start else "",
-            report.period_end.isoformat() if report.period_end else "",
-            "",
-            "ALL_PARTNERS",
-            report.total_leads,
-            report.unique_users,
-        ]
-    )
-    for row in report.by_partner:
-        writer.writerow(
-            [
-                "PARTNER",
-                report.period_start.isoformat() if report.period_start else "",
-                report.period_end.isoformat() if report.period_end else "",
-                str(row.partner_id),
-                row.partner_name,
-                row.leads_count,
-                row.unique_users,
-            ]
-        )
-
-    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
-    filename = f"lead_report_{timestamp}.csv"
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return _csv_response(report)
 

@@ -90,6 +90,16 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - json
+              - csv
+            default: json
+          description: Response format (`json` by default, `csv` for export).
         - name: partner_id
           in: query
           required: false
@@ -118,6 +128,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LeadReportResponse"
+            text/csv:
+              schema:
+                type: string
+                format: binary
         "400":
           description: Invalid date range.
           content:

@@ -193,3 +193,20 @@ def test_lead_report_csv_export(mocker):
     assert partner_a in partner_ids
     assert partner_b in partner_ids
 
+
+def test_lead_report_csv_via_format_query(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    assert client.post(
+        f"/partners/{partner_id}/handoff",
+        headers=get_auth_headers("user-a@example.com"),
+    ).status_code == 202
+
+    response = client.get(
+        "/leads/report?format=csv",
+        headers=get_auth_headers("billing-admin@example.com"),
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "row_type,period_start,period_end,partner_id,partner_name,leads_count,unique_users" in response.text
+
