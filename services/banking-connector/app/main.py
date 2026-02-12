@@ -15,10 +15,13 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be
 AUTH_ALGORITHM = "HS256"
 
 vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
-if vault_client.is_authenticated():
-    print("Successfully authenticated with Vault.")
-else:
-    print("Error: Could not authenticate with Vault.")
+try:
+    if vault_client.is_authenticated():
+        print("Successfully authenticated with Vault.")
+    else:
+        print("Error: Could not authenticate with Vault.")
+except Exception as exc:
+    print(f"Warning: Vault authentication check failed during startup: {exc}")
 
 
 def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
