@@ -75,7 +75,11 @@ async def get_partner_details(
     return partner
 
 
-@app.post("/partners/{partner_id}/handoff", status_code=status.HTTP_202_ACCEPTED)
+@app.post(
+    "/partners/{partner_id}/handoff",
+    response_model=schemas.HandoffResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def initiate_handoff(
     partner_id: uuid.UUID,
     user_id: str = Depends(get_current_user_id),
@@ -85,17 +89,37 @@ async def initiate_handoff(
     if not partner:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner not found")
 
+    existing_lead = await crud.get_recent_handoff_lead(
+        db,
+        user_id=user_id,
+        partner_id=str(partner.id),
+    )
+    if existing_lead:
+        return schemas.HandoffResponse(
+            message=f"Handoff to {partner.name} already initiated recently.",
+            lead_id=uuid.UUID(str(existing_lead.id)),
+            duplicated=True,
+        )
+
+    lead = await crud.create_handoff_lead(
+        db,
+        user_id=user_id,
+        partner_id=str(partner.id),
+    )
+
     audit_event_id = await log_audit_event(
         user_id=user_id,
         action="partner.handoff.initiated",
         details={
+            "lead_id": str(lead.id),
             "partner_id": str(partner.id),
             "partner_name": partner.name,
         },
     )
 
-    return {
-        "message": f"Handoff to {partner.name} initiated.",
-        "audit_event_id": audit_event_id,
-    }
+    return schemas.HandoffResponse(
+        message=f"Handoff to {partner.name} initiated.",
+        lead_id=uuid.UUID(str(lead.id)),
+        audit_event_id=audit_event_id,
+    )
 

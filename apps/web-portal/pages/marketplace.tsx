@@ -13,6 +13,7 @@ type Partner = {
   id: string;
   name: string;
   services_offered: string[];
+  website: string;
 };
 
 const serviceTitles: Record<string, string> = {
@@ -75,10 +76,11 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
         headers: { Authorization: `Bearer ${token}` },
         method: 'POST',
       });
+      const payload = await response.json();
       if (!response.ok) {
-        throw new Error('Handoff failed');
+        throw new Error(payload.detail || 'Handoff failed');
       }
-      setMessage(`Your request has been sent to ${partnerName}. They will be in touch shortly.`);
+      setMessage(payload.message || `Your request has been sent to ${partnerName}. They will be in touch shortly.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Unexpected error');
     }
@@ -99,6 +101,9 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
               <div key={partner.id} className={styles.partnerItem}>
                 <strong>{partner.name}</strong>
                 <p>{partner.description}</p>
+                <a href={partner.website} rel="noopener noreferrer" target="_blank">
+                  Visit website
+                </a>
                 <button className={styles.button} onClick={() => handleHandoff(partner.id, partner.name)}>
                   Request Contact
                 </button>

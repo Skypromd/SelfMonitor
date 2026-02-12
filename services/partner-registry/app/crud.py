@@ -1,3 +1,4 @@
+import datetime
 from typing import List, Optional
 
 from sqlalchemy import func
@@ -52,4 +53,31 @@ async def list_partners(db: AsyncSession, service_type: Optional[str] = None) ->
 async def get_partner_by_id(db: AsyncSession, partner_id: str) -> models.Partner | None:
     result = await db.execute(select(models.Partner).filter(models.Partner.id == partner_id))
     return result.scalars().first()
+
+
+async def get_recent_handoff_lead(
+    db: AsyncSession,
+    user_id: str,
+    partner_id: str,
+    dedupe_window_hours: int = 24,
+) -> models.HandoffLead | None:
+    cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=dedupe_window_hours)
+    result = await db.execute(
+        select(models.HandoffLead)
+        .filter(
+            models.HandoffLead.user_id == user_id,
+            models.HandoffLead.partner_id == partner_id,
+            models.HandoffLead.created_at >= cutoff,
+        )
+        .order_by(models.HandoffLead.created_at.desc())
+    )
+    return result.scalars().first()
+
+
+async def create_handoff_lead(db: AsyncSession, user_id: str, partner_id: str) -> models.HandoffLead:
+    lead = models.HandoffLead(user_id=user_id, partner_id=partner_id, status="initiated")
+    db.add(lead)
+    await db.commit()
+    await db.refresh(lead)
+    return lead
 

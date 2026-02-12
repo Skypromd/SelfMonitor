@@ -75,10 +75,32 @@ def test_handoff_triggers_audit(mocker):
     payload = handoff_response.json()
     assert "Handoff to" in payload["message"]
     assert payload["audit_event_id"] == "audit-1"
+    assert payload["duplicated"] is False
+    assert uuid.UUID(payload["lead_id"])
 
     mock_log.assert_awaited_once()
     call_args = mock_log.call_args.kwargs
     assert call_args["user_id"] == TEST_USER_ID
     assert call_args["action"] == "partner.handoff.initiated"
     assert call_args["details"]["partner_id"] == partner_id
+    assert uuid.UUID(call_args["details"]["lead_id"])
+
+
+def test_duplicate_handoff_is_deduplicated(mocker):
+    mock_log = mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partners_response = client.get("/partners")
+    partner_id = partners_response.json()[0]["id"]
+
+    first_response = client.post(f"/partners/{partner_id}/handoff", headers=get_auth_headers())
+    assert first_response.status_code == 202
+    first_payload = first_response.json()
+    assert first_payload["duplicated"] is False
+
+    second_response = client.post(f"/partners/{partner_id}/handoff", headers=get_auth_headers())
+    assert second_response.status_code == 202
+    second_payload = second_response.json()
+    assert second_payload["duplicated"] is True
+    assert second_payload["lead_id"] == first_payload["lead_id"]
+
+    mock_log.assert_awaited_once()
 
