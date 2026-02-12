@@ -1,4 +1,5 @@
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -24,7 +25,7 @@ async def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 # Fixture to create/drop tables for each test function
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def db_session():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
