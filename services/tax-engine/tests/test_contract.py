@@ -1,56 +1,65 @@
+import os
+import tempfile
+from pathlib import Path
+
+import httpx
 import pytest
+from pact import Pact
+from pact.match import like
 
-pact_module = pytest.importorskip("pact")
-Consumer = getattr(pact_module, "Consumer", None)
-Provider = getattr(pact_module, "Provider", None)
-Like = getattr(pact_module, "Like", None)
+if os.getenv("ENABLE_CONTRACT_TESTS") != "1":
+    pytest.skip(
+        "Contract tests are disabled. Set ENABLE_CONTRACT_TESTS=1 to run.",
+        allow_module_level=True,
+    )
 
-if not all([Consumer, Provider, Like]):
-    pytest.skip("Installed pact library does not expose Consumer/Provider/Like API", allow_module_level=True)
+CONSUMER_NAME = "TaxEngineService"
+PROVIDER_NAME = "TransactionsService"
+PACT_OUTPUT_DIR = Path(os.getenv("PACT_OUTPUT_DIR", Path(tempfile.gettempdir()) / "pacts"))
+PACT_FILE = PACT_OUTPUT_DIR / f"{CONSUMER_NAME}-{PROVIDER_NAME}.json"
 
-# Определяем пути для Pact
-PACT_DIR = 'pacts'
-CONSUMER_NAME = 'TaxEngineService'
-PROVIDER_NAME = 'TransactionsService'
 
-@pytest.fixture(scope="module")
-def pact():
-    pact = Consumer(CONSUMER_NAME).has_pact_with(Provider(PROVIDER_NAME), pact_dir=PACT_DIR)
-    pact.start_service()
-    yield pact
-    pact.stop_service()
+def test_get_all_transactions_for_a_user():
+    pact = Pact(CONSUMER_NAME, PROVIDER_NAME)
 
-def test_get_all_transactions_for_a_user(pact):
-    # 1. Определяем, какой ответ мы ожидаем от TransactionsService
-    expected = [
-        {
-            "id": Like("123e4567-e89b-12d3-a456-426614174000"),
-            "account_id": Like("123e4567-e89b-12d3-a456-426614174001"),
-            "user_id": "test_user",
-            "provider_transaction_id": Like("txn_abc"),
-            "date": Like("2023-10-10"),
-            "description": Like("Tesco"),
-            "amount": Like(123.45),
-            "currency": Like("GBP"),
-            "category": Like("groceries"),
-            "created_at": Like("2023-10-10T10:00:00Z")
-        }
-    ]
+    (
+        pact.upon_receiving("a request for all of a user's transactions")
+        .given("transactions exist for a user")
+        .with_request("GET", "/transactions/me")
+        .with_header("Authorization", "Bearer fake-token", "Request")
+        .will_respond_with(200)
+        .with_header("Content-Type", "application/json", "Response")
+        .with_body(
+            [
+                {
+                    "id": like("123e4567-e89b-12d3-a456-426614174000"),
+                    "account_id": like("123e4567-e89b-12d3-a456-426614174001"),
+                    "user_id": "test_user",
+                    "provider_transaction_id": like("txn_abc"),
+                    "date": like("2023-10-10"),
+                    "description": like("Tesco"),
+                    "amount": like(123.45),
+                    "currency": like("GBP"),
+                    "category": like("groceries"),
+                    "created_at": like("2023-10-10T10:00:00Z"),
+                }
+            ],
+            part="Response",
+        )
+    )
 
-    # 2. Определяем, какой запрос мы будем отправлять
-    (pact
-     .given('transactions exist for a user')
-     .upon_receiving('a request for all of a user\'s transactions')
-     .with_request('GET', '/transactions/me', headers={'Authorization': 'Bearer fake-token'})
-     .will_respond_with(200, body=expected))
-
-    # 3. Выполняем наш код, который делает этот запрос
-    with pact:
-        # В реальном тесте здесь был бы вызов функции из tax-engine,
-        # которая делает запрос. Мы имитируем его для простоты.
-        import httpx
-        transactions_url = f"{pact.uri}/transactions/me"
-        response = httpx.get(transactions_url, headers={'Authorization': 'Bearer fake-token'})
+    with pact.serve() as mock_server:
+        response = httpx.get(
+            f"{mock_server.url}/transactions/me",
+            headers={"Authorization": "Bearer fake-token"},
+            timeout=5.0,
+        )
         assert response.status_code == 200
+        payload = response.json()
+        assert isinstance(payload, list)
+        assert payload
 
-    # После этого теста будет сгенерирован файл pacts/TaxEngineService-TransactionsService.json
+        mock_server.write_file(PACT_OUTPUT_DIR, overwrite=True)
+
+    assert PACT_FILE.exists()
+
