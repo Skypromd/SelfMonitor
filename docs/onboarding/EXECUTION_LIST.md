@@ -16,7 +16,7 @@ _Last updated: 2026-02-12_
 ## Sprint 2 (Weeks 3-4) - Auth/Security Hardening
 
 - [x] Replace `fake_auth_check` in critical services
-- [ ] Centralize JWT validation in shared library
+- [x] Centralize JWT validation in shared library
 - [x] Propagate real user identity across inter-service requests
 - [ ] Migrate critical in-memory stores to persistent storage
 - [ ] Standardize error handling/retries for inter-service calls
@@ -30,5 +30,5 @@ _Last updated: 2026-02-12_
 
 ## Current focus
 
-1. Centralized shared auth library rollout
-2. Replacing in-memory stores in consent/partner services
+1. Replacing in-memory stores in consent/partner services
+2. Release-readiness quality gates
