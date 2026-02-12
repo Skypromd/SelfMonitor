@@ -95,8 +95,10 @@ services:
     container_name: consent-service
     depends_on:
       - compliance-service
+      - postgres
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      DATABASE_URL: "${CONSENT_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_consent}"
       COMPLIANCE_SERVICE_URL: "${CONSENT_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
     networks:
       - default_network
@@ -246,8 +248,10 @@ services:
     container_name: partner-registry
     depends_on:
       - compliance-service
+      - postgres
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_partner}"
       COMPLIANCE_SERVICE_URL: "${PARTNER_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
     networks:
       - default_network

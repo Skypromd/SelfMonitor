@@ -8,5 +8,7 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-E
     CREATE DATABASE db_transactions;
     CREATE DATABASE db_compliance;
     CREATE DATABASE db_documents;
+    CREATE DATABASE db_consent;
+    CREATE DATABASE db_partner;
 EOSQL
 

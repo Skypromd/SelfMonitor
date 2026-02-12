@@ -24,6 +24,7 @@ jobs:
           - banking-connector
           - compliance-service
           - consent-service
+          - partner-registry
           - tax-engine
           - transactions-service
           - user-profile-service

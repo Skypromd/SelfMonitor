@@ -1,0 +1,84 @@
+import os
+import sys
+import uuid
+
+import pytest
+import pytest_asyncio
+from fastapi.testclient import TestClient
+from jose import jwt
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import sessionmaker
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from app import crud
+from app.database import Base, get_db
+from app.main import app
+
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+TEST_USER_ID = "test-user@example.com"
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+engine = create_async_engine(TEST_DATABASE_URL)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
+
+
+def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
+    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def override_get_db():
+    async with TestingSessionLocal() as session:
+        yield session
+
+
+app.dependency_overrides[get_db] = override_get_db
+client = TestClient(app)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def setup_db():
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+
+    async with TestingSessionLocal() as session:
+        await crud.seed_partners_if_empty(session)
+
+    yield
+
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
+
+
+def test_list_partners_and_filter():
+    response = client.get("/partners")
+    assert response.status_code == 200
+    partners = response.json()
+    assert len(partners) == 3
+
+    filter_response = client.get("/partners?service_type=mortgage_advice")
+    assert filter_response.status_code == 200
+    filtered = filter_response.json()
+    assert len(filtered) == 1
+    assert filtered[0]["name"] == "HomePath Mortgages"
+
+
+def test_handoff_triggers_audit(mocker):
+    mock_log = mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partners_response = client.get("/partners")
+    partner_id = partners_response.json()[0]["id"]
+
+    handoff_response = client.post(f"/partners/{partner_id}/handoff", headers=get_auth_headers())
+    assert handoff_response.status_code == 202
+    payload = handoff_response.json()
+    assert "Handoff to" in payload["message"]
+    assert payload["audit_event_id"] == "audit-1"
+
+    mock_log.assert_awaited_once()
+    call_args = mock_log.call_args.kwargs
+    assert call_args["user_id"] == TEST_USER_ID
+    assert call_args["action"] == "partner.handoff.initiated"
+    assert call_args["details"]["partner_id"] == partner_id
+
