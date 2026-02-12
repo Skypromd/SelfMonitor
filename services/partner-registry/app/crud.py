@@ -61,7 +61,7 @@ async def get_recent_handoff_lead(
     partner_id: str,
     dedupe_window_hours: int = 24,
 ) -> models.HandoffLead | None:
-    cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=dedupe_window_hours)
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=dedupe_window_hours)
     result = await db.execute(
         select(models.HandoffLead)
         .filter(

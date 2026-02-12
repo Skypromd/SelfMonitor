@@ -88,15 +88,17 @@ async def initiate_handoff(
     partner = await crud.get_partner_by_id(db, str(partner_id))
     if not partner:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner not found")
+    partner_db_id = str(partner.id)
+    partner_name = partner.name
 
     existing_lead = await crud.get_recent_handoff_lead(
         db,
         user_id=user_id,
-        partner_id=str(partner.id),
+        partner_id=partner_db_id,
     )
     if existing_lead:
         return schemas.HandoffResponse(
-            message=f"Handoff to {partner.name} already initiated recently.",
+            message=f"Handoff to {partner_name} already initiated recently.",
             lead_id=uuid.UUID(str(existing_lead.id)),
             duplicated=True,
         )
@@ -104,7 +106,7 @@ async def initiate_handoff(
     lead = await crud.create_handoff_lead(
         db,
         user_id=user_id,
-        partner_id=str(partner.id),
+        partner_id=partner_db_id,
     )
 
     audit_event_id = await log_audit_event(
@@ -112,13 +114,13 @@ async def initiate_handoff(
         action="partner.handoff.initiated",
         details={
             "lead_id": str(lead.id),
-            "partner_id": str(partner.id),
-            "partner_name": partner.name,
+            "partner_id": partner_db_id,
+            "partner_name": partner_name,
         },
     )
 
     return schemas.HandoffResponse(
-        message=f"Handoff to {partner.name} initiated.",
+        message=f"Handoff to {partner_name} initiated.",
         lead_id=uuid.UUID(str(lead.id)),
         audit_event_id=audit_event_id,
     )

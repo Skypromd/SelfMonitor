@@ -23,5 +23,10 @@ class HandoffLead(Base):
     user_id = Column(String, nullable=False, index=True)
     partner_id = Column(String, nullable=False, index=True)
     status = Column(String, nullable=False, default="initiated")
-    created_at = Column(DateTime, nullable=False, default=datetime.datetime.utcnow, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        index=True,
+    )
 
