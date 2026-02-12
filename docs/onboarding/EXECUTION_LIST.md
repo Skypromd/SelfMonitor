@@ -5,8 +5,8 @@ _Last updated: 2026-02-12_
 ## Sprint 1 (Weeks 1-2) - Build and CI Stabilization
 
 - [x] Create execution list and start implementation
-- [ ] Fix broken Next.js/TypeScript pages in `apps/web-portal/pages/*`
-- [ ] Ensure `npx tsc --noEmit` passes in `apps/web-portal`
+- [x] Fix broken Next.js/TypeScript pages in `apps/web-portal/pages/*`
+- [x] Ensure `npx tsc --noEmit` passes in `apps/web-portal`
 - [ ] Resolve auth-service dependency/runtime break in local test setup
 - [ ] Replace CI test placeholder with real `pytest` execution
 - [ ] Expand CI coverage beyond 3 hardcoded services
