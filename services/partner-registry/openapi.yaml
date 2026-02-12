@@ -1,12 +1,13 @@
 openapi: 3.0.3
 info:
   title: Partner Registry Service
-  description: Manages a registry of third-party partners (e.g., financial advisors).
+  description: Manages partner catalog and monetization handoff leads.
   version: 1.0.0
+
 paths:
   /partners:
     get:
-      summary: List all available partners
+      summary: List available partners
       tags:
         - Partners
       parameters:
@@ -15,20 +16,21 @@ paths:
           required: false
           schema:
             type: string
-            example: 'mortgage_advice'
-          description: Filter partners by the type of service they offer.
+            example: mortgage_advice
+          description: Filter partners by offered service.
       responses:
-        '200':
-          description: A list of partners.
+        "200":
+          description: List of partners.
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/Partner'
+                  $ref: "#/components/schemas/Partner"
+
   /partners/{partner_id}:
     get:
-      summary: Get details for a specific partner
+      summary: Get partner details
       tags:
         - Partners
       parameters:
@@ -39,18 +41,24 @@ paths:
             type: string
             format: uuid
       responses:
-        '200':
+        "200":
           description: Partner details.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Partner'
-        '404':
+                $ref: "#/components/schemas/Partner"
+        "404":
           description: Partner not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /partners/{partner_id}/handoff:
     post:
-      summary: Initiate a handoff to a partner
+      summary: Initiate partner handoff and create monetization lead
       tags:
-        - Partners
+        - Monetization
       security:
         - bearerAuth: []
       parameters:
@@ -61,21 +69,61 @@ paths:
             type: string
             format: uuid
       responses:
-        '202':
-          description: Handoff process initiated.
+        "202":
+          description: Handoff handled (created or deduplicated).
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Handoff to SafeFuture Financial Advisors initiated."
-                  audit_event_id:
-                    type: string
-                    format: uuid
-        '404':
+                $ref: "#/components/schemas/HandoffResponse"
+        "404":
           description: Partner not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /leads/report:
+    get:
+      summary: Get lead report for Pay-Per-Lead billing
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: partner_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional partner filter.
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Inclusive start date (UTC).
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Inclusive end date (UTC).
+      responses:
+        "200":
+          description: Aggregated report of leads.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadReportResponse"
+        "400":
+          description: Invalid date range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
 components:
   schemas:
@@ -87,23 +135,104 @@ components:
           format: uuid
         name:
           type: string
-          example: 'SafeFuture Financial Advisors'
+          example: SafeFuture Financial Advisors
         description:
           type: string
-          example: 'Independent financial advisors regulated by the FCA.'
+          example: Independent financial advisors regulated by the FCA.
         services_offered:
           type: array
           items:
             type: string
-          example: ['pension_advice', 'investment_management']
+          example:
+            - pension_advice
+            - investment_management
         website:
           type: string
           format: uri
-          example: 'https://www.safefuture.example.com'
+          example: https://www.safefuture.example.com
       required:
         - id
         - name
+        - description
         - services_offered
+        - website
+
+    HandoffResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Handoff to SafeFuture Financial Advisors initiated.
+        lead_id:
+          type: string
+          format: uuid
+        audit_event_id:
+          type: string
+          nullable: true
+          example: 1473f17b-56e9-43e9-b8d8-3cd5a53efed2
+        duplicated:
+          type: boolean
+          example: false
+      required:
+        - message
+        - lead_id
+        - duplicated
+
+    LeadReportByPartner:
+      type: object
+      properties:
+        partner_id:
+          type: string
+          format: uuid
+        partner_name:
+          type: string
+          example: HomePath Mortgages
+        leads_count:
+          type: integer
+          example: 12
+        unique_users:
+          type: integer
+          example: 10
+      required:
+        - partner_id
+        - partner_name
+        - leads_count
+        - unique_users
+
+    LeadReportResponse:
+      type: object
+      properties:
+        period_start:
+          type: string
+          format: date
+          nullable: true
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        total_leads:
+          type: integer
+          example: 42
+        unique_users:
+          type: integer
+          example: 35
+        by_partner:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadReportByPartner"
+      required:
+        - total_leads
+        - unique_users
+        - by_partner
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+      required:
+        - detail
+
   securitySchemes:
     bearerAuth:
       type: http

@@ -1,3 +1,4 @@
+import datetime
 import os
 import sys
 import uuid
@@ -123,5 +124,63 @@ async def initiate_handoff(
         message=f"Handoff to {partner_name} initiated.",
         lead_id=uuid.UUID(str(lead.id)),
         audit_event_id=audit_event_id,
+    )
+
+
+@app.get("/leads/report", response_model=schemas.LeadReportResponse)
+async def get_lead_report(
+    partner_id: Optional[uuid.UUID] = Query(default=None),
+    start_date: Optional[datetime.date] = Query(default=None),
+    end_date: Optional[datetime.date] = Query(default=None),
+    _user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date cannot be after end_date",
+        )
+
+    start_at = (
+        datetime.datetime.combine(start_date, datetime.time.min, tzinfo=datetime.UTC)
+        if start_date
+        else None
+    )
+    end_before = (
+        datetime.datetime.combine(
+            end_date + datetime.timedelta(days=1),
+            datetime.time.min,
+            tzinfo=datetime.UTC,
+        )
+        if end_date
+        else None
+    )
+
+    total_leads, unique_users, by_partner_rows = await crud.get_lead_report(
+        db,
+        partner_id=str(partner_id) if partner_id else None,
+        start_at=start_at,
+        end_before=end_before,
+    )
+
+    return schemas.LeadReportResponse(
+        period_start=start_date,
+        period_end=end_date,
+        total_leads=total_leads,
+        unique_users=unique_users,
+        by_partner=[
+            schemas.LeadReportByPartner(
+                partner_id=uuid.UUID(partner_id_str),
+                partner_name=partner_name,
+                leads_count=leads_count,
+                unique_users=partner_unique_users,
+            )
+            for (
+                partner_id_str,
+                partner_name,
+                leads_count,
+                partner_unique_users,
+            ) in by_partner_rows
+        ],
     )
 

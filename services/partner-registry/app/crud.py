@@ -1,7 +1,7 @@
 import datetime
 from typing import List, Optional
 
-from sqlalchemy import func
+from sqlalchemy import Select, distinct, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -80,4 +80,55 @@ async def create_handoff_lead(db: AsyncSession, user_id: str, partner_id: str) -
     await db.commit()
     await db.refresh(lead)
     return lead
+
+
+def _apply_lead_filters(
+    query: Select,
+    partner_id: str | None,
+    start_at: datetime.datetime | None,
+    end_before: datetime.datetime | None,
+) -> Select:
+    if partner_id:
+        query = query.filter(models.HandoffLead.partner_id == partner_id)
+    if start_at:
+        query = query.filter(models.HandoffLead.created_at >= start_at)
+    if end_before:
+        query = query.filter(models.HandoffLead.created_at < end_before)
+    return query
+
+
+async def get_lead_report(
+    db: AsyncSession,
+    partner_id: str | None = None,
+    start_at: datetime.datetime | None = None,
+    end_before: datetime.datetime | None = None,
+) -> tuple[int, int, list[tuple[str, str, int, int]]]:
+    totals_query = select(
+        func.count(models.HandoffLead.id),
+        func.count(distinct(models.HandoffLead.user_id)),
+    )
+    totals_query = _apply_lead_filters(totals_query, partner_id, start_at, end_before)
+    totals_result = await db.execute(totals_query)
+    total_leads, unique_users = totals_result.one()
+
+    by_partner_query = (
+        select(
+            models.HandoffLead.partner_id,
+            models.Partner.name,
+            func.count(models.HandoffLead.id),
+            func.count(distinct(models.HandoffLead.user_id)),
+        )
+        .join(models.Partner, models.Partner.id == models.HandoffLead.partner_id)
+        .group_by(models.HandoffLead.partner_id, models.Partner.name)
+        .order_by(func.count(models.HandoffLead.id).desc(), models.Partner.name.asc())
+    )
+    by_partner_query = _apply_lead_filters(by_partner_query, partner_id, start_at, end_before)
+    by_partner_result = await db.execute(by_partner_query)
+    by_partner_rows = by_partner_result.all()
+
+    return (
+        int(total_leads or 0),
+        int(unique_users or 0),
+        [(str(pid), str(name), int(count or 0), int(users or 0)) for pid, name, count, users in by_partner_rows],
+    )
 

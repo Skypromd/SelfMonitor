@@ -104,3 +104,58 @@ def test_duplicate_handoff_is_deduplicated(mocker):
 
     mock_log.assert_awaited_once()
 
+
+def test_lead_report_aggregates_by_partner(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partners = client.get("/partners").json()
+    partner_a = partners[0]["id"]
+    partner_b = partners[1]["id"]
+
+    assert client.post(f"/partners/{partner_a}/handoff", headers=get_auth_headers("user-a@example.com")).status_code == 202
+    assert client.post(f"/partners/{partner_a}/handoff", headers=get_auth_headers("user-b@example.com")).status_code == 202
+    assert client.post(f"/partners/{partner_b}/handoff", headers=get_auth_headers("user-a@example.com")).status_code == 202
+
+    report_response = client.get("/leads/report", headers=get_auth_headers("billing-admin@example.com"))
+    assert report_response.status_code == 200
+    payload = report_response.json()
+
+    assert payload["total_leads"] == 3
+    assert payload["unique_users"] == 2
+
+    by_partner = {item["partner_id"]: item for item in payload["by_partner"]}
+    assert by_partner[partner_a]["leads_count"] == 2
+    assert by_partner[partner_a]["unique_users"] == 2
+    assert by_partner[partner_b]["leads_count"] == 1
+    assert by_partner[partner_b]["unique_users"] == 1
+
+
+def test_lead_report_supports_partner_filter(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partners = client.get("/partners").json()
+    partner_a = partners[0]["id"]
+    partner_b = partners[1]["id"]
+
+    assert client.post(f"/partners/{partner_a}/handoff", headers=get_auth_headers("user-a@example.com")).status_code == 202
+    assert client.post(f"/partners/{partner_b}/handoff", headers=get_auth_headers("user-b@example.com")).status_code == 202
+
+    report_response = client.get(
+        f"/leads/report?partner_id={partner_a}",
+        headers=get_auth_headers("billing-admin@example.com"),
+    )
+    assert report_response.status_code == 200
+    payload = report_response.json()
+
+    assert payload["total_leads"] == 1
+    assert payload["unique_users"] == 1
+    assert len(payload["by_partner"]) == 1
+    assert payload["by_partner"][0]["partner_id"] == partner_a
+
+
+def test_lead_report_rejects_invalid_date_range():
+    response = client.get(
+        "/leads/report?start_date=2026-01-10&end_date=2026-01-01",
+        headers=get_auth_headers("billing-admin@example.com"),
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "start_date cannot be after end_date"
+
