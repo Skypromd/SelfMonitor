@@ -1,6 +1,8 @@
 import os
 import sys
 import uuid
+import csv
+import io
 
 import pytest
 import pytest_asyncio
@@ -158,4 +160,36 @@ def test_lead_report_rejects_invalid_date_range():
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "start_date cannot be after end_date"
+
+
+def test_lead_report_csv_export(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partners = client.get("/partners").json()
+    partner_a = partners[0]["id"]
+    partner_b = partners[1]["id"]
+
+    assert client.post(
+        f"/partners/{partner_a}/handoff",
+        headers=get_auth_headers("user-a@example.com"),
+    ).status_code == 202
+    assert client.post(
+        f"/partners/{partner_b}/handoff",
+        headers=get_auth_headers("user-b@example.com"),
+    ).status_code == 202
+
+    response = client.get("/leads/report.csv", headers=get_auth_headers("billing-admin@example.com"))
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "attachment; filename=\"lead_report_" in response.headers["content-disposition"]
+
+    rows = list(csv.DictReader(io.StringIO(response.text)))
+    assert rows[0]["row_type"] == "SUMMARY"
+    assert rows[0]["leads_count"] == "2"
+    assert rows[0]["unique_users"] == "2"
+
+    partner_rows = [row for row in rows if row["row_type"] == "PARTNER"]
+    assert len(partner_rows) == 2
+    partner_ids = {row["partner_id"] for row in partner_rows}
+    assert partner_a in partner_ids
+    assert partner_b in partner_ids
 

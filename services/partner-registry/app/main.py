@@ -1,4 +1,6 @@
 import datetime
+import csv
+import io
 import os
 import sys
 import uuid
@@ -7,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, schemas
@@ -55,6 +57,68 @@ async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]) ->
     except httpx.HTTPError as exc:
         print(f"Error: Could not log audit event to compliance service: {exc}")
         return None
+
+
+def _build_report_window(
+    start_date: datetime.date | None,
+    end_date: datetime.date | None,
+) -> tuple[datetime.datetime | None, datetime.datetime | None]:
+    if start_date and end_date and start_date > end_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="start_date cannot be after end_date",
+        )
+
+    start_at = (
+        datetime.datetime.combine(start_date, datetime.time.min, tzinfo=datetime.UTC)
+        if start_date
+        else None
+    )
+    end_before = (
+        datetime.datetime.combine(
+            end_date + datetime.timedelta(days=1),
+            datetime.time.min,
+            tzinfo=datetime.UTC,
+        )
+        if end_date
+        else None
+    )
+    return start_at, end_before
+
+
+async def _load_lead_report(
+    db: AsyncSession,
+    partner_id: uuid.UUID | None,
+    start_date: datetime.date | None,
+    end_date: datetime.date | None,
+) -> schemas.LeadReportResponse:
+    start_at, end_before = _build_report_window(start_date, end_date)
+    total_leads, unique_users, by_partner_rows = await crud.get_lead_report(
+        db,
+        partner_id=str(partner_id) if partner_id else None,
+        start_at=start_at,
+        end_before=end_before,
+    )
+    return schemas.LeadReportResponse(
+        period_start=start_date,
+        period_end=end_date,
+        total_leads=total_leads,
+        unique_users=unique_users,
+        by_partner=[
+            schemas.LeadReportByPartner(
+                partner_id=uuid.UUID(partner_id_str),
+                partner_name=partner_name,
+                leads_count=leads_count,
+                unique_users=partner_unique_users,
+            )
+            for (
+                partner_id_str,
+                partner_name,
+                leads_count,
+                partner_unique_users,
+            ) in by_partner_rows
+        ],
+    )
 
 
 @app.get("/partners", response_model=List[schemas.Partner])
@@ -135,52 +199,71 @@ async def get_lead_report(
     _user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    if start_date and end_date and start_date > end_date:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="start_date cannot be after end_date",
+    return await _load_lead_report(
+        db=db,
+        partner_id=partner_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+
+@app.get("/leads/report.csv")
+async def export_lead_report_csv(
+    partner_id: Optional[uuid.UUID] = Query(default=None),
+    start_date: Optional[datetime.date] = Query(default=None),
+    end_date: Optional[datetime.date] = Query(default=None),
+    _user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await _load_lead_report(
+        db=db,
+        partner_id=partner_id,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "row_type",
+            "period_start",
+            "period_end",
+            "partner_id",
+            "partner_name",
+            "leads_count",
+            "unique_users",
+        ]
+    )
+    writer.writerow(
+        [
+            "SUMMARY",
+            report.period_start.isoformat() if report.period_start else "",
+            report.period_end.isoformat() if report.period_end else "",
+            "",
+            "ALL_PARTNERS",
+            report.total_leads,
+            report.unique_users,
+        ]
+    )
+    for row in report.by_partner:
+        writer.writerow(
+            [
+                "PARTNER",
+                report.period_start.isoformat() if report.period_start else "",
+                report.period_end.isoformat() if report.period_end else "",
+                str(row.partner_id),
+                row.partner_name,
+                row.leads_count,
+                row.unique_users,
+            ]
         )
 
-    start_at = (
-        datetime.datetime.combine(start_date, datetime.time.min, tzinfo=datetime.UTC)
-        if start_date
-        else None
-    )
-    end_before = (
-        datetime.datetime.combine(
-            end_date + datetime.timedelta(days=1),
-            datetime.time.min,
-            tzinfo=datetime.UTC,
-        )
-        if end_date
-        else None
-    )
-
-    total_leads, unique_users, by_partner_rows = await crud.get_lead_report(
-        db,
-        partner_id=str(partner_id) if partner_id else None,
-        start_at=start_at,
-        end_before=end_before,
-    )
-
-    return schemas.LeadReportResponse(
-        period_start=start_date,
-        period_end=end_date,
-        total_leads=total_leads,
-        unique_users=unique_users,
-        by_partner=[
-            schemas.LeadReportByPartner(
-                partner_id=uuid.UUID(partner_id_str),
-                partner_name=partner_name,
-                leads_count=leads_count,
-                unique_users=partner_unique_users,
-            )
-            for (
-                partner_id_str,
-                partner_name,
-                leads_count,
-                partner_unique_users,
-            ) in by_partner_rows
-        ],
+    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
+    filename = f"lead_report_{timestamp}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
