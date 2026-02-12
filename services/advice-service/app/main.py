@@ -4,15 +4,41 @@ from collections import defaultdict
 from typing import Literal, Optional
 
 import httpx
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
 # --- Configuration ---
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    return "fake-user-123"
+
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    return user_id
 
 app = FastAPI(
     title="Advice Service",
@@ -40,14 +66,15 @@ class AdviceResponse(BaseModel):
 @app.post("/generate", response_model=AdviceResponse)
 async def generate_advice(
     request: AdviceRequest, 
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     print(f"Generating advice for user {user_id} on topic: {request.topic}")
 
     # --- Fetch transactions once for all topics that need them ---
     try:
         async with httpx.AsyncClient() as client:
-            headers = {"Authorization": "Bearer fake-token"}
+            headers = {"Authorization": f"Bearer {bearer_token}"}
             response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
             response.raise_for_status()
             transactions = [Transaction(**t) for t in response.json()]

@@ -28,7 +28,9 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
   const handleGrant = async () => {
     setError('');
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/banking/connections/callback?code=fake_auth_code`);
+      const response = await fetch(`${API_GATEWAY_URL}/banking/connections/callback?code=fake_auth_code`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       if (!response.ok) throw new Error('Failed to complete connection');
       const data = await response.json();
       onConnectionComplete(data.connection_id);

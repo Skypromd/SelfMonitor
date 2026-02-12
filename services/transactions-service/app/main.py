@@ -1,7 +1,10 @@
-from fastapi import FastAPI, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+import os
 import uuid
+from typing import List
+
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from jose import JWTError, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
 from .database import get_db
@@ -16,16 +19,41 @@ app = FastAPI(
 # Instrument the app for OpenTelemetry
 setup_telemetry(app)
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+
+
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    return user_id
 
 # --- Endpoints ---
 @app.post("/import", status_code=status.HTTP_202_ACCEPTED)
 async def import_transactions(
     request: schemas.TransactionImportRequest, 
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Imports a batch of transactions for an account into the database."""
@@ -40,7 +68,7 @@ async def import_transactions(
 @app.get("/accounts/{account_id}/transactions", response_model=List[schemas.Transaction])
 async def get_transactions_for_account(
     account_id: uuid.UUID, 
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves all transactions for a specific account belonging to the user from the database."""
@@ -49,7 +77,7 @@ async def get_transactions_for_account(
 
 @app.get("/transactions/me", response_model=List[schemas.Transaction])
 async def get_all_my_transactions(
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves all transactions for the authenticated user across all accounts."""
@@ -60,7 +88,7 @@ async def get_all_my_transactions(
 async def update_transaction_category(
     transaction_id: uuid.UUID,
     update_request: schemas.TransactionUpdateRequest,
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Updates the category of a single transaction in the database."""

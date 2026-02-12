@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 import httpx
+from jose import jwt
 
 # Adjust path to import app
 import sys
@@ -9,6 +10,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app.main import app
 
 client = TestClient(app)
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+TEST_USER_ID = "test-user@example.com"
+
+
+def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
+    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+    return {"Authorization": f"Bearer {token}"}
 
 @pytest.mark.asyncio
 async def test_calculate_tax_with_mocked_transactions(mocker):
@@ -34,6 +43,7 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
     # 3. Call the /calculate endpoint
     response = client.post(
         "/calculate",
+        headers=get_auth_headers(),
         json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"}
     )
 
@@ -67,6 +77,7 @@ async def test_calculate_tax_service_unavailable(mocker):
 
     response = client.post(
         "/calculate",
+        headers=get_auth_headers(),
         json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"}
     )
 

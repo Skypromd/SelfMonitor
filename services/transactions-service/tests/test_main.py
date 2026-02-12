@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 import uuid
+from jose import jwt
 
 # Adjust path to import app and other modules
 import sys
@@ -13,6 +14,15 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app.main import app
 from app.database import get_db, Base
 from app import schemas
+
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+TEST_USER_ID = "test-user@example.com"
+
+
+def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
+    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+    return {"Authorization": f"Bearer {token}"}
 
 # --- Test Database Setup ---
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -41,11 +51,12 @@ client = TestClient(app)
 @pytest.mark.asyncio
 async def test_import_and_get_transactions(db_session):
     account_id = str(uuid.uuid4())
-    user_id = "fake-user-123" # This comes from fake_auth_check
+    user_id = TEST_USER_ID
 
     # 1. Import transactions
     import_response = client.post(
         "/import",
+        headers=get_auth_headers(user_id),
         json={
             "account_id": account_id,
             "transactions": [
@@ -58,7 +69,7 @@ async def test_import_and_get_transactions(db_session):
     assert import_response.json()["imported_count"] == 2
 
     # 2. Get transactions for that account
-    get_response = client.get(f"/accounts/{account_id}/transactions")
+    get_response = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers(user_id))
     assert get_response.status_code == 200
     transactions = get_response.json()
     assert len(transactions) == 2
@@ -73,6 +84,7 @@ async def test_update_transaction_category(db_session):
     # 1. Import a transaction
     client.post(
         "/import",
+        headers=get_auth_headers(),
         json={
             "account_id": account_id,
             "transactions": [
@@ -82,12 +94,13 @@ async def test_update_transaction_category(db_session):
     )
 
     # 2. Retrieve it to get its generated UUID
-    get_response = client.get(f"/accounts/{account_id}/transactions")
+    get_response = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers())
     transaction_id = get_response.json()[0]["id"]
 
     # 3. Update its category
     update_response = client.patch(
         f"/transactions/{transaction_id}",
+        headers=get_auth_headers(),
         json={"category": "groceries"}
     )
     assert update_response.status_code == 200
@@ -96,7 +109,7 @@ async def test_update_transaction_category(db_session):
     assert updated_transaction["description"] == "Tesco"
 
     # 4. Verify the update is persisted
-    get_response_after_update = client.get(f"/accounts/{account_id}/transactions")
+    get_response_after_update = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers())
     assert get_response_after_update.json()[0]["category"] == "groceries"
 
 @pytest.mark.asyncio
@@ -104,6 +117,7 @@ async def test_update_nonexistent_transaction(db_session):
     non_existent_id = str(uuid.uuid4())
     response = client.patch(
         f"/transactions/{non_existent_id}",
+        headers=get_auth_headers(),
         json={"category": "does-not-matter"}
     )
     assert response.status_code == 404
@@ -115,11 +129,11 @@ async def test_get_all_my_transactions(db_session):
     account_id_1 = str(uuid.uuid4())
     account_id_2 = str(uuid.uuid4())
 
-    client.post("/import", json={ "account_id": account_id_1, "transactions": [{"provider_transaction_id": "txn1", "date": "2023-10-01", "description": "Coffee", "amount": -5, "currency": "GBP"}]})
-    client.post("/import", json={ "account_id": account_id_2, "transactions": [{"provider_transaction_id": "txn2", "date": "2023-10-02", "description": "Salary", "amount": 2500, "currency": "GBP"}]})
+    client.post("/import", headers=get_auth_headers(), json={ "account_id": account_id_1, "transactions": [{"provider_transaction_id": "txn1", "date": "2023-10-01", "description": "Coffee", "amount": -5, "currency": "GBP"}]})
+    client.post("/import", headers=get_auth_headers(), json={ "account_id": account_id_2, "transactions": [{"provider_transaction_id": "txn2", "date": "2023-10-02", "description": "Salary", "amount": 2500, "currency": "GBP"}]})
 
     # Call the new endpoint
-    response = client.get("/transactions/me")
+    response = client.get("/transactions/me", headers=get_auth_headers())
 
     assert response.status_code == 200
     transactions = response.json()

@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from jose import JWTError, jwt
 from pydantic import BaseModel, HttpUrl
 from typing import List, Optional
 import uuid
@@ -10,6 +11,8 @@ from .celery_app import import_transactions_task
 # --- Vault Client Setup ---
 VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "dev-root-token")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
 
 vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
 if vault_client.is_authenticated():
@@ -31,10 +34,31 @@ def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: s
         print(f"Error storing tokens in Vault: {e}")
 
 
-# --- Placeholder Security ---
-def fake_auth_check():
-    """A fake dependency to simulate user authentication."""
-    return {"user_id": "fake-user-123"}
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    return user_id
 
 app = FastAPI(
     title="Banking Connector Service",
@@ -67,9 +91,9 @@ class Transaction(BaseModel):
 @app.post("/connections/initiate", response_model=InitiateConnectionResponse)
 async def initiate_connection(
     request: InitiateConnectionRequest,
-    auth_user: dict = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id)
 ):
-    print(f"User {auth_user['user_id']} is initiating connection with {request.provider_id}")
+    print(f"User {user_id} is initiating connection with {request.provider_id}")
     consent_url = f"https://fake-bank-provider.com/consent?client_id={request.provider_id}&redirect_uri={request.redirect_uri}&scope=transactions"
     return InitiateConnectionResponse(consent_url=consent_url)
 
@@ -77,6 +101,8 @@ async def initiate_connection(
 async def handle_provider_callback(
     code: str,
     state: Optional[str] = None,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     if not code:
         raise HTTPException(status_code=400, detail="Authorization code is missing")
@@ -99,7 +125,12 @@ async def handle_provider_callback(
 
     # Dispatch the task to the Celery queue.
     # We convert Pydantic models to dicts as Celery works best with simple data types.
-    task = import_transactions_task.delay(str(connection_id), [t.dict() for t in mock_transactions])
+    task = import_transactions_task.delay(
+        str(connection_id),
+        user_id,
+        bearer_token,
+        [t.dict() for t in mock_transactions],
+    )
 
     return CallbackResponse(
         connection_id=connection_id,

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, status, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict, Any, List
 import uuid
@@ -9,10 +9,37 @@ from collections import defaultdict
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
 import io
+from jose import JWTError, jwt
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    return "fake-user-123"
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+
+
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    return user_id
 
 app = FastAPI(
     title="Analytics Service",
@@ -55,7 +82,7 @@ def simulate_job_execution(job_id: uuid.UUID):
 # --- Endpoints ---
 
 @app.post("/jobs", response_model=JobStatus, status_code=status.HTTP_202_ACCEPTED)
-async def trigger_job(request: JobRequest):
+async def trigger_job(request: JobRequest, _user_id: str = Depends(get_current_user_id)):
     """
     Accepts a new job request and puts it into a 'pending' state.
     """
@@ -69,7 +96,7 @@ async def trigger_job(request: JobRequest):
     return new_job
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
-async def get_job_status(job_id: uuid.UUID):
+async def get_job_status(job_id: uuid.UUID, _user_id: str = Depends(get_current_user_id)):
     """
     Retrieves the status of a specific job.
     """
@@ -105,7 +132,8 @@ class Transaction(BaseModel):
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow_forecast(
     request: ForecastRequest,
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
     if not TRANSACTIONS_SERVICE_URL:
@@ -114,7 +142,7 @@ async def get_cash_flow_forecast(
     # 1. Fetch transactions
     try:
         async with httpx.AsyncClient() as client:
-            headers = {"Authorization": "Bearer fake-token"} # Pass real token in prod
+            headers = {"Authorization": f"Bearer {bearer_token}"}
             response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
             response.raise_for_status()
             transactions = [Transaction(**t) for t in response.json()]
@@ -150,12 +178,15 @@ async def get_cash_flow_forecast(
 
 # --- PDF Report Generation ---
 @app.get("/reports/mortgage-readiness", response_class=StreamingResponse)
-async def get_mortgage_readiness_report(user_id: str = Depends(fake_auth_check)):
+async def get_mortgage_readiness_report(
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
     # 1. Fetch transactions (similar to cash flow)
     try:
         async with httpx.AsyncClient() as client:
-            headers = {"Authorization": "Bearer fake-token"}
+            headers = {"Authorization": f"Bearer {bearer_token}"}
             response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
             response.raise_for_status()
             transactions = [Transaction(**t) for t in response.json()]

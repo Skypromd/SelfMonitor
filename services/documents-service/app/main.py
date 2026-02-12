@@ -1,7 +1,8 @@
 import os
 import uuid
 from typing import List
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile, status
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 import boto3
 from botocore.client import Config
@@ -15,6 +16,8 @@ from .celery_app import ocr_processing_task
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "documents-bucket")
 # For local development with LocalStack, boto3 needs the endpoint_url.
 S3_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
 
 # Configure boto3 client
 s3_client = boto3.client(
@@ -29,15 +32,36 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    return user_id
 
 @app.post("/documents/upload", response_model=schemas.Document, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...), 
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Accepts a document, uploads it to S3, creates a DB record, and triggers OCR."""
@@ -58,7 +82,7 @@ async def upload_document(
 
 @app.get("/documents", response_model=List[schemas.Document])
 async def list_documents(
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Lists all documents for the authenticated user from the database."""
@@ -68,7 +92,7 @@ async def list_documents(
 @app.get("/documents/{document_id}", response_model=schemas.Document)
 async def get_document(
     document_id: uuid.UUID,
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves metadata for a specific document."""

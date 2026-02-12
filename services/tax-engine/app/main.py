@@ -1,4 +1,5 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from jose import JWTError, jwt
 from pydantic import BaseModel
 from typing import List, Optional
 import datetime
@@ -14,9 +15,35 @@ DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"
 UK_PERSONAL_ALLOWANCE = 12570.0
 UK_BASIC_TAX_RATE = 0.20
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    return "fake-user-123"
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+
+
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    return user_id
 
 app = FastAPI(
     title="Tax Engine Service",
@@ -56,7 +83,8 @@ class TaxCalculationResult(BaseModel):
 @app.post("/calculate", response_model=TaxCalculationResult)
 async def calculate_tax(
     request: TaxCalculationRequest, 
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     if request.start_date > request.end_date:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End date cannot be before start date.")
@@ -66,8 +94,7 @@ async def calculate_tax(
     # 1. Fetch all transactions for the user from the transactions-service
     try:
         async with httpx.AsyncClient() as client:
-            # In a real app, we'd pass the user's auth token here
-            headers = {"Authorization": "Bearer fake-token"}
+            headers = {"Authorization": f"Bearer {bearer_token}"}
             response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
             response.raise_for_status()
             transactions_data = response.json()
@@ -115,17 +142,17 @@ async def calculate_tax(
 @app.post("/calculate-and-submit", status_code=status.HTTP_202_ACCEPTED)
 async def calculate_and_submit_tax(
     request: TaxCalculationRequest,
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     # This re-uses the logic from the calculate endpoint.
     # In a real app, this logic would be in a shared function.
-    calculation_result = await calculate_tax(request, user_id)
+    calculation_result = await calculate_tax(request, user_id, bearer_token)
 
     # 5. Submit the calculated tax to the integrations service
     try:
         async with httpx.AsyncClient() as client:
-            # Pass user auth token if needed by the integrations service
-            headers = {"Authorization": "Bearer fake-token"}
+            headers = {"Authorization": f"Bearer {bearer_token}"}
             submission_payload = {
                 "tax_period_start": request.start_date.isoformat(),
                 "tax_period_end": request.end_date.isoformat(),

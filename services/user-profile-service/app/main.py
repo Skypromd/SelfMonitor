@@ -1,4 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+import os
+
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
@@ -10,10 +13,35 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+
+
+def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+        )
+    return authorization.split(" ", 1)[1]
+
+
+def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        )
+    return user_id
 
 # @app.on_event("startup")
 # async def startup():
@@ -24,7 +52,7 @@ def fake_auth_check() -> str:
 # --- Endpoints ---
 @app.get("/profiles/me", response_model=schemas.UserProfile)
 async def get_my_profile(
-    user_id: str = Depends(fake_auth_check), 
+    user_id: str = Depends(get_current_user_id), 
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves the profile for the currently authenticated user from the database."""
@@ -36,7 +64,7 @@ async def get_my_profile(
 @app.put("/profiles/me", response_model=schemas.UserProfile)
 async def create_or_update_my_profile(
     profile_update: schemas.UserProfileUpdate,
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Creates a new profile or updates an existing one for the authenticated user in the database."""

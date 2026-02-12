@@ -58,6 +58,7 @@ services:
     depends_on:
       - postgres
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       DATABASE_URL: "${USER_PROFILE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_user_profile}"
     # Run migrations before starting the app server
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
@@ -71,6 +72,7 @@ services:
       - postgres
       - categorization-service
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_transactions}"
       CATEGORIZATION_SERVICE_URL: "${CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
@@ -94,6 +96,7 @@ services:
     depends_on:
       - compliance-service
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       COMPLIANCE_SERVICE_URL: "${CONSENT_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
     networks:
       - default_network
@@ -105,6 +108,7 @@ services:
       - transactions-service
       - vault
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       TRANSACTIONS_SERVICE_URL: "${BANKING_TRANSACTIONS_SERVICE_URL:-http://transactions-service/import}"
       VAULT_ADDR: "${BANKING_VAULT_ADDR:-http://vault:8200}"
       VAULT_TOKEN: "${BANKING_VAULT_TOKEN:-dev-root-token}" # This is the default root token for Vault's dev mode
@@ -194,6 +198,7 @@ services:
       - postgres
       - localstack
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_documents}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://localstack:4566}" # Point to LocalStack
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
@@ -216,6 +221,7 @@ services:
       - calendar-service
       - jaeger
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       TRANSACTIONS_SERVICE_URL: "${TAX_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       INTEGRATIONS_SERVICE_URL: "${TAX_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/submit-tax-return}"
       CALENDAR_SERVICE_URL: "${TAX_CALENDAR_SERVICE_URL:-http://calendar-service/events}"
@@ -230,6 +236,7 @@ services:
     depends_on:
       - transactions-service
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       TRANSACTIONS_SERVICE_URL: "${ADVICE_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
     networks:
       - default_network
@@ -240,6 +247,7 @@ services:
     depends_on:
       - compliance-service
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       COMPLIANCE_SERVICE_URL: "${PARTNER_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
     networks:
       - default_network
@@ -247,6 +255,8 @@ services:
   integrations-service:
     build: ./services/integrations-service
     container_name: integrations-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
     networks:
       - default_network
 
@@ -256,6 +266,7 @@ services:
     depends_on:
       - transactions-service
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       TRANSACTIONS_SERVICE_URL: "${ANALYTICS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
     networks:
       - default_network
