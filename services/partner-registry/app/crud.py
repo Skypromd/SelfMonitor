@@ -107,34 +107,34 @@ async def create_or_get_handoff_lead(
 ) -> tuple[models.HandoffLead, bool]:
     cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=dedupe_window_hours)
 
-    async with db.begin():
-        await _acquire_dedupe_lock_if_postgres(db, user_id=user_id, partner_id=partner_id)
+    await _acquire_dedupe_lock_if_postgres(db, user_id=user_id, partner_id=partner_id)
 
-        recent_lead_query = (
-            select(models.HandoffLead)
-            .filter(
-                models.HandoffLead.user_id == user_id,
-                models.HandoffLead.partner_id == partner_id,
-                models.HandoffLead.created_at >= cutoff,
-            )
-            .order_by(models.HandoffLead.created_at.desc())
+    recent_lead_query = (
+        select(models.HandoffLead)
+        .filter(
+            models.HandoffLead.user_id == user_id,
+            models.HandoffLead.partner_id == partner_id,
+            models.HandoffLead.created_at >= cutoff,
         )
+        .order_by(models.HandoffLead.created_at.desc())
+    )
 
-        bind = db.get_bind()
-        if bind and bind.dialect.name == "postgresql":
-            recent_lead_query = recent_lead_query.with_for_update()
+    bind = db.get_bind()
+    if bind and bind.dialect.name == "postgresql":
+        recent_lead_query = recent_lead_query.with_for_update()
 
-        result = await db.execute(recent_lead_query)
-        existing_lead = result.scalars().first()
-        if existing_lead:
-            await db.refresh(existing_lead)
-            return existing_lead, True
+    result = await db.execute(recent_lead_query)
+    existing_lead = result.scalars().first()
+    if existing_lead:
+        await db.commit()
+        await db.refresh(existing_lead)
+        return existing_lead, True
 
-        lead = models.HandoffLead(user_id=user_id, partner_id=partner_id, status="initiated")
-        db.add(lead)
-        await db.flush()
-        await db.refresh(lead)
-        return lead, False
+    lead = models.HandoffLead(user_id=user_id, partner_id=partner_id, status="initiated")
+    db.add(lead)
+    await db.commit()
+    await db.refresh(lead)
+    return lead, False
 
 
 def _apply_lead_filters(
