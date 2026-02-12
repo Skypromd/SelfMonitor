@@ -8,10 +8,13 @@ import '../styles/globals.css';
 const LOCALIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || 'http://localhost:8012';
 const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_EMAIL_KEY = 'authUserEmail';
+const THEME_KEY = 'appTheme';
+type ThemeMode = 'light' | 'dark';
 
 function AppContent({ Component, pageProps }: AppProps) {
   const [token, setToken] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [theme, setTheme] = useState<ThemeMode>('light');
   const router = useRouter();
   const { setTranslations } = useContext(I18nContext);
   const { defaultLocale, locale } = router;
@@ -45,6 +48,23 @@ function AppContent({ Component, pageProps }: AppProps) {
     }
   }, [router]);
 
+  useEffect(() => {
+    const storedTheme = localStorage.getItem(THEME_KEY);
+    if (storedTheme === 'dark' || storedTheme === 'light') {
+      setTheme(storedTheme);
+      return;
+    }
+
+    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      setTheme('dark');
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
   const handleLoginSuccess = (newToken: string, email?: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, newToken);
     setToken(newToken);
@@ -63,6 +83,10 @@ function AppContent({ Component, pageProps }: AppProps) {
     router.push('/');
   };
 
+  const toggleTheme = () => {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'));
+  };
+
   const PageComponent = Component as ComponentType<Record<string, unknown>>;
   if (router.pathname === '/') {
     return <PageComponent {...pageProps} onLoginSuccess={handleLoginSuccess} />;
@@ -73,7 +97,12 @@ function AppContent({ Component, pageProps }: AppProps) {
   }
 
   return (
-    <Layout onLogout={handleLogout} userEmail={userEmail ?? undefined}>
+    <Layout
+      isDarkMode={theme === 'dark'}
+      onLogout={handleLogout}
+      onToggleTheme={toggleTheme}
+      userEmail={userEmail ?? undefined}
+    >
       <PageComponent {...pageProps} token={token} userEmail={userEmail} />
     </Layout>
   );

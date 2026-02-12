@@ -6,11 +6,13 @@ import styles from '../styles/Layout.module.css';
 
 type LayoutProps = {
   children: ReactNode;
+  isDarkMode: boolean;
   onLogout: () => void;
+  onToggleTheme: () => void;
   userEmail?: string;
 };
 
-export default function Layout({ children, onLogout, userEmail }: LayoutProps) {
+export default function Layout({ children, isDarkMode, onLogout, onToggleTheme, userEmail }: LayoutProps) {
   const router = useRouter();
   const { t } = useTranslation();
   const { locales, locale: activeLocale } = router;
@@ -50,6 +52,9 @@ export default function Layout({ children, onLogout, userEmail }: LayoutProps) {
         </nav>
         <div className={styles.sidebarFooter}>
           {userEmail && <p className={styles.userEmail}>{userEmail}</p>}
+          <button className={styles.themeToggleButton} onClick={onToggleTheme} type="button">
+            {isDarkMode ? 'Switch to Light' : 'Switch to Dark'}
+          </button>
           <div className={styles.langSwitcher}>
             {locales?.map(locale => (
               <Link href={router.pathname} key={locale} locale={locale}>

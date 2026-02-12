@@ -20,10 +20,12 @@ type AuditEvent = {
 export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const { t } = useTranslation();
 
   useEffect(() => {
     const fetchActivity = async () => {
+      setIsLoading(true);
       try {
         const userId = userEmail || FALLBACK_USER_ID;
         const response = await fetch(
@@ -36,6 +38,8 @@ export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
         setEvents(await response.json());
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unexpected error');
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -63,24 +67,38 @@ export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
       <p>{t('activity.description')}</p>
       {error && <p className={styles.error}>{error}</p>}
       <div className={styles.subContainer}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>{t('activity.col_date')}</th>
-              <th>{t('activity.col_action')}</th>
-              <th>{t('activity.col_details')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map((event) => (
-              <tr key={event.id}>
-                <td>{new Date(event.timestamp).toLocaleString()}</td>
-                <td>{event.action}</td>
-                <td>{formatEventDetails(event)}</td>
-              </tr>
+        {isLoading ? (
+          <div className={styles.skeletonTable}>
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div className={styles.skeletonRow} key={index}>
+                <div className={styles.skeletonCell} />
+                <div className={styles.skeletonCell} />
+                <div className={styles.skeletonCell} />
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        ) : events.length === 0 ? (
+          <p className={styles.emptyState}>No activity events found yet.</p>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>{t('activity.col_date')}</th>
+                <th>{t('activity.col_action')}</th>
+                <th>{t('activity.col_details')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((event) => (
+                <tr key={event.id}>
+                  <td>{new Date(event.timestamp).toLocaleString()}</td>
+                  <td>{event.action}</td>
+                  <td>{formatEventDetails(event)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

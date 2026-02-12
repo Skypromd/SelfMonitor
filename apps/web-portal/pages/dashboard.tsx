@@ -19,9 +19,18 @@ type ForecastPoint = {
   date: string;
 };
 
+type TaxEstimateResult = {
+  end_date: string;
+  estimated_tax_due: number;
+  start_date: string;
+  total_expenses: number;
+  total_income: number;
+};
+
 function TaxCalculator({ token }: { token: string }) {
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<TaxEstimateResult | null>(null);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [startDate, setStartDate] = useState('2023-01-01');
   const [endDate, setEndDate] = useState('2023-12-31');
 
@@ -29,6 +38,7 @@ function TaxCalculator({ token }: { token: string }) {
     event.preventDefault();
     setError('');
     setResult(null);
+    setIsLoading(true);
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_TAX_ENGINE_URL || 'http://localhost:8007'}/calculate`, {
         body: JSON.stringify({ end_date: endDate, jurisdiction: 'UK', start_date: startDate }),
@@ -45,6 +55,8 @@ function TaxCalculator({ token }: { token: string }) {
       setResult(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -56,8 +68,8 @@ function TaxCalculator({ token }: { token: string }) {
           <input className={styles.input} onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} />
           <input className={styles.input} onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} />
         </div>
-        <button className={styles.button} type="submit">
-          Calculate Tax
+        <button className={styles.button} disabled={isLoading} type="submit">
+          {isLoading ? 'Calculating...' : 'Calculate Tax'}
         </button>
       </form>
       {error && <p className={styles.error}>{error}</p>}
@@ -84,9 +96,11 @@ function TaxCalculator({ token }: { token: string }) {
 function CashFlowPreview({ token }: { token: string }) {
   const [data, setData] = useState<ForecastPoint[]>([]);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchForecast = async () => {
+      setIsLoading(true);
       try {
         const response = await fetch(`${ANALYTICS_SERVICE_URL}/forecast/cash-flow`, {
           body: JSON.stringify({ days_to_forecast: 14 }),
@@ -103,33 +117,63 @@ function CashFlowPreview({ token }: { token: string }) {
         setData(result.forecast || []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unexpected error');
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchForecast();
   }, [token]);
 
+  const maxAbsBalance = data.reduce((max, point) => Math.max(max, Math.abs(point.balance)), 0) || 1;
+
   return (
     <div className={styles.subContainer}>
       <h2>Cash Flow Forecast (Next 14 Days)</h2>
       {error && <p className={styles.error}>{error}</p>}
-      {!error && data.length === 0 && <p>Generating forecast...</p>}
+      {isLoading && (
+        <div className={styles.skeletonTable}>
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div className={styles.skeletonRow} key={index}>
+              <div className={styles.skeletonCell} />
+              <div className={styles.skeletonCell} />
+              <div className={styles.skeletonCell} />
+            </div>
+          ))}
+        </div>
+      )}
+      {!error && !isLoading && data.length === 0 && <p className={styles.emptyState}>No forecast data available yet.</p>}
       {data.length > 0 && (
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Projected Balance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((point) => (
-              <tr key={point.date}>
-                <td>{point.date}</td>
-                <td className={point.balance >= 0 ? styles.positive : styles.negative}>£{point.balance.toFixed(2)}</td>
+        <>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Projected Balance</th>
+                <th>Trend</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.map((point) => {
+                const normalizedWidth = Math.max(8, Math.round((Math.abs(point.balance) / maxAbsBalance) * 100));
+                return (
+                  <tr key={point.date}>
+                    <td>{point.date}</td>
+                    <td className={point.balance >= 0 ? styles.positive : styles.negative}>£{point.balance.toFixed(2)}</td>
+                    <td className={styles.tableTrendCell}>
+                      <div className={styles.trendTrack}>
+                        <span
+                          className={`${styles.trendFill} ${point.balance >= 0 ? styles.trendPositive : styles.trendNegative}`}
+                          style={{ width: `${normalizedWidth}%` }}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className={styles.tableCaption}>Spark bars show relative daily balance movement within the current forecast window.</p>
+        </>
       )}
     </div>
   );
@@ -137,10 +181,12 @@ function CashFlowPreview({ token }: { token: string }) {
 
 function ActionCenter({ token }: { token: string }) {
   const [advice, setAdvice] = useState<AdviceResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
     const fetchAdvice = async () => {
+      setIsLoading(true);
       try {
         const response = await fetch(`${process.env.NEXT_PUBLIC_ADVICE_SERVICE_URL || 'http://localhost:8008'}/generate`, {
           body: JSON.stringify({ topic: 'income_protection' }),
@@ -156,10 +202,28 @@ function ActionCenter({ token }: { token: string }) {
         setAdvice(await response.json());
       } catch (err) {
         console.error(err);
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchAdvice();
   }, [token]);
+
+  if (isLoading) {
+    return (
+      <div className={`${styles.subContainer} ${styles.actionableAdviceCard}`}>
+        <div>
+          <div className={`${styles.skeletonLine} ${styles.skeletonLineShort}`} />
+          <div className={`${styles.skeletonLine} ${styles.skeletonLineLong}`} />
+          <div className={`${styles.skeletonLine} ${styles.skeletonLineMedium}`} />
+        </div>
+        <div>
+          <div className={`${styles.skeletonLine} ${styles.skeletonLineMedium}`} />
+          <div className={`${styles.skeletonLine} ${styles.skeletonLineLong}`} />
+        </div>
+      </div>
+    );
+  }
 
   if (!advice) {
     return null;
@@ -174,7 +238,7 @@ function ActionCenter({ token }: { token: string }) {
       <div className={styles.advicePartnerList}>
         <h4>What&apos;s Next?</h4>
         <p>Explore our marketplace of trusted partners for insurance, accounting, and more.</p>
-        <button className={styles.button} onClick={() => router.push('/marketplace')}>
+        <button className={styles.button} onClick={() => router.push('/marketplace')} type="button">
           Explore Partner Services
         </button>
       </div>

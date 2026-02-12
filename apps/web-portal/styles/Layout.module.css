@@ -4,13 +4,14 @@
 }
 
 .sidebar {
-  width: 280px;
+  width: 286px;
   padding: 24px 18px 20px;
-  background: linear-gradient(180deg, #0f172a 0%, #132442 65%, #172f55 100%);
+  background: linear-gradient(180deg, var(--color-nav-bg-start) 0%, var(--color-nav-bg-end) 100%);
   border-right: 1px solid rgba(255, 255, 255, 0.08);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
+  transition: background 0.24s ease;
 }
 
 .logo {
@@ -30,6 +31,7 @@
 
 .navLink {
   display: block;
+  animation: slideIn 0.3s ease both;
 }
 
 .navLabel {
@@ -39,18 +41,18 @@
   border-radius: 10px;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #d4dff2;
+  color: var(--color-nav-link);
   transition: all 0.18s ease;
 }
 
 .navLink:hover .navLabel {
-  background: rgba(255, 255, 255, 0.08);
-  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--color-nav-link-active);
 }
 
 .active {
-  background: linear-gradient(135deg, #2f6df6 0%, #3b82f6 100%);
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #3b82f6 100%);
+  color: var(--color-nav-link-active);
   box-shadow: 0 10px 20px rgba(15, 46, 115, 0.35);
 }
 
@@ -62,21 +64,39 @@
   margin: 0 0 12px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.08);
-  color: #c9d5ea;
+  background: rgba(255, 255, 255, 0.09);
+  color: #d4dff2;
   font-size: 0.82rem;
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+.themeToggleButton {
+  width: 100%;
+  margin: 0 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f8ff;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.themeToggleButton:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: translateY(-1px);
 }
 
 .langSwitcher {
   display: flex;
   justify-content: center;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
   padding: 6px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-nav-chip-bg);
 }
 
 .langSwitcher span {
@@ -90,6 +110,7 @@
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.04em;
+  transition: background 0.18s ease, color 0.18s ease;
 }
 
 .langSwitcher .activeLang {
@@ -124,13 +145,24 @@
   margin: 0;
   font-size: 2rem;
   letter-spacing: -0.01em;
-  color: #17233a;
+  color: var(--color-text-primary);
 }
 
 .mainContent > div > p:first-of-type {
   margin: 8px 0 22px;
-  color: #5a6880;
+  color: var(--color-text-muted);
   max-width: 760px;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @media (max-width: 980px) {
@@ -156,7 +188,7 @@
   }
 
   .sidebarFooter {
-    margin-top: 8px;
+    margin-top: 10px;
   }
 
   .mainContent {

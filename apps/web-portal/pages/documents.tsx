@@ -26,6 +26,7 @@ function SemanticSearch({ token }: { token: string }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const { t } = useTranslation();
 
   const handleSearch = async (event: FormEvent) => {
@@ -35,6 +36,7 @@ function SemanticSearch({ token }: { token: string }) {
       return;
     }
 
+    setIsSearching(true);
     try {
       const response = await fetch(`${QNA_SERVICE_URL}/search`, {
         body: JSON.stringify({ query, user_id: 'fake-user-123' }),
@@ -50,6 +52,8 @@ function SemanticSearch({ token }: { token: string }) {
       setResults(await response.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsSearching(false);
     }
   };
 
@@ -73,6 +77,17 @@ function SemanticSearch({ token }: { token: string }) {
       </form>
 
       {error && <p className={styles.error}>{error}</p>}
+      {isSearching && (
+        <div className={styles.searchResults}>
+          {Array.from({ length: 3 }).map((_, index) => (
+            <div className={styles.searchResultItem} key={index}>
+              <div className={`${styles.skeletonLine} ${styles.skeletonLineShort}`} />
+              <div className={`${styles.skeletonLine} ${styles.skeletonLineLong}`} />
+              <div className={`${styles.skeletonLine} ${styles.skeletonLineMedium}`} />
+            </div>
+          ))}
+        </div>
+      )}
       {results.length > 0 && (
         <div className={styles.searchResults}>
           <h4>Search Results:</h4>
@@ -93,10 +108,13 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { t } = useTranslation();
 
   const fetchDocuments = async () => {
+    setIsLoadingDocuments(true);
     try {
       const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -107,6 +125,8 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
       setDocuments(await response.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsLoadingDocuments(false);
     }
   };
 
@@ -129,6 +149,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
       return;
     }
 
+    setIsUploading(true);
     const formData = new FormData();
     formData.append('file', selectedFile);
 
@@ -148,6 +169,8 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
       await fetchDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -160,34 +183,48 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         <form onSubmit={handleUpload}>
           <div className={styles.fileInputContainer}>
             <input onChange={handleFileSelect} type="file" />
-            <button className={styles.button} disabled={!selectedFile} type="submit">
-              {t('documents.upload_button')}
+            <button className={styles.button} disabled={!selectedFile || isUploading} type="submit">
+              {isUploading ? 'Uploading...' : t('documents.upload_button')}
             </button>
           </div>
         </form>
         {message && <p className={styles.message}>{message}</p>}
         {error && <p className={styles.error}>{error}</p>}
 
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>{t('documents.col_filename')}</th>
-              <th>{t('documents.col_status')}</th>
-              <th>{t('documents.col_uploaded_at')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {documents.map((document) => (
-              <tr key={document.id}>
-                <td>{document.filename}</td>
-                <td>
-                  <span className={`${styles.status} ${styles[document.status]}`}>{document.status}</span>
-                </td>
-                <td>{new Date(document.uploaded_at).toLocaleString()}</td>
-              </tr>
+        {isLoadingDocuments ? (
+          <div className={styles.skeletonTable}>
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div className={styles.skeletonRow} key={index}>
+                <div className={styles.skeletonCell} />
+                <div className={styles.skeletonCell} />
+                <div className={styles.skeletonCell} />
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        ) : documents.length === 0 ? (
+          <p className={styles.emptyState}>No documents uploaded yet.</p>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>{t('documents.col_filename')}</th>
+                <th>{t('documents.col_status')}</th>
+                <th>{t('documents.col_uploaded_at')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {documents.map((document) => (
+                <tr key={document.id}>
+                  <td>{document.filename}</td>
+                  <td>
+                    <span className={`${styles.status} ${styles[document.status]}`}>{document.status}</span>
+                  </td>
+                  <td>{new Date(document.uploaded_at).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <SemanticSearch token={token} />
