@@ -14,6 +14,8 @@ jobs:
   python-services:
     name: Python checks (${{ matrix.service }})
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     strategy:
       fail-fast: false
       matrix:

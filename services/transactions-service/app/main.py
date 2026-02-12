@@ -1,14 +1,23 @@
-import os
+import sys
 import uuid
+from pathlib import Path
 from typing import List
 
-from fastapi import Depends, FastAPI, Header, HTTPException, status
-from jose import JWTError, jwt
+from fastapi import Depends, FastAPI, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
 from .database import get_db
 from .telemetry import setup_telemetry
+
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
+
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
 app = FastAPI(
     title="Transactions Service",
@@ -19,35 +28,7 @@ app = FastAPI(
 # Instrument the app for OpenTelemetry
 setup_telemetry(app)
 
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
-AUTH_ALGORITHM = "HS256"
-
-
-def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-        )
-    return authorization.split(" ", 1)[1]
-
-
-def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-        ) from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-        )
-    return user_id
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 # --- Endpoints ---
 @app.post("/import", status_code=status.HTTP_202_ACCEPTED)

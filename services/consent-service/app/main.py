@@ -1,44 +1,28 @@
-from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
-from jose import JWTError, jwt
-from pydantic import BaseModel, Field
-from typing import List, Literal, Dict, Any
-import uuid
 import datetime
-import httpx
 import os
+import sys
+import uuid
+from pathlib import Path
+from typing import Any, Dict, List, Literal
+
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from pydantic import BaseModel, Field
 
 # --- Configuration ---
 # The URL for the compliance service is now read from an environment variable.
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
-AUTH_ALGORITHM = "HS256"
 
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
-def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header",
-        )
-    return authorization.split(" ", 1)[1]
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
-
-def get_current_user_id(token: str = Depends(get_bearer_token)) -> str:
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-        ) from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-        )
-    return user_id
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 
 app = FastAPI(
