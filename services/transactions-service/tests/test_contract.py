@@ -151,7 +151,7 @@ def provider_runtime():
 @pytest.mark.skipif(not PACT_FILE.exists(), reason="Pact file not found")
 def test_transaction_service_honours_pact_with_tax_engine(provider_runtime: ProviderRuntime):
     verifier = (
-        Verifier(PROVIDER_NAME)
+        Verifier(PROVIDER_NAME, host="127.0.0.1")
         .add_transport(url=provider_runtime.base_url)
         .add_source(PACT_FILE)
         .add_custom_header("Authorization", "Bearer fake-token")

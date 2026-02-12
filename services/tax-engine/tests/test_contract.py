@@ -5,7 +5,7 @@ from pathlib import Path
 import httpx
 import pytest
 from pact import Pact
-from pact.match import like
+from pact import match
 
 if os.getenv("ENABLE_CONTRACT_TESTS") != "1":
     pytest.skip(
@@ -32,16 +32,16 @@ def test_get_all_transactions_for_a_user():
         .with_body(
             [
                 {
-                    "id": like("123e4567-e89b-12d3-a456-426614174000"),
-                    "account_id": like("123e4567-e89b-12d3-a456-426614174001"),
+                    "id": match.like("123e4567-e89b-12d3-a456-426614174000"),
+                    "account_id": match.like("123e4567-e89b-12d3-a456-426614174001"),
                     "user_id": "test_user",
-                    "provider_transaction_id": like("txn_abc"),
-                    "date": like("2023-10-10"),
-                    "description": like("Tesco"),
-                    "amount": like(123.45),
-                    "currency": like("GBP"),
-                    "category": like("groceries"),
-                    "created_at": like("2023-10-10T10:00:00Z"),
+                    "provider_transaction_id": match.like("txn_abc"),
+                    "date": match.like("2023-10-10"),
+                    "description": match.like("Tesco"),
+                    "amount": match.like(123.45),
+                    "currency": match.like("GBP"),
+                    "category": match.like("groceries"),
+                    "created_at": match.like("2023-10-10T10:00:00Z"),
                 }
             ],
             part="Response",
