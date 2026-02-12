@@ -1,149 +1,88 @@
 import type { AppProps } from 'next/app';
-import { useState, useEffect, useContext } from 'react';
+import { useContext, useEffect, useState, type ComponentType } from 'react';
 import { useRouter } from 'next/router';
-import '../styles/globals.css';
 import Layout from '../components/Layout';
-import { I18nProvider, I18nContext } from '../context/i18n';
+import { I18nContext, I18nProvider } from '../context/i18n';
+import '../styles/globals.css';
 
 const LOCALIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || 'http://localhost:8012';
+const AUTH_TOKEN_KEY = 'authToken';
+const AUTH_EMAIL_KEY = 'authUserEmail';
 
 function AppContent({ Component, pageProps }: AppProps) {
   const [token, setToken] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const router = useRouter();
   const { setTranslations } = useContext(I18nContext);
-  const { locale, defaultLocale } = router;
+  const { defaultLocale, locale } = router;
 
-  // Fetch translations when locale changes
   useEffect(() => {
     const fetchTranslations = async () => {
       const lang = locale || defaultLocale || 'en-GB';
       try {
         const response = await fetch(`${LOCALIZATION_SERVICE_URL}/translations/${lang}/all`);
-        if (!response.ok) throw new Error('Failed to fetch translations');
-        const data = await response.json();
-        setTranslations(data);
+        if (!response.ok) {
+          throw new Error('Failed to fetch translations');
+        }
+        setTranslations(await response.json());
       } catch (error) {
-        console.error("Could not load translations:", error);
+        console.error('Could not load translations:', error);
       }
     };
     fetchTranslations();
-  }, [locale, defaultLocale, setTranslations]);
+  }, [defaultLocale, locale, setTranslations]);
 
-  // Auth logic
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    const storedEmail = localStorage.getItem(AUTH_EMAIL_KEY);
     if (storedToken) {
       setToken(storedToken);
+      if (storedEmail) {
+        setUserEmail(storedEmail);
+      }
     } else if (router.pathname !== '/') {
       router.push('/');
     }
-  }, [router.pathname]);
+  }, [router]);
 
-  const handleLoginSuccess = (newToken: string) => {
-    localStorage.setItem('authToken', newToken);
+  const handleLoginSuccess = (newToken: string, email?: string) => {
+    localStorage.setItem(AUTH_TOKEN_KEY, newToken);
     setToken(newToken);
+    if (email) {
+      localStorage.setItem(AUTH_EMAIL_KEY, email);
+      setUserEmail(email);
+    }
     router.push('/dashboard');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_EMAIL_KEY);
     setToken(null);
+    setUserEmail(null);
     router.push('/');
   };
 
-  const isLoginPage = router.pathname === '/';
-
-  if (isLoginPage) {
-    return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
+  const PageComponent = Component as ComponentType<Record<string, unknown>>;
+  if (router.pathname === '/') {
+    return <PageComponent {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }
 
-  return token ? (
-    <Layout onLogout={handleLogout}>
-      <Component {...pageProps} token={token} />
-    </Layout>
-  ) : null;
-}
-import type { AppProps } from 'next/app';
-import { useState, useEffect, useContext } from 'react';
-import { useRouter } from 'next/router';
-import '../styles/globals.css';
-import Layout from '../components/Layout';
-import { I18nProvider, I18nContext } from '../context/i18n';
-
-const LOCALIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || 'http://localhost:8012';
-
-function AppContent({ Component, pageProps }: AppProps) {
-  const [token, setToken] = useState<string | null>(null);
-  const router = useRouter();
-  const { setTranslations } = useContext(I18nContext);
-  const { locale, defaultLocale } = router;
-
-  // Fetch translations when locale changes
-  useEffect(() => {
-    const fetchTranslations = async () => {
-      const lang = locale || defaultLocale || 'en-GB';
-      try {
-        const response = await fetch(`${LOCALIZATION_SERVICE_URL}/translations/${lang}/all`);
-        if (!response.ok) throw new Error('Failed to fetch translations');
-        const data = await response.json();
-        setTranslations(data);
-      } catch (error) {
-        console.error("Could not load translations:", error);
-      }
-    };
-    fetchTranslations();
-  }, [locale, defaultLocale, setTranslations]);
-
-  // Auth logic
-  useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
-    if (storedToken) {
-      setToken(storedToken);
-    } else if (router.pathname !== '/') {
-      router.push('/');
-    }
-  }, [router.pathname]);
-
-  const handleLoginSuccess = (newToken: string) => {
-    localStorage.setItem('authToken', newToken);
-    setToken(newToken);
-    router.push('/dashboard');
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('authToken');
-    setToken(null);
-    router.push('/');
-  };
-
-  const isLoginPage = router.pathname === '/';
-
-  if (isLoginPage) {
-    return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
+  if (!token) {
+    return null;
   }
 
-  return token ? (
-    <Layout onLogout={handleLogout}>
-      <Component {...pageProps} token={token} />
+  return (
+    <Layout onLogout={handleLogout} userEmail={userEmail ?? undefined}>
+      <PageComponent {...pageProps} token={token} userEmail={userEmail} />
     </Layout>
-  ) : null;
+  );
 }
 
-function MyApp(props: AppProps) {
+export default function MyApp(props: AppProps) {
   return (
     <I18nProvider>
       <AppContent {...props} />
     </I18nProvider>
   );
 }
-
-export default MyApp;
-function MyApp(props: AppProps) {
-  return (
-    <I18nProvider>
-      <AppContent {...props} />
-    </I18nProvider>
-  );
-}
-
-export default MyApp;
