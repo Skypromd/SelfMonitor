@@ -1,6 +1,7 @@
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy import JSON
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -11,6 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from app.main import app
 from app.database import get_db, Base
+from app import models
 
 # --- Test Database Setup ---
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -27,6 +29,8 @@ app.dependency_overrides[get_db] = override_get_db
 # Fixture to create/drop tables for each test function
 @pytest_asyncio.fixture()
 async def db_session():
+    # SQLite cannot compile PostgreSQL JSONB; override to generic JSON in tests.
+    models.AuditEvent.__table__.c.details.type = JSON()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
