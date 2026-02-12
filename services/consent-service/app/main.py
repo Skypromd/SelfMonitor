@@ -1,6 +1,7 @@
 import os
 import sys
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -8,7 +9,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import crud, models, schemas
+from . import crud, schemas
 from .database import Base, engine, get_db
 
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
@@ -25,17 +26,20 @@ from libs.shared_http.retry import post_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    yield
+
+
 app = FastAPI(
     title="Consent Service",
     description="Manages user consents for data access.",
     version="1.0.0",
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
 
 
 async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]):

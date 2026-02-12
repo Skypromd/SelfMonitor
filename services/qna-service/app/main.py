@@ -1,4 +1,6 @@
 import os
+from contextlib import asynccontextmanager
+
 import weaviate
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -8,12 +10,6 @@ from sentence_transformers import SentenceTransformer
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 # Load a small but effective model for generating sentence embeddings
 model = SentenceTransformer('all-MiniLM-L6-v2')
-
-app = FastAPI(
-    title="Q&A and Semantic Search Service",
-    description="Handles creating text embeddings and searching for documents.",
-    version="1.0.0"
-)
 
 # --- Weaviate Client and Schema ---
 try:
@@ -39,9 +35,19 @@ def ensure_schema_exists():
         client.schema.create_class(document_schema)
         print("Schema created.")
 
-@app.on_event("startup")
-def startup_event():
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
     ensure_schema_exists()
+    yield
+
+
+app = FastAPI(
+    title="Q&A and Semantic Search Service",
+    description="Handles creating text embeddings and searching for documents.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
 
 # --- API Models ---
 class IndexRequest(BaseModel):

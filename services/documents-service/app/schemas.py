@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Literal
 import uuid
 import datetime
@@ -19,5 +19,4 @@ class Document(DocumentBase):
     uploaded_at: datetime.datetime
     extracted_data: Optional[ExtractedData] = None
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 import datetime
 
@@ -18,6 +18,4 @@ class UserProfile(UserProfileBase):
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
-    class Config:
-        # This allows the model to be created from ORM objects
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

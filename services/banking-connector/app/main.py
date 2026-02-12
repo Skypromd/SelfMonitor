@@ -117,7 +117,7 @@ async def handle_provider_callback(
         str(connection_id),
         user_id,
         bearer_token,
-        [t.dict() for t in mock_transactions],
+        [t.model_dump() for t in mock_transactions],
     )
 
     return CallbackResponse(

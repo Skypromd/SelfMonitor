@@ -1,6 +1,7 @@
 import os
 import sys
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -8,8 +9,8 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import crud, models, schemas
-from .database import Base, engine, get_db
+from . import crud, schemas
+from .database import AsyncSessionLocal, Base, engine, get_db
 
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
 
@@ -25,21 +26,21 @@ from libs.shared_http.retry import post_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    async with AsyncSessionLocal() as db:
+        await crud.seed_partners_if_empty(db)
+    yield
+
+
 app = FastAPI(
     title="Partner Registry Service",
     description="Manages a registry of third-party partners.",
     version="1.0.0",
+    lifespan=lifespan,
 )
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
-
-    async for db in get_db():
-        await crud.seed_partners_if_empty(db)
-        break
 
 
 async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]) -> str | None:

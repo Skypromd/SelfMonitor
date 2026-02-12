@@ -1,7 +1,7 @@
 import uuid
 from typing import List
 
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, ConfigDict, HttpUrl
 
 
 class Partner(BaseModel):
@@ -11,6 +11,5 @@ class Partner(BaseModel):
     services_offered: List[str]
     website: HttpUrl
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 

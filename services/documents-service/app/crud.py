@@ -33,6 +33,6 @@ async def update_document_with_ocr_results(db: AsyncSession, doc_id: str, status
     db_document = result.scalars().first()
     if db_document:
         db_document.status = status
-        db_document.extracted_data = extracted_data.dict()
+        db_document.extracted_data = extracted_data.model_dump()
         await db.commit()
     return db_document

@@ -10,7 +10,7 @@ async def get_profile_by_user_id(db: AsyncSession, user_id: str):
 async def create_or_update_profile(db: AsyncSession, user_id: str, profile: schemas.UserProfileUpdate):
     """Creates or updates a user profile in the database."""
     existing_profile = await get_profile_by_user_id(db, user_id)
-    update_data = profile.dict(exclude_unset=True)
+    update_data = profile.model_dump(exclude_unset=True)
 
     if existing_profile:
         # Update existing profile
@@ -19,7 +19,7 @@ async def create_or_update_profile(db: AsyncSession, user_id: str, profile: sche
         db_profile = existing_profile
     else:
         # Create new profile
-        db_profile = models.UserProfile(**profile.dict(exclude_unset=True), user_id=user_id)
+        db_profile = models.UserProfile(**profile.model_dump(exclude_unset=True), user_id=user_id)
         db.add(db_profile)
 
     await db.commit()

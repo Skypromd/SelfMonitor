@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import List, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ConsentCreate(BaseModel):
@@ -21,6 +21,5 @@ class Consent(BaseModel):
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
