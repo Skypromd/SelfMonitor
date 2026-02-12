@@ -11,7 +11,7 @@ _Last updated: 2026-02-12_
 - [x] Replace CI test placeholder with real `pytest` execution
 - [x] Expand CI coverage beyond 3 hardcoded services
 - [x] Add frontend checks (`typecheck`, `lint`, `build`) to CI
-- [ ] Move dev secrets from hardcoded compose values to env-based setup
+- [x] Move dev secrets from hardcoded compose values to env-based setup
 
 ## Sprint 2 (Weeks 3-4) - Auth/Security Hardening
 
@@ -30,5 +30,5 @@ _Last updated: 2026-02-12_
 
 ## Current focus
 
-1. Web portal build stabilization (active)
-2. CI workflow hardening
+1. Sprint 2 auth/security hardening
+2. Release-readiness quality gates
