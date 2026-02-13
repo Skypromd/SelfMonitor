@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
@@ -94,7 +94,7 @@ function SemanticSearch({ token }: { token: string }) {
           {results.map((result, index) => (
             <div key={`${result.filename}-${index}`} className={styles.searchResultItem}>
               <strong>{result.filename}</strong>
-              <p>"{result.content}"</p>
+              <p>&quot;{result.content}&quot;</p>
               <small>Similarity score: {result.score.toFixed(4)}</small>
             </div>
           ))}
@@ -113,7 +113,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { t } = useTranslation();
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     setIsLoadingDocuments(true);
     try {
       const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents`, {
@@ -128,11 +128,11 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
     } finally {
       setIsLoadingDocuments(false);
     }
-  };
+  }, [token]);
 
   useEffect(() => {
     fetchDocuments();
-  }, [token]);
+  }, [fetchDocuments]);
 
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) {

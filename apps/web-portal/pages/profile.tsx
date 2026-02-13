@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
@@ -24,7 +24,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
   const [error, setError] = useState('');
   const { t } = useTranslation();
 
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     setMessage('');
     setError('');
     try {
@@ -49,11 +49,11 @@ export default function ProfilePage({ token }: ProfilePageProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
     }
-  };
+  }, [token]);
 
   useEffect(() => {
     fetchProfile();
-  }, [token]);
+  }, [fetchProfile]);
 
   const handleProfileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setProfile((current) => ({ ...current, [event.target.name]: event.target.value }));
