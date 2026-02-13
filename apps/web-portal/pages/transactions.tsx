@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
@@ -14,6 +14,27 @@ type TransactionRecord = {
   date: string;
   description: string;
   id: string;
+};
+
+type ReceiptDraftCandidate = {
+  account_id: string;
+  amount: number;
+  confidence_score: number;
+  currency: string;
+  date: string;
+  description: string;
+  provider_transaction_id: string;
+  transaction_id: string;
+};
+
+type UnmatchedReceiptDraftItem = {
+  candidates: ReceiptDraftCandidate[];
+  draft_transaction: TransactionRecord;
+};
+
+type UnmatchedReceiptDraftsResponse = {
+  items: UnmatchedReceiptDraftItem[];
+  total: number;
 };
 
 function BankConnection({ token, onConnectionComplete }: { token: string, onConnectionComplete: (accountId: string) => void }) {
@@ -175,6 +196,124 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   );
 }
 
+function ReceiptDraftManualMatching({ token }: { token: string }) {
+  const [rows, setRows] = useState<UnmatchedReceiptDraftItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [activeMatchKey, setActiveMatchKey] = useState('');
+
+  const loadUnmatchedDrafts = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/unmatched?limit=25&candidate_limit=5`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Failed to load unmatched receipt drafts');
+      const data: UnmatchedReceiptDraftsResponse = await response.json();
+      setRows(data.items);
+      setTotal(data.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void loadUnmatchedDrafts();
+  }, [loadUnmatchedDrafts]);
+
+  const handleMatch = async (draftId: string, targetId: string) => {
+    const actionKey = `${draftId}:${targetId}`;
+    setActiveMatchKey(actionKey);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/${draftId}/reconcile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ target_transaction_id: targetId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'Failed to reconcile draft transaction');
+      setMessage(`Draft ${payload.reconciled_transaction.id} matched successfully.`);
+      await loadUnmatchedDrafts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setActiveMatchKey('');
+    }
+  };
+
+  return (
+    <div className={styles.subContainer}>
+      <h2>Manual Receipt Matching</h2>
+      <p>Unmatched receipt drafts: {total}</p>
+      <div className={styles.buttonGroup}>
+        <button className={styles.secondaryButton} onClick={() => void loadUnmatchedDrafts()} type="button" disabled={isLoading}>
+          {isLoading ? 'Refreshing...' : 'Refresh suggestions'}
+        </button>
+      </div>
+      {message && <p className={styles.message}>{message}</p>}
+      {error && <p className={styles.error}>{error}</p>}
+      {rows.length === 0 ? (
+        <p className={styles.emptyState}>No unmatched receipt drafts. Auto-reconciliation is up to date.</p>
+      ) : (
+        <div className={styles.tableResponsive}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Draft</th>
+                <th>Amount</th>
+                <th>Date</th>
+                <th>Candidate bank transactions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.draft_transaction.id}>
+                  <td>{row.draft_transaction.description}</td>
+                  <td className={row.draft_transaction.amount > 0 ? styles.positive : styles.negative}>
+                    {row.draft_transaction.amount.toFixed(2)} {row.draft_transaction.currency}
+                  </td>
+                  <td>{row.draft_transaction.date}</td>
+                  <td>
+                    {row.candidates.length === 0 ? (
+                      <span className={styles.emptyState}>No strong candidates yet.</span>
+                    ) : (
+                      <div className={styles.invoiceExportGroup}>
+                        {row.candidates.map((candidate) => (
+                          <button
+                            key={candidate.transaction_id}
+                            className={styles.tableActionButton}
+                            disabled={activeMatchKey === `${row.draft_transaction.id}:${candidate.transaction_id}`}
+                            onClick={() => void handleMatch(row.draft_transaction.id, candidate.transaction_id)}
+                            type="button"
+                          >
+                            {activeMatchKey === `${row.draft_transaction.id}:${candidate.transaction_id}`
+                              ? 'Matching...'
+                              : `Match ${candidate.description} (${(candidate.confidence_score * 100).toFixed(0)}%)`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TransactionsPage({ token }: TransactionsPageProps) {
     const [connectedAccountId, setConnectedAccountId] = useState('');
     return (
@@ -183,6 +322,7 @@ export default function TransactionsPage({ token }: TransactionsPageProps) {
             <p>Connect your bank account to import and categorize your transactions.</p>
             <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />
             <TransactionsList token={token} accountId={connectedAccountId} />
+            <ReceiptDraftManualMatching token={token} />
         </div>
     );
 }

@@ -3,7 +3,7 @@ import uuid
 from pathlib import Path
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
@@ -107,3 +107,55 @@ async def create_receipt_draft_transaction(
         payload=payload,
     )
     return schemas.ReceiptDraftCreateResponse(transaction=transaction, duplicated=duplicated)
+
+
+@app.get(
+    "/transactions/receipt-drafts/unmatched",
+    response_model=schemas.UnmatchedReceiptDraftsResponse,
+)
+async def list_unmatched_receipt_drafts(
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    candidate_limit: int = Query(default=5, ge=1, le=20),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, items = await crud.list_unmatched_receipt_drafts(
+        db,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+        candidate_limit=candidate_limit,
+    )
+    return schemas.UnmatchedReceiptDraftsResponse(total=total, items=items)
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/reconcile",
+    response_model=schemas.ReceiptDraftManualReconcileResponse,
+)
+async def manual_reconcile_receipt_draft(
+    draft_transaction_id: uuid.UUID,
+    payload: schemas.ReceiptDraftManualReconcileRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        reconciled, removed_id = await crud.manual_reconcile_receipt_draft(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            target_transaction_id=payload.target_transaction_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if message in {"draft_not_found", "target_not_found"}:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message) from exc
+        if message in {"draft_not_unmatched", "target_is_draft", "target_provider_conflict"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message) from exc
+
+    return schemas.ReceiptDraftManualReconcileResponse(
+        reconciled_transaction=reconciled,
+        removed_transaction_id=removed_id,
+    )

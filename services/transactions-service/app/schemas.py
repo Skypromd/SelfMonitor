@@ -51,3 +51,34 @@ class ReceiptDraftCreateRequest(BaseModel):
 class ReceiptDraftCreateResponse(BaseModel):
     transaction: Transaction
     duplicated: bool
+
+
+class ReceiptDraftCandidate(BaseModel):
+    transaction_id: uuid.UUID
+    account_id: uuid.UUID
+    provider_transaction_id: str
+    date: datetime.date
+    description: str
+    amount: float
+    currency: str
+    category: Optional[str] = None
+    confidence_score: float
+
+
+class UnmatchedReceiptDraftItem(BaseModel):
+    draft_transaction: Transaction
+    candidates: List[ReceiptDraftCandidate]
+
+
+class UnmatchedReceiptDraftsResponse(BaseModel):
+    total: int
+    items: List[UnmatchedReceiptDraftItem]
+
+
+class ReceiptDraftManualReconcileRequest(BaseModel):
+    target_transaction_id: uuid.UUID
+
+
+class ReceiptDraftManualReconcileResponse(BaseModel):
+    reconciled_transaction: Transaction
+    removed_transaction_id: uuid.UUID

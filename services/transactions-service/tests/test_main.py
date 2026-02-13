@@ -241,3 +241,79 @@ async def test_import_reconciles_matching_receipt_draft(db_session):
     assert reconciled["account_id"] == account_id
     assert reconciled["amount"] == -28.45
     assert reconciled["category"] == "transport"
+
+
+@pytest.mark.asyncio
+async def test_manual_reconcile_unmatched_receipt_draft(db_session):
+    account_id = str(uuid.uuid4())
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "trainline_receipt.pdf",
+        "transaction_date": "2026-02-12",
+        "total_amount": 28.45,
+        "currency": "GBP",
+        "vendor_name": "Trainline",
+        "suggested_category": "transport",
+        "expense_article": "travel_costs",
+        "is_potentially_deductible": True,
+    }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    assert draft_response.status_code == 200
+    draft_tx = draft_response.json()["transaction"]
+
+    # Description intentionally does not mention vendor to avoid auto-reconciliation.
+    import_response = client.post(
+        "/import",
+        headers=get_auth_headers(),
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "bank-txn-manual-1",
+                    "date": "2026-02-12",
+                    "description": "CARD PAYMENT 8934",
+                    "amount": -28.45,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert import_response.status_code == 202
+    import_data = import_response.json()
+    assert import_data["created_count"] == 1
+    assert import_data["reconciled_receipt_drafts"] == 0
+
+    unmatched_response = client.get(
+        "/transactions/receipt-drafts/unmatched",
+        headers=get_auth_headers(),
+    )
+    assert unmatched_response.status_code == 200
+    unmatched_data = unmatched_response.json()
+    assert unmatched_data["total"] == 1
+    item = unmatched_data["items"][0]
+    assert item["draft_transaction"]["id"] == draft_tx["id"]
+    assert len(item["candidates"]) >= 1
+    candidate = item["candidates"][0]
+    assert candidate["provider_transaction_id"] == "bank-txn-manual-1"
+
+    reconcile_response = client.post(
+        f"/transactions/receipt-drafts/{draft_tx['id']}/reconcile",
+        headers=get_auth_headers(),
+        json={"target_transaction_id": candidate["transaction_id"]},
+    )
+    assert reconcile_response.status_code == 200
+    reconcile_data = reconcile_response.json()
+    assert reconcile_data["removed_transaction_id"] == candidate["transaction_id"]
+    assert reconcile_data["reconciled_transaction"]["id"] == draft_tx["id"]
+    assert reconcile_data["reconciled_transaction"]["provider_transaction_id"] == "bank-txn-manual-1"
+    assert reconcile_data["reconciled_transaction"]["category"] == "transport"
+
+    user_transactions_response = client.get("/transactions/me", headers=get_auth_headers())
+    assert user_transactions_response.status_code == 200
+    transactions = user_transactions_response.json()
+    assert len(transactions) == 1
+    assert transactions[0]["id"] == draft_tx["id"]

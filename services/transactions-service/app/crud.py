@@ -14,6 +14,7 @@ CATEGORIZATION_SERVICE_URL = os.getenv("CATEGORIZATION_SERVICE_URL", "http://loc
 RECEIPT_DRAFT_ACCOUNT_NAMESPACE = uuid.UUID(
     os.getenv("RECEIPT_DRAFT_ACCOUNT_NAMESPACE", "f0b6e53b-0dd0-4f65-91d2-7bb272f8ea20")
 )
+RECEIPT_DRAFT_PREFIX = "receipt-draft-"
 
 async def get_suggested_category(description: str) -> str | None:
     """Calls the categorization service to get a suggested category."""
@@ -38,6 +39,77 @@ def _extract_receipt_draft_vendor(description: str) -> str | None:
     return vendor.lower() if vendor else None
 
 
+def _is_receipt_draft(transaction: models.Transaction) -> bool:
+    return bool(transaction.provider_transaction_id and transaction.provider_transaction_id.startswith(RECEIPT_DRAFT_PREFIX))
+
+
+def _candidate_confidence_score(
+    draft_transaction: models.Transaction,
+    candidate_transaction: models.Transaction,
+) -> float:
+    amount_gap = abs(abs(float(draft_transaction.amount)) - abs(float(candidate_transaction.amount)))
+    if amount_gap > 1.0:
+        return 0.0
+    day_gap = abs((candidate_transaction.date - draft_transaction.date).days)
+    if day_gap > 14:
+        return 0.0
+
+    amount_score = 1.0 - min(amount_gap, 1.0)
+    date_score = 1.0 - (day_gap / 14.0)
+    vendor_bonus = 0.0
+    draft_vendor = _extract_receipt_draft_vendor(draft_transaction.description)
+    if draft_vendor and draft_vendor in candidate_transaction.description.lower():
+        vendor_bonus = 0.2
+
+    return round((amount_score * 0.6) + (date_score * 0.2) + vendor_bonus, 3)
+
+
+async def _list_non_draft_candidates_for_receipt(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    draft_transaction: models.Transaction,
+    candidate_limit: int,
+) -> list[schemas.ReceiptDraftCandidate]:
+    start_date = draft_transaction.date - datetime.timedelta(days=14)
+    end_date = draft_transaction.date + datetime.timedelta(days=14)
+    result = await db.execute(
+        select(models.Transaction)
+        .filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.id != draft_transaction.id,
+            models.Transaction.provider_transaction_id.not_like(f"{RECEIPT_DRAFT_PREFIX}%"),
+            models.Transaction.currency == draft_transaction.currency,
+            models.Transaction.date >= start_date,
+            models.Transaction.date <= end_date,
+        )
+        .order_by(models.Transaction.date.desc(), models.Transaction.id.desc())
+    )
+    candidates = list(result.scalars().all())
+
+    scored_candidates: list[schemas.ReceiptDraftCandidate] = []
+    for candidate in candidates:
+        confidence = _candidate_confidence_score(draft_transaction, candidate)
+        if confidence <= 0:
+            continue
+        scored_candidates.append(
+            schemas.ReceiptDraftCandidate(
+                transaction_id=candidate.id,
+                account_id=candidate.account_id,
+                provider_transaction_id=candidate.provider_transaction_id,
+                date=candidate.date,
+                description=candidate.description,
+                amount=candidate.amount,
+                currency=candidate.currency,
+                category=candidate.category,
+                confidence_score=confidence,
+            )
+        )
+
+    scored_candidates.sort(key=lambda item: item.confidence_score, reverse=True)
+    return scored_candidates[:candidate_limit]
+
+
 async def _find_matching_receipt_draft(
     db: AsyncSession,
     *,
@@ -50,7 +122,7 @@ async def _find_matching_receipt_draft(
         select(models.Transaction)
         .filter(
             models.Transaction.user_id == user_id,
-            models.Transaction.provider_transaction_id.like("receipt-draft-%"),
+            models.Transaction.provider_transaction_id.like(f"{RECEIPT_DRAFT_PREFIX}%"),
             models.Transaction.currency == imported_transaction.currency.upper(),
             models.Transaction.date >= start_date,
             models.Transaction.date <= end_date,
@@ -171,7 +243,7 @@ async def create_or_get_receipt_draft_transaction(
     user_id: str,
     payload: schemas.ReceiptDraftCreateRequest,
 ) -> tuple[models.Transaction, bool]:
-    provider_transaction_id = f"receipt-draft-{payload.document_id}"
+    provider_transaction_id = f"{RECEIPT_DRAFT_PREFIX}{payload.document_id}"
     existing = await db.execute(
         select(models.Transaction).filter(
             models.Transaction.user_id == user_id,
@@ -200,6 +272,101 @@ async def create_or_get_receipt_draft_transaction(
     await db.commit()
     await db.refresh(db_transaction)
     return db_transaction, False
+
+
+async def list_unmatched_receipt_drafts(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    limit: int = 25,
+    offset: int = 0,
+    candidate_limit: int = 5,
+) -> tuple[int, list[schemas.UnmatchedReceiptDraftItem]]:
+    result = await db.execute(
+        select(models.Transaction)
+        .filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.provider_transaction_id.like(f"{RECEIPT_DRAFT_PREFIX}%"),
+        )
+        .order_by(models.Transaction.date.desc(), models.Transaction.id.desc())
+    )
+    all_drafts = list(result.scalars().all())
+    total = len(all_drafts)
+    page_drafts = all_drafts[offset : offset + limit]
+
+    items: list[schemas.UnmatchedReceiptDraftItem] = []
+    for draft_transaction in page_drafts:
+        candidates = await _list_non_draft_candidates_for_receipt(
+            db,
+            user_id=user_id,
+            draft_transaction=draft_transaction,
+            candidate_limit=candidate_limit,
+        )
+        items.append(
+            schemas.UnmatchedReceiptDraftItem(
+                draft_transaction=draft_transaction,
+                candidates=candidates,
+            )
+        )
+    return total, items
+
+
+async def manual_reconcile_receipt_draft(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    draft_transaction_id: uuid.UUID,
+    target_transaction_id: uuid.UUID,
+) -> tuple[models.Transaction, uuid.UUID]:
+    draft_result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.id == draft_transaction_id,
+            models.Transaction.user_id == user_id,
+        )
+    )
+    draft_transaction = draft_result.scalars().first()
+    if not draft_transaction:
+        raise ValueError("draft_not_found")
+    if not _is_receipt_draft(draft_transaction):
+        raise ValueError("draft_not_unmatched")
+
+    target_result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.id == target_transaction_id,
+            models.Transaction.user_id == user_id,
+        )
+    )
+    target_transaction = target_result.scalars().first()
+    if not target_transaction:
+        raise ValueError("target_not_found")
+    if _is_receipt_draft(target_transaction):
+        raise ValueError("target_is_draft")
+
+    conflict_result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.provider_transaction_id == target_transaction.provider_transaction_id,
+            models.Transaction.id != draft_transaction.id,
+            models.Transaction.id != target_transaction.id,
+        )
+    )
+    if conflict_result.scalars().first():
+        raise ValueError("target_provider_conflict")
+
+    preserved_category = draft_transaction.category or target_transaction.category
+    draft_transaction.account_id = target_transaction.account_id
+    draft_transaction.provider_transaction_id = target_transaction.provider_transaction_id
+    draft_transaction.date = target_transaction.date
+    draft_transaction.description = target_transaction.description
+    draft_transaction.amount = target_transaction.amount
+    draft_transaction.currency = target_transaction.currency
+    draft_transaction.category = preserved_category
+
+    removed_id = target_transaction.id
+    await db.delete(target_transaction)
+    await db.commit()
+    await db.refresh(draft_transaction)
+    return draft_transaction, removed_id
 
 async def get_transactions_by_account(db: AsyncSession, user_id: str, account_id: uuid.UUID):
     """Fetches all transactions for a specific account belonging to a user."""

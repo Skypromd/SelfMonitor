@@ -118,6 +118,77 @@ paths:
               schema:
                 $ref: '#/components/schemas/ReceiptDraftCreateResponse'
 
+  /transactions/receipt-drafts/unmatched:
+    get:
+      summary: List unmatched receipt drafts with candidate bank transactions
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: candidate_limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 5
+      responses:
+        '200':
+          description: Paginated list of unmatched receipt drafts and candidates.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnmatchedReceiptDraftsResponse'
+
+  /transactions/receipt-drafts/{draft_transaction_id}/reconcile:
+    post:
+      summary: Manually reconcile a receipt draft with a bank transaction
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draft_transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceiptDraftManualReconcileRequest'
+      responses:
+        '200':
+          description: Draft reconciled and duplicate bank transaction removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptDraftManualReconcileResponse'
+        '404':
+          description: Draft or target transaction not found.
+        '409':
+          description: Invalid reconciliation state.
+
 components:
   schemas:
     TransactionBase:
@@ -247,6 +318,90 @@ components:
       required:
         - transaction
         - duplicated
+
+    ReceiptDraftCandidate:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        provider_transaction_id:
+          type: string
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        amount:
+          type: number
+          format: float
+        currency:
+          type: string
+        category:
+          type: string
+          nullable: true
+        confidence_score:
+          type: number
+          format: float
+      required:
+        - transaction_id
+        - account_id
+        - provider_transaction_id
+        - date
+        - description
+        - amount
+        - currency
+        - confidence_score
+
+    UnmatchedReceiptDraftItem:
+      type: object
+      properties:
+        draft_transaction:
+          $ref: '#/components/schemas/Transaction'
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptDraftCandidate'
+      required:
+        - draft_transaction
+        - candidates
+
+    UnmatchedReceiptDraftsResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnmatchedReceiptDraftItem'
+      required:
+        - total
+        - items
+
+    ReceiptDraftManualReconcileRequest:
+      type: object
+      properties:
+        target_transaction_id:
+          type: string
+          format: uuid
+      required:
+        - target_transaction_id
+
+    ReceiptDraftManualReconcileResponse:
+      type: object
+      properties:
+        reconciled_transaction:
+          $ref: '#/components/schemas/Transaction'
+        removed_transaction_id:
+          type: string
+          format: uuid
+      required:
+        - reconciled_transaction
+        - removed_transaction_id
 
   securitySchemes:
     bearerAuth:
