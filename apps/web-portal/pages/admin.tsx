@@ -10,6 +10,8 @@ type AdminPageProps = {
   token: string;
 };
 
+type PeriodPreset = 'custom' | '7d' | '30d' | 'qtd';
+
 type PartnerOption = {
   id: string;
   name: string;
@@ -49,6 +51,12 @@ type ToastItem = {
 };
 
 const currency = (value: number, code: string) => `${value.toFixed(2)} ${code}`;
+const toIsoDate = (value: Date) => {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 export default function AdminPage({ token }: AdminPageProps) {
   const [emailToDeactivate, setEmailToDeactivate] = useState('');
@@ -62,8 +70,10 @@ export default function AdminPage({ token }: AdminPageProps) {
   const [selectedPartnerId, setSelectedPartnerId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [activePreset, setActivePreset] = useState<PeriodPreset>('30d');
   const [includeQualified, setIncludeQualified] = useState(true);
   const [includeConverted, setIncludeConverted] = useState(true);
+  const [selectedPartnerModal, setSelectedPartnerModal] = useState<BillingReportByPartner | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const { t } = useTranslation();
 
@@ -139,6 +149,55 @@ export default function AdminPage({ token }: AdminPageProps) {
       })
       .join(' ');
   }, [billingRowsSorted, maxPartnerAmount]);
+
+  const applyPreset = (preset: PeriodPreset) => {
+    if (preset === 'custom') {
+      setActivePreset('custom');
+      return;
+    }
+
+    const today = new Date();
+    const endValue = toIsoDate(today);
+    let start = new Date(today);
+
+    if (preset === '7d') {
+      start.setDate(today.getDate() - 6);
+    } else if (preset === '30d') {
+      start.setDate(today.getDate() - 29);
+    } else {
+      const quarterStartMonth = Math.floor(today.getMonth() / 3) * 3;
+      start = new Date(today.getFullYear(), quarterStartMonth, 1);
+    }
+
+    setStartDate(toIsoDate(start));
+    setEndDate(endValue);
+    setActivePreset(preset);
+  };
+
+  useEffect(() => {
+    if (!startDate && !endDate && activePreset === '30d') {
+      applyPreset('30d');
+    }
+  }, [activePreset, endDate, startDate]);
+
+  useEffect(() => {
+    if (!selectedPartnerModal) {
+      return;
+    }
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelectedPartnerModal(null);
+      }
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onEscape);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', onEscape);
+    };
+  }, [selectedPartnerModal]);
 
   const buildBillingQuery = () => {
     const params = new URLSearchParams();
@@ -323,46 +382,95 @@ export default function AdminPage({ token }: AdminPageProps) {
           <p className={styles.sectionSubtitle}>Filter billable statuses and export finance-ready CSV snapshots.</p>
         </div>
 
-        <div className={styles.adminFiltersGrid}>
-          <label className={styles.filterField}>
-            <span>Start date</span>
-            <input className={styles.input} onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} />
-          </label>
-          <label className={styles.filterField}>
-            <span>End date</span>
-            <input className={styles.input} onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} />
-          </label>
-          <label className={styles.filterField}>
-            <span>Partner</span>
-            <select className={styles.categorySelect} onChange={(event) => setSelectedPartnerId(event.target.value)} value={selectedPartnerId}>
-              <option value="">All partners</option>
-              {partners.map((partner) => (
-                <option key={partner.id} value={partner.id}>
-                  {partner.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <div className={styles.billingControlPanel}>
+          <div className={styles.presetRow}>
+            <button
+              className={`${styles.presetButton} ${activePreset === '7d' ? styles.presetButtonActive : ''}`}
+              onClick={() => applyPreset('7d')}
+              type="button"
+            >
+              7D
+            </button>
+            <button
+              className={`${styles.presetButton} ${activePreset === '30d' ? styles.presetButtonActive : ''}`}
+              onClick={() => applyPreset('30d')}
+              type="button"
+            >
+              30D
+            </button>
+            <button
+              className={`${styles.presetButton} ${activePreset === 'qtd' ? styles.presetButtonActive : ''}`}
+              onClick={() => applyPreset('qtd')}
+              type="button"
+            >
+              QTD
+            </button>
+            <button
+              className={`${styles.presetButton} ${activePreset === 'custom' ? styles.presetButtonActive : ''}`}
+              onClick={() => setActivePreset('custom')}
+              type="button"
+            >
+              CUSTOM
+            </button>
+          </div>
 
-        <div className={styles.statusPillsRow}>
-          <label className={styles.checkboxPill}>
-            <input checked={includeQualified} onChange={(event) => setIncludeQualified(event.target.checked)} type="checkbox" />
-            <span>qualified</span>
-          </label>
-          <label className={styles.checkboxPill}>
-            <input checked={includeConverted} onChange={(event) => setIncludeConverted(event.target.checked)} type="checkbox" />
-            <span>converted</span>
-          </label>
-        </div>
+          <div className={styles.adminFiltersGrid}>
+            <label className={styles.filterField}>
+              <span>Start date</span>
+              <input
+                className={styles.input}
+                onChange={(event) => {
+                  setStartDate(event.target.value);
+                  setActivePreset('custom');
+                }}
+                type="date"
+                value={startDate}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>End date</span>
+              <input
+                className={styles.input}
+                onChange={(event) => {
+                  setEndDate(event.target.value);
+                  setActivePreset('custom');
+                }}
+                type="date"
+                value={endDate}
+              />
+            </label>
+            <label className={styles.filterField}>
+              <span>Partner</span>
+              <select className={styles.categorySelect} onChange={(event) => setSelectedPartnerId(event.target.value)} value={selectedPartnerId}>
+                <option value="">All partners</option>
+                {partners.map((partner) => (
+                  <option key={partner.id} value={partner.id}>
+                    {partner.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
-        <div className={styles.adminActionsRow}>
-          <button className={styles.button} disabled={isBillingLoading} onClick={loadBillingReport} type="button">
-            {isBillingLoading ? 'Loading...' : 'Load Billing'}
-          </button>
-          <button className={`${styles.button} ${styles.secondaryButton}`} onClick={downloadBillingCsv} type="button">
-            Download CSV
-          </button>
+          <div className={styles.statusPillsRow}>
+            <label className={styles.checkboxPill}>
+              <input checked={includeQualified} onChange={(event) => setIncludeQualified(event.target.checked)} type="checkbox" />
+              <span>qualified</span>
+            </label>
+            <label className={styles.checkboxPill}>
+              <input checked={includeConverted} onChange={(event) => setIncludeConverted(event.target.checked)} type="checkbox" />
+              <span>converted</span>
+            </label>
+          </div>
+
+          <div className={styles.adminActionsRow}>
+            <button className={styles.button} disabled={isBillingLoading} onClick={loadBillingReport} type="button">
+              {isBillingLoading ? 'Loading...' : 'Load Billing'}
+            </button>
+            <button className={`${styles.button} ${styles.secondaryButton}`} onClick={downloadBillingCsv} type="button">
+              Download CSV
+            </button>
+          </div>
         </div>
 
         {report && (
@@ -418,6 +526,7 @@ export default function AdminPage({ token }: AdminPageProps) {
                     <th>Converted</th>
                     <th>Rates (GBP)</th>
                     <th>Amount (GBP)</th>
+                    <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -430,6 +539,11 @@ export default function AdminPage({ token }: AdminPageProps) {
                         {item.qualified_lead_fee_gbp.toFixed(2)} / {item.converted_lead_fee_gbp.toFixed(2)}
                       </td>
                       <td className={styles.positive}>{item.amount_gbp.toFixed(2)}</td>
+                      <td>
+                        <button className={styles.tableActionButton} onClick={() => setSelectedPartnerModal(item)} type="button">
+                          Details
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -438,6 +552,54 @@ export default function AdminPage({ token }: AdminPageProps) {
           </>
         )}
       </div>
+
+      {selectedPartnerModal && report && (
+        <div className={styles.modalBackdrop} onClick={() => setSelectedPartnerModal(null)} role="presentation">
+          <div className={styles.modalCard} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>{selectedPartnerModal.partner_name}</h3>
+              <button aria-label="Close partner details" className={styles.toastClose} onClick={() => setSelectedPartnerModal(null)} type="button">
+                ×
+              </button>
+            </div>
+            <p className={styles.sectionSubtitle}>Partner billing drill-down for selected filters.</p>
+            <div className={styles.modalGrid}>
+              <div className={styles.modalMetric}>
+                <span className={styles.modalLabel}>Qualified leads</span>
+                <strong className={styles.modalValue}>{selectedPartnerModal.qualified_leads}</strong>
+              </div>
+              <div className={styles.modalMetric}>
+                <span className={styles.modalLabel}>Converted leads</span>
+                <strong className={styles.modalValue}>{selectedPartnerModal.converted_leads}</strong>
+              </div>
+              <div className={styles.modalMetric}>
+                <span className={styles.modalLabel}>Unique users</span>
+                <strong className={styles.modalValue}>{selectedPartnerModal.unique_users}</strong>
+              </div>
+              <div className={styles.modalMetric}>
+                <span className={styles.modalLabel}>Revenue contribution</span>
+                <strong className={styles.modalValue}>{currency(selectedPartnerModal.amount_gbp, report.currency)}</strong>
+              </div>
+              <div className={styles.modalMetric}>
+                <span className={styles.modalLabel}>Conversion rate</span>
+                <strong className={styles.modalValue}>
+                  {selectedPartnerModal.qualified_leads
+                    ? `${((selectedPartnerModal.converted_leads / selectedPartnerModal.qualified_leads) * 100).toFixed(1)}%`
+                    : '0.0%'}
+                </strong>
+              </div>
+              <div className={styles.modalMetric}>
+                <span className={styles.modalLabel}>Avg revenue / user</span>
+                <strong className={styles.modalValue}>
+                  {selectedPartnerModal.unique_users
+                    ? currency(selectedPartnerModal.amount_gbp / selectedPartnerModal.unique_users, report.currency)
+                    : currency(0, report.currency)}
+                </strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={styles.toastViewport}>
         {toasts.map((toast) => (
