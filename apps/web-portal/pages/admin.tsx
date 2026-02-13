@@ -1,9 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
 const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
 const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || 'http://localhost:8009';
+const TOAST_DURATION_MS = 4200;
 
 type AdminPageProps = {
   token: string;
@@ -37,16 +38,24 @@ type BillingReportResponse = {
   unique_users: number;
 };
 
+type LeadLifecycleStatus = 'qualified' | 'rejected' | 'converted';
+
+type ToastKind = 'success' | 'error' | 'info';
+
+type ToastItem = {
+  id: string;
+  kind: ToastKind;
+  message: string;
+};
+
+const currency = (value: number, code: string) => `${value.toFixed(2)} ${code}`;
+
 export default function AdminPage({ token }: AdminPageProps) {
   const [emailToDeactivate, setEmailToDeactivate] = useState('');
-  const [deactivateError, setDeactivateError] = useState('');
-  const [deactivateMessage, setDeactivateMessage] = useState('');
   const [leadId, setLeadId] = useState('');
-  const [leadStatus, setLeadStatus] = useState<'qualified' | 'rejected' | 'converted'>('qualified');
-  const [leadStatusError, setLeadStatusError] = useState('');
-  const [leadStatusMessage, setLeadStatusMessage] = useState('');
-  const [billingError, setBillingError] = useState('');
-  const [billingMessage, setBillingMessage] = useState('');
+  const [leadStatus, setLeadStatus] = useState<LeadLifecycleStatus>('qualified');
+  const [isUserActionLoading, setIsUserActionLoading] = useState(false);
+  const [isLeadActionLoading, setIsLeadActionLoading] = useState(false);
   const [isBillingLoading, setIsBillingLoading] = useState(false);
   const [report, setReport] = useState<BillingReportResponse | null>(null);
   const [partners, setPartners] = useState<PartnerOption[]>([]);
@@ -55,7 +64,20 @@ export default function AdminPage({ token }: AdminPageProps) {
   const [endDate, setEndDate] = useState('');
   const [includeQualified, setIncludeQualified] = useState(true);
   const [includeConverted, setIncludeConverted] = useState(true);
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
   const { t } = useTranslation();
+
+  const pushToast = (kind: ToastKind, message: string) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setToasts((current) => [...current, { id, kind, message }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((item) => item.id !== id));
+    }, TOAST_DURATION_MS);
+  };
+
+  const dismissToast = (id: string) => {
+    setToasts((current) => current.filter((item) => item.id !== id));
+  };
 
   useEffect(() => {
     const loadPartners = async () => {
@@ -64,18 +86,18 @@ export default function AdminPage({ token }: AdminPageProps) {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) {
-          return;
+          throw new Error('Failed to load partners for billing filters.');
         }
         setPartners(await response.json());
       } catch (err) {
-        console.error(err);
+        pushToast('error', err instanceof Error ? err.message : 'Unexpected error loading partners.');
       }
     };
 
     loadPartners();
   }, [token]);
 
-  const selectedStatuses = () => {
+  const selectedStatuses = useMemo(() => {
     const statuses: string[] = [];
     if (includeQualified) {
       statuses.push('qualified');
@@ -84,7 +106,39 @@ export default function AdminPage({ token }: AdminPageProps) {
       statuses.push('converted');
     }
     return statuses;
-  };
+  }, [includeConverted, includeQualified]);
+
+  const billingRowsSorted = useMemo(() => {
+    if (!report) {
+      return [];
+    }
+    return [...report.by_partner].sort((a, b) => b.amount_gbp - a.amount_gbp);
+  }, [report]);
+
+  const maxPartnerAmount = useMemo(() => {
+    if (!billingRowsSorted.length) {
+      return 1;
+    }
+    return Math.max(...billingRowsSorted.map((item) => item.amount_gbp), 1);
+  }, [billingRowsSorted]);
+
+  const chartPoints = useMemo(() => {
+    if (!billingRowsSorted.length) {
+      return '';
+    }
+    if (billingRowsSorted.length === 1) {
+      return `0,75 100,75`;
+    }
+    const step = 100 / (billingRowsSorted.length - 1);
+    return billingRowsSorted
+      .map((item, index) => {
+        const x = index * step;
+        const normalized = item.amount_gbp / maxPartnerAmount;
+        const y = 90 - normalized * 70;
+        return `${x},${y}`;
+      })
+      .join(' ');
+  }, [billingRowsSorted, maxPartnerAmount]);
 
   const buildBillingQuery = () => {
     const params = new URLSearchParams();
@@ -97,19 +151,16 @@ export default function AdminPage({ token }: AdminPageProps) {
     if (endDate) {
       params.set('end_date', endDate);
     }
-    selectedStatuses().forEach((statusValue) => params.append('statuses', statusValue));
+    selectedStatuses.forEach((statusValue) => params.append('statuses', statusValue));
     return params.toString();
   };
 
   const loadBillingReport = async () => {
-    const statuses = selectedStatuses();
-    if (!statuses.length) {
-      setBillingError('Select at least one billable status.');
+    if (!selectedStatuses.length) {
+      pushToast('error', 'Select at least one billable status.');
       return;
     }
 
-    setBillingError('');
-    setBillingMessage('');
     setIsBillingLoading(true);
     try {
       const query = buildBillingQuery();
@@ -121,23 +172,20 @@ export default function AdminPage({ token }: AdminPageProps) {
         throw new Error(payload.detail || 'Failed to load billing report');
       }
       setReport(payload);
-      setBillingMessage('Billing report updated.');
+      pushToast('success', 'Billing report refreshed.');
     } catch (err) {
-      setBillingError(err instanceof Error ? err.message : 'Unexpected error');
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error loading billing report.');
     } finally {
       setIsBillingLoading(false);
     }
   };
 
   const downloadBillingCsv = async () => {
-    const statuses = selectedStatuses();
-    if (!statuses.length) {
-      setBillingError('Select at least one billable status.');
+    if (!selectedStatuses.length) {
+      pushToast('error', 'Select at least one billable status.');
       return;
     }
 
-    setBillingError('');
-    setBillingMessage('');
     try {
       const query = buildBillingQuery();
       const response = await fetch(`${PARTNER_REGISTRY_URL}/leads/billing.csv${query ? `?${query}` : ''}`, {
@@ -156,16 +204,15 @@ export default function AdminPage({ token }: AdminPageProps) {
       anchor.click();
       anchor.remove();
       window.URL.revokeObjectURL(url);
-      setBillingMessage('Billing CSV downloaded.');
+      pushToast('success', 'Billing CSV downloaded.');
     } catch (err) {
-      setBillingError(err instanceof Error ? err.message : 'Unexpected error');
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error downloading billing CSV.');
     }
   };
 
   const handleDeactivate = async (event: FormEvent) => {
     event.preventDefault();
-    setDeactivateError('');
-    setDeactivateMessage('');
+    setIsUserActionLoading(true);
 
     try {
       const response = await fetch(`${AUTH_SERVICE_BASE_URL}/users/${emailToDeactivate}/deactivate`, {
@@ -177,23 +224,23 @@ export default function AdminPage({ token }: AdminPageProps) {
         throw new Error(data.detail || 'Failed to deactivate user');
       }
 
-      setDeactivateMessage(`User ${data.email} has been deactivated.`);
       setEmailToDeactivate('');
+      pushToast('success', `User ${data.email} has been deactivated.`);
     } catch (err) {
-      setDeactivateError(err instanceof Error ? err.message : 'Unexpected error');
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error deactivating user.');
+    } finally {
+      setIsUserActionLoading(false);
     }
   };
 
   const handleLeadStatusUpdate = async (event: FormEvent) => {
     event.preventDefault();
-    setLeadStatusError('');
-    setLeadStatusMessage('');
-
     if (!leadId) {
-      setLeadStatusError('Lead ID is required.');
+      pushToast('error', 'Lead ID is required.');
       return;
     }
 
+    setIsLeadActionLoading(true);
     try {
       const response = await fetch(`${PARTNER_REGISTRY_URL}/leads/${leadId}/status`, {
         body: JSON.stringify({ status: leadStatus }),
@@ -207,18 +254,27 @@ export default function AdminPage({ token }: AdminPageProps) {
       if (!response.ok) {
         throw new Error(payload.detail || 'Failed to update lead status');
       }
-      setLeadStatusMessage(`Lead ${payload.lead_id} updated to status '${payload.status}'.`);
+      pushToast('success', `Lead ${payload.lead_id} updated to '${payload.status}'.`);
     } catch (err) {
-      setLeadStatusError(err instanceof Error ? err.message : 'Unexpected error');
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error updating lead status.');
+    } finally {
+      setIsLeadActionLoading(false);
     }
   };
 
   return (
     <div className={styles.dashboard}>
-      <h1>{t('nav.admin')}</h1>
-      <p>{t('admin.description')}</p>
+      <div className={styles.pageHeader}>
+        <p className={styles.pageEyebrow}>Operations Console</p>
+        <h1 className={styles.pageTitle}>{t('nav.admin')}</h1>
+        <p className={styles.pageLead}>{t('admin.description')} Manage billing operations and lead lifecycle from one dashboard.</p>
+      </div>
+
       <div className={styles.subContainer}>
-        <h2>{t('admin.form_title')}</h2>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>{t('admin.form_title')}</h2>
+          <p className={styles.sectionSubtitle}>Restrict risky accounts before they affect workflows.</p>
+        </div>
         <form onSubmit={handleDeactivate}>
           <input
             className={styles.input}
@@ -227,18 +283,18 @@ export default function AdminPage({ token }: AdminPageProps) {
             type="email"
             value={emailToDeactivate}
           />
-          <button className={styles.button} type="submit">
-            {t('admin.deactivate_button')}
+          <button className={styles.button} disabled={isUserActionLoading} type="submit">
+            {isUserActionLoading ? 'Processing...' : t('admin.deactivate_button')}
           </button>
         </form>
-        {deactivateMessage && <p className={styles.message}>{deactivateMessage}</p>}
-        {deactivateError && <p className={styles.error}>{deactivateError}</p>}
       </div>
 
       <div className={styles.subContainer}>
-        <h2>Lead Lifecycle Management</h2>
-        <p>Set lead status for billing reconciliation.</p>
-        <form onSubmit={handleLeadStatusUpdate}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Lead Lifecycle Management</h2>
+          <p className={styles.sectionSubtitle}>Apply lifecycle transitions used by billing.</p>
+        </div>
+        <form className={styles.adminStatusForm} onSubmit={handleLeadStatusUpdate}>
           <input
             className={styles.input}
             onChange={(event) => setLeadId(event.target.value)}
@@ -246,43 +302,61 @@ export default function AdminPage({ token }: AdminPageProps) {
             type="text"
             value={leadId}
           />
-          <select className={styles.categorySelect} onChange={(event) => setLeadStatus(event.target.value as 'qualified' | 'rejected' | 'converted')} value={leadStatus}>
+          <select
+            className={styles.categorySelect}
+            onChange={(event) => setLeadStatus(event.target.value as LeadLifecycleStatus)}
+            value={leadStatus}
+          >
             <option value="qualified">qualified</option>
             <option value="rejected">rejected</option>
             <option value="converted">converted</option>
           </select>
-          <div style={{ marginTop: '0.75rem' }}>
-            <button className={styles.button} type="submit">
-              Update Lead Status
-            </button>
-          </div>
+          <button className={styles.button} disabled={isLeadActionLoading} type="submit">
+            {isLeadActionLoading ? 'Updating...' : 'Update Lead Status'}
+          </button>
         </form>
-        {leadStatusMessage && <p className={styles.message}>{leadStatusMessage}</p>}
-        {leadStatusError && <p className={styles.error}>{leadStatusError}</p>}
       </div>
 
       <div className={styles.subContainer}>
-        <h2>Billing Report</h2>
-        <p>Review billable volume and monetary totals by partner.</p>
-        <div className={styles.fileInputContainer}>
-          <input className={styles.input} onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} />
-          <input className={styles.input} onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} />
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Billing Report</h2>
+          <p className={styles.sectionSubtitle}>Filter billable statuses and export finance-ready CSV snapshots.</p>
         </div>
-        <div className={styles.fileInputContainer}>
-          <select className={styles.categorySelect} onChange={(event) => setSelectedPartnerId(event.target.value)} value={selectedPartnerId}>
-            <option value="">All partners</option>
-            {partners.map((partner) => (
-              <option key={partner.id} value={partner.id}>
-                {partner.name}
-              </option>
-            ))}
-          </select>
-          <label>
-            <input checked={includeQualified} onChange={(event) => setIncludeQualified(event.target.checked)} type="checkbox" /> qualified
+
+        <div className={styles.adminFiltersGrid}>
+          <label className={styles.filterField}>
+            <span>Start date</span>
+            <input className={styles.input} onChange={(event) => setStartDate(event.target.value)} type="date" value={startDate} />
           </label>
-          <label>
-            <input checked={includeConverted} onChange={(event) => setIncludeConverted(event.target.checked)} type="checkbox" /> converted
+          <label className={styles.filterField}>
+            <span>End date</span>
+            <input className={styles.input} onChange={(event) => setEndDate(event.target.value)} type="date" value={endDate} />
           </label>
+          <label className={styles.filterField}>
+            <span>Partner</span>
+            <select className={styles.categorySelect} onChange={(event) => setSelectedPartnerId(event.target.value)} value={selectedPartnerId}>
+              <option value="">All partners</option>
+              {partners.map((partner) => (
+                <option key={partner.id} value={partner.id}>
+                  {partner.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className={styles.statusPillsRow}>
+          <label className={styles.checkboxPill}>
+            <input checked={includeQualified} onChange={(event) => setIncludeQualified(event.target.checked)} type="checkbox" />
+            <span>qualified</span>
+          </label>
+          <label className={styles.checkboxPill}>
+            <input checked={includeConverted} onChange={(event) => setIncludeConverted(event.target.checked)} type="checkbox" />
+            <span>converted</span>
+          </label>
+        </div>
+
+        <div className={styles.adminActionsRow}>
           <button className={styles.button} disabled={isBillingLoading} onClick={loadBillingReport} type="button">
             {isBillingLoading ? 'Loading...' : 'Load Billing'}
           </button>
@@ -291,43 +365,95 @@ export default function AdminPage({ token }: AdminPageProps) {
           </button>
         </div>
 
-        {billingMessage && <p className={styles.message}>{billingMessage}</p>}
-        {billingError && <p className={styles.error}>{billingError}</p>}
-
         {report && (
           <>
-            <div className={styles.resultsContainer}>
-              <div className={styles.resultItem}><span>Currency:</span><span>{report.currency}</span></div>
-              <div className={styles.resultItem}><span>Total leads:</span><span>{report.total_leads}</span></div>
-              <div className={styles.resultItem}><span>Qualified leads:</span><span>{report.qualified_leads}</span></div>
-              <div className={styles.resultItem}><span>Converted leads:</span><span>{report.converted_leads}</span></div>
-              <div className={styles.resultItemMain}><span>Total amount:</span><span>{report.total_amount_gbp.toFixed(2)} {report.currency}</span></div>
+            <div className={styles.kpiGrid}>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Total revenue</p>
+                <p className={styles.kpiValue}>{currency(report.total_amount_gbp, report.currency)}</p>
+              </div>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Qualified leads</p>
+                <p className={styles.kpiValue}>{report.qualified_leads}</p>
+              </div>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Converted leads</p>
+                <p className={styles.kpiValue}>{report.converted_leads}</p>
+              </div>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Unique users</p>
+                <p className={styles.kpiValue}>{report.unique_users}</p>
+              </div>
             </div>
 
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>Partner</th>
-                  <th>Qualified</th>
-                  <th>Converted</th>
-                  <th>Rates (GBP)</th>
-                  <th>Amount (GBP)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.by_partner.map((item) => (
-                  <tr key={item.partner_id}>
-                    <td>{item.partner_name}</td>
-                    <td>{item.qualified_leads}</td>
-                    <td>{item.converted_leads}</td>
-                    <td>{item.qualified_lead_fee_gbp.toFixed(2)} / {item.converted_lead_fee_gbp.toFixed(2)}</td>
-                    <td className={styles.positive}>{item.amount_gbp.toFixed(2)}</td>
-                  </tr>
+            <div className={styles.billingVisualGrid}>
+              <div className={styles.chartCard}>
+                <h3 className={styles.chartTitle}>Revenue trend by partner</h3>
+                <p className={styles.chartSubtitle}>Sorted by contribution amount in current filter window.</p>
+                <svg className={styles.lineChart} preserveAspectRatio="none" viewBox="0 0 100 100">
+                  <polyline className={styles.lineChartPath} points={chartPoints || '0,75 100,75'} />
+                </svg>
+              </div>
+
+              <div className={styles.barChartCard}>
+                {!billingRowsSorted.length && <p className={styles.emptyState}>No partner rows for selected filters.</p>}
+                {billingRowsSorted.map((item) => (
+                  <div className={styles.barRow} key={item.partner_id}>
+                    <span className={styles.barLabel}>{item.partner_name}</span>
+                    <div className={styles.barTrack}>
+                      <span className={styles.barFill} style={{ width: `${Math.max(7, (item.amount_gbp / maxPartnerAmount) * 100)}%` }} />
+                    </div>
+                    <span className={styles.barValue}>{currency(item.amount_gbp, report.currency)}</span>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+
+            <div className={styles.tableResponsive}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Partner</th>
+                    <th>Qualified</th>
+                    <th>Converted</th>
+                    <th>Rates (GBP)</th>
+                    <th>Amount (GBP)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {billingRowsSorted.map((item) => (
+                    <tr key={item.partner_id}>
+                      <td>{item.partner_name}</td>
+                      <td>{item.qualified_leads}</td>
+                      <td>{item.converted_leads}</td>
+                      <td>
+                        {item.qualified_lead_fee_gbp.toFixed(2)} / {item.converted_lead_fee_gbp.toFixed(2)}
+                      </td>
+                      <td className={styles.positive}>{item.amount_gbp.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </>
         )}
+      </div>
+
+      <div className={styles.toastViewport}>
+        {toasts.map((toast) => (
+          <div
+            className={`${styles.toastItem} ${
+              toast.kind === 'success' ? styles.toastSuccess : toast.kind === 'error' ? styles.toastError : styles.toastInfo
+            }`}
+            key={toast.id}
+            role="status"
+          >
+            <span>{toast.message}</span>
+            <button aria-label="Dismiss notification" className={styles.toastClose} onClick={() => dismissToast(toast.id)} type="button">
+              ×
+            </button>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -561,6 +561,294 @@
   font-size: 0.94rem;
 }
 
+.pageHeader {
+  margin-bottom: 8px;
+}
+
+.pageEyebrow {
+  margin: 0 0 6px;
+  color: var(--color-primary);
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: clamp(1.8rem, 2.6vw, 2.4rem);
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+}
+
+.pageLead {
+  margin: 10px 0 0;
+  max-width: 800px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+}
+
+.sectionHeader {
+  margin-bottom: 14px;
+}
+
+.sectionTitle {
+  margin: 0 0 6px;
+  font-size: 1.24rem;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.sectionSubtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.93rem;
+}
+
+.adminStatusForm {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.adminStatusForm .input {
+  margin: 0;
+}
+
+.adminStatusForm .categorySelect {
+  height: 42px;
+}
+
+.adminStatusForm .button {
+  height: 42px;
+}
+
+.adminFiltersGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filterField span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filterField .input,
+.filterField .categorySelect {
+  margin: 0;
+}
+
+.statusPillsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 10px;
+}
+
+.checkboxPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-primary);
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+
+.checkboxPill input {
+  margin: 0;
+}
+
+.adminActionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.kpiCard {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--color-surface-muted);
+}
+
+.kpiLabel {
+  margin: 0 0 6px;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.kpiValue {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.billingVisualGrid {
+  display: grid;
+  grid-template-columns: 1fr 1.1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.chartCard,
+.barChartCard {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+  padding: 12px;
+}
+
+.chartTitle {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--color-text-primary);
+}
+
+.chartSubtitle {
+  margin: 6px 0 10px;
+  font-size: 0.84rem;
+  color: var(--color-text-muted);
+}
+
+.lineChart {
+  width: 100%;
+  height: 120px;
+  display: block;
+}
+
+.lineChartPath {
+  fill: none;
+  stroke: var(--color-primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.barChartCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.barLabel {
+  font-size: 0.83rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.barTrack {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(143, 164, 204, 0.25);
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #2f6df6 0%, #60a5fa 100%);
+}
+
+.barValue {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.tableResponsive {
+  overflow-x: auto;
+}
+
+.toastViewport {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(340px, calc(100vw - 24px));
+}
+
+.toastItem {
+  border-radius: 12px;
+  border: 1px solid transparent;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  box-shadow: var(--shadow-sm);
+  animation: fadeUp 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.toastSuccess {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border-color: rgba(30, 143, 95, 0.32);
+}
+
+.toastError {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+  border-color: rgba(210, 63, 87, 0.32);
+}
+
+.toastInfo {
+  background: rgba(66, 153, 225, 0.16);
+  border-color: rgba(66, 153, 225, 0.35);
+  color: var(--color-text-primary);
+}
+
+.toastClose {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 1rem;
+  padding: 0;
+}
+
 @keyframes shimmer {
   from {
     background-position: 100% 0;
@@ -604,5 +892,37 @@
 
   .skeletonRow {
     grid-template-columns: 1fr;
+  }
+
+  .adminStatusForm {
+    grid-template-columns: 1fr;
+  }
+
+  .adminFiltersGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminActionsRow .button {
+    width: 100%;
+  }
+
+  .kpiGrid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .billingVisualGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .barRow {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .toastViewport {
+    top: 12px;
+    right: 12px;
+    left: 12px;
+    width: auto;
   }
 }
