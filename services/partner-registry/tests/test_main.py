@@ -352,3 +352,115 @@ def test_billing_report_rejects_non_billable_status_filter():
     assert response.status_code == 400
     assert "supports only qualified/converted statuses" in response.json()["detail"]
 
+
+def test_update_partner_pricing():
+    partner = client.get("/partners").json()[0]
+    partner_id = partner["id"]
+
+    response = client.patch(
+        f"/partners/{partner_id}/pricing",
+        headers=get_billing_headers(),
+        json={
+            "qualified_lead_fee_gbp": 21.5,
+            "converted_lead_fee_gbp": 67.0,
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] == partner_id
+    assert payload["qualified_lead_fee_gbp"] == 21.5
+    assert payload["converted_lead_fee_gbp"] == 67.0
+
+
+def test_list_leads_supports_filters(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead_a = create_handoff_lead(partner_id, "lead-filter-a@example.com")
+    create_handoff_lead(partner_id, "lead-filter-b@example.com")
+    set_lead_status(lead_a, "qualified")
+
+    response = client.get(
+        "/leads?status=qualified&limit=10&offset=0",
+        headers=get_billing_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["status"] == "qualified"
+    assert payload["items"][0]["partner_id"] == partner_id
+
+
+def test_generate_list_and_get_invoice(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead = create_handoff_lead(partner_id, "invoice-user@example.com")
+    set_lead_status(lead, "qualified")
+
+    create_response = client.post(
+        "/billing/invoices/generate",
+        headers=get_billing_headers(),
+        json={
+            "partner_id": partner_id,
+            "statuses": ["qualified"],
+        },
+    )
+    assert create_response.status_code == 201
+    invoice_payload = create_response.json()
+    invoice_id = invoice_payload["id"]
+    assert invoice_payload["status"] == "generated"
+    assert invoice_payload["total_amount_gbp"] > 0
+    assert len(invoice_payload["lines"]) == 1
+
+    list_response = client.get("/billing/invoices", headers=get_billing_headers())
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert listed["total"] >= 1
+    ids = [item["id"] for item in listed["items"]]
+    assert invoice_id in ids
+
+    get_response = client.get(f"/billing/invoices/{invoice_id}", headers=get_billing_headers())
+    assert get_response.status_code == 200
+    detail = get_response.json()
+    assert detail["id"] == invoice_id
+    assert detail["lines"][0]["partner_id"] == partner_id
+
+
+def test_invoice_status_lifecycle_and_invalid_transition(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead = create_handoff_lead(partner_id, "invoice-status-user@example.com")
+    set_lead_status(lead, "qualified")
+
+    create_response = client.post(
+        "/billing/invoices/generate",
+        headers=get_billing_headers(),
+        json={"partner_id": partner_id},
+    )
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["id"]
+
+    issued_response = client.patch(
+        f"/billing/invoices/{invoice_id}/status",
+        headers=get_billing_headers(),
+        json={"status": "issued"},
+    )
+    assert issued_response.status_code == 200
+    assert issued_response.json()["status"] == "issued"
+
+    paid_response = client.patch(
+        f"/billing/invoices/{invoice_id}/status",
+        headers=get_billing_headers(),
+        json={"status": "paid"},
+    )
+    assert paid_response.status_code == 200
+    assert paid_response.json()["status"] == "paid"
+
+    invalid_response = client.patch(
+        f"/billing/invoices/{invoice_id}/status",
+        headers=get_billing_headers(),
+        json={"status": "issued"},
+    )
+    assert invalid_response.status_code == 409
+    assert "Cannot transition invoice status" in invalid_response.json()["detail"]
+

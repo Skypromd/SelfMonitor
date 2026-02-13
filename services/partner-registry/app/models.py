@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import CheckConstraint, JSON, Column, DateTime, Float, ForeignKey, Index, String
+from sqlalchemy import CheckConstraint, JSON, Column, Date, DateTime, Float, ForeignKey, Index, Integer, String
 
 from .database import Base
 
@@ -46,4 +46,56 @@ class HandoffLead(Base):
         default=lambda: datetime.datetime.now(datetime.UTC),
         onupdate=lambda: datetime.datetime.now(datetime.UTC),
     )
+
+
+class BillingInvoice(Base):
+    __tablename__ = "billing_invoices"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('generated', 'issued', 'paid', 'void')",
+            name="ck_billing_invoices_status_allowed",
+        ),
+        Index("ix_billing_invoices_created_at", "created_at"),
+        Index("ix_billing_invoices_status", "status"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    generated_by_user_id = Column(String, nullable=False, index=True)
+    partner_id = Column(String, ForeignKey("partners.id", ondelete="SET NULL"), nullable=True, index=True)
+    period_start = Column(Date, nullable=True)
+    period_end = Column(Date, nullable=True)
+    currency = Column(String(length=3), nullable=False, default="GBP")
+    statuses = Column(JSON, nullable=False)
+    total_amount_gbp = Column(Float, nullable=False, default=0.0)
+    status = Column(String, nullable=False, default="generated")
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+
+
+class BillingInvoiceLine(Base):
+    __tablename__ = "billing_invoice_lines"
+    __table_args__ = (
+        Index("ix_billing_invoice_lines_invoice_id", "invoice_id"),
+        Index("ix_billing_invoice_lines_partner_id", "partner_id"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    invoice_id = Column(String, ForeignKey("billing_invoices.id", ondelete="CASCADE"), nullable=False)
+    partner_id = Column(String, nullable=False)
+    partner_name = Column(String, nullable=False)
+    qualified_leads = Column(Integer, nullable=False, default=0)
+    converted_leads = Column(Integer, nullable=False, default=0)
+    unique_users = Column(Integer, nullable=False, default=0)
+    qualified_lead_fee_gbp = Column(Float, nullable=False, default=0.0)
+    converted_lead_fee_gbp = Column(Float, nullable=False, default=0.0)
+    amount_gbp = Column(Float, nullable=False, default=0.0)
 

@@ -82,6 +82,314 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /partners/{partner_id}/pricing:
+    patch:
+      summary: Update partner pricing used for billing calculations
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: partner_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartnerPricingUpdateRequest"
+      responses:
+        "200":
+          description: Updated partner pricing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Partner"
+        "404":
+          description: Partner not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /leads:
+    get:
+      summary: List handoff leads for operations
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: partner_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/LeadStatus"
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated operational lead list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeadListResponse"
+        "400":
+          description: Invalid query parameters or date range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /billing/invoices/generate:
+    post:
+      summary: Generate immutable billing invoice snapshot
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingInvoiceGenerateRequest"
+      responses:
+        "201":
+          description: Invoice generated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingInvoiceDetail"
+        "400":
+          description: Invalid request payload or statuses.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /billing/invoices:
+    get:
+      summary: List generated billing invoices
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/BillingInvoiceStatus"
+        - name: partner_id
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated invoice list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingInvoiceListResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /billing/invoices/{invoice_id}:
+    get:
+      summary: Get billing invoice details
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full invoice details and line items.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingInvoiceDetail"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /billing/invoices/{invoice_id}/status:
+    patch:
+      summary: Update billing invoice status lifecycle
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BillingInvoiceStatusUpdateRequest"
+      responses:
+        "200":
+          description: Invoice status updated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BillingInvoiceDetail"
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid status transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /leads/billing:
     get:
       summary: Get billing report with monetary totals (GBP)
@@ -638,6 +946,207 @@ components:
         - unique_users
         - total_amount_gbp
         - by_partner
+
+    PartnerPricingUpdateRequest:
+      type: object
+      properties:
+        qualified_lead_fee_gbp:
+          type: number
+          format: float
+          minimum: 0
+        converted_lead_fee_gbp:
+          type: number
+          format: float
+          minimum: 0
+      required:
+        - qualified_lead_fee_gbp
+        - converted_lead_fee_gbp
+
+    LeadListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        partner_id:
+          type: string
+          format: uuid
+        partner_name:
+          type: string
+        status:
+          $ref: "#/components/schemas/LeadStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - user_id
+        - partner_id
+        - partner_name
+        - status
+        - created_at
+        - updated_at
+
+    LeadListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 124
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadListItem"
+      required:
+        - total
+        - items
+
+    BillingInvoiceStatus:
+      type: string
+      enum:
+        - generated
+        - issued
+        - paid
+        - void
+
+    BillingInvoiceGenerateRequest:
+      type: object
+      properties:
+        partner_id:
+          type: string
+          format: uuid
+          nullable: true
+        start_date:
+          type: string
+          format: date
+          nullable: true
+        end_date:
+          type: string
+          format: date
+          nullable: true
+        statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeadStatus"
+
+    BillingInvoiceLine:
+      type: object
+      properties:
+        partner_id:
+          type: string
+          format: uuid
+        partner_name:
+          type: string
+        qualified_leads:
+          type: integer
+        converted_leads:
+          type: integer
+        unique_users:
+          type: integer
+        qualified_lead_fee_gbp:
+          type: number
+          format: float
+        converted_lead_fee_gbp:
+          type: number
+          format: float
+        amount_gbp:
+          type: number
+          format: float
+      required:
+        - partner_id
+        - partner_name
+        - qualified_leads
+        - converted_leads
+        - unique_users
+        - qualified_lead_fee_gbp
+        - converted_lead_fee_gbp
+        - amount_gbp
+
+    BillingInvoiceSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        period_start:
+          type: string
+          format: date
+          nullable: true
+        period_end:
+          type: string
+          format: date
+          nullable: true
+        currency:
+          type: string
+          example: GBP
+        status:
+          $ref: "#/components/schemas/BillingInvoiceStatus"
+        total_amount_gbp:
+          type: number
+          format: float
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - currency
+        - status
+        - total_amount_gbp
+        - created_at
+
+    BillingInvoiceDetail:
+      allOf:
+        - $ref: "#/components/schemas/BillingInvoiceSummary"
+        - type: object
+          properties:
+            generated_by_user_id:
+              type: string
+            partner_id:
+              type: string
+              format: uuid
+              nullable: true
+            statuses:
+              type: array
+              items:
+                $ref: "#/components/schemas/LeadStatus"
+            updated_at:
+              type: string
+              format: date-time
+            lines:
+              type: array
+              items:
+                $ref: "#/components/schemas/BillingInvoiceLine"
+          required:
+            - generated_by_user_id
+            - statuses
+            - updated_at
+            - lines
+
+    BillingInvoiceListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BillingInvoiceSummary"
+      required:
+        - total
+        - items
+
+    BillingInvoiceStatusUpdateRequest:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/BillingInvoiceStatus"
+      required:
+        - status
 
     LeadStatusUpdateRequest:
       type: object

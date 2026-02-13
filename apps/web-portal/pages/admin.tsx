@@ -13,8 +13,10 @@ type AdminPageProps = {
 type PeriodPreset = 'custom' | '7d' | '30d' | 'qtd';
 
 type PartnerOption = {
+  converted_lead_fee_gbp: number;
   id: string;
   name: string;
+  qualified_lead_fee_gbp: number;
 };
 
 type BillingReportByPartner = {
@@ -38,6 +40,36 @@ type BillingReportResponse = {
   total_amount_gbp: number;
   total_leads: number;
   unique_users: number;
+};
+
+type LeadOpsItem = {
+  created_at: string;
+  id: string;
+  partner_id: string;
+  partner_name: string;
+  status: 'initiated' | 'qualified' | 'rejected' | 'converted';
+  updated_at: string;
+  user_id: string;
+};
+
+type LeadOpsResponse = {
+  items: LeadOpsItem[];
+  total: number;
+};
+
+type InvoiceSummary = {
+  created_at: string;
+  currency: string;
+  id: string;
+  period_end: string | null;
+  period_start: string | null;
+  status: 'generated' | 'issued' | 'paid' | 'void';
+  total_amount_gbp: number;
+};
+
+type InvoiceListResponse = {
+  items: InvoiceSummary[];
+  total: number;
 };
 
 type LeadLifecycleStatus = 'qualified' | 'rejected' | 'converted';
@@ -73,6 +105,20 @@ export default function AdminPage({ token }: AdminPageProps) {
   const [activePreset, setActivePreset] = useState<PeriodPreset>('30d');
   const [includeQualified, setIncludeQualified] = useState(true);
   const [includeConverted, setIncludeConverted] = useState(true);
+  const [pricingPartnerId, setPricingPartnerId] = useState('');
+  const [qualifiedPricing, setQualifiedPricing] = useState('');
+  const [convertedPricing, setConvertedPricing] = useState('');
+  const [isPricingLoading, setIsPricingLoading] = useState(false);
+  const [leadOpsStatusFilter, setLeadOpsStatusFilter] = useState<'all' | 'initiated' | 'qualified' | 'rejected' | 'converted'>('all');
+  const [leadOpsUserFilter, setLeadOpsUserFilter] = useState('');
+  const [leadOpsRows, setLeadOpsRows] = useState<LeadOpsItem[]>([]);
+  const [leadOpsTotal, setLeadOpsTotal] = useState(0);
+  const [isLeadOpsLoading, setIsLeadOpsLoading] = useState(false);
+  const [invoiceRows, setInvoiceRows] = useState<InvoiceSummary[]>([]);
+  const [invoiceStatusDrafts, setInvoiceStatusDrafts] = useState<Record<string, InvoiceSummary['status']>>({});
+  const [isInvoiceListLoading, setIsInvoiceListLoading] = useState(false);
+  const [isInvoiceGenerateLoading, setIsInvoiceGenerateLoading] = useState(false);
+  const [isInvoiceStatusLoading, setIsInvoiceStatusLoading] = useState<string | null>(null);
   const [selectedPartnerModal, setSelectedPartnerModal] = useState<BillingReportByPartner | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const { t } = useTranslation();
@@ -106,6 +152,22 @@ export default function AdminPage({ token }: AdminPageProps) {
 
     loadPartners();
   }, [token]);
+
+  useEffect(() => {
+    if (!pricingPartnerId && partners.length > 0) {
+      const firstPartner = partners[0];
+      setPricingPartnerId(firstPartner.id);
+      setQualifiedPricing(firstPartner.qualified_lead_fee_gbp.toString());
+      setConvertedPricing(firstPartner.converted_lead_fee_gbp.toString());
+      return;
+    }
+
+    const selected = partners.find((partner) => partner.id === pricingPartnerId);
+    if (selected) {
+      setQualifiedPricing(selected.qualified_lead_fee_gbp.toString());
+      setConvertedPricing(selected.converted_lead_fee_gbp.toString());
+    }
+  }, [partners, pricingPartnerId]);
 
   const selectedStatuses = useMemo(() => {
     const statuses: string[] = [];
@@ -212,6 +274,190 @@ export default function AdminPage({ token }: AdminPageProps) {
     }
     selectedStatuses.forEach((statusValue) => params.append('statuses', statusValue));
     return params.toString();
+  };
+
+  const loadLeadOps = async () => {
+    setIsLeadOpsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (selectedPartnerId) {
+        params.set('partner_id', selectedPartnerId);
+      }
+      if (leadOpsStatusFilter !== 'all') {
+        params.set('status', leadOpsStatusFilter);
+      }
+      if (leadOpsUserFilter) {
+        params.set('user_id', leadOpsUserFilter);
+      }
+      params.set('limit', '25');
+      params.set('offset', '0');
+
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/leads?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload: LeadOpsResponse | { detail?: string } = await response.json();
+      if (!response.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to load leads');
+      }
+      const data = payload as LeadOpsResponse;
+      setLeadOpsRows(data.items);
+      setLeadOpsTotal(data.total);
+      pushToast('success', 'Lead feed updated.');
+    } catch (err) {
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error loading lead feed.');
+    } finally {
+      setIsLeadOpsLoading(false);
+    }
+  };
+
+  const refreshInvoiceList = async () => {
+    setIsInvoiceListLoading(true);
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/billing/invoices?limit=20&offset=0`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload: InvoiceListResponse | { detail?: string } = await response.json();
+      if (!response.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to load invoices');
+      }
+      const data = payload as InvoiceListResponse;
+      setInvoiceRows(data.items);
+      setInvoiceStatusDrafts(
+        data.items.reduce<Record<string, InvoiceSummary['status']>>((accumulator, item) => {
+          accumulator[item.id] = item.status;
+          return accumulator;
+        }, {}),
+      );
+    } catch (err) {
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error loading invoices.');
+    } finally {
+      setIsInvoiceListLoading(false);
+    }
+  };
+
+  const generateInvoiceSnapshot = async () => {
+    if (!selectedStatuses.length) {
+      pushToast('error', 'Select at least one billable status.');
+      return;
+    }
+
+    setIsInvoiceGenerateLoading(true);
+    try {
+      const body: {
+        end_date?: string;
+        partner_id?: string;
+        start_date?: string;
+        statuses: string[];
+      } = { statuses: selectedStatuses };
+      if (selectedPartnerId) {
+        body.partner_id = selectedPartnerId;
+      }
+      if (startDate) {
+        body.start_date = startDate;
+      }
+      if (endDate) {
+        body.end_date = endDate;
+      }
+
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/billing/invoices/generate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to generate invoice');
+      }
+      pushToast('success', `Invoice ${payload.id} generated.`);
+      await refreshInvoiceList();
+    } catch (err) {
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error generating invoice.');
+    } finally {
+      setIsInvoiceGenerateLoading(false);
+    }
+  };
+
+  const updateInvoiceStatus = async (invoiceId: string) => {
+    const nextStatus = invoiceStatusDrafts[invoiceId];
+    if (!nextStatus) {
+      return;
+    }
+
+    setIsInvoiceStatusLoading(invoiceId);
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/billing/invoices/${invoiceId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to update invoice status');
+      }
+      pushToast('success', `Invoice ${invoiceId} updated to ${payload.status}.`);
+      await refreshInvoiceList();
+    } catch (err) {
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error updating invoice status.');
+    } finally {
+      setIsInvoiceStatusLoading(null);
+    }
+  };
+
+  const handlePricingUpdate = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!pricingPartnerId) {
+      pushToast('error', 'Select a partner first.');
+      return;
+    }
+
+    const qualifiedValue = Number(qualifiedPricing);
+    const convertedValue = Number(convertedPricing);
+    if (!Number.isFinite(qualifiedValue) || qualifiedValue < 0 || !Number.isFinite(convertedValue) || convertedValue < 0) {
+      pushToast('error', 'Pricing values must be non-negative numbers.');
+      return;
+    }
+
+    setIsPricingLoading(true);
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/partners/${pricingPartnerId}/pricing`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          qualified_lead_fee_gbp: qualifiedValue,
+          converted_lead_fee_gbp: convertedValue,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to update partner pricing');
+      }
+
+      setPartners((current) =>
+        current.map((partner) =>
+          partner.id === pricingPartnerId
+            ? {
+                ...partner,
+                qualified_lead_fee_gbp: payload.qualified_lead_fee_gbp,
+                converted_lead_fee_gbp: payload.converted_lead_fee_gbp,
+              }
+            : partner,
+        ),
+      );
+      pushToast('success', `Pricing updated for ${payload.name}.`);
+    } catch (err) {
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error updating pricing.');
+    } finally {
+      setIsPricingLoading(false);
+    }
   };
 
   const loadBillingReport = async () => {
@@ -321,6 +567,11 @@ export default function AdminPage({ token }: AdminPageProps) {
     }
   };
 
+  useEffect(() => {
+    void refreshInvoiceList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   return (
     <div className={styles.dashboard}>
       <div className={styles.pageHeader}>
@@ -344,6 +595,50 @@ export default function AdminPage({ token }: AdminPageProps) {
           />
           <button className={styles.button} disabled={isUserActionLoading} type="submit">
             {isUserActionLoading ? 'Processing...' : t('admin.deactivate_button')}
+          </button>
+        </form>
+      </div>
+
+      <div className={styles.subContainer}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Partner Pricing Controls</h2>
+          <p className={styles.sectionSubtitle}>Update partner fee cards used by billing and invoice generation.</p>
+        </div>
+        <form className={styles.adminStatusForm} onSubmit={handlePricingUpdate}>
+          <select
+            className={styles.categorySelect}
+            onChange={(event) => setPricingPartnerId(event.target.value)}
+            value={pricingPartnerId}
+          >
+            <option value="" disabled>
+              Select partner
+            </option>
+            {partners.map((partner) => (
+              <option key={partner.id} value={partner.id}>
+                {partner.name}
+              </option>
+            ))}
+          </select>
+          <input
+            className={styles.input}
+            onChange={(event) => setQualifiedPricing(event.target.value)}
+            placeholder="Qualified fee GBP"
+            type="number"
+            min="0"
+            step="0.01"
+            value={qualifiedPricing}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setConvertedPricing(event.target.value)}
+            placeholder="Converted fee GBP"
+            type="number"
+            min="0"
+            step="0.01"
+            value={convertedPricing}
+          />
+          <button className={styles.button} disabled={isPricingLoading} type="submit">
+            {isPricingLoading ? 'Saving...' : 'Save Pricing'}
           </button>
         </form>
       </div>
@@ -374,6 +669,79 @@ export default function AdminPage({ token }: AdminPageProps) {
             {isLeadActionLoading ? 'Updating...' : 'Update Lead Status'}
           </button>
         </form>
+      </div>
+
+      <div className={styles.subContainer}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Operational Lead Feed</h2>
+          <p className={styles.sectionSubtitle}>Search and review recent lead events before status/invoice actions.</p>
+        </div>
+        <div className={styles.adminFiltersGrid}>
+          <label className={styles.filterField}>
+            <span>Status</span>
+            <select
+              className={styles.categorySelect}
+              onChange={(event) =>
+                setLeadOpsStatusFilter(event.target.value as 'all' | 'initiated' | 'qualified' | 'rejected' | 'converted')
+              }
+              value={leadOpsStatusFilter}
+            >
+              <option value="all">all</option>
+              <option value="initiated">initiated</option>
+              <option value="qualified">qualified</option>
+              <option value="rejected">rejected</option>
+              <option value="converted">converted</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>User ID</span>
+            <input
+              className={styles.input}
+              onChange={(event) => setLeadOpsUserFilter(event.target.value)}
+              placeholder="user@example.com"
+              type="text"
+              value={leadOpsUserFilter}
+            />
+          </label>
+          <div className={styles.filterField}>
+            <span>Actions</span>
+            <button className={styles.button} disabled={isLeadOpsLoading} onClick={loadLeadOps} type="button">
+              {isLeadOpsLoading ? 'Loading...' : 'Load Leads'}
+            </button>
+          </div>
+        </div>
+        <p className={styles.tableCaption}>Total matching leads: {leadOpsTotal}</p>
+        <div className={styles.tableResponsive}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>User</th>
+                <th>Partner</th>
+                <th>Status</th>
+                <th>Lead ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              {leadOpsRows.length === 0 && (
+                <tr>
+                  <td colSpan={5}>
+                    <p className={styles.emptyState}>No leads loaded yet.</p>
+                  </td>
+                </tr>
+              )}
+              {leadOpsRows.map((row) => (
+                <tr key={row.id}>
+                  <td>{new Date(row.created_at).toLocaleString()}</td>
+                  <td>{row.user_id}</td>
+                  <td>{row.partner_name}</td>
+                  <td>{row.status}</td>
+                  <td>{row.id}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className={styles.subContainer}>
@@ -551,6 +919,78 @@ export default function AdminPage({ token }: AdminPageProps) {
             </div>
           </>
         )}
+      </div>
+
+      <div className={styles.subContainer}>
+        <div className={styles.sectionHeader}>
+          <h2 className={styles.sectionTitle}>Invoice Operations</h2>
+          <p className={styles.sectionSubtitle}>Generate immutable invoice snapshots and progress them through lifecycle.</p>
+        </div>
+        <div className={styles.adminActionsRow}>
+          <button className={styles.button} disabled={isInvoiceGenerateLoading} onClick={generateInvoiceSnapshot} type="button">
+            {isInvoiceGenerateLoading ? 'Generating...' : 'Generate Invoice Snapshot'}
+          </button>
+          <button className={`${styles.button} ${styles.secondaryButton}`} disabled={isInvoiceListLoading} onClick={refreshInvoiceList} type="button">
+            {isInvoiceListLoading ? 'Refreshing...' : 'Refresh Invoice Queue'}
+          </button>
+        </div>
+        <div className={styles.tableResponsive}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Invoice ID</th>
+                <th>Status</th>
+                <th>Total</th>
+                <th>Update</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoiceRows.length === 0 && (
+                <tr>
+                  <td colSpan={5}>
+                    <p className={styles.emptyState}>No invoices generated yet.</p>
+                  </td>
+                </tr>
+              )}
+              {invoiceRows.map((invoice) => (
+                <tr key={invoice.id}>
+                  <td>{new Date(invoice.created_at).toLocaleString()}</td>
+                  <td>{invoice.id}</td>
+                  <td>{invoice.status}</td>
+                  <td className={styles.positive}>{currency(invoice.total_amount_gbp, invoice.currency)}</td>
+                  <td>
+                    <div className={styles.invoiceActionGroup}>
+                      <select
+                        className={styles.categorySelect}
+                        onChange={(event) =>
+                          setInvoiceStatusDrafts((current) => ({
+                            ...current,
+                            [invoice.id]: event.target.value as InvoiceSummary['status'],
+                          }))
+                        }
+                        value={invoiceStatusDrafts[invoice.id] || invoice.status}
+                      >
+                        <option value="generated">generated</option>
+                        <option value="issued">issued</option>
+                        <option value="paid">paid</option>
+                        <option value="void">void</option>
+                      </select>
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={isInvoiceStatusLoading === invoice.id}
+                        onClick={() => updateInvoiceStatus(invoice.id)}
+                        type="button"
+                      >
+                        {isInvoiceStatusLoading === invoice.id ? 'Saving...' : 'Apply'}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {selectedPartnerModal && report && (

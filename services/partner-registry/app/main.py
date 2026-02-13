@@ -63,6 +63,18 @@ LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.rejected.value: set(),
     schemas.LeadStatus.converted.value: set(),
 }
+INVOICE_STATUS_TRANSITIONS = {
+    schemas.BillingInvoiceStatus.generated.value: {
+        schemas.BillingInvoiceStatus.issued.value,
+        schemas.BillingInvoiceStatus.void.value,
+    },
+    schemas.BillingInvoiceStatus.issued.value: {
+        schemas.BillingInvoiceStatus.paid.value,
+        schemas.BillingInvoiceStatus.void.value,
+    },
+    schemas.BillingInvoiceStatus.paid.value: set(),
+    schemas.BillingInvoiceStatus.void.value: set(),
+}
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -208,6 +220,70 @@ def _validate_status_transition(current_status: str, target_status: schemas.Lead
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Cannot transition lead status from {current_status} to {target_status.value}",
         )
+
+
+def _validate_invoice_status_transition(
+    current_status: str,
+    target_status: schemas.BillingInvoiceStatus,
+) -> None:
+    if target_status.value == current_status:
+        return
+
+    allowed = INVOICE_STATUS_TRANSITIONS.get(current_status, set())
+    if target_status.value not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot transition invoice status from {current_status} to {target_status.value}",
+        )
+
+
+def _to_invoice_summary(invoice: Any) -> schemas.BillingInvoiceSummary:
+    return schemas.BillingInvoiceSummary(
+        id=uuid.UUID(str(invoice.id)),
+        period_start=invoice.period_start,
+        period_end=invoice.period_end,
+        currency=invoice.currency,
+        status=schemas.BillingInvoiceStatus(invoice.status),
+        total_amount_gbp=invoice.total_amount_gbp,
+        created_at=invoice.created_at,
+    )
+
+
+async def _load_invoice_detail(
+    db: AsyncSession,
+    invoice_id: uuid.UUID,
+) -> schemas.BillingInvoiceDetail:
+    invoice = await crud.get_billing_invoice_by_id(db, str(invoice_id))
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+
+    lines = await crud.get_billing_invoice_lines(db, str(invoice.id))
+    return schemas.BillingInvoiceDetail(
+        id=uuid.UUID(str(invoice.id)),
+        period_start=invoice.period_start,
+        period_end=invoice.period_end,
+        currency=invoice.currency,
+        status=schemas.BillingInvoiceStatus(invoice.status),
+        total_amount_gbp=invoice.total_amount_gbp,
+        created_at=invoice.created_at,
+        updated_at=invoice.updated_at,
+        generated_by_user_id=invoice.generated_by_user_id,
+        partner_id=uuid.UUID(str(invoice.partner_id)) if invoice.partner_id else None,
+        statuses=[schemas.LeadStatus(status_value) for status_value in (invoice.statuses or [])],
+        lines=[
+            schemas.BillingInvoiceLine(
+                partner_id=uuid.UUID(str(line.partner_id)),
+                partner_name=line.partner_name,
+                qualified_leads=line.qualified_leads,
+                converted_leads=line.converted_leads,
+                unique_users=line.unique_users,
+                qualified_lead_fee_gbp=line.qualified_lead_fee_gbp,
+                converted_lead_fee_gbp=line.converted_lead_fee_gbp,
+                amount_gbp=line.amount_gbp,
+            )
+            for line in lines
+        ],
+    )
 
 
 async def _load_lead_report(
@@ -448,6 +524,35 @@ async def get_partner_details(
     return partner
 
 
+@app.patch("/partners/{partner_id}/pricing", response_model=schemas.Partner)
+async def update_partner_pricing(
+    partner_id: uuid.UUID,
+    payload: schemas.PartnerPricingUpdateRequest,
+    user_id: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    partner = await crud.get_partner_by_id(db, str(partner_id))
+    if not partner:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner not found")
+
+    updated = await crud.update_partner_pricing(
+        db,
+        partner=partner,
+        qualified_lead_fee_gbp=payload.qualified_lead_fee_gbp,
+        converted_lead_fee_gbp=payload.converted_lead_fee_gbp,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="partner.pricing.updated",
+        details={
+            "partner_id": str(partner_id),
+            "qualified_lead_fee_gbp": payload.qualified_lead_fee_gbp,
+            "converted_lead_fee_gbp": payload.converted_lead_fee_gbp,
+        },
+    )
+    return updated
+
+
 @app.post(
     "/partners/{partner_id}/handoff",
     response_model=schemas.HandoffResponse,
@@ -524,6 +629,169 @@ async def update_lead_status(
         status=schemas.LeadStatus(lead.status),
         updated_at=lead.updated_at,
     )
+
+
+@app.get("/leads", response_model=schemas.LeadListResponse)
+async def list_leads(
+    partner_id: Optional[uuid.UUID] = Query(default=None),
+    status_filter: Optional[schemas.LeadStatus] = Query(default=None, alias="status"),
+    user_id: Optional[str] = Query(default=None),
+    start_date: Optional[datetime.date] = Query(default=None),
+    end_date: Optional[datetime.date] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    start_at, end_before = _build_report_window(start_date, end_date)
+    total, rows = await crud.list_handoff_leads(
+        db,
+        partner_id=str(partner_id) if partner_id else None,
+        status=status_filter.value if status_filter else None,
+        user_id=user_id,
+        start_at=start_at,
+        end_before=end_before,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.LeadListResponse(
+        total=total,
+        items=[
+            schemas.LeadListItem(
+                id=uuid.UUID(lead_id),
+                user_id=lead_user_id,
+                partner_id=uuid.UUID(lead_partner_id),
+                partner_name=partner_name,
+                status=schemas.LeadStatus(lead_status),
+                created_at=created_at,
+                updated_at=updated_at,
+            )
+            for (
+                lead_id,
+                lead_user_id,
+                lead_partner_id,
+                partner_name,
+                lead_status,
+                created_at,
+                updated_at,
+            ) in rows
+        ],
+    )
+
+
+@app.post(
+    "/billing/invoices/generate",
+    response_model=schemas.BillingInvoiceDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def generate_billing_invoice(
+    payload: schemas.BillingInvoiceGenerateRequest,
+    user_id: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice_statuses = _resolve_billing_statuses(payload.statuses)
+    report = await _load_billing_report(
+        db=db,
+        partner_id=payload.partner_id,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        statuses=invoice_statuses,
+    )
+    invoice = await crud.create_billing_invoice(
+        db,
+        generated_by_user_id=user_id,
+        partner_id=str(payload.partner_id) if payload.partner_id else None,
+        period_start=payload.start_date,
+        period_end=payload.end_date,
+        statuses=invoice_statuses,
+        currency=report.currency,
+        total_amount_gbp=report.total_amount_gbp,
+        lines=[
+            {
+                "partner_id": str(item.partner_id),
+                "partner_name": item.partner_name,
+                "qualified_leads": item.qualified_leads,
+                "converted_leads": item.converted_leads,
+                "unique_users": item.unique_users,
+                "qualified_lead_fee_gbp": item.qualified_lead_fee_gbp,
+                "converted_lead_fee_gbp": item.converted_lead_fee_gbp,
+                "amount_gbp": item.amount_gbp,
+            }
+            for item in report.by_partner
+        ],
+    )
+
+    await log_audit_event(
+        user_id=user_id,
+        action="partner.billing.invoice.generated",
+        details={
+            "invoice_id": str(invoice.id),
+            "total_amount_gbp": report.total_amount_gbp,
+            "currency": report.currency,
+            "lines_count": len(report.by_partner),
+        },
+    )
+
+    return await _load_invoice_detail(db, uuid.UUID(str(invoice.id)))
+
+
+@app.get("/billing/invoices", response_model=schemas.BillingInvoiceListResponse)
+async def list_billing_invoices(
+    invoice_status: Optional[schemas.BillingInvoiceStatus] = Query(default=None, alias="status"),
+    partner_id: Optional[uuid.UUID] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    total, invoices = await crud.list_billing_invoices(
+        db,
+        status=invoice_status.value if invoice_status else None,
+        partner_id=str(partner_id) if partner_id else None,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.BillingInvoiceListResponse(
+        total=total,
+        items=[_to_invoice_summary(invoice) for invoice in invoices],
+    )
+
+
+@app.get("/billing/invoices/{invoice_id}", response_model=schemas.BillingInvoiceDetail)
+async def get_billing_invoice(
+    invoice_id: uuid.UUID,
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _load_invoice_detail(db, invoice_id=invoice_id)
+
+
+@app.patch("/billing/invoices/{invoice_id}/status", response_model=schemas.BillingInvoiceDetail)
+async def update_billing_invoice_status(
+    invoice_id: uuid.UUID,
+    payload: schemas.BillingInvoiceStatusUpdateRequest,
+    user_id: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice = await crud.get_billing_invoice_by_id(db, str(invoice_id))
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+
+    _validate_invoice_status_transition(invoice.status, payload.status)
+    previous_status = invoice.status
+    if payload.status.value != invoice.status:
+        invoice = await crud.update_billing_invoice_status(db, invoice, status=payload.status.value)
+        await log_audit_event(
+            user_id=user_id,
+            action="partner.billing.invoice.status.updated",
+            details={
+                "invoice_id": str(invoice.id),
+                "from_status": previous_status,
+                "to_status": payload.status.value,
+            },
+        )
+
+    return await _load_invoice_detail(db, invoice_id=invoice_id)
 
 
 @app.get("/leads/billing", response_model=schemas.BillingReportResponse)

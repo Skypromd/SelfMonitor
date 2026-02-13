@@ -37,3 +37,4 @@ _Last updated: 2026-02-12_
 5. [x] Introduce Alembic baseline for `partner-registry` and migration-ready schema checks
 6. [x] Add lead lifecycle statuses (`initiated/qualified/rejected/converted`) and billable-first reports
 7. [x] Surface monetization billing tools in web admin panel (status updates + billing export)
+8. [x] Add pricing ops, lead feed, and invoice lifecycle in monetization admin workflows

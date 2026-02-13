@@ -3,7 +3,7 @@ import uuid
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
 class LeadStatus(str, Enum):
@@ -11,6 +11,13 @@ class LeadStatus(str, Enum):
     qualified = "qualified"
     rejected = "rejected"
     converted = "converted"
+
+
+class BillingInvoiceStatus(str, Enum):
+    generated = "generated"
+    issued = "issued"
+    paid = "paid"
+    void = "void"
 
 
 class Partner(BaseModel):
@@ -80,4 +87,71 @@ class BillingReportResponse(BaseModel):
     unique_users: int
     total_amount_gbp: float
     by_partner: List[BillingReportByPartner]
+
+
+class PartnerPricingUpdateRequest(BaseModel):
+    qualified_lead_fee_gbp: float = Field(ge=0)
+    converted_lead_fee_gbp: float = Field(ge=0)
+
+
+class LeadListItem(BaseModel):
+    id: uuid.UUID
+    user_id: str
+    partner_id: uuid.UUID
+    partner_name: str
+    status: LeadStatus
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class LeadListResponse(BaseModel):
+    total: int
+    items: List[LeadListItem]
+
+
+class BillingInvoiceGenerateRequest(BaseModel):
+    partner_id: Optional[uuid.UUID] = None
+    start_date: Optional[datetime.date] = None
+    end_date: Optional[datetime.date] = None
+    statuses: Optional[List[LeadStatus]] = None
+
+
+class BillingInvoiceLine(BaseModel):
+    partner_id: uuid.UUID
+    partner_name: str
+    qualified_leads: int
+    converted_leads: int
+    unique_users: int
+    qualified_lead_fee_gbp: float
+    converted_lead_fee_gbp: float
+    amount_gbp: float
+
+
+class BillingInvoiceSummary(BaseModel):
+    id: uuid.UUID
+    period_start: Optional[datetime.date] = None
+    period_end: Optional[datetime.date] = None
+    currency: str
+    status: BillingInvoiceStatus
+    total_amount_gbp: float
+    created_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BillingInvoiceDetail(BillingInvoiceSummary):
+    generated_by_user_id: str
+    partner_id: Optional[uuid.UUID] = None
+    statuses: List[LeadStatus]
+    updated_at: datetime.datetime
+    lines: List[BillingInvoiceLine]
+
+
+class BillingInvoiceListResponse(BaseModel):
+    total: int
+    items: List[BillingInvoiceSummary]
+
+
+class BillingInvoiceStatusUpdateRequest(BaseModel):
+    status: BillingInvoiceStatus
 
