@@ -6,10 +6,6 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-import boto3
-from botocore.client import Config
-from botocore.exceptions import BotoCoreError, ClientError
-
 _CURRENCY_AMOUNT_RE = re.compile(r"(?:£|\$|EUR\s*)?\s*([0-9]{1,6}(?:[.,][0-9]{2})?)")
 _ISO_DATE_RE = re.compile(r"\b(\d{4})[-/](\d{2})[-/](\d{2})\b")
 _DMY_DATE_RE = re.compile(r"\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b")
@@ -187,6 +183,12 @@ def build_text_excerpt(text: str, limit: int = 320) -> Optional[str]:
 
 
 def _textract_client():
+    try:
+        import boto3
+        from botocore.client import Config
+    except ModuleNotFoundError as exc:
+        raise OCRPipelineError("boto3_not_installed") from exc
+
     endpoint_url = os.getenv("AWS_TEXTRACT_ENDPOINT_URL") or os.getenv("AWS_ENDPOINT_URL")
     region = os.getenv("AWS_DEFAULT_REGION", "eu-west-2")
     return boto3.client(
@@ -198,9 +200,13 @@ def _textract_client():
 
 
 def _extract_text_textract(document_bytes: bytes) -> str:
-    client = _textract_client()
-    response = client.detect_document_text(Document={"Bytes": document_bytes})
-    blocks = response.get("Blocks", [])
+    try:
+        client = _textract_client()
+        response = client.detect_document_text(Document={"Bytes": document_bytes})
+        blocks = response.get("Blocks", [])
+    except Exception as exc:  # noqa: BLE001 - provider errors are surfaced as OCRPipelineError
+        raise OCRPipelineError(f"textract_failed: {exc}") from exc
+
     lines = [str(block.get("Text", "")).strip() for block in blocks if block.get("BlockType") == "LINE"]
     return "\n".join([line for line in lines if line])
 
@@ -208,9 +214,6 @@ def _extract_text_textract(document_bytes: bytes) -> str:
 def extract_document_text(document_bytes: bytes) -> OCRTextResult:
     provider = os.getenv("OCR_PROVIDER", "textract").strip().lower()
     if provider == "textract":
-        try:
-            text = _extract_text_textract(document_bytes=document_bytes)
-        except (ClientError, BotoCoreError, KeyError, ValueError, TypeError) as exc:
-            raise OCRPipelineError(f"textract_failed: {exc}") from exc
+        text = _extract_text_textract(document_bytes=document_bytes)
         return OCRTextResult(provider="textract", text=text)
     raise OCRPipelineError(f"unsupported_ocr_provider: {provider}")
