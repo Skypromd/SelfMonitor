@@ -307,3 +307,48 @@ def test_lead_status_update_rejects_invalid_transition(mocker):
     assert response.status_code == 409
     assert "Cannot transition lead status" in response.json()["detail"]
 
+
+def test_billing_report_aggregates_amounts(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead_a = create_handoff_lead(partner_id, "billing-user-a@example.com")
+    lead_b = create_handoff_lead(partner_id, "billing-user-b@example.com")
+
+    set_lead_status(lead_a, "qualified")
+    set_lead_status(lead_b, "qualified")
+    set_lead_status(lead_b, "converted")
+
+    response = client.get("/leads/billing", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["currency"] == "GBP"
+    assert payload["total_leads"] == 2
+    assert payload["qualified_leads"] == 1
+    assert payload["converted_leads"] == 1
+    assert payload["total_amount_gbp"] > 0
+    assert len(payload["by_partner"]) >= 1
+
+
+def test_billing_csv_export_contains_totals(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead_id = create_handoff_lead(partner_id, "csv-billing-user@example.com")
+    set_lead_status(lead_id, "qualified")
+
+    response = client.get("/leads/billing.csv", headers=get_billing_headers())
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "lead_billing_report_" in response.headers["content-disposition"]
+    assert "row_type,period_start,period_end,currency,partner_id,partner_name" in response.text
+    assert "SUMMARY" in response.text
+
+
+def test_billing_report_rejects_non_billable_status_filter():
+    response = client.get(
+        "/leads/billing?statuses=initiated",
+        headers=get_billing_headers(),
+    )
+    assert response.status_code == 400
+    assert "supports only qualified/converted statuses" in response.json()["detail"]
+

@@ -36,3 +36,4 @@ _Last updated: 2026-02-12_
 4. [x] Make lead deduplication race-safe in PostgreSQL (advisory lock + transactional insert)
 5. [x] Introduce Alembic baseline for `partner-registry` and migration-ready schema checks
 6. [x] Add lead lifecycle statuses (`initiated/qualified/rejected/converted`) and billable-first reports
+7. [x] Surface monetization billing tools in web admin panel (status updates + billing export)

@@ -19,6 +19,8 @@ class Partner(BaseModel):
     description: str
     services_offered: List[str]
     website: HttpUrl
+    qualified_lead_fee_gbp: float
+    converted_lead_fee_gbp: float
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -55,4 +57,27 @@ class LeadStatusUpdateResponse(BaseModel):
     updated_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BillingReportByPartner(BaseModel):
+    partner_id: uuid.UUID
+    partner_name: str
+    qualified_leads: int
+    converted_leads: int
+    unique_users: int
+    qualified_lead_fee_gbp: float
+    converted_lead_fee_gbp: float
+    amount_gbp: float
+
+
+class BillingReportResponse(BaseModel):
+    period_start: Optional[datetime.date] = None
+    period_end: Optional[datetime.date] = None
+    currency: str
+    total_leads: int
+    qualified_leads: int
+    converted_leads: int
+    unique_users: int
+    total_amount_gbp: float
+    by_partner: List[BillingReportByPartner]
 

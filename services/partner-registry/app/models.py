@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import CheckConstraint, JSON, Column, DateTime, ForeignKey, Index, String
+from sqlalchemy import CheckConstraint, JSON, Column, DateTime, Float, ForeignKey, Index, String
 
 from .database import Base
 
@@ -14,6 +14,8 @@ class Partner(Base):
     description = Column(String, nullable=False)
     services_offered = Column(JSON, nullable=False)
     website = Column(String, nullable=False)
+    qualified_lead_fee_gbp = Column(Float, nullable=False, default=12.0)
+    converted_lead_fee_gbp = Column(Float, nullable=False, default=35.0)
 
 
 class HandoffLead(Base):

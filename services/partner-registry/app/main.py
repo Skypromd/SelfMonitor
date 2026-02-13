@@ -53,6 +53,10 @@ BILLING_REPORT_ALLOWED_ROLES = {
     if item.strip()
 }
 DEFAULT_BILLABLE_STATUSES = [schemas.LeadStatus.qualified.value]
+DEFAULT_BILLING_STATUSES = [
+    schemas.LeadStatus.qualified.value,
+    schemas.LeadStatus.converted.value,
+]
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
     schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
@@ -177,6 +181,23 @@ def _resolve_report_statuses(
     return None
 
 
+def _resolve_billing_statuses(statuses: list[schemas.LeadStatus] | None) -> list[str]:
+    if not statuses:
+        return list(DEFAULT_BILLING_STATUSES)
+
+    status_values = [status_item.value for status_item in statuses]
+    invalid = [status for status in status_values if status not in DEFAULT_BILLING_STATUSES]
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Billing report supports only qualified/converted statuses; "
+                f"invalid values: {', '.join(invalid)}"
+            ),
+        )
+    return status_values
+
+
 def _validate_status_transition(current_status: str, target_status: schemas.LeadStatus) -> None:
     if target_status.value == current_status:
         return
@@ -226,6 +247,70 @@ async def _load_lead_report(
     )
 
 
+async def _load_billing_report(
+    db: AsyncSession,
+    partner_id: uuid.UUID | None,
+    start_date: datetime.date | None,
+    end_date: datetime.date | None,
+    statuses: list[str],
+) -> schemas.BillingReportResponse:
+    start_at, end_before = _build_report_window(start_date, end_date)
+    (
+        total_leads,
+        unique_users,
+        qualified_leads,
+        converted_leads,
+        by_partner_rows,
+    ) = await crud.get_billing_report(
+        db,
+        partner_id=str(partner_id) if partner_id else None,
+        start_at=start_at,
+        end_before=end_before,
+        statuses=statuses,
+    )
+
+    by_partner: list[schemas.BillingReportByPartner] = []
+    total_amount_gbp = 0.0
+    for (
+        partner_id_str,
+        partner_name,
+        qualified_fee,
+        converted_fee,
+        partner_qualified_leads,
+        partner_converted_leads,
+        partner_unique_users,
+    ) in by_partner_rows:
+        amount_gbp = round(
+            (partner_qualified_leads * qualified_fee) + (partner_converted_leads * converted_fee),
+            2,
+        )
+        total_amount_gbp += amount_gbp
+        by_partner.append(
+            schemas.BillingReportByPartner(
+                partner_id=uuid.UUID(partner_id_str),
+                partner_name=partner_name,
+                qualified_leads=partner_qualified_leads,
+                converted_leads=partner_converted_leads,
+                unique_users=partner_unique_users,
+                qualified_lead_fee_gbp=qualified_fee,
+                converted_lead_fee_gbp=converted_fee,
+                amount_gbp=amount_gbp,
+            )
+        )
+
+    return schemas.BillingReportResponse(
+        period_start=start_date,
+        period_end=end_date,
+        currency="GBP",
+        total_leads=total_leads,
+        qualified_leads=qualified_leads,
+        converted_leads=converted_leads,
+        unique_users=unique_users,
+        total_amount_gbp=round(total_amount_gbp, 2),
+        by_partner=by_partner,
+    )
+
+
 def _build_csv_report(report: schemas.LeadReportResponse) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
@@ -271,6 +356,74 @@ def _csv_response(report: schemas.LeadReportResponse) -> Response:
     filename = f"lead_report_{timestamp}.csv"
     return Response(
         content=_build_csv_report(report),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_billing_csv_report(report: schemas.BillingReportResponse) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "row_type",
+            "period_start",
+            "period_end",
+            "currency",
+            "partner_id",
+            "partner_name",
+            "qualified_leads",
+            "converted_leads",
+            "total_leads",
+            "unique_users",
+            "qualified_lead_fee_gbp",
+            "converted_lead_fee_gbp",
+            "amount_gbp",
+        ]
+    )
+    writer.writerow(
+        [
+            "SUMMARY",
+            report.period_start.isoformat() if report.period_start else "",
+            report.period_end.isoformat() if report.period_end else "",
+            report.currency,
+            "",
+            "ALL_PARTNERS",
+            report.qualified_leads,
+            report.converted_leads,
+            report.total_leads,
+            report.unique_users,
+            "",
+            "",
+            f"{report.total_amount_gbp:.2f}",
+        ]
+    )
+    for row in report.by_partner:
+        writer.writerow(
+            [
+                "PARTNER",
+                report.period_start.isoformat() if report.period_start else "",
+                report.period_end.isoformat() if report.period_end else "",
+                report.currency,
+                str(row.partner_id),
+                row.partner_name,
+                row.qualified_leads,
+                row.converted_leads,
+                row.qualified_leads + row.converted_leads,
+                row.unique_users,
+                f"{row.qualified_lead_fee_gbp:.2f}",
+                f"{row.converted_lead_fee_gbp:.2f}",
+                f"{row.amount_gbp:.2f}",
+            ]
+        )
+    return output.getvalue()
+
+
+def _billing_csv_response(report: schemas.BillingReportResponse) -> Response:
+    timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
+    filename = f"lead_billing_report_{timestamp}.csv"
+    return Response(
+        content=_build_billing_csv_report(report),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
@@ -371,6 +524,47 @@ async def update_lead_status(
         status=schemas.LeadStatus(lead.status),
         updated_at=lead.updated_at,
     )
+
+
+@app.get("/leads/billing", response_model=schemas.BillingReportResponse)
+async def get_lead_billing_report(
+    report_format: Literal["json", "csv"] = Query(default="json", alias="format"),
+    partner_id: Optional[uuid.UUID] = Query(default=None),
+    start_date: Optional[datetime.date] = Query(default=None),
+    end_date: Optional[datetime.date] = Query(default=None),
+    statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await _load_billing_report(
+        db=db,
+        partner_id=partner_id,
+        start_date=start_date,
+        end_date=end_date,
+        statuses=_resolve_billing_statuses(statuses),
+    )
+    if report_format == "csv":
+        return _billing_csv_response(report)
+    return report
+
+
+@app.get("/leads/billing.csv")
+async def export_lead_billing_csv(
+    partner_id: Optional[uuid.UUID] = Query(default=None),
+    start_date: Optional[datetime.date] = Query(default=None),
+    end_date: Optional[datetime.date] = Query(default=None),
+    statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await _load_billing_report(
+        db=db,
+        partner_id=partner_id,
+        start_date=start_date,
+        end_date=end_date,
+        statuses=_resolve_billing_statuses(statuses),
+    )
+    return _billing_csv_response(report)
 
 
 @app.get("/leads/report", response_model=schemas.LeadReportResponse)
