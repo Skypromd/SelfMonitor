@@ -11,6 +11,12 @@ type DocumentsPageProps = {
 
 type DocumentRecord = {
   extracted_data?: {
+    ocr_confidence?: number | null;
+    needs_review?: boolean | null;
+    review_reason?: string | null;
+    review_status?: string | null;
+    reviewed_at?: string | null;
+    review_notes?: string | null;
     expense_article?: string | null;
     is_potentially_deductible?: boolean | null;
     receipt_draft_transaction_id?: string | null;
@@ -115,10 +121,13 @@ function SemanticSearch({ token }: { token: string }) {
 
 export default function DocumentsPage({ token }: DocumentsPageProps) {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [reviewQueue, setReviewQueue] = useState<DocumentRecord[]>([]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
+  const [isLoadingReviewQueue, setIsLoadingReviewQueue] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [reviewActionDocumentId, setReviewActionDocumentId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { t } = useTranslation();
 
@@ -139,9 +148,31 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
     }
   }, [token]);
 
+  const fetchReviewQueue = useCallback(async () => {
+    setIsLoadingReviewQueue(true);
+    try {
+      const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents/review-queue?limit=50&offset=0`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch review queue');
+      }
+      const payload = (await response.json()) as { items?: DocumentRecord[] };
+      setReviewQueue(payload.items ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsLoadingReviewQueue(false);
+    }
+  }, [token]);
+
   useEffect(() => {
     fetchDocuments();
   }, [fetchDocuments]);
+
+  useEffect(() => {
+    fetchReviewQueue();
+  }, [fetchReviewQueue]);
 
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) {
@@ -175,12 +206,57 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
 
       setMessage(`File '${data.filename}' uploaded successfully!`);
       setSelectedFile(null);
-      await fetchDocuments();
+      await Promise.all([fetchDocuments(), fetchReviewQueue()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleMarkReviewed = useCallback(
+    async (documentId: string) => {
+      setError('');
+      setReviewActionDocumentId(documentId);
+      try {
+        const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents/${documentId}/review`, {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ review_status: 'confirmed' }),
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload.detail || 'Failed to confirm OCR review');
+        }
+        await Promise.all([fetchDocuments(), fetchReviewQueue()]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unexpected error');
+      } finally {
+        setReviewActionDocumentId(null);
+      }
+    },
+    [token, fetchDocuments, fetchReviewQueue]
+  );
+
+  const renderReviewBadge = (document: DocumentRecord) => {
+    if (document.extracted_data?.needs_review === true) {
+      return <span className={`${styles.reviewBadge} ${styles.reviewBadgePending}`}>Needs review</span>;
+    }
+    if (document.extracted_data?.review_status) {
+      return <span className={`${styles.reviewBadge} ${styles.reviewBadgeDone}`}>{document.extracted_data.review_status}</span>;
+    }
+    return <span className={styles.reviewBadge}>—</span>;
+  };
+
+  const renderConfidence = (document: DocumentRecord) => {
+    const confidence = document.extracted_data?.ocr_confidence;
+    if (typeof confidence !== 'number') {
+      return '—';
+    }
+    return `${Math.round(confidence * 100)}%`;
   };
 
   return (
@@ -199,6 +275,56 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         </form>
         {message && <p className={styles.message}>{message}</p>}
         {error && <p className={styles.error}>{error}</p>}
+
+        <div className={styles.subContainer}>
+          <h2>Manual OCR review queue</h2>
+          <p>Low-confidence or incomplete receipt extractions are routed here for manual confirmation.</p>
+          {isLoadingReviewQueue ? (
+            <p>Loading review queue...</p>
+          ) : reviewQueue.length === 0 ? (
+            <p className={styles.emptyState}>No documents need manual OCR review right now.</p>
+          ) : (
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Filename</th>
+                  <th>Confidence</th>
+                  <th>Reason</th>
+                  <th>Vendor</th>
+                  <th>Amount</th>
+                  <th>Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reviewQueue.map((document) => (
+                  <tr key={`review-${document.id}`}>
+                    <td>{document.filename}</td>
+                    <td>{renderConfidence(document)}</td>
+                    <td>{document.extracted_data?.review_reason || '—'}</td>
+                    <td>{document.extracted_data?.vendor_name || '—'}</td>
+                    <td>
+                      {typeof document.extracted_data?.total_amount === 'number'
+                        ? `£${document.extracted_data.total_amount.toFixed(2)}`
+                        : '—'}
+                    </td>
+                    <td>{document.extracted_data?.transaction_date || '—'}</td>
+                    <td>
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={reviewActionDocumentId === document.id}
+                        onClick={() => handleMarkReviewed(document.id)}
+                        type="button"
+                      >
+                        {reviewActionDocumentId === document.id ? 'Saving...' : 'Mark reviewed'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
 
         {isLoadingDocuments ? (
           <div className={styles.skeletonTable}>
@@ -224,6 +350,8 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                 <th>{t('documents.col_expense_article')}</th>
                 <th>{t('documents.col_deductible')}</th>
                 <th>{t('documents.col_receipt_draft')}</th>
+                <th>OCR confidence</th>
+                <th>Review</th>
                 <th>{t('documents.col_uploaded_at')}</th>
               </tr>
             </thead>
@@ -250,6 +378,8 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                         : '—'}
                   </td>
                   <td>{document.extracted_data?.receipt_draft_transaction_id || '—'}</td>
+                  <td>{renderConfidence(document)}</td>
+                  <td>{renderReviewBadge(document)}</td>
                   <td>{new Date(document.uploaded_at).toLocaleString()}</td>
                 </tr>
               ))}

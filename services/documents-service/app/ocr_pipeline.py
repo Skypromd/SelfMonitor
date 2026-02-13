@@ -62,6 +62,13 @@ class OCRTextResult:
     text: str
 
 
+@dataclass
+class OCRQualityResult:
+    confidence: float
+    needs_review: bool
+    reason: str
+
+
 def _normalize_whitespace(value: str) -> str:
     return " ".join(value.split()).strip()
 
@@ -180,6 +187,57 @@ def build_text_excerpt(text: str, limit: int = 320) -> Optional[str]:
         return normalized
     suffix = "..."
     return f"{normalized[: limit - len(suffix)]}{suffix}"
+
+
+def estimate_ocr_confidence(
+    *,
+    text: str,
+    total_amount: Optional[float],
+    transaction_date: Optional[datetime.date],
+    vendor_name: Optional[str],
+) -> float:
+    score = 0.0
+    if text.strip():
+        score += 0.2
+    if total_amount is not None:
+        score += 0.35
+    if transaction_date is not None:
+        score += 0.25
+    if vendor_name:
+        score += 0.2
+    return round(min(score, 1.0), 3)
+
+
+def evaluate_ocr_quality(
+    *,
+    text: str,
+    total_amount: Optional[float],
+    transaction_date: Optional[datetime.date],
+    vendor_name: Optional[str],
+    threshold: float = 0.75,
+) -> OCRQualityResult:
+    confidence = estimate_ocr_confidence(
+        text=text,
+        total_amount=total_amount,
+        transaction_date=transaction_date,
+        vendor_name=vendor_name,
+    )
+    missing_fields: list[str] = []
+    if total_amount is None:
+        missing_fields.append("total_amount")
+    if transaction_date is None:
+        missing_fields.append("transaction_date")
+    if not vendor_name:
+        missing_fields.append("vendor_name")
+
+    needs_review = confidence < threshold or bool(missing_fields)
+    if missing_fields:
+        reason = f"missing_fields:{','.join(missing_fields)}"
+    elif needs_review:
+        reason = "low_confidence"
+    else:
+        reason = "high_confidence"
+    return OCRQualityResult(confidence=confidence, needs_review=needs_review, reason=reason)
 
 
 def _textract_client():

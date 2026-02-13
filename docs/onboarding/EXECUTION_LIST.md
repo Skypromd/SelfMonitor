@@ -47,3 +47,4 @@ _Last updated: 2026-02-13_
 15. [x] Add manual receipt-draft matching workflow when auto-reconciliation misses
 16. [x] Add ignore/search controls for manual receipt reconciliation fallback
 17. [x] Replace simulated receipt OCR with production Textract-based extraction pipeline
+18. [x] Add OCR quality loop with confidence scoring and manual review queue

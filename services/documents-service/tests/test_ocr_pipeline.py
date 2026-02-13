@@ -6,6 +6,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app.ocr_pipeline import (
     build_text_excerpt,
+    evaluate_ocr_quality,
+    estimate_ocr_confidence,
     extract_total_amount,
     extract_transaction_date,
     infer_vendor_name,
@@ -50,3 +52,38 @@ def test_build_text_excerpt_truncates_long_text():
     assert excerpt is not None
     assert len(excerpt) == 40
     assert excerpt.endswith("...")
+
+
+def test_estimate_ocr_confidence_for_complete_extraction():
+    confidence = estimate_ocr_confidence(
+        text="Receipt text",
+        total_amount=18.45,
+        transaction_date=datetime.date(2026, 2, 13),
+        vendor_name="Trainline",
+    )
+    assert confidence == 1.0
+
+
+def test_evaluate_ocr_quality_requires_review_when_fields_missing():
+    quality = evaluate_ocr_quality(
+        text="Total 18.45",
+        total_amount=18.45,
+        transaction_date=None,
+        vendor_name=None,
+        threshold=0.75,
+    )
+    assert quality.needs_review is True
+    assert quality.confidence < 0.75
+    assert quality.reason == "missing_fields:transaction_date,vendor_name"
+
+
+def test_evaluate_ocr_quality_marks_high_confidence_as_confirmed():
+    quality = evaluate_ocr_quality(
+        text="Trainline\nDate: 13/02/2026\nTOTAL 18.45",
+        total_amount=18.45,
+        transaction_date=datetime.date(2026, 2, 13),
+        vendor_name="Trainline",
+        threshold=0.75,
+    )
+    assert quality.needs_review is False
+    assert quality.reason == "high_confidence"

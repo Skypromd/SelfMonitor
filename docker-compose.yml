@@ -164,6 +164,7 @@ services:
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
       OCR_PROVIDER: "${DOCUMENTS_OCR_PROVIDER:-textract}"
+      OCR_REVIEW_CONFIDENCE_THRESHOLD: "${DOCUMENTS_OCR_REVIEW_CONFIDENCE_THRESHOLD:-0.75}"
     networks:
       - default_network
 
@@ -216,6 +217,7 @@ services:
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
       OCR_PROVIDER: "${DOCUMENTS_OCR_PROVIDER:-textract}"
+      OCR_REVIEW_CONFIDENCE_THRESHOLD: "${DOCUMENTS_OCR_REVIEW_CONFIDENCE_THRESHOLD:-0.75}"
     # No longer need local volume for uploads
     # volumes:
     #   - documents_data:/uploads

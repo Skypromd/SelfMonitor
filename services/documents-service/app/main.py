@@ -3,7 +3,7 @@ import sys
 import uuid
 from pathlib import Path
 from typing import List
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 import boto3
 from botocore.client import Config
@@ -78,6 +78,22 @@ async def list_documents(
     return await crud.get_documents_by_user(db, user_id=user_id)
 
 
+@app.get("/documents/review-queue", response_model=schemas.DocumentReviewQueueResponse)
+async def list_documents_review_queue(
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, items = await crud.list_documents_requiring_review(
+        db,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.DocumentReviewQueueResponse(total=total, items=items)
+
+
 @app.get("/documents/{document_id}", response_model=schemas.Document)
 async def get_document(
     document_id: uuid.UUID,
@@ -89,3 +105,21 @@ async def get_document(
     if db_document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return db_document
+
+
+@app.patch("/documents/{document_id}/review", response_model=schemas.Document)
+async def review_document(
+    document_id: uuid.UUID,
+    payload: schemas.DocumentReviewUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    updated = await crud.update_document_review(
+        db,
+        user_id=user_id,
+        doc_id=document_id,
+        payload=payload,
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+    return updated

@@ -16,6 +16,7 @@ from .expense_classifier import suggest_category_from_keywords, to_expense_artic
 from .ocr_pipeline import (
     OCRPipelineError,
     build_text_excerpt,
+    evaluate_ocr_quality,
     extract_document_text,
     extract_total_amount,
     extract_transaction_date,
@@ -34,6 +35,7 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "documents-bucket")
 S3_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
+OCR_REVIEW_CONFIDENCE_THRESHOLD = float(os.getenv("OCR_REVIEW_CONFIDENCE_THRESHOLD", "0.75"))
 
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -175,6 +177,13 @@ def _build_extracted_data_from_text(
     )
     suggested_category = suggest_expense_category(description)
     expense_article, is_deductible = to_expense_article(suggested_category)
+    quality = evaluate_ocr_quality(
+        text=text,
+        total_amount=total_amount,
+        transaction_date=transaction_date,
+        vendor_name=vendor_name,
+        threshold=OCR_REVIEW_CONFIDENCE_THRESHOLD,
+    )
 
     return schemas.ExtractedData(
         total_amount=total_amount,
@@ -185,6 +194,12 @@ def _build_extracted_data_from_text(
         is_potentially_deductible=is_deductible,
         ocr_provider=provider,
         raw_text_excerpt=build_text_excerpt(text, limit=320),
+        ocr_confidence=quality.confidence,
+        needs_review=quality.needs_review,
+        review_reason=quality.reason,
+        review_status="pending" if quality.needs_review else "confirmed",
+        reviewed_at=None,
+        review_notes=None,
     )
 
 
@@ -205,6 +220,9 @@ def _create_index_text(extracted_data: schemas.ExtractedData, raw_text: str) -> 
             if extracted_data.receipt_draft_transaction_id
             else None
         ),
+        f"OCR confidence: {extracted_data.ocr_confidence}" if extracted_data.ocr_confidence is not None else None,
+        f"Needs review: {extracted_data.needs_review}" if extracted_data.needs_review is not None else None,
+        f"Review reason: {extracted_data.review_reason}" if extracted_data.review_reason else None,
     ]
     summary = ". ".join(part for part in summary_parts if part)
     if raw_text.strip():
@@ -241,7 +259,14 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
     print(f"Starting OCR processing for document: {document_id}")
     resolved_filepath = filepath or asyncio.run(_load_filepath_for_document(document_id))
     if not resolved_filepath:
-        extracted_data = schemas.ExtractedData(ocr_provider=os.getenv("OCR_PROVIDER", "textract"), raw_text_excerpt=None)
+        extracted_data = schemas.ExtractedData(
+            ocr_provider=os.getenv("OCR_PROVIDER", "textract"),
+            raw_text_excerpt=None,
+            ocr_confidence=0.0,
+            needs_review=True,
+            review_reason="filepath_not_found",
+            review_status="pending",
+        )
         asyncio.run(_update_document_ocr_state(document_id=document_id, status="failed", extracted_data=extracted_data))
         print(f"OCR failed: file path not found for document {document_id}")
         return {"document_id": document_id, "status": "failed", "reason": "filepath_not_found"}
@@ -264,6 +289,8 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
         )
         extracted_data.receipt_draft_transaction_id = receipt_transaction_id
         extracted_data.receipt_draft_duplicated = receipt_transaction_duplicated
+        if extracted_data.needs_review is not True:
+            extracted_data.reviewed_at = datetime.datetime.now(datetime.UTC)
         asyncio.run(
             _update_document_ocr_state(
                 document_id=document_id,
@@ -289,6 +316,10 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
         failed_data = schemas.ExtractedData(
             ocr_provider=os.getenv("OCR_PROVIDER", "textract"),
             raw_text_excerpt=f"OCR failed: {exc}",
+            ocr_confidence=0.0,
+            needs_review=True,
+            review_reason="ocr_failed",
+            review_status="pending",
         )
         asyncio.run(_update_document_ocr_state(document_id=document_id, status="failed", extracted_data=failed_data))
         print(f"OCR processing failed for {document_id}: {exc}")

@@ -44,6 +44,36 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/Document'
+  /documents/review-queue:
+    get:
+      summary: List documents pending manual OCR review
+      tags:
+        - Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 25
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Queue of documents requiring manual review.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentReviewQueueResponse'
   /documents/{document_id}:
     get:
       summary: Get document status and result
@@ -61,6 +91,35 @@ paths:
       responses:
         '200':
           description: Document details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        '404':
+          description: Document not found.
+  /documents/{document_id}/review:
+    patch:
+      summary: Confirm or correct OCR extraction for a document
+      tags:
+        - Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentReviewUpdateRequest'
+      responses:
+        '200':
+          description: Updated document with reviewed OCR metadata.
           content:
             application/json:
               schema:
@@ -104,6 +163,32 @@ components:
           type: string
           nullable: true
           example: TOTAL 18.45 GBP
+        ocr_confidence:
+          type: number
+          format: float
+          nullable: true
+          example: 0.82
+        needs_review:
+          type: boolean
+          nullable: true
+          example: false
+        review_reason:
+          type: string
+          nullable: true
+          example: missing_fields:vendor_name
+        review_status:
+          type: string
+          nullable: true
+          enum: [pending, confirmed, corrected, ignored]
+          example: pending
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        review_notes:
+          type: string
+          nullable: true
+          example: Vendor corrected manually.
         receipt_draft_transaction_id:
           type: string
           nullable: true
@@ -138,6 +223,50 @@ components:
         - filename
         - status
         - uploaded_at
+    DocumentReviewQueueResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          example: 2
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Document'
+      required:
+        - total
+        - items
+    DocumentReviewUpdateRequest:
+      type: object
+      properties:
+        total_amount:
+          type: number
+          format: float
+          minimum: 0.01
+          nullable: true
+        vendor_name:
+          type: string
+          nullable: true
+        transaction_date:
+          type: string
+          format: date
+          nullable: true
+        suggested_category:
+          type: string
+          nullable: true
+        expense_article:
+          type: string
+          nullable: true
+        is_potentially_deductible:
+          type: boolean
+          nullable: true
+        review_status:
+          type: string
+          enum: [confirmed, corrected, ignored]
+          default: confirmed
+        review_notes:
+          type: string
+          nullable: true
 
   securitySchemes:
     bearerAuth:

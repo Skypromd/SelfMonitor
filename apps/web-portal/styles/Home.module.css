@@ -368,6 +368,28 @@
   color: #b72849;
 }
 
+.reviewBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  background: rgba(130, 150, 190, 0.2);
+  color: var(--color-text-muted);
+}
+
+.reviewBadgePending {
+  background: #fff1d6;
+  color: #9b6100;
+}
+
+.reviewBadgeDone {
+  background: #e6f8ef;
+  color: #0f7a4a;
+}
+
 .actionableAdviceCard {
   background: linear-gradient(135deg, rgba(69, 117, 255, 0.09) 0%, var(--color-surface-muted) 100%);
   border-color: rgba(69, 117, 255, 0.3);
