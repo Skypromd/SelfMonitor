@@ -23,6 +23,15 @@ class TransactionImportRequest(BaseModel):
     account_id: uuid.UUID
     transactions: List[TransactionBase]
 
+
+class TransactionImportResponse(BaseModel):
+    message: str
+    imported_count: int
+    created_count: int
+    reconciled_receipt_drafts: int
+    skipped_duplicates: int
+
+
 class TransactionUpdateRequest(BaseModel):
     category: str
 

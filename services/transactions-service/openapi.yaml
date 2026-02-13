@@ -28,12 +28,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                  imported_count:
-                    type: integer
+                $ref: '#/components/schemas/TransactionImportResponse'
   /accounts/{account_id}/transactions:
     get:
       summary: Get transactions for an account
@@ -155,6 +150,25 @@ components:
       required:
         - account_id
         - transactions
+    TransactionImportResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        imported_count:
+          type: integer
+        created_count:
+          type: integer
+        reconciled_receipt_drafts:
+          type: integer
+        skipped_duplicates:
+          type: integer
+      required:
+        - message
+        - imported_count
+        - created_count
+        - reconciled_receipt_drafts
+        - skipped_duplicates
     TransactionUpdateRequest:
       type: object
       properties:

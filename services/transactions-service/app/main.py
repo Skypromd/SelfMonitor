@@ -31,20 +31,30 @@ setup_telemetry(app)
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 # --- Endpoints ---
-@app.post("/import", status_code=status.HTTP_202_ACCEPTED)
+@app.post(
+    "/import",
+    response_model=schemas.TransactionImportResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def import_transactions(
     request: schemas.TransactionImportRequest, 
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Imports a batch of transactions for an account into the database."""
-    imported_count = await crud.create_transactions(
+    import_result = await crud.create_transactions(
         db, 
         user_id=user_id, 
         account_id=request.account_id, 
         transactions=request.transactions
     )
-    return {"message": "Import request accepted", "imported_count": imported_count}
+    return schemas.TransactionImportResponse(
+        message="Import request accepted",
+        imported_count=import_result["imported_count"],
+        created_count=import_result["created_count"],
+        reconciled_receipt_drafts=import_result["reconciled_receipt_drafts"],
+        skipped_duplicates=import_result["skipped_duplicates"],
+    )
 
 @app.get("/accounts/{account_id}/transactions", response_model=List[schemas.Transaction])
 async def get_transactions_for_account(

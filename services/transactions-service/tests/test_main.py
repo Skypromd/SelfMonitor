@@ -67,6 +67,9 @@ async def test_import_and_get_transactions(db_session):
     )
     assert import_response.status_code == 202
     assert import_response.json()["imported_count"] == 2
+    assert import_response.json()["created_count"] == 2
+    assert import_response.json()["reconciled_receipt_drafts"] == 0
+    assert import_response.json()["skipped_duplicates"] == 0
 
     # 2. Get transactions for that account
     get_response = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers(user_id))
@@ -181,3 +184,60 @@ async def test_create_receipt_draft_transaction_and_deduplicate(db_session):
     second_data = second_response.json()
     assert second_data["duplicated"] is True
     assert second_data["transaction"]["id"] == first_tx["id"]
+
+
+@pytest.mark.asyncio
+async def test_import_reconciles_matching_receipt_draft(db_session):
+    account_id = str(uuid.uuid4())
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "trainline_receipt.pdf",
+        "transaction_date": "2026-02-12",
+        "total_amount": 28.45,
+        "currency": "GBP",
+        "vendor_name": "Trainline",
+        "suggested_category": "transport",
+        "expense_article": "travel_costs",
+        "is_potentially_deductible": True,
+    }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    assert draft_response.status_code == 200
+    draft_tx_id = draft_response.json()["transaction"]["id"]
+
+    import_response = client.post(
+        "/import",
+        headers=get_auth_headers(),
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "bank-txn-777",
+                    "date": "2026-02-12",
+                    "description": "TRAINLINE UK WEB",
+                    "amount": -28.45,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert import_response.status_code == 202
+    payload = import_response.json()
+    assert payload["imported_count"] == 1
+    assert payload["created_count"] == 0
+    assert payload["reconciled_receipt_drafts"] == 1
+    assert payload["skipped_duplicates"] == 0
+
+    user_transactions_response = client.get("/transactions/me", headers=get_auth_headers())
+    assert user_transactions_response.status_code == 200
+    items = user_transactions_response.json()
+    assert len(items) == 1
+    reconciled = items[0]
+    assert reconciled["id"] == draft_tx_id
+    assert reconciled["provider_transaction_id"] == "bank-txn-777"
+    assert reconciled["account_id"] == account_id
+    assert reconciled["amount"] == -28.45
+    assert reconciled["category"] == "transport"

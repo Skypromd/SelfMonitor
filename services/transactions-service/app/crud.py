@@ -1,11 +1,14 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from . import models, schemas
+import asyncio
+import datetime
+import os
 import uuid
 from typing import List
+
 import httpx
-import os
-import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from . import models, schemas
 
 CATEGORIZATION_SERVICE_URL = os.getenv("CATEGORIZATION_SERVICE_URL", "http://localhost:8013/categorize")
 RECEIPT_DRAFT_ACCOUNT_NAMESPACE = uuid.UUID(
@@ -24,28 +27,131 @@ async def get_suggested_category(description: str) -> str | None:
         return None
     return None
 
-async def create_transactions(db: AsyncSession, user_id: str, account_id: uuid.UUID, transactions: List[schemas.TransactionBase]):
+
+def _extract_receipt_draft_vendor(description: str) -> str | None:
+    prefix = "Receipt draft:"
+    if not description.startswith(prefix):
+        return None
+
+    tail = description[len(prefix) :].strip()
+    vendor = tail.split("(", 1)[0].strip()
+    return vendor.lower() if vendor else None
+
+
+async def _find_matching_receipt_draft(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    imported_transaction: schemas.TransactionBase,
+) -> models.Transaction | None:
+    start_date = imported_transaction.date - datetime.timedelta(days=3)
+    end_date = imported_transaction.date + datetime.timedelta(days=3)
+    result = await db.execute(
+        select(models.Transaction)
+        .filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.provider_transaction_id.like("receipt-draft-%"),
+            models.Transaction.currency == imported_transaction.currency.upper(),
+            models.Transaction.date >= start_date,
+            models.Transaction.date <= end_date,
+        )
+        .order_by(models.Transaction.date.desc())
+    )
+    candidates = list(result.scalars().all())
+    imported_description = imported_transaction.description.lower()
+
+    for candidate in candidates:
+        if abs(abs(candidate.amount) - abs(imported_transaction.amount)) > 0.01:
+            continue
+
+        draft_vendor = _extract_receipt_draft_vendor(candidate.description)
+        if draft_vendor and draft_vendor not in imported_description:
+            continue
+        return candidate
+    return None
+
+
+def _reconcile_receipt_draft_with_imported_transaction(
+    receipt_draft: models.Transaction,
+    *,
+    account_id: uuid.UUID,
+    imported_transaction: schemas.TransactionBase,
+    suggested_category: str | None,
+) -> None:
+    receipt_draft.account_id = account_id
+    receipt_draft.provider_transaction_id = imported_transaction.provider_transaction_id
+    receipt_draft.date = imported_transaction.date
+    receipt_draft.description = imported_transaction.description
+    receipt_draft.amount = imported_transaction.amount
+    receipt_draft.currency = imported_transaction.currency.upper()
+    if not receipt_draft.category:
+        receipt_draft.category = suggested_category
+
+
+async def create_transactions(
+    db: AsyncSession,
+    user_id: str,
+    account_id: uuid.UUID,
+    transactions: List[schemas.TransactionBase],
+) -> dict[str, int]:
     """
-    Creates multiple transaction records, enriching them with categories from the categorization service.
+    Imports bank transactions while auto-reconciling matching receipt draft entries.
     """
-    # Create categorization tasks for all transactions concurrently
+    stats = {
+        "imported_count": 0,
+        "created_count": 0,
+        "reconciled_receipt_drafts": 0,
+        "skipped_duplicates": 0,
+    }
+
     category_tasks = [get_suggested_category(t.description) for t in transactions]
     suggested_categories = await asyncio.gather(*category_tasks)
 
-    db_transactions = []
     for t, category in zip(transactions, suggested_categories):
-        db_transactions.append(
+        existing_result = await db.execute(
+            select(models.Transaction).filter(
+                models.Transaction.user_id == user_id,
+                models.Transaction.provider_transaction_id == t.provider_transaction_id,
+            )
+        )
+        if existing_result.scalars().first():
+            stats["skipped_duplicates"] += 1
+            continue
+
+        matching_receipt_draft = await _find_matching_receipt_draft(
+            db,
+            user_id=user_id,
+            imported_transaction=t,
+        )
+        if matching_receipt_draft:
+            _reconcile_receipt_draft_with_imported_transaction(
+                matching_receipt_draft,
+                account_id=account_id,
+                imported_transaction=t,
+                suggested_category=category,
+            )
+            stats["reconciled_receipt_drafts"] += 1
+            stats["imported_count"] += 1
+            continue
+
+        db.add(
             models.Transaction(
                 user_id=user_id,
                 account_id=account_id,
-                category=category, # Add the suggested category
-                **t.model_dump()
+                provider_transaction_id=t.provider_transaction_id,
+                date=t.date,
+                description=t.description,
+                amount=t.amount,
+                currency=t.currency.upper(),
+                category=category,
             )
         )
+        stats["created_count"] += 1
+        stats["imported_count"] += 1
 
-    db.add_all(db_transactions)
-    await db.commit()
-    return len(db_transactions)
+    if stats["created_count"] > 0 or stats["reconciled_receipt_drafts"] > 0:
+        await db.commit()
+    return stats
 
 
 def _receipt_draft_account_id(user_id: str) -> uuid.UUID:

@@ -43,3 +43,4 @@ _Last updated: 2026-02-13_
 11. [x] Close security pass: upgrade web dependencies and lock reproducible npm install
 12. [x] Restore receipt scanning output for expense article and deductible hints
 13. [x] Bridge OCR receipts into draft categorized transactions for tax workflows
+14. [x] Add auto-reconciliation of receipt drafts during bank transaction import
