@@ -123,12 +123,14 @@ dmypy.json
 
 # node.js
 /node_modules
+**/node_modules/
 /build
 .next/
 npm-debug.log
 yarn-error.log
 package-lock.json
 yarn.lock
+!apps/web-portal/package-lock.json
 
 # IDE settings
 .idea/
