@@ -149,6 +149,30 @@ paths:
             minimum: 1
             maximum: 20
             default: 5
+        - name: include_ignored
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: search_provider_transaction_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search_amount
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0.01
+        - name: search_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
       responses:
         '200':
           description: Paginated list of unmatched receipt drafts and candidates.
@@ -156,6 +180,146 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UnmatchedReceiptDraftsResponse'
+
+  /transactions/receipt-drafts/{draft_transaction_id}/candidates:
+    get:
+      summary: Search candidate bank transactions for a receipt draft
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draft_transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: include_ignored
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: search_provider_transaction_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search_amount
+          in: query
+          required: false
+          schema:
+            type: number
+            format: float
+            minimum: 0.01
+        - name: search_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Candidate transactions for selected draft.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptDraftCandidatesResponse'
+        '404':
+          description: Draft transaction not found.
+
+  /transactions/receipt-drafts/{draft_transaction_id}/ignore-candidate:
+    post:
+      summary: Ignore a specific candidate for receipt draft matching
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draft_transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceiptDraftIgnoreCandidateRequest'
+      responses:
+        '200':
+          description: Candidate ignored for this draft.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptDraftStateUpdateResponse'
+        '404':
+          description: Draft or target transaction not found.
+        '409':
+          description: Invalid candidate target.
+
+  /transactions/receipt-drafts/{draft_transaction_id}/ignore:
+    post:
+      summary: Ignore a receipt draft from unmatched queue
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draft_transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Draft moved to ignored state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptDraftStateUpdateResponse'
+        '404':
+          description: Draft not found.
+        '409':
+          description: Invalid draft state.
+
+  /transactions/receipt-drafts/{draft_transaction_id}/reopen:
+    post:
+      summary: Reopen an ignored receipt draft for matching
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: draft_transaction_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Draft reopened for matching.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptDraftStateUpdateResponse'
+        '404':
+          description: Draft not found.
+        '409':
+          description: Invalid draft state.
 
   /transactions/receipt-drafts/{draft_transaction_id}/reconcile:
     post:
@@ -262,6 +426,14 @@ components:
             category:
               type: string
               nullable: true
+            reconciliation_status:
+              type: string
+              nullable: true
+            ignored_candidate_ids:
+              type: array
+              nullable: true
+              items:
+                type: string
             created_at:
               type: string
               format: date-time
@@ -346,6 +518,8 @@ components:
         confidence_score:
           type: number
           format: float
+            ignored:
+              type: boolean
       required:
         - transaction_id
         - account_id
@@ -355,6 +529,7 @@ components:
         - amount
         - currency
         - confidence_score
+            - ignored
 
     UnmatchedReceiptDraftItem:
       type: object
@@ -402,6 +577,39 @@ components:
       required:
         - reconciled_transaction
         - removed_transaction_id
+
+    ReceiptDraftCandidatesResponse:
+      type: object
+      properties:
+        draft_transaction:
+          $ref: '#/components/schemas/Transaction'
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReceiptDraftCandidate'
+      required:
+        - draft_transaction
+        - total
+        - items
+
+    ReceiptDraftIgnoreCandidateRequest:
+      type: object
+      properties:
+        target_transaction_id:
+          type: string
+          format: uuid
+      required:
+        - target_transaction_id
+
+    ReceiptDraftStateUpdateResponse:
+      type: object
+      properties:
+        draft_transaction:
+          $ref: '#/components/schemas/Transaction'
+      required:
+        - draft_transaction
 
   securitySchemes:
     bearerAuth:

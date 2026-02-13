@@ -15,6 +15,8 @@ class Transaction(TransactionBase):
     account_id: uuid.UUID
     user_id: str
     category: Optional[str] = None
+    reconciliation_status: Optional[str] = None
+    ignored_candidate_ids: Optional[List[str]] = None
     created_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -63,6 +65,7 @@ class ReceiptDraftCandidate(BaseModel):
     currency: str
     category: Optional[str] = None
     confidence_score: float
+    ignored: bool = False
 
 
 class UnmatchedReceiptDraftItem(BaseModel):
@@ -82,3 +85,17 @@ class ReceiptDraftManualReconcileRequest(BaseModel):
 class ReceiptDraftManualReconcileResponse(BaseModel):
     reconciled_transaction: Transaction
     removed_transaction_id: uuid.UUID
+
+
+class ReceiptDraftCandidatesResponse(BaseModel):
+    draft_transaction: Transaction
+    total: int
+    items: List[ReceiptDraftCandidate]
+
+
+class ReceiptDraftIgnoreCandidateRequest(BaseModel):
+    target_transaction_id: uuid.UUID
+
+
+class ReceiptDraftStateUpdateResponse(BaseModel):
+    draft_transaction: Transaction

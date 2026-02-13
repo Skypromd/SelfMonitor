@@ -43,6 +43,17 @@ def _is_receipt_draft(transaction: models.Transaction) -> bool:
     return bool(transaction.provider_transaction_id and transaction.provider_transaction_id.startswith(RECEIPT_DRAFT_PREFIX))
 
 
+def _ignored_candidate_id_set(transaction: models.Transaction) -> set[str]:
+    raw = transaction.ignored_candidate_ids
+    if not isinstance(raw, list):
+        return set()
+    return {str(item) for item in raw if str(item)}
+
+
+def _set_ignored_candidate_ids(transaction: models.Transaction, values: set[str]) -> None:
+    transaction.ignored_candidate_ids = sorted(values)
+
+
 def _candidate_confidence_score(
     draft_transaction: models.Transaction,
     candidate_transaction: models.Transaction,
@@ -70,28 +81,59 @@ async def _list_non_draft_candidates_for_receipt(
     user_id: str,
     draft_transaction: models.Transaction,
     candidate_limit: int,
+    include_ignored: bool = False,
+    search_provider_transaction_id: str | None = None,
+    search_amount: float | None = None,
+    search_date: datetime.date | None = None,
 ) -> list[schemas.ReceiptDraftCandidate]:
+    manual_filter_mode = any(
+        (
+            search_provider_transaction_id,
+            search_amount is not None,
+            search_date is not None,
+        )
+    )
     start_date = draft_transaction.date - datetime.timedelta(days=14)
     end_date = draft_transaction.date + datetime.timedelta(days=14)
-    result = await db.execute(
+
+    query = (
         select(models.Transaction)
         .filter(
             models.Transaction.user_id == user_id,
             models.Transaction.id != draft_transaction.id,
             models.Transaction.provider_transaction_id.not_like(f"{RECEIPT_DRAFT_PREFIX}%"),
             models.Transaction.currency == draft_transaction.currency,
-            models.Transaction.date >= start_date,
-            models.Transaction.date <= end_date,
         )
         .order_by(models.Transaction.date.desc(), models.Transaction.id.desc())
     )
+    if search_date:
+        query = query.filter(models.Transaction.date == search_date)
+    else:
+        query = query.filter(
+            models.Transaction.date >= start_date,
+            models.Transaction.date <= end_date,
+        )
+    if search_provider_transaction_id:
+        query = query.filter(models.Transaction.provider_transaction_id.ilike(f"%{search_provider_transaction_id}%"))
+
+    result = await db.execute(query)
     candidates = list(result.scalars().all())
+    ignored_ids = _ignored_candidate_id_set(draft_transaction)
 
     scored_candidates: list[schemas.ReceiptDraftCandidate] = []
     for candidate in candidates:
-        confidence = _candidate_confidence_score(draft_transaction, candidate)
-        if confidence <= 0:
+        if search_amount is not None and abs(abs(float(candidate.amount)) - abs(float(search_amount))) > 0.01:
             continue
+
+        ignored = str(candidate.id) in ignored_ids
+        if ignored and not include_ignored:
+            continue
+
+        confidence = _candidate_confidence_score(draft_transaction, candidate)
+        if confidence <= 0 and not manual_filter_mode:
+            continue
+        if confidence <= 0 and manual_filter_mode:
+            confidence = 0.01
         scored_candidates.append(
             schemas.ReceiptDraftCandidate(
                 transaction_id=candidate.id,
@@ -103,6 +145,7 @@ async def _list_non_draft_candidates_for_receipt(
                 currency=candidate.currency,
                 category=candidate.category,
                 confidence_score=confidence,
+                ignored=ignored,
             )
         )
 
@@ -123,6 +166,7 @@ async def _find_matching_receipt_draft(
         .filter(
             models.Transaction.user_id == user_id,
             models.Transaction.provider_transaction_id.like(f"{RECEIPT_DRAFT_PREFIX}%"),
+            (models.Transaction.reconciliation_status != "ignored") | (models.Transaction.reconciliation_status.is_(None)),
             models.Transaction.currency == imported_transaction.currency.upper(),
             models.Transaction.date >= start_date,
             models.Transaction.date <= end_date,
@@ -156,6 +200,8 @@ def _reconcile_receipt_draft_with_imported_transaction(
     receipt_draft.description = imported_transaction.description
     receipt_draft.amount = imported_transaction.amount
     receipt_draft.currency = imported_transaction.currency.upper()
+    receipt_draft.reconciliation_status = None
+    receipt_draft.ignored_candidate_ids = None
     if not receipt_draft.category:
         receipt_draft.category = suggested_category
 
@@ -267,6 +313,8 @@ async def create_or_get_receipt_draft_transaction(
         amount=-abs(payload.total_amount),
         currency=payload.currency.upper(),
         category=category,
+        reconciliation_status="open",
+        ignored_candidate_ids=[],
     )
     db.add(db_transaction)
     await db.commit()
@@ -281,8 +329,12 @@ async def list_unmatched_receipt_drafts(
     limit: int = 25,
     offset: int = 0,
     candidate_limit: int = 5,
+    include_ignored: bool = False,
+    search_provider_transaction_id: str | None = None,
+    search_amount: float | None = None,
+    search_date: datetime.date | None = None,
 ) -> tuple[int, list[schemas.UnmatchedReceiptDraftItem]]:
-    result = await db.execute(
+    query = (
         select(models.Transaction)
         .filter(
             models.Transaction.user_id == user_id,
@@ -290,6 +342,11 @@ async def list_unmatched_receipt_drafts(
         )
         .order_by(models.Transaction.date.desc(), models.Transaction.id.desc())
     )
+    if not include_ignored:
+        query = query.filter(
+            (models.Transaction.reconciliation_status != "ignored") | (models.Transaction.reconciliation_status.is_(None))
+        )
+    result = await db.execute(query)
     all_drafts = list(result.scalars().all())
     total = len(all_drafts)
     page_drafts = all_drafts[offset : offset + limit]
@@ -301,6 +358,10 @@ async def list_unmatched_receipt_drafts(
             user_id=user_id,
             draft_transaction=draft_transaction,
             candidate_limit=candidate_limit,
+            include_ignored=include_ignored,
+            search_provider_transaction_id=search_provider_transaction_id,
+            search_amount=search_amount,
+            search_date=search_date,
         )
         items.append(
             schemas.UnmatchedReceiptDraftItem(
@@ -309,6 +370,111 @@ async def list_unmatched_receipt_drafts(
             )
         )
     return total, items
+
+
+async def get_receipt_draft_candidates(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    draft_transaction_id: uuid.UUID,
+    limit: int = 20,
+    include_ignored: bool = True,
+    search_provider_transaction_id: str | None = None,
+    search_amount: float | None = None,
+    search_date: datetime.date | None = None,
+) -> tuple[models.Transaction, list[schemas.ReceiptDraftCandidate]]:
+    draft_result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.id == draft_transaction_id,
+            models.Transaction.user_id == user_id,
+        )
+    )
+    draft_transaction = draft_result.scalars().first()
+    if not draft_transaction or not _is_receipt_draft(draft_transaction):
+        raise ValueError("draft_not_found")
+
+    candidates = await _list_non_draft_candidates_for_receipt(
+        db,
+        user_id=user_id,
+        draft_transaction=draft_transaction,
+        candidate_limit=limit,
+        include_ignored=include_ignored,
+        search_provider_transaction_id=search_provider_transaction_id,
+        search_amount=search_amount,
+        search_date=search_date,
+    )
+    return draft_transaction, candidates
+
+
+async def ignore_receipt_draft_candidate(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    draft_transaction_id: uuid.UUID,
+    target_transaction_id: uuid.UUID,
+) -> models.Transaction:
+    draft_result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.id == draft_transaction_id,
+            models.Transaction.user_id == user_id,
+        )
+    )
+    draft_transaction = draft_result.scalars().first()
+    if not draft_transaction:
+        raise ValueError("draft_not_found")
+    if not _is_receipt_draft(draft_transaction):
+        raise ValueError("draft_not_unmatched")
+
+    target_result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.id == target_transaction_id,
+            models.Transaction.user_id == user_id,
+        )
+    )
+    target_transaction = target_result.scalars().first()
+    if not target_transaction:
+        raise ValueError("target_not_found")
+    if _is_receipt_draft(target_transaction):
+        raise ValueError("target_is_draft")
+
+    ignored_ids = _ignored_candidate_id_set(draft_transaction)
+    ignored_ids.add(str(target_transaction_id))
+    _set_ignored_candidate_ids(draft_transaction, ignored_ids)
+    if draft_transaction.reconciliation_status is None:
+        draft_transaction.reconciliation_status = "open"
+    await db.commit()
+    await db.refresh(draft_transaction)
+    return draft_transaction
+
+
+async def set_receipt_draft_status(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    draft_transaction_id: uuid.UUID,
+    status: str,
+) -> models.Transaction:
+    if status not in {"open", "ignored"}:
+        raise ValueError("invalid_status")
+
+    draft_result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.id == draft_transaction_id,
+            models.Transaction.user_id == user_id,
+        )
+    )
+    draft_transaction = draft_result.scalars().first()
+    if not draft_transaction:
+        raise ValueError("draft_not_found")
+    if not _is_receipt_draft(draft_transaction):
+        raise ValueError("draft_not_unmatched")
+
+    draft_transaction.reconciliation_status = status
+    if status == "open" and draft_transaction.ignored_candidate_ids is None:
+        draft_transaction.ignored_candidate_ids = []
+    await db.commit()
+    await db.refresh(draft_transaction)
+    return draft_transaction
 
 
 async def manual_reconcile_receipt_draft(
@@ -361,6 +527,8 @@ async def manual_reconcile_receipt_draft(
     draft_transaction.amount = target_transaction.amount
     draft_transaction.currency = target_transaction.currency
     draft_transaction.category = preserved_category
+    draft_transaction.reconciliation_status = None
+    draft_transaction.ignored_candidate_ids = None
 
     removed_id = target_transaction.id
     await db.delete(target_transaction)

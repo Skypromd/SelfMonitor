@@ -14,6 +14,8 @@ type TransactionRecord = {
   date: string;
   description: string;
   id: string;
+  ignored_candidate_ids?: string[] | null;
+  reconciliation_status?: string | null;
 };
 
 type ReceiptDraftCandidate = {
@@ -23,6 +25,7 @@ type ReceiptDraftCandidate = {
   currency: string;
   date: string;
   description: string;
+  ignored: boolean;
   provider_transaction_id: string;
   transaction_id: string;
 };
@@ -202,13 +205,31 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [activeMatchKey, setActiveMatchKey] = useState('');
+  const [activeActionKey, setActiveActionKey] = useState('');
+  const [searchProviderTransactionId, setSearchProviderTransactionId] = useState('');
+  const [searchAmount, setSearchAmount] = useState('');
+  const [searchDate, setSearchDate] = useState('');
+  const [includeIgnoredDrafts, setIncludeIgnoredDrafts] = useState(false);
 
   const loadUnmatchedDrafts = useCallback(async () => {
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/unmatched?limit=25&candidate_limit=5`, {
+      const params = new URLSearchParams({
+        limit: '25',
+        candidate_limit: '5',
+        include_ignored: includeIgnoredDrafts ? 'true' : 'false',
+      });
+      if (searchProviderTransactionId) {
+        params.set('search_provider_transaction_id', searchProviderTransactionId);
+      }
+      if (searchAmount) {
+        params.set('search_amount', searchAmount);
+      }
+      if (searchDate) {
+        params.set('search_date', searchDate);
+      }
+      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/unmatched?${params.toString()}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) throw new Error('Failed to load unmatched receipt drafts');
@@ -220,7 +241,7 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
     } finally {
       setIsLoading(false);
     }
-  }, [token]);
+  }, [includeIgnoredDrafts, searchAmount, searchDate, searchProviderTransactionId, token]);
 
   useEffect(() => {
     void loadUnmatchedDrafts();
@@ -228,7 +249,7 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
 
   const handleMatch = async (draftId: string, targetId: string) => {
     const actionKey = `${draftId}:${targetId}`;
-    setActiveMatchKey(actionKey);
+    setActiveActionKey(actionKey);
     setError('');
     setMessage('');
     try {
@@ -247,7 +268,55 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
-      setActiveMatchKey('');
+      setActiveActionKey('');
+    }
+  };
+
+  const handleIgnoreCandidate = async (draftId: string, targetId: string) => {
+    const actionKey = `ignore-candidate:${draftId}:${targetId}`;
+    setActiveActionKey(actionKey);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/${draftId}/ignore-candidate`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ target_transaction_id: targetId }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || 'Failed to ignore candidate');
+      setMessage(`Candidate ignored for draft ${payload.draft_transaction.id}.`);
+      await loadUnmatchedDrafts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setActiveActionKey('');
+    }
+  };
+
+  const handleDraftState = async (draftId: string, action: 'ignore' | 'reopen') => {
+    const actionKey = `${action}:${draftId}`;
+    setActiveActionKey(actionKey);
+    setError('');
+    setMessage('');
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/${draftId}/${action}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || `Failed to ${action} draft`);
+      setMessage(`Draft ${payload.draft_transaction.id} ${action === 'ignore' ? 'ignored' : 'reopened'}.`);
+      await loadUnmatchedDrafts();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setActiveActionKey('');
     }
   };
 
@@ -255,9 +324,58 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
     <div className={styles.subContainer}>
       <h2>Manual Receipt Matching</h2>
       <p>Unmatched receipt drafts: {total}</p>
-      <div className={styles.buttonGroup}>
+      <div className={styles.adminFiltersGrid}>
+        <label className={styles.filterField}>
+          <span>Provider Tx ID</span>
+          <input
+            className={styles.input}
+            onChange={(event) => setSearchProviderTransactionId(event.target.value)}
+            placeholder="bank-txn-..."
+            type="text"
+            value={searchProviderTransactionId}
+          />
+        </label>
+        <label className={styles.filterField}>
+          <span>Amount</span>
+          <input
+            className={styles.input}
+            onChange={(event) => setSearchAmount(event.target.value)}
+            placeholder="28.45"
+            step="0.01"
+            type="number"
+            value={searchAmount}
+          />
+        </label>
+        <label className={styles.filterField}>
+          <span>Date</span>
+          <input
+            className={styles.input}
+            onChange={(event) => setSearchDate(event.target.value)}
+            type="date"
+            value={searchDate}
+          />
+        </label>
+      </div>
+      <div className={styles.statusPillsRow}>
+        <label className={styles.checkboxPill}>
+          <input checked={includeIgnoredDrafts} onChange={(event) => setIncludeIgnoredDrafts(event.target.checked)} type="checkbox" />
+          <span>Include ignored drafts</span>
+        </label>
+      </div>
+      <div className={styles.adminActionsRow}>
         <button className={styles.secondaryButton} onClick={() => void loadUnmatchedDrafts()} type="button" disabled={isLoading}>
           {isLoading ? 'Refreshing...' : 'Refresh suggestions'}
+        </button>
+        <button
+          className={styles.secondaryButton}
+          onClick={() => {
+            setSearchProviderTransactionId('');
+            setSearchAmount('');
+            setSearchDate('');
+          }}
+          type="button"
+        >
+          Clear search
         </button>
       </div>
       {message && <p className={styles.message}>{message}</p>}
@@ -272,6 +390,8 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
                 <th>Draft</th>
                 <th>Amount</th>
                 <th>Date</th>
+                <th>Status</th>
+                <th>Draft actions</th>
                 <th>Candidate bank transactions</th>
               </tr>
             </thead>
@@ -283,23 +403,58 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
                     {row.draft_transaction.amount.toFixed(2)} {row.draft_transaction.currency}
                   </td>
                   <td>{row.draft_transaction.date}</td>
+                  <td>{row.draft_transaction.reconciliation_status || 'open'}</td>
+                  <td>
+                    {(row.draft_transaction.reconciliation_status || 'open') === 'ignored' ? (
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={activeActionKey === `reopen:${row.draft_transaction.id}`}
+                        onClick={() => void handleDraftState(row.draft_transaction.id, 'reopen')}
+                        type="button"
+                      >
+                        {activeActionKey === `reopen:${row.draft_transaction.id}` ? 'Reopening...' : 'Reopen draft'}
+                      </button>
+                    ) : (
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={activeActionKey === `ignore:${row.draft_transaction.id}`}
+                        onClick={() => void handleDraftState(row.draft_transaction.id, 'ignore')}
+                        type="button"
+                      >
+                        {activeActionKey === `ignore:${row.draft_transaction.id}` ? 'Ignoring...' : 'Ignore draft'}
+                      </button>
+                    )}
+                  </td>
                   <td>
                     {row.candidates.length === 0 ? (
                       <span className={styles.emptyState}>No strong candidates yet.</span>
                     ) : (
                       <div className={styles.invoiceExportGroup}>
                         {row.candidates.map((candidate) => (
-                          <button
-                            key={candidate.transaction_id}
-                            className={styles.tableActionButton}
-                            disabled={activeMatchKey === `${row.draft_transaction.id}:${candidate.transaction_id}`}
-                            onClick={() => void handleMatch(row.draft_transaction.id, candidate.transaction_id)}
-                            type="button"
-                          >
-                            {activeMatchKey === `${row.draft_transaction.id}:${candidate.transaction_id}`
-                              ? 'Matching...'
-                              : `Match ${candidate.description} (${(candidate.confidence_score * 100).toFixed(0)}%)`}
-                          </button>
+                          <div key={candidate.transaction_id} className={styles.invoiceActionGroup}>
+                            <button
+                              className={styles.tableActionButton}
+                              disabled={activeActionKey === `${row.draft_transaction.id}:${candidate.transaction_id}`}
+                              onClick={() => void handleMatch(row.draft_transaction.id, candidate.transaction_id)}
+                              type="button"
+                            >
+                              {activeActionKey === `${row.draft_transaction.id}:${candidate.transaction_id}`
+                                ? 'Matching...'
+                                : `Match ${candidate.description} (${(candidate.confidence_score * 100).toFixed(0)}%)`}
+                            </button>
+                            <button
+                              className={styles.tableActionButton}
+                              disabled={activeActionKey === `ignore-candidate:${row.draft_transaction.id}:${candidate.transaction_id}`}
+                              onClick={() => void handleIgnoreCandidate(row.draft_transaction.id, candidate.transaction_id)}
+                              type="button"
+                            >
+                              {activeActionKey === `ignore-candidate:${row.draft_transaction.id}:${candidate.transaction_id}`
+                                ? 'Ignoring...'
+                                : candidate.ignored
+                                  ? 'Ignored'
+                                  : 'Ignore candidate'}
+                            </button>
+                          </div>
                         ))}
                       </div>
                     )}

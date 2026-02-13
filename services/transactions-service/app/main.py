@@ -1,3 +1,4 @@
+import datetime
 import sys
 import uuid
 from pathlib import Path
@@ -117,6 +118,10 @@ async def list_unmatched_receipt_drafts(
     limit: int = Query(default=25, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     candidate_limit: int = Query(default=5, ge=1, le=20),
+    include_ignored: bool = Query(default=False),
+    search_provider_transaction_id: str | None = Query(default=None),
+    search_amount: float | None = Query(default=None, gt=0),
+    search_date: datetime.date | None = Query(default=None),
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -126,8 +131,120 @@ async def list_unmatched_receipt_drafts(
         limit=limit,
         offset=offset,
         candidate_limit=candidate_limit,
+        include_ignored=include_ignored,
+        search_provider_transaction_id=search_provider_transaction_id,
+        search_amount=search_amount,
+        search_date=search_date,
     )
     return schemas.UnmatchedReceiptDraftsResponse(total=total, items=items)
+
+
+@app.get(
+    "/transactions/receipt-drafts/{draft_transaction_id}/candidates",
+    response_model=schemas.ReceiptDraftCandidatesResponse,
+)
+async def get_receipt_draft_candidates(
+    draft_transaction_id: uuid.UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    include_ignored: bool = Query(default=True),
+    search_provider_transaction_id: str | None = Query(default=None),
+    search_amount: float | None = Query(default=None, gt=0),
+    search_date: datetime.date | None = Query(default=None),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction, candidates = await crud.get_receipt_draft_candidates(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            limit=limit,
+            include_ignored=include_ignored,
+            search_provider_transaction_id=search_provider_transaction_id,
+            search_amount=search_amount,
+            search_date=search_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return schemas.ReceiptDraftCandidatesResponse(
+        draft_transaction=draft_transaction,
+        total=len(candidates),
+        items=candidates,
+    )
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/ignore-candidate",
+    response_model=schemas.ReceiptDraftStateUpdateResponse,
+)
+async def ignore_receipt_draft_candidate(
+    draft_transaction_id: uuid.UUID,
+    payload: schemas.ReceiptDraftIgnoreCandidateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction = await crud.ignore_receipt_draft_candidate(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            target_transaction_id=payload.target_transaction_id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if detail in {"draft_not_found", "target_not_found"}:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+    return schemas.ReceiptDraftStateUpdateResponse(draft_transaction=draft_transaction)
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/ignore",
+    response_model=schemas.ReceiptDraftStateUpdateResponse,
+)
+async def ignore_receipt_draft(
+    draft_transaction_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction = await crud.set_receipt_draft_status(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            status="ignored",
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "draft_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+    return schemas.ReceiptDraftStateUpdateResponse(draft_transaction=draft_transaction)
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/reopen",
+    response_model=schemas.ReceiptDraftStateUpdateResponse,
+)
+async def reopen_receipt_draft(
+    draft_transaction_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction = await crud.set_receipt_draft_status(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            status="open",
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "draft_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+    return schemas.ReceiptDraftStateUpdateResponse(draft_transaction=draft_transaction)
 
 
 @app.post(

@@ -317,3 +317,131 @@ async def test_manual_reconcile_unmatched_receipt_draft(db_session):
     transactions = user_transactions_response.json()
     assert len(transactions) == 1
     assert transactions[0]["id"] == draft_tx["id"]
+
+
+@pytest.mark.asyncio
+async def test_ignore_candidate_and_search_for_manual_match(db_session):
+    account_id = str(uuid.uuid4())
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "office_receipt.pdf",
+        "transaction_date": "2026-02-15",
+        "total_amount": 14.99,
+        "currency": "GBP",
+        "vendor_name": "Tesco Business",
+        "suggested_category": "office_supplies",
+    }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    draft_id = draft_response.json()["transaction"]["id"]
+
+    import_response = client.post(
+        "/import",
+        headers=get_auth_headers(),
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "bank-txn-ignore-1",
+                    "date": "2026-02-15",
+                    "description": "CARD PAYMENT 22",
+                    "amount": -14.99,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert import_response.status_code == 202
+    assert import_response.json()["created_count"] == 1
+
+    unmatched_before = client.get(
+        "/transactions/receipt-drafts/unmatched",
+        headers=get_auth_headers(),
+    ).json()
+    candidate_id = unmatched_before["items"][0]["candidates"][0]["transaction_id"]
+
+    ignore_candidate_response = client.post(
+        f"/transactions/receipt-drafts/{draft_id}/ignore-candidate",
+        headers=get_auth_headers(),
+        json={"target_transaction_id": candidate_id},
+    )
+    assert ignore_candidate_response.status_code == 200
+    ignored_ids = ignore_candidate_response.json()["draft_transaction"]["ignored_candidate_ids"]
+    assert candidate_id in ignored_ids
+
+    unmatched_after = client.get(
+        "/transactions/receipt-drafts/unmatched",
+        headers=get_auth_headers(),
+    ).json()
+    assert unmatched_after["items"][0]["candidates"] == []
+
+    searched = client.get(
+        (
+            f"/transactions/receipt-drafts/{draft_id}/candidates"
+            "?include_ignored=true&search_provider_transaction_id=bank-txn-ignore-1"
+            "&search_amount=14.99&search_date=2026-02-15"
+        ),
+        headers=get_auth_headers(),
+    )
+    assert searched.status_code == 200
+    searched_payload = searched.json()
+    assert searched_payload["total"] >= 1
+    candidate = searched_payload["items"][0]
+    assert candidate["transaction_id"] == candidate_id
+    assert candidate["ignored"] is True
+
+
+@pytest.mark.asyncio
+async def test_ignore_and_reopen_receipt_draft(db_session):
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "ignored_receipt.pdf",
+        "transaction_date": "2026-02-10",
+        "total_amount": 9.5,
+        "currency": "GBP",
+        "vendor_name": "Uber",
+        "suggested_category": "transport",
+    }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    draft_id = draft_response.json()["transaction"]["id"]
+
+    baseline = client.get("/transactions/receipt-drafts/unmatched", headers=get_auth_headers())
+    assert baseline.status_code == 200
+    assert baseline.json()["total"] == 1
+
+    ignore_response = client.post(
+        f"/transactions/receipt-drafts/{draft_id}/ignore",
+        headers=get_auth_headers(),
+    )
+    assert ignore_response.status_code == 200
+    assert ignore_response.json()["draft_transaction"]["reconciliation_status"] == "ignored"
+
+    hidden = client.get("/transactions/receipt-drafts/unmatched", headers=get_auth_headers())
+    assert hidden.status_code == 200
+    assert hidden.json()["total"] == 0
+
+    visible_ignored = client.get(
+        "/transactions/receipt-drafts/unmatched?include_ignored=true",
+        headers=get_auth_headers(),
+    )
+    assert visible_ignored.status_code == 200
+    assert visible_ignored.json()["total"] == 1
+    assert visible_ignored.json()["items"][0]["draft_transaction"]["reconciliation_status"] == "ignored"
+
+    reopen_response = client.post(
+        f"/transactions/receipt-drafts/{draft_id}/reopen",
+        headers=get_auth_headers(),
+    )
+    assert reopen_response.status_code == 200
+    assert reopen_response.json()["draft_transaction"]["reconciliation_status"] == "open"
+
+    restored = client.get("/transactions/receipt-drafts/unmatched", headers=get_auth_headers())
+    assert restored.status_code == 200
+    assert restored.json()["total"] == 1
