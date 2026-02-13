@@ -98,6 +98,10 @@ jobs:
             --cov=services/consent-service/app --cov-append --cov-report=
           pytest -q services/partner-registry/tests/test_main.py::test_handoff_triggers_audit \
             --cov=services/partner-registry/app --cov-append --cov-report=
+          pytest -q services/partner-registry/tests/test_main.py::test_generate_list_and_get_invoice \
+            --cov=services/partner-registry/app --cov-append --cov-report=
+          pytest -q services/partner-registry/tests/test_main.py::test_invoice_pdf_and_accounting_exports \
+            --cov=services/partner-registry/app --cov-append --cov-report=
           coverage report --fail-under=25
 
   contract-tests:

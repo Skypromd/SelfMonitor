@@ -39,3 +39,4 @@ _Last updated: 2026-02-13_
 7. [x] Surface monetization billing tools in web admin panel (status updates + billing export)
 8. [x] Add pricing ops, lead feed, and invoice lifecycle in monetization admin workflows
 9. [x] Add invoice numbering policy, PDF export, and Xero/QuickBooks CSV mappings
+10. [x] Add go-live runbook, rollback drill, and monetization smoke gate expansion

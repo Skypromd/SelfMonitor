@@ -63,3 +63,22 @@
 3.  Запустите pytest: `pytest`.
 
 CI-пайплайн, настроенный в `.github/workflows/ci.yaml`, также автоматически запускает эти тесты при внесении изменений.
+
+## Release readiness
+
+Перед релизом рекомендуется выполнить preflight-проверки из корня репозитория:
+
+```bash
+python3 tools/release_preflight.py --quick
+```
+
+Для расширенной проверки с фронтенд-сборкой:
+
+```bash
+python3 tools/release_preflight.py --include-frontend
+```
+
+Операционные инструкции:
+
+- `docs/release/GO_LIVE_RUNBOOK.md`
+- `docs/release/ROLLBACK_DRILL.md`

@@ -2,10 +2,15 @@
 
 Use this checklist for each production release.
 
+Related docs:
+- `docs/release/GO_LIVE_RUNBOOK.md`
+- `docs/release/ROLLBACK_DRILL.md`
+
 ## 1. Pre-release gates
 
 - [ ] CI is green (`python-services`, `web-portal`, `smoke-core-flow`).
 - [ ] No critical/high security findings in dependency scan.
+- [ ] `python3 tools/release_preflight.py --quick` passes from repo root.
 - [ ] Release notes drafted and reviewed.
 - [ ] On-call engineer assigned for release window.
 
@@ -29,10 +34,15 @@ Use this checklist for each production release.
 - [ ] Verify previous stable image/tag is available.
 - [ ] Define rollback trigger thresholds (error-rate, latency, availability).
 - [ ] Confirm data rollback strategy for non-reversible migrations.
+- [ ] Rollback drill evidence is current (last 90 days) per `docs/release/ROLLBACK_DRILL.md`.
 
 ## 5. Post-release validation
 
 - [ ] Run smoke checks on auth/profile/transactions flow.
+- [ ] Validate monetization smoke path:
+  - generate invoice snapshot,
+  - download PDF invoice,
+  - export accounting CSV for `xero` and `quickbooks`.
 - [ ] Verify SLO dashboards (availability, error rate, p95 latency).
 - [ ] Verify alert channels are active and not noisy.
 - [ ] Announce release completion with validation summary.
