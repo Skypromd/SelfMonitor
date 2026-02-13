@@ -42,3 +42,4 @@ _Last updated: 2026-02-13_
 10. [x] Add go-live runbook, rollback drill, and monetization smoke gate expansion
 11. [x] Close security pass: upgrade web dependencies and lock reproducible npm install
 12. [x] Restore receipt scanning output for expense article and deductible hints
+13. [x] Bridge OCR receipts into draft categorized transactions for tax workflows

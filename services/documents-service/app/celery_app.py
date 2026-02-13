@@ -4,6 +4,7 @@ import time
 import random
 import datetime
 import httpx
+from jose import jwt
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 import asyncio
@@ -15,6 +16,12 @@ from .expense_classifier import suggest_category_from_keywords, to_expense_artic
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost/db_documents")
 QNA_SERVICE_URL = os.getenv("QNA_SERVICE_URL", "http://localhost:8014/index")
 CATEGORIZATION_SERVICE_URL = os.getenv("CATEGORIZATION_SERVICE_URL", "http://categorization-service/categorize")
+TRANSACTIONS_SERVICE_URL = os.getenv(
+    "TRANSACTIONS_SERVICE_URL",
+    "http://transactions-service/transactions/receipt-drafts",
+)
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -23,6 +30,14 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
 celery = Celery(__name__, broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEND)
+
+
+def _build_user_token(user_id: str) -> str:
+    payload = {
+        "sub": user_id,
+        "iat": int(datetime.datetime.now(datetime.UTC).timestamp()),
+    }
+    return jwt.encode(payload, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
 
 
 def suggest_expense_category(description: str) -> str | None:
@@ -68,6 +83,50 @@ def index_document_content(user_id: str, doc_id: str, filename: str, content: st
     except httpx.RequestError as e:
         print(f"Error indexing document {doc_id}: {e}")
 
+
+def create_receipt_draft_transaction(
+    *,
+    document_id: str,
+    user_id: str,
+    filename: str,
+    extracted_data: schemas.ExtractedData,
+) -> tuple[str | None, bool | None]:
+    if extracted_data.total_amount is None or extracted_data.transaction_date is None:
+        return None, None
+
+    payload = {
+        "document_id": document_id,
+        "filename": filename,
+        "transaction_date": extracted_data.transaction_date.isoformat(),
+        "total_amount": float(abs(extracted_data.total_amount)),
+        "currency": "GBP",
+        "vendor_name": extracted_data.vendor_name,
+        "suggested_category": extracted_data.suggested_category,
+        "expense_article": extracted_data.expense_article,
+        "is_potentially_deductible": extracted_data.is_potentially_deductible,
+    }
+
+    try:
+        token = _build_user_token(user_id)
+        with httpx.Client() as client:
+            response = client.post(
+                TRANSACTIONS_SERVICE_URL,
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            response_payload = response.json() if response.content else {}
+            if not isinstance(response_payload, dict):
+                return None, None
+            transaction = response_payload.get("transaction")
+            duplicated = response_payload.get("duplicated")
+            transaction_id = transaction.get("id") if isinstance(transaction, dict) else None
+            return str(transaction_id) if transaction_id else None, bool(duplicated) if duplicated is not None else None
+    except (httpx.HTTPError, ValueError, TypeError) as exc:
+        print(f"Error creating receipt draft transaction for {document_id}: {exc}")
+        return None, None
+
 @celery.task
 def ocr_processing_task(document_id: str, user_id: str, filename: str):
     """
@@ -96,6 +155,14 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str):
     extracted_data.suggested_category = category_hint
     extracted_data.expense_article = expense_article
     extracted_data.is_potentially_deductible = is_deductible
+    receipt_transaction_id, receipt_transaction_duplicated = create_receipt_draft_transaction(
+        document_id=document_id,
+        user_id=user_id,
+        filename=filename,
+        extracted_data=extracted_data,
+    )
+    extracted_data.receipt_draft_transaction_id = receipt_transaction_id
+    extracted_data.receipt_draft_duplicated = receipt_transaction_duplicated
 
     # 2. Update our main DB with the results
     async def update_db():
@@ -114,7 +181,8 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str):
         f"Receipt from {extracted_data.vendor_name} for the amount of {extracted_data.total_amount} "
         f"on {extracted_data.transaction_date}. Suggested category: {extracted_data.suggested_category}. "
         f"Expense article: {extracted_data.expense_article}. "
-        f"Potentially deductible: {extracted_data.is_potentially_deductible}."
+        f"Potentially deductible: {extracted_data.is_potentially_deductible}. "
+        f"Draft transaction ID: {extracted_data.receipt_draft_transaction_id}."
     )
     index_document_content(user_id, document_id, filename, text_content)
 

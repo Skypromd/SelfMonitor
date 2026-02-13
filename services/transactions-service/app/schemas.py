@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional
 import uuid
 import datetime
@@ -25,3 +25,20 @@ class TransactionImportRequest(BaseModel):
 
 class TransactionUpdateRequest(BaseModel):
     category: str
+
+
+class ReceiptDraftCreateRequest(BaseModel):
+    document_id: uuid.UUID
+    filename: str
+    transaction_date: datetime.date
+    total_amount: float = Field(gt=0)
+    currency: str = Field(default="GBP", min_length=3, max_length=3)
+    vendor_name: Optional[str] = None
+    suggested_category: Optional[str] = None
+    expense_article: Optional[str] = None
+    is_potentially_deductible: Optional[bool] = None
+
+
+class ReceiptDraftCreateResponse(BaseModel):
+    transaction: Transaction
+    duplicated: bool

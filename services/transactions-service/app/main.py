@@ -82,3 +82,18 @@ async def update_transaction_category(
     if not updated_transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
     return updated_transaction
+
+
+@app.post("/transactions/receipt-drafts", response_model=schemas.ReceiptDraftCreateResponse)
+async def create_receipt_draft_transaction(
+    payload: schemas.ReceiptDraftCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Creates or reuses a receipt-derived draft transaction for tax expenses."""
+    transaction, duplicated = await crud.create_or_get_receipt_draft_transaction(
+        db,
+        user_id=user_id,
+        payload=payload,
+    )
+    return schemas.ReceiptDraftCreateResponse(transaction=transaction, duplicated=duplicated)

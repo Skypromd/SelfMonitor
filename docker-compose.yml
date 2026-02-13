@@ -160,6 +160,7 @@ services:
       S3_BUCKET_NAME: "${DOCUMENTS_S3_BUCKET_NAME:-documents-bucket}"
       QNA_SERVICE_URL: "${DOCUMENTS_QNA_SERVICE_URL:-http://qna-service/index}"
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
+      TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
     networks:
       - default_network
 
@@ -209,6 +210,7 @@ services:
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
       S3_BUCKET_NAME: "${DOCUMENTS_S3_BUCKET_NAME:-documents-bucket}"
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
+      TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
     # No longer need local volume for uploads
     # volumes:
     #   - documents_data:/uploads

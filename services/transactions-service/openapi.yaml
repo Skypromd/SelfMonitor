@@ -102,6 +102,27 @@ paths:
         '404':
           description: Transaction not found.
 
+  /transactions/receipt-drafts:
+    post:
+      summary: Create receipt-derived draft transaction
+      tags:
+        - Transactions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReceiptDraftCreateRequest'
+      responses:
+        '200':
+          description: Draft transaction created or reused.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReceiptDraftCreateResponse'
+
 components:
   schemas:
     TransactionBase:
@@ -163,6 +184,55 @@ components:
             - id
             - account_id
             - user_id
+
+    ReceiptDraftCreateRequest:
+      type: object
+      properties:
+        document_id:
+          type: string
+          format: uuid
+        filename:
+          type: string
+        transaction_date:
+          type: string
+          format: date
+        total_amount:
+          type: number
+          format: float
+          minimum: 0.01
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          default: GBP
+        vendor_name:
+          type: string
+          nullable: true
+        suggested_category:
+          type: string
+          nullable: true
+        expense_article:
+          type: string
+          nullable: true
+        is_potentially_deductible:
+          type: boolean
+          nullable: true
+      required:
+        - document_id
+        - filename
+        - transaction_date
+        - total_amount
+
+    ReceiptDraftCreateResponse:
+      type: object
+      properties:
+        transaction:
+          $ref: '#/components/schemas/Transaction'
+        duplicated:
+          type: boolean
+      required:
+        - transaction
+        - duplicated
 
   securitySchemes:
     bearerAuth:

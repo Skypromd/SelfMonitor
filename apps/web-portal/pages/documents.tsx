@@ -13,6 +13,7 @@ type DocumentRecord = {
   extracted_data?: {
     expense_article?: string | null;
     is_potentially_deductible?: boolean | null;
+    receipt_draft_transaction_id?: string | null;
     suggested_category?: string | null;
     total_amount?: number | null;
     transaction_date?: string | null;
@@ -222,6 +223,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                 <th>{t('documents.col_category')}</th>
                 <th>{t('documents.col_expense_article')}</th>
                 <th>{t('documents.col_deductible')}</th>
+                <th>{t('documents.col_receipt_draft')}</th>
                 <th>{t('documents.col_uploaded_at')}</th>
               </tr>
             </thead>
@@ -247,6 +249,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                         ? 'No'
                         : '—'}
                   </td>
+                  <td>{document.extracted_data?.receipt_draft_transaction_id || '—'}</td>
                   <td>{new Date(document.uploaded_at).toLocaleString()}</td>
                 </tr>
               ))}

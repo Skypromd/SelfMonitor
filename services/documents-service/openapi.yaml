@@ -96,6 +96,14 @@ components:
           type: boolean
           nullable: true
           example: true
+        receipt_draft_transaction_id:
+          type: string
+          nullable: true
+          example: 3ec1afdf-62ac-4f8a-a456-74e6d0f8bf21
+        receipt_draft_duplicated:
+          type: boolean
+          nullable: true
+          example: false
     Document:
       type: object
       properties:

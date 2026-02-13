@@ -8,6 +8,9 @@ import os
 import asyncio
 
 CATEGORIZATION_SERVICE_URL = os.getenv("CATEGORIZATION_SERVICE_URL", "http://localhost:8013/categorize")
+RECEIPT_DRAFT_ACCOUNT_NAMESPACE = uuid.UUID(
+    os.getenv("RECEIPT_DRAFT_ACCOUNT_NAMESPACE", "f0b6e53b-0dd0-4f65-91d2-7bb272f8ea20")
+)
 
 async def get_suggested_category(description: str) -> str | None:
     """Calls the categorization service to get a suggested category."""
@@ -43,6 +46,54 @@ async def create_transactions(db: AsyncSession, user_id: str, account_id: uuid.U
     db.add_all(db_transactions)
     await db.commit()
     return len(db_transactions)
+
+
+def _receipt_draft_account_id(user_id: str) -> uuid.UUID:
+    return uuid.uuid5(RECEIPT_DRAFT_ACCOUNT_NAMESPACE, user_id)
+
+
+def _build_receipt_draft_description(payload: schemas.ReceiptDraftCreateRequest) -> str:
+    title = payload.vendor_name or payload.filename
+    if payload.expense_article:
+        return f"Receipt draft: {title} ({payload.expense_article})"
+    return f"Receipt draft: {title}"
+
+
+async def create_or_get_receipt_draft_transaction(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    payload: schemas.ReceiptDraftCreateRequest,
+) -> tuple[models.Transaction, bool]:
+    provider_transaction_id = f"receipt-draft-{payload.document_id}"
+    existing = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.provider_transaction_id == provider_transaction_id,
+        )
+    )
+    existing_transaction = existing.scalars().first()
+    if existing_transaction:
+        return existing_transaction, True
+
+    category = payload.suggested_category
+    if not category:
+        category = await get_suggested_category(payload.vendor_name or payload.filename)
+
+    db_transaction = models.Transaction(
+        user_id=user_id,
+        account_id=_receipt_draft_account_id(user_id),
+        provider_transaction_id=provider_transaction_id,
+        date=payload.transaction_date,
+        description=_build_receipt_draft_description(payload),
+        amount=-abs(payload.total_amount),
+        currency=payload.currency.upper(),
+        category=category,
+    )
+    db.add(db_transaction)
+    await db.commit()
+    await db.refresh(db_transaction)
+    return db_transaction, False
 
 async def get_transactions_by_account(db: AsyncSession, user_id: str, account_id: uuid.UUID):
     """Fetches all transactions for a specific account belonging to a user."""

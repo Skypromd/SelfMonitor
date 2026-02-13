@@ -142,3 +142,42 @@ async def test_get_all_my_transactions(db_session):
     descriptions = {t["description"] for t in transactions}
     assert "Coffee" in descriptions
     assert "Salary" in descriptions
+
+
+@pytest.mark.asyncio
+async def test_create_receipt_draft_transaction_and_deduplicate(db_session):
+    payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "trainline_receipt.pdf",
+        "transaction_date": "2026-02-12",
+        "total_amount": 28.45,
+        "currency": "GBP",
+        "vendor_name": "Trainline",
+        "suggested_category": "transport",
+        "expense_article": "travel_costs",
+        "is_potentially_deductible": True,
+    }
+
+    first_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=payload,
+    )
+    assert first_response.status_code == 200
+    first_data = first_response.json()
+    assert first_data["duplicated"] is False
+    first_tx = first_data["transaction"]
+    assert first_tx["provider_transaction_id"].startswith("receipt-draft-")
+    assert first_tx["amount"] == -28.45
+    assert first_tx["category"] == "transport"
+    assert "Receipt draft: Trainline" in first_tx["description"]
+
+    second_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=payload,
+    )
+    assert second_response.status_code == 200
+    second_data = second_response.json()
+    assert second_data["duplicated"] is True
+    assert second_data["transaction"]["id"] == first_tx["id"]
