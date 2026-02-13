@@ -10,6 +10,14 @@ type DocumentsPageProps = {
 };
 
 type DocumentRecord = {
+  extracted_data?: {
+    expense_article?: string | null;
+    is_potentially_deductible?: boolean | null;
+    suggested_category?: string | null;
+    total_amount?: number | null;
+    transaction_date?: string | null;
+    vendor_name?: string | null;
+  } | null;
   filename: string;
   id: string;
   status: string;
@@ -209,6 +217,11 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
               <tr>
                 <th>{t('documents.col_filename')}</th>
                 <th>{t('documents.col_status')}</th>
+                <th>{t('documents.col_vendor')}</th>
+                <th>{t('documents.col_amount')}</th>
+                <th>{t('documents.col_category')}</th>
+                <th>{t('documents.col_expense_article')}</th>
+                <th>{t('documents.col_deductible')}</th>
                 <th>{t('documents.col_uploaded_at')}</th>
               </tr>
             </thead>
@@ -218,6 +231,21 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                   <td>{document.filename}</td>
                   <td>
                     <span className={`${styles.status} ${styles[document.status]}`}>{document.status}</span>
+                  </td>
+                  <td>{document.extracted_data?.vendor_name || '—'}</td>
+                  <td>
+                    {typeof document.extracted_data?.total_amount === 'number'
+                      ? `£${document.extracted_data.total_amount.toFixed(2)}`
+                      : '—'}
+                  </td>
+                  <td>{document.extracted_data?.suggested_category || '—'}</td>
+                  <td>{document.extracted_data?.expense_article || '—'}</td>
+                  <td>
+                    {document.extracted_data?.is_potentially_deductible === true
+                      ? 'Yes'
+                      : document.extracted_data?.is_potentially_deductible === false
+                        ? 'No'
+                        : '—'}
                   </td>
                   <td>{new Date(document.uploaded_at).toLocaleString()}</td>
                 </tr>

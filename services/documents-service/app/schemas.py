@@ -7,6 +7,9 @@ class ExtractedData(BaseModel):
     total_amount: Optional[float] = None
     vendor_name: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
+    suggested_category: Optional[str] = None
+    expense_article: Optional[str] = None
+    is_potentially_deductible: Optional[bool] = None
 
 class DocumentBase(BaseModel):
     filename: str

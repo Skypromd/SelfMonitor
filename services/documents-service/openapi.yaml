@@ -84,6 +84,18 @@ components:
           type: string
           format: date
           example: '2023-10-26'
+        suggested_category:
+          type: string
+          nullable: true
+          example: transport
+        expense_article:
+          type: string
+          nullable: true
+          example: travel_costs
+        is_potentially_deductible:
+          type: boolean
+          nullable: true
+          example: true
     Document:
       type: object
       properties:
