@@ -52,6 +52,13 @@ BILLING_REPORT_ALLOWED_ROLES = {
     for item in os.getenv("BILLING_REPORT_ALLOWED_ROLES", "admin,billing_admin").split(",")
     if item.strip()
 }
+DEFAULT_BILLABLE_STATUSES = [schemas.LeadStatus.qualified.value]
+LEAD_STATUS_TRANSITIONS = {
+    schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
+    schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
+    schemas.LeadStatus.rejected.value: set(),
+    schemas.LeadStatus.converted.value: set(),
+}
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -159,11 +166,35 @@ def _build_report_window(
     return start_at, end_before
 
 
+def _resolve_report_statuses(
+    billable_only: bool,
+    statuses: list[schemas.LeadStatus] | None,
+) -> list[str] | None:
+    if statuses:
+        return [status_item.value for status_item in statuses]
+    if billable_only:
+        return list(DEFAULT_BILLABLE_STATUSES)
+    return None
+
+
+def _validate_status_transition(current_status: str, target_status: schemas.LeadStatus) -> None:
+    if target_status.value == current_status:
+        return
+
+    allowed = LEAD_STATUS_TRANSITIONS.get(current_status, set())
+    if target_status.value not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Cannot transition lead status from {current_status} to {target_status.value}",
+        )
+
+
 async def _load_lead_report(
     db: AsyncSession,
     partner_id: uuid.UUID | None,
     start_date: datetime.date | None,
     end_date: datetime.date | None,
+    statuses: list[str] | None,
 ) -> schemas.LeadReportResponse:
     start_at, end_before = _build_report_window(start_date, end_date)
     total_leads, unique_users, by_partner_rows = await crud.get_lead_report(
@@ -171,6 +202,7 @@ async def _load_lead_report(
         partner_id=str(partner_id) if partner_id else None,
         start_at=start_at,
         end_before=end_before,
+        statuses=statuses,
     )
     return schemas.LeadReportResponse(
         period_start=start_date,
@@ -309,20 +341,56 @@ async def initiate_handoff(
     )
 
 
+@app.patch("/leads/{lead_id}/status", response_model=schemas.LeadStatusUpdateResponse)
+async def update_lead_status(
+    lead_id: uuid.UUID,
+    payload: schemas.LeadStatusUpdateRequest,
+    user_id: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    lead = await crud.get_handoff_lead_by_id(db, str(lead_id))
+    if not lead:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lead not found")
+
+    previous_status = lead.status
+    _validate_status_transition(previous_status, payload.status)
+    if payload.status.value != previous_status:
+        lead = await crud.update_handoff_lead_status(db, lead=lead, status=payload.status.value)
+        await log_audit_event(
+            user_id=user_id,
+            action="partner.handoff.status.updated",
+            details={
+                "lead_id": str(lead.id),
+                "from_status": previous_status,
+                "to_status": payload.status.value,
+            },
+        )
+
+    return schemas.LeadStatusUpdateResponse(
+        lead_id=uuid.UUID(str(lead.id)),
+        status=schemas.LeadStatus(lead.status),
+        updated_at=lead.updated_at,
+    )
+
+
 @app.get("/leads/report", response_model=schemas.LeadReportResponse)
 async def get_lead_report(
     report_format: Literal["json", "csv"] = Query(default="json", alias="format"),
     partner_id: Optional[uuid.UUID] = Query(default=None),
     start_date: Optional[datetime.date] = Query(default=None),
     end_date: Optional[datetime.date] = Query(default=None),
+    statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
+    billable_only: bool = Query(default=True),
     _billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
+    report_statuses = _resolve_report_statuses(billable_only=billable_only, statuses=statuses)
     report = await _load_lead_report(
         db=db,
         partner_id=partner_id,
         start_date=start_date,
         end_date=end_date,
+        statuses=report_statuses,
     )
     if report_format == "csv":
         return _csv_response(report)
@@ -334,14 +402,18 @@ async def export_lead_report_csv(
     partner_id: Optional[uuid.UUID] = Query(default=None),
     start_date: Optional[datetime.date] = Query(default=None),
     end_date: Optional[datetime.date] = Query(default=None),
+    statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
+    billable_only: bool = Query(default=True),
     _billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
+    report_statuses = _resolve_report_statuses(billable_only=billable_only, statuses=statuses)
     report = await _load_lead_report(
         db=db,
         partner_id=partner_id,
         start_date=start_date,
         end_date=end_date,
+        statuses=report_statuses,
     )
     return _csv_response(report)
 

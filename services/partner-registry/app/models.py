@@ -1,7 +1,7 @@
 import datetime
 import uuid
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, Index, String
+from sqlalchemy import CheckConstraint, JSON, Column, DateTime, ForeignKey, Index, String
 
 from .database import Base
 
@@ -19,6 +19,11 @@ class Partner(Base):
 class HandoffLead(Base):
     __tablename__ = "handoff_leads"
     __table_args__ = (
+        CheckConstraint(
+            "status IN ('initiated', 'qualified', 'rejected', 'converted')",
+            name="ck_handoff_leads_status_allowed",
+        ),
+        Index("ix_handoff_leads_status", "status"),
         Index("ix_handoff_leads_partner_created_at", "partner_id", "created_at"),
         Index("ix_handoff_leads_user_partner_created_at", "user_id", "partner_id", "created_at"),
     )
@@ -32,5 +37,11 @@ class HandoffLead(Base):
         nullable=False,
         default=lambda: datetime.datetime.now(datetime.UTC),
         index=True,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
     )
 

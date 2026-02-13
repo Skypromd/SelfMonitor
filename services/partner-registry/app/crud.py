@@ -137,11 +137,29 @@ async def create_or_get_handoff_lead(
     return lead, False
 
 
+async def get_handoff_lead_by_id(db: AsyncSession, lead_id: str) -> models.HandoffLead | None:
+    result = await db.execute(select(models.HandoffLead).filter(models.HandoffLead.id == lead_id))
+    return result.scalars().first()
+
+
+async def update_handoff_lead_status(
+    db: AsyncSession,
+    lead: models.HandoffLead,
+    status: str,
+) -> models.HandoffLead:
+    lead.status = status
+    lead.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(lead)
+    return lead
+
+
 def _apply_lead_filters(
     query: Select,
     partner_id: str | None,
     start_at: datetime.datetime | None,
     end_before: datetime.datetime | None,
+    statuses: list[str] | None,
 ) -> Select:
     if partner_id:
         query = query.filter(models.HandoffLead.partner_id == partner_id)
@@ -149,6 +167,8 @@ def _apply_lead_filters(
         query = query.filter(models.HandoffLead.created_at >= start_at)
     if end_before:
         query = query.filter(models.HandoffLead.created_at < end_before)
+    if statuses:
+        query = query.filter(models.HandoffLead.status.in_(statuses))
     return query
 
 
@@ -157,12 +177,13 @@ async def get_lead_report(
     partner_id: str | None = None,
     start_at: datetime.datetime | None = None,
     end_before: datetime.datetime | None = None,
+    statuses: list[str] | None = None,
 ) -> tuple[int, int, list[tuple[str, str, int, int]]]:
     totals_query = select(
         func.count(models.HandoffLead.id),
         func.count(distinct(models.HandoffLead.user_id)),
     )
-    totals_query = _apply_lead_filters(totals_query, partner_id, start_at, end_before)
+    totals_query = _apply_lead_filters(totals_query, partner_id, start_at, end_before, statuses)
     totals_result = await db.execute(totals_query)
     total_leads, unique_users = totals_result.one()
 
@@ -177,7 +198,7 @@ async def get_lead_report(
         .group_by(models.HandoffLead.partner_id, models.Partner.name)
         .order_by(func.count(models.HandoffLead.id).desc(), models.Partner.name.asc())
     )
-    by_partner_query = _apply_lead_filters(by_partner_query, partner_id, start_at, end_before)
+    by_partner_query = _apply_lead_filters(by_partner_query, partner_id, start_at, end_before, statuses)
     by_partner_result = await db.execute(by_partner_query)
     by_partner_rows = by_partner_result.all()
 

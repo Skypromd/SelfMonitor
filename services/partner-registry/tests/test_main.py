@@ -44,6 +44,31 @@ def get_auth_headers(
     return {"Authorization": f"Bearer {token}"}
 
 
+def get_billing_headers(user_id: str = "billing-admin@example.com") -> dict[str, str]:
+    return get_auth_headers(
+        user_id,
+        scopes=["billing:read"],
+        roles=["admin"],
+        is_admin=True,
+    )
+
+
+def create_handoff_lead(partner_id: str, user_id: str) -> str:
+    response = client.post(f"/partners/{partner_id}/handoff", headers=get_auth_headers(user_id))
+    assert response.status_code == 202
+    return response.json()["lead_id"]
+
+
+def set_lead_status(lead_id: str, status_value: str, billing_user: str = "billing-admin@example.com") -> None:
+    response = client.patch(
+        f"/leads/{lead_id}/status",
+        headers=get_billing_headers(billing_user),
+        json={"status": status_value},
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == status_value
+
+
 async def override_get_db():
     async with TestingSessionLocal() as session:
         yield session
@@ -126,14 +151,14 @@ def test_lead_report_aggregates_by_partner(mocker):
     partner_a = partners[0]["id"]
     partner_b = partners[1]["id"]
 
-    assert client.post(f"/partners/{partner_a}/handoff", headers=get_auth_headers("user-a@example.com")).status_code == 202
-    assert client.post(f"/partners/{partner_a}/handoff", headers=get_auth_headers("user-b@example.com")).status_code == 202
-    assert client.post(f"/partners/{partner_b}/handoff", headers=get_auth_headers("user-a@example.com")).status_code == 202
+    lead_1 = create_handoff_lead(partner_a, "user-a@example.com")
+    lead_2 = create_handoff_lead(partner_a, "user-b@example.com")
+    lead_3 = create_handoff_lead(partner_b, "user-a@example.com")
+    set_lead_status(lead_1, "qualified")
+    set_lead_status(lead_2, "qualified")
+    set_lead_status(lead_3, "qualified")
 
-    report_response = client.get(
-        "/leads/report",
-        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
-    )
+    report_response = client.get("/leads/report", headers=get_billing_headers())
     assert report_response.status_code == 200
     payload = report_response.json()
 
@@ -153,12 +178,14 @@ def test_lead_report_supports_partner_filter(mocker):
     partner_a = partners[0]["id"]
     partner_b = partners[1]["id"]
 
-    assert client.post(f"/partners/{partner_a}/handoff", headers=get_auth_headers("user-a@example.com")).status_code == 202
-    assert client.post(f"/partners/{partner_b}/handoff", headers=get_auth_headers("user-b@example.com")).status_code == 202
+    lead_1 = create_handoff_lead(partner_a, "user-a@example.com")
+    lead_2 = create_handoff_lead(partner_b, "user-b@example.com")
+    set_lead_status(lead_1, "qualified")
+    set_lead_status(lead_2, "qualified")
 
     report_response = client.get(
         f"/leads/report?partner_id={partner_a}",
-        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
+        headers=get_billing_headers(),
     )
     assert report_response.status_code == 200
     payload = report_response.json()
@@ -172,7 +199,7 @@ def test_lead_report_supports_partner_filter(mocker):
 def test_lead_report_rejects_invalid_date_range():
     response = client.get(
         "/leads/report?start_date=2026-01-10&end_date=2026-01-01",
-        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
+        headers=get_billing_headers(),
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "start_date cannot be after end_date"
@@ -184,19 +211,12 @@ def test_lead_report_csv_export(mocker):
     partner_a = partners[0]["id"]
     partner_b = partners[1]["id"]
 
-    assert client.post(
-        f"/partners/{partner_a}/handoff",
-        headers=get_auth_headers("user-a@example.com"),
-    ).status_code == 202
-    assert client.post(
-        f"/partners/{partner_b}/handoff",
-        headers=get_auth_headers("user-b@example.com"),
-    ).status_code == 202
+    lead_1 = create_handoff_lead(partner_a, "user-a@example.com")
+    lead_2 = create_handoff_lead(partner_b, "user-b@example.com")
+    set_lead_status(lead_1, "qualified")
+    set_lead_status(lead_2, "qualified")
 
-    response = client.get(
-        "/leads/report.csv",
-        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
-    )
+    response = client.get("/leads/report.csv", headers=get_billing_headers())
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert "attachment; filename=\"lead_report_" in response.headers["content-disposition"]
@@ -216,14 +236,12 @@ def test_lead_report_csv_export(mocker):
 def test_lead_report_csv_via_format_query(mocker):
     mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
     partner_id = client.get("/partners").json()[0]["id"]
-    assert client.post(
-        f"/partners/{partner_id}/handoff",
-        headers=get_auth_headers("user-a@example.com"),
-    ).status_code == 202
+    lead_id = create_handoff_lead(partner_id, "user-a@example.com")
+    set_lead_status(lead_id, "qualified")
 
     response = client.get(
         "/leads/report?format=csv",
-        headers=get_auth_headers("billing-admin@example.com", scopes=["billing:read"]),
+        headers=get_billing_headers(),
     )
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
@@ -246,4 +264,46 @@ def test_lead_report_allows_admin_claim_without_scope(mocker):
 
     response = client.get("/leads/report", headers=get_auth_headers("admin@example.com", is_admin=True))
     assert response.status_code == 200
+
+
+def test_default_report_includes_only_qualified_leads(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    qualified_lead = create_handoff_lead(partner_id, "user-qualified@example.com")
+    create_handoff_lead(partner_id, "user-initiated@example.com")
+
+    set_lead_status(qualified_lead, "qualified")
+
+    response = client.get("/leads/report", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_leads"] == 1
+    assert payload["unique_users"] == 1
+
+
+def test_report_includes_all_statuses_when_billable_disabled(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    create_handoff_lead(partner_id, "user-1@example.com")
+    create_handoff_lead(partner_id, "user-2@example.com")
+
+    response = client.get("/leads/report?billable_only=false", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_leads"] == 2
+    assert payload["unique_users"] == 2
+
+
+def test_lead_status_update_rejects_invalid_transition(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead_id = create_handoff_lead(partner_id, "user-transition@example.com")
+
+    response = client.patch(
+        f"/leads/{lead_id}/status",
+        headers=get_billing_headers(),
+        json={"status": "converted"},
+    )
+    assert response.status_code == 409
+    assert "Cannot transition lead status" in response.json()["detail"]
 

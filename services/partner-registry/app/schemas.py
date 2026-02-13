@@ -1,8 +1,16 @@
 import datetime
 import uuid
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, HttpUrl
+
+
+class LeadStatus(str, Enum):
+    initiated = "initiated"
+    qualified = "qualified"
+    rejected = "rejected"
+    converted = "converted"
 
 
 class Partner(BaseModel):
@@ -35,4 +43,16 @@ class LeadReportResponse(BaseModel):
     total_leads: int
     unique_users: int
     by_partner: List[LeadReportByPartner]
+
+
+class LeadStatusUpdateRequest(BaseModel):
+    status: LeadStatus
+
+
+class LeadStatusUpdateResponse(BaseModel):
+    lead_id: uuid.UUID
+    status: LeadStatus
+    updated_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
