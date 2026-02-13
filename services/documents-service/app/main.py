@@ -59,8 +59,13 @@ async def upload_document(
 
     db_document = await crud.create_document(db, user_id=user_id, filename=file.filename, filepath=s3_key)
 
-    # Trigger the background task for OCR processing.
-    ocr_processing_task.delay(str(db_document.id), db_document.user_id, db_document.filename)
+    # Trigger background OCR task with persisted file key.
+    ocr_processing_task.delay(
+        str(db_document.id),
+        db_document.user_id,
+        db_document.filename,
+        db_document.filepath,
+    )
 
     return db_document
 

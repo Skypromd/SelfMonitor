@@ -46,3 +46,4 @@ _Last updated: 2026-02-13_
 14. [x] Add auto-reconciliation of receipt drafts during bank transaction import
 15. [x] Add manual receipt-draft matching workflow when auto-reconciliation misses
 16. [x] Add ignore/search controls for manual receipt reconciliation fallback
+17. [x] Replace simulated receipt OCR with production Textract-based extraction pipeline

@@ -96,6 +96,14 @@ components:
           type: boolean
           nullable: true
           example: true
+        ocr_provider:
+          type: string
+          nullable: true
+          example: textract
+        raw_text_excerpt:
+          type: string
+          nullable: true
+          example: TOTAL 18.45 GBP
         receipt_draft_transaction_id:
           type: string
           nullable: true

@@ -26,11 +26,16 @@ async def get_document_by_id(db: AsyncSession, user_id: str, doc_id: uuid.UUID) 
     )
     return result.scalars().first()
 
-async def update_document_with_ocr_results(db: AsyncSession, doc_id: str, status: str, extracted_data: schemas.ExtractedData):
-    """Updates a document's status and extracted data after OCR processing."""
+
+async def get_document_for_processing(db: AsyncSession, doc_id: str) -> models.Document | None:
     doc_uuid = uuid.UUID(doc_id)
     result = await db.execute(select(models.Document).filter(models.Document.id == doc_uuid))
-    db_document = result.scalars().first()
+    return result.scalars().first()
+
+
+async def update_document_with_ocr_results(db: AsyncSession, doc_id: str, status: str, extracted_data: schemas.ExtractedData):
+    """Updates a document's status and extracted data after OCR processing."""
+    db_document = await get_document_for_processing(db, doc_id=doc_id)
     if db_document:
         db_document.status = status
         db_document.extracted_data = extracted_data.model_dump()

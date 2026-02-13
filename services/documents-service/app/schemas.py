@@ -10,6 +10,8 @@ class ExtractedData(BaseModel):
     suggested_category: Optional[str] = None
     expense_article: Optional[str] = None
     is_potentially_deductible: Optional[bool] = None
+    ocr_provider: Optional[str] = None
+    raw_text_excerpt: Optional[str] = None
     receipt_draft_transaction_id: Optional[str] = None
     receipt_draft_duplicated: Optional[bool] = None
 

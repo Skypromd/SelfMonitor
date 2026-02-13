@@ -153,14 +153,17 @@ services:
       DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_documents}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
       CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://localstack:4566}"
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
+      AWS_TEXTRACT_ENDPOINT_URL: "${DOCUMENTS_AWS_TEXTRACT_ENDPOINT_URL:-http://localstack:4566}"
       S3_BUCKET_NAME: "${DOCUMENTS_S3_BUCKET_NAME:-documents-bucket}"
       QNA_SERVICE_URL: "${DOCUMENTS_QNA_SERVICE_URL:-http://qna-service/index}"
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
+      OCR_PROVIDER: "${DOCUMENTS_OCR_PROVIDER:-textract}"
     networks:
       - default_network
 
@@ -208,9 +211,11 @@ services:
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
+      AWS_TEXTRACT_ENDPOINT_URL: "${DOCUMENTS_AWS_TEXTRACT_ENDPOINT_URL:-http://localstack:4566}"
       S3_BUCKET_NAME: "${DOCUMENTS_S3_BUCKET_NAME:-documents-bucket}"
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
+      OCR_PROVIDER: "${DOCUMENTS_OCR_PROVIDER:-textract}"
     # No longer need local volume for uploads
     # volumes:
     #   - documents_data:/uploads
