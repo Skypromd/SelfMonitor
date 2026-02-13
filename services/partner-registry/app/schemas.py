@@ -129,8 +129,10 @@ class BillingInvoiceLine(BaseModel):
 
 class BillingInvoiceSummary(BaseModel):
     id: uuid.UUID
+    invoice_number: str
     period_start: Optional[datetime.date] = None
     period_end: Optional[datetime.date] = None
+    due_date: datetime.date
     currency: str
     status: BillingInvoiceStatus
     total_amount_gbp: float

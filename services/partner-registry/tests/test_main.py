@@ -409,6 +409,8 @@ def test_generate_list_and_get_invoice(mocker):
     invoice_payload = create_response.json()
     invoice_id = invoice_payload["id"]
     assert invoice_payload["status"] == "generated"
+    assert invoice_payload["invoice_number"].startswith("INV-")
+    assert invoice_payload["due_date"]
     assert invoice_payload["total_amount_gbp"] > 0
     assert len(invoice_payload["lines"]) == 1
 
@@ -418,11 +420,15 @@ def test_generate_list_and_get_invoice(mocker):
     assert listed["total"] >= 1
     ids = [item["id"] for item in listed["items"]]
     assert invoice_id in ids
+    matching = [item for item in listed["items"] if item["id"] == invoice_id][0]
+    assert matching["invoice_number"] == invoice_payload["invoice_number"]
+    assert matching["due_date"] == invoice_payload["due_date"]
 
     get_response = client.get(f"/billing/invoices/{invoice_id}", headers=get_billing_headers())
     assert get_response.status_code == 200
     detail = get_response.json()
     assert detail["id"] == invoice_id
+    assert detail["invoice_number"] == invoice_payload["invoice_number"]
     assert detail["lines"][0]["partner_id"] == partner_id
 
 
@@ -463,4 +469,44 @@ def test_invoice_status_lifecycle_and_invalid_transition(mocker):
     )
     assert invalid_response.status_code == 409
     assert "Cannot transition invoice status" in invalid_response.json()["detail"]
+
+
+def test_invoice_pdf_and_accounting_exports(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead = create_handoff_lead(partner_id, "invoice-export-user@example.com")
+    set_lead_status(lead, "qualified")
+
+    create_response = client.post(
+        "/billing/invoices/generate",
+        headers=get_billing_headers(),
+        json={"partner_id": partner_id},
+    )
+    assert create_response.status_code == 201
+    invoice_payload = create_response.json()
+    invoice_id = invoice_payload["id"]
+
+    pdf_response = client.get(f"/billing/invoices/{invoice_id}/pdf", headers=get_billing_headers())
+    assert pdf_response.status_code == 200
+    assert pdf_response.headers["content-type"].startswith("application/pdf")
+    assert f"{invoice_payload['invoice_number']}.pdf" in pdf_response.headers["content-disposition"]
+    assert pdf_response.content.startswith(b"%PDF-")
+
+    xero_response = client.get(
+        f"/billing/invoices/{invoice_id}/accounting.csv?target=xero",
+        headers=get_billing_headers(),
+    )
+    assert xero_response.status_code == 200
+    assert xero_response.headers["content-type"].startswith("text/csv")
+    assert "ContactName,InvoiceNumber,InvoiceDate,DueDate" in xero_response.text
+    assert invoice_payload["invoice_number"] in xero_response.text
+
+    qb_response = client.get(
+        f"/billing/invoices/{invoice_id}/accounting.csv?target=quickbooks",
+        headers=get_billing_headers(),
+    )
+    assert qb_response.status_code == 200
+    assert qb_response.headers["content-type"].startswith("text/csv")
+    assert "Customer,InvoiceNo,InvoiceDate,DueDate" in qb_response.text
+    assert invoice_payload["invoice_number"] in qb_response.text
 

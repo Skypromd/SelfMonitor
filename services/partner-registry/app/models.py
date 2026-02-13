@@ -57,13 +57,17 @@ class BillingInvoice(Base):
         ),
         Index("ix_billing_invoices_created_at", "created_at"),
         Index("ix_billing_invoices_status", "status"),
+        Index("ix_billing_invoices_invoice_number", "invoice_number", unique=True),
+        Index("ix_billing_invoices_due_date", "due_date"),
     )
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    invoice_number = Column(String(length=32), nullable=False)
     generated_by_user_id = Column(String, nullable=False, index=True)
     partner_id = Column(String, ForeignKey("partners.id", ondelete="SET NULL"), nullable=True, index=True)
     period_start = Column(Date, nullable=True)
     period_end = Column(Date, nullable=True)
+    due_date = Column(Date, nullable=False)
     currency = Column(String(length=3), nullable=False, default="GBP")
     statuses = Column(JSON, nullable=False)
     total_amount_gbp = Column(Float, nullable=False, default=0.0)

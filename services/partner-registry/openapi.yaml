@@ -338,6 +338,94 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /billing/invoices/{invoice_id}/pdf:
+    get:
+      summary: Download invoice as PDF document
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: PDF invoice export.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /billing/invoices/{invoice_id}/accounting.csv:
+    get:
+      summary: Export invoice in accounting-friendly CSV format
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: target
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/AccountingExportTarget"
+          description: CSV mapping profile for the target accounting platform.
+      responses:
+        "200":
+          description: Accounting CSV export.
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /billing/invoices/{invoice_id}/status:
     patch:
       summary: Update billing invoice status lifecycle
@@ -1014,6 +1102,12 @@ components:
         - paid
         - void
 
+    AccountingExportTarget:
+      type: string
+      enum:
+        - xero
+        - quickbooks
+
     BillingInvoiceGenerateRequest:
       type: object
       properties:
@@ -1073,6 +1167,9 @@ components:
         id:
           type: string
           format: uuid
+        invoice_number:
+          type: string
+          example: INV-202602-000123
         period_start:
           type: string
           format: date
@@ -1081,6 +1178,9 @@ components:
           type: string
           format: date
           nullable: true
+        due_date:
+          type: string
+          format: date
         currency:
           type: string
           example: GBP
@@ -1094,6 +1194,8 @@ components:
           format: date-time
       required:
         - id
+        - invoice_number
+        - due_date
         - currency
         - status
         - total_amount_gbp

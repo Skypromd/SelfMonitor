@@ -8,6 +8,8 @@ from sqlalchemy.future import select
 
 from . import models
 
+INVOICE_SEQUENCE_LOCK_KEY = 6_217_650_042_184_901_117
+
 SEED_PARTNERS = [
     {
         "id": "1a8a8f69-a1b7-4c13-9a16-9e9f9a2e3f5d",
@@ -117,6 +119,38 @@ async def _acquire_dedupe_lock_if_postgres(db: AsyncSession, user_id: str, partn
         text("SELECT pg_advisory_xact_lock(:lock_key)"),
         {"lock_key": _dedupe_lock_key(user_id=user_id, partner_id=partner_id)},
     )
+
+
+async def _acquire_invoice_sequence_lock_if_postgres(db: AsyncSession) -> None:
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": INVOICE_SEQUENCE_LOCK_KEY},
+    )
+
+
+def _invoice_prefix_for_date(invoice_date: datetime.date) -> str:
+    return f"INV-{invoice_date.strftime('%Y%m')}"
+
+
+async def _next_invoice_number(db: AsyncSession, *, invoice_date: datetime.date) -> str:
+    prefix = _invoice_prefix_for_date(invoice_date)
+    like_prefix = f"{prefix}-%"
+    result = await db.execute(
+        select(models.BillingInvoice.invoice_number).filter(models.BillingInvoice.invoice_number.like(like_prefix))
+    )
+    existing_numbers = [str(item) for item in result.scalars().all() if item]
+
+    max_sequence = 0
+    for invoice_number in existing_numbers:
+        suffix = invoice_number.removeprefix(f"{prefix}-")
+        if suffix.isdigit():
+            max_sequence = max(max_sequence, int(suffix))
+
+    return f"{prefix}-{max_sequence + 1:06d}"
 
 
 async def create_or_get_handoff_lead(
@@ -387,12 +421,20 @@ async def create_billing_invoice(
     currency: str,
     total_amount_gbp: float,
     lines: list[dict[str, object]],
+    due_days: int = 14,
 ) -> models.BillingInvoice:
+    issue_date = datetime.datetime.now(datetime.UTC).date()
+    due_date = issue_date + datetime.timedelta(days=max(due_days, 1))
+    await _acquire_invoice_sequence_lock_if_postgres(db)
+    invoice_number = await _next_invoice_number(db, invoice_date=issue_date)
+
     invoice = models.BillingInvoice(
+        invoice_number=invoice_number,
         generated_by_user_id=generated_by_user_id,
         partner_id=partner_id,
         period_start=period_start,
         period_end=period_end,
+        due_date=due_date,
         statuses=statuses,
         currency=currency,
         total_amount_gbp=total_amount_gbp,

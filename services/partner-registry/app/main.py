@@ -57,6 +57,20 @@ DEFAULT_BILLING_STATUSES = [
     schemas.LeadStatus.qualified.value,
     schemas.LeadStatus.converted.value,
 ]
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+BILLING_INVOICE_DUE_DAYS = _parse_positive_int_env("BILLING_INVOICE_DUE_DAYS", 14)
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
     schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
@@ -240,8 +254,10 @@ def _validate_invoice_status_transition(
 def _to_invoice_summary(invoice: Any) -> schemas.BillingInvoiceSummary:
     return schemas.BillingInvoiceSummary(
         id=uuid.UUID(str(invoice.id)),
+        invoice_number=str(invoice.invoice_number),
         period_start=invoice.period_start,
         period_end=invoice.period_end,
+        due_date=invoice.due_date,
         currency=invoice.currency,
         status=schemas.BillingInvoiceStatus(invoice.status),
         total_amount_gbp=invoice.total_amount_gbp,
@@ -260,8 +276,10 @@ async def _load_invoice_detail(
     lines = await crud.get_billing_invoice_lines(db, str(invoice.id))
     return schemas.BillingInvoiceDetail(
         id=uuid.UUID(str(invoice.id)),
+        invoice_number=str(invoice.invoice_number),
         period_start=invoice.period_start,
         period_end=invoice.period_end,
+        due_date=invoice.due_date,
         currency=invoice.currency,
         status=schemas.BillingInvoiceStatus(invoice.status),
         total_amount_gbp=invoice.total_amount_gbp,
@@ -505,6 +523,268 @@ def _billing_csv_response(report: schemas.BillingReportResponse) -> Response:
     )
 
 
+def _escape_pdf_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _render_simple_pdf(lines: list[str]) -> bytes:
+    safe_lines = [line for line in lines if line.strip()]
+    y_position = 800
+    text_operations: list[str] = ["BT", "/F1 10 Tf"]
+    for line in safe_lines:
+        if y_position < 60:
+            break
+        text_operations.append(f"1 0 0 1 48 {y_position} Tm ({_escape_pdf_text(line)}) Tj")
+        y_position -= 15
+    text_operations.append("ET")
+    stream = "\n".join(text_operations).encode("utf-8")
+
+    objects: list[bytes] = [
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+        (
+            b"3 0 obj\n"
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\n"
+            b"endobj\n"
+        ),
+        b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+        (
+            f"5 0 obj\n<< /Length {len(stream)} >>\nstream\n".encode("utf-8")
+            + stream
+            + b"\nendstream\nendobj\n"
+        ),
+    ]
+
+    pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"
+    offsets: list[int] = []
+    for obj in objects:
+        offsets.append(len(pdf))
+        pdf += obj
+
+    xref_start = len(pdf)
+    pdf += f"xref\n0 {len(objects) + 1}\n".encode("utf-8")
+    pdf += b"0000000000 65535 f \n"
+    for offset in offsets:
+        pdf += f"{offset:010d} 00000 n \n".encode("utf-8")
+    pdf += f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n".encode("utf-8")
+    pdf += f"startxref\n{xref_start}\n%%EOF\n".encode("utf-8")
+    return pdf
+
+
+def _build_invoice_pdf(invoice: schemas.BillingInvoiceDetail) -> bytes:
+    invoice_date = invoice.created_at.date().isoformat()
+    lines = [
+        "Billing Invoice",
+        f"Invoice number: {invoice.invoice_number}",
+        f"Invoice date: {invoice_date}",
+        f"Due date: {invoice.due_date.isoformat()}",
+        f"Status: {invoice.status.value}",
+        f"Currency: {invoice.currency}",
+        (
+            f"Billing period: {(invoice.period_start.isoformat() if invoice.period_start else 'N/A')} "
+            f"to {(invoice.period_end.isoformat() if invoice.period_end else 'N/A')}"
+        ),
+        "",
+        "Line items",
+    ]
+
+    if not invoice.lines:
+        lines.append("No billable line items found for this invoice snapshot.")
+    for line in invoice.lines:
+        if line.qualified_leads > 0:
+            lines.append(
+                (
+                    f"- {line.partner_name} / qualified leads: {line.qualified_leads} x "
+                    f"{line.qualified_lead_fee_gbp:.2f} = "
+                    f"{line.qualified_leads * line.qualified_lead_fee_gbp:.2f} {invoice.currency}"
+                )
+            )
+        if line.converted_leads > 0:
+            lines.append(
+                (
+                    f"- {line.partner_name} / converted leads: {line.converted_leads} x "
+                    f"{line.converted_lead_fee_gbp:.2f} = "
+                    f"{line.converted_leads * line.converted_lead_fee_gbp:.2f} {invoice.currency}"
+                )
+            )
+    lines.extend(["", f"Total: {invoice.total_amount_gbp:.2f} {invoice.currency}"])
+    return _render_simple_pdf(lines)
+
+
+def _invoice_pdf_response(invoice: schemas.BillingInvoiceDetail) -> Response:
+    filename = f"{invoice.invoice_number}.pdf"
+    return Response(
+        content=_build_invoice_pdf(invoice),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_accounting_csv(invoice: schemas.BillingInvoiceDetail, *, target: Literal["xero", "quickbooks"]) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    invoice_date = invoice.created_at.date().isoformat()
+    due_date = invoice.due_date.isoformat()
+
+    if target == "xero":
+        writer.writerow(
+            [
+                "ContactName",
+                "InvoiceNumber",
+                "InvoiceDate",
+                "DueDate",
+                "Description",
+                "Quantity",
+                "UnitAmount",
+                "LineAmount",
+                "TaxType",
+                "AccountCode",
+                "Currency",
+            ]
+        )
+    else:
+        writer.writerow(
+            [
+                "Customer",
+                "InvoiceNo",
+                "InvoiceDate",
+                "DueDate",
+                "Item",
+                "Description",
+                "Qty",
+                "Rate",
+                "Amount",
+                "Class",
+                "Currency",
+            ]
+        )
+
+    has_rows = False
+    for line in invoice.lines:
+        partner_name = line.partner_name
+        if line.qualified_leads > 0:
+            amount = round(line.qualified_leads * line.qualified_lead_fee_gbp, 2)
+            has_rows = True
+            if target == "xero":
+                writer.writerow(
+                    [
+                        partner_name,
+                        invoice.invoice_number,
+                        invoice_date,
+                        due_date,
+                        "Qualified leads",
+                        line.qualified_leads,
+                        f"{line.qualified_lead_fee_gbp:.2f}",
+                        f"{amount:.2f}",
+                        "NONE",
+                        "200",
+                        invoice.currency,
+                    ]
+                )
+            else:
+                writer.writerow(
+                    [
+                        partner_name,
+                        invoice.invoice_number,
+                        invoice_date,
+                        due_date,
+                        "QualifiedLead",
+                        "Qualified leads",
+                        line.qualified_leads,
+                        f"{line.qualified_lead_fee_gbp:.2f}",
+                        f"{amount:.2f}",
+                        "Leads",
+                        invoice.currency,
+                    ]
+                )
+
+        if line.converted_leads > 0:
+            amount = round(line.converted_leads * line.converted_lead_fee_gbp, 2)
+            has_rows = True
+            if target == "xero":
+                writer.writerow(
+                    [
+                        partner_name,
+                        invoice.invoice_number,
+                        invoice_date,
+                        due_date,
+                        "Converted leads",
+                        line.converted_leads,
+                        f"{line.converted_lead_fee_gbp:.2f}",
+                        f"{amount:.2f}",
+                        "NONE",
+                        "200",
+                        invoice.currency,
+                    ]
+                )
+            else:
+                writer.writerow(
+                    [
+                        partner_name,
+                        invoice.invoice_number,
+                        invoice_date,
+                        due_date,
+                        "ConvertedLead",
+                        "Converted leads",
+                        line.converted_leads,
+                        f"{line.converted_lead_fee_gbp:.2f}",
+                        f"{amount:.2f}",
+                        "Leads",
+                        invoice.currency,
+                    ]
+                )
+
+    if not has_rows:
+        if target == "xero":
+            writer.writerow(
+                [
+                    "No billable lines",
+                    invoice.invoice_number,
+                    invoice_date,
+                    due_date,
+                    "No billable lines",
+                    1,
+                    "0.00",
+                    "0.00",
+                    "NONE",
+                    "200",
+                    invoice.currency,
+                ]
+            )
+        else:
+            writer.writerow(
+                [
+                    "No billable lines",
+                    invoice.invoice_number,
+                    invoice_date,
+                    due_date,
+                    "NoLines",
+                    "No billable lines",
+                    1,
+                    "0.00",
+                    "0.00",
+                    "Leads",
+                    invoice.currency,
+                ]
+            )
+
+    return output.getvalue()
+
+
+def _accounting_csv_response(
+    invoice: schemas.BillingInvoiceDetail,
+    *,
+    target: Literal["xero", "quickbooks"],
+) -> Response:
+    filename = f"{invoice.invoice_number}_{target}.csv"
+    return Response(
+        content=_build_accounting_csv(invoice, target=target),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/partners", response_model=List[schemas.Partner])
 async def list_partners(
     service_type: Optional[str] = Query(None),
@@ -706,6 +986,7 @@ async def generate_billing_invoice(
         statuses=invoice_statuses,
         currency=report.currency,
         total_amount_gbp=report.total_amount_gbp,
+        due_days=BILLING_INVOICE_DUE_DAYS,
         lines=[
             {
                 "partner_id": str(item.partner_id),
@@ -764,6 +1045,41 @@ async def get_billing_invoice(
     db: AsyncSession = Depends(get_db),
 ):
     return await _load_invoice_detail(db, invoice_id=invoice_id)
+
+
+@app.get("/billing/invoices/{invoice_id}/pdf")
+async def download_billing_invoice_pdf(
+    invoice_id: uuid.UUID,
+    user_id: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice = await _load_invoice_detail(db, invoice_id=invoice_id)
+    await log_audit_event(
+        user_id=user_id,
+        action="partner.billing.invoice.pdf_downloaded",
+        details={"invoice_id": str(invoice_id), "invoice_number": invoice.invoice_number},
+    )
+    return _invoice_pdf_response(invoice)
+
+
+@app.get("/billing/invoices/{invoice_id}/accounting.csv")
+async def download_billing_invoice_accounting_csv(
+    invoice_id: uuid.UUID,
+    target: Literal["xero", "quickbooks"] = Query(default="xero"),
+    user_id: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice = await _load_invoice_detail(db, invoice_id=invoice_id)
+    await log_audit_event(
+        user_id=user_id,
+        action="partner.billing.invoice.accounting_exported",
+        details={
+            "invoice_id": str(invoice_id),
+            "invoice_number": invoice.invoice_number,
+            "target": target,
+        },
+    )
+    return _accounting_csv_response(invoice, target=target)
 
 
 @app.patch("/billing/invoices/{invoice_id}/status", response_model=schemas.BillingInvoiceDetail)

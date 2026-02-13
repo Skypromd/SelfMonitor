@@ -60,7 +60,9 @@ type LeadOpsResponse = {
 type InvoiceSummary = {
   created_at: string;
   currency: string;
+  due_date: string;
   id: string;
+  invoice_number: string;
   period_end: string | null;
   period_start: string | null;
   status: 'generated' | 'issued' | 'paid' | 'void';
@@ -119,6 +121,7 @@ export default function AdminPage({ token }: AdminPageProps) {
   const [isInvoiceListLoading, setIsInvoiceListLoading] = useState(false);
   const [isInvoiceGenerateLoading, setIsInvoiceGenerateLoading] = useState(false);
   const [isInvoiceStatusLoading, setIsInvoiceStatusLoading] = useState<string | null>(null);
+  const [invoiceExportLoadingKey, setInvoiceExportLoadingKey] = useState<string | null>(null);
   const [selectedPartnerModal, setSelectedPartnerModal] = useState<BillingReportByPartner | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const { t } = useTranslation();
@@ -371,7 +374,7 @@ export default function AdminPage({ token }: AdminPageProps) {
       if (!response.ok) {
         throw new Error(payload.detail || 'Failed to generate invoice');
       }
-      pushToast('success', `Invoice ${payload.id} generated.`);
+      pushToast('success', `Invoice ${payload.invoice_number || payload.id} generated.`);
       await refreshInvoiceList();
     } catch (err) {
       pushToast('error', err instanceof Error ? err.message : 'Unexpected error generating invoice.');
@@ -406,6 +409,55 @@ export default function AdminPage({ token }: AdminPageProps) {
       pushToast('error', err instanceof Error ? err.message : 'Unexpected error updating invoice status.');
     } finally {
       setIsInvoiceStatusLoading(null);
+    }
+  };
+
+  const downloadInvoiceArtifact = async (invoice: InvoiceSummary, target: 'pdf' | 'xero' | 'quickbooks') => {
+    const actionKey = `${invoice.id}:${target}`;
+    setInvoiceExportLoadingKey(actionKey);
+    try {
+      const endpoint =
+        target === 'pdf'
+          ? `${PARTNER_REGISTRY_URL}/billing/invoices/${invoice.id}/pdf`
+          : `${PARTNER_REGISTRY_URL}/billing/invoices/${invoice.id}/accounting.csv?target=${target}`;
+
+      const response = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) {
+        let detail = 'Failed to download invoice artifact';
+        try {
+          const payload = await response.json();
+          if (payload?.detail) {
+            detail = payload.detail as string;
+          }
+        } catch {
+          // Keep fallback detail when non-JSON error payload.
+        }
+        throw new Error(detail);
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition');
+      const matched = disposition?.match(/filename="?([^"]+)"?/i);
+      const fallbackName =
+        target === 'pdf' ? `${invoice.invoice_number}.pdf` : `${invoice.invoice_number}_${target}.csv`;
+      const filename = matched?.[1] || fallbackName;
+
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      pushToast('success', `${invoice.invoice_number} ${target.toUpperCase()} downloaded.`);
+    } catch (err) {
+      pushToast('error', err instanceof Error ? err.message : 'Unexpected error downloading invoice artifact.');
+    } finally {
+      setInvoiceExportLoadingKey((current) => (current === actionKey ? null : current));
     }
   };
 
@@ -939,16 +991,18 @@ export default function AdminPage({ token }: AdminPageProps) {
             <thead>
               <tr>
                 <th>Created</th>
-                <th>Invoice ID</th>
+                <th>Invoice #</th>
+                <th>Due date</th>
                 <th>Status</th>
                 <th>Total</th>
+                <th>Exports</th>
                 <th>Update</th>
               </tr>
             </thead>
             <tbody>
               {invoiceRows.length === 0 && (
                 <tr>
-                  <td colSpan={5}>
+                  <td colSpan={7}>
                     <p className={styles.emptyState}>No invoices generated yet.</p>
                   </td>
                 </tr>
@@ -956,9 +1010,38 @@ export default function AdminPage({ token }: AdminPageProps) {
               {invoiceRows.map((invoice) => (
                 <tr key={invoice.id}>
                   <td>{new Date(invoice.created_at).toLocaleString()}</td>
-                  <td>{invoice.id}</td>
+                  <td>{invoice.invoice_number}</td>
+                  <td>{new Date(invoice.due_date).toLocaleDateString()}</td>
                   <td>{invoice.status}</td>
                   <td className={styles.positive}>{currency(invoice.total_amount_gbp, invoice.currency)}</td>
+                  <td>
+                    <div className={styles.invoiceExportGroup}>
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={invoiceExportLoadingKey === `${invoice.id}:pdf`}
+                        onClick={() => downloadInvoiceArtifact(invoice, 'pdf')}
+                        type="button"
+                      >
+                        {invoiceExportLoadingKey === `${invoice.id}:pdf` ? '...' : 'PDF'}
+                      </button>
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={invoiceExportLoadingKey === `${invoice.id}:xero`}
+                        onClick={() => downloadInvoiceArtifact(invoice, 'xero')}
+                        type="button"
+                      >
+                        {invoiceExportLoadingKey === `${invoice.id}:xero` ? '...' : 'Xero'}
+                      </button>
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={invoiceExportLoadingKey === `${invoice.id}:quickbooks`}
+                        onClick={() => downloadInvoiceArtifact(invoice, 'quickbooks')}
+                        type="button"
+                      >
+                        {invoiceExportLoadingKey === `${invoice.id}:quickbooks` ? '...' : 'QuickBooks'}
+                      </button>
+                    </div>
+                  </td>
                   <td>
                     <div className={styles.invoiceActionGroup}>
                       <select
