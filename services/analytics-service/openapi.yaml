@@ -391,6 +391,9 @@ components:
           default: 300
           minimum: 10
           maximum: 2000
+        advisor_review_confirmed:
+          type: boolean
+          default: false
       required:
         - mortgage_type
     MortgageReadinessResponse:
@@ -469,6 +472,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
+        submission_gate:
+          $ref: '#/components/schemas/MortgageSubmissionGate'
       required:
         - jurisdiction
         - mortgage_type
@@ -493,6 +498,7 @@ components:
         - readiness_summary
         - evidence_quality_summary
         - evidence_quality_issues
+        - submission_gate
     MortgageReadinessMatrixRequest:
       type: object
       properties:
@@ -620,6 +626,9 @@ components:
           default: 300
           minimum: 10
           maximum: 2000
+        advisor_review_confirmed:
+          type: boolean
+          default: false
       required:
         - mortgage_type
     MortgageDocumentEvidenceItem:
@@ -687,6 +696,27 @@ components:
         - warning_count
         - info_count
         - has_blockers
+    MortgageSubmissionGate:
+      type: object
+      properties:
+        compliance_disclaimer:
+          type: string
+        advisor_review_required:
+          type: boolean
+        advisor_review_confirmed:
+          type: boolean
+        broker_submission_allowed:
+          type: boolean
+        broker_submission_blockers:
+          type: array
+          items:
+            type: string
+      required:
+        - compliance_disclaimer
+        - advisor_review_required
+        - advisor_review_confirmed
+        - broker_submission_allowed
+        - broker_submission_blockers
     MortgagePackIndexResponse:
       type: object
       properties:
@@ -767,6 +797,8 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
+        submission_gate:
+          $ref: '#/components/schemas/MortgageSubmissionGate'
         generated_at:
           type: string
           format: date-time
@@ -796,6 +828,7 @@ components:
         - conditional_document_evidence
         - evidence_quality_summary
         - evidence_quality_issues
+        - submission_gate
         - generated_at
     JobRequest:
       type: object

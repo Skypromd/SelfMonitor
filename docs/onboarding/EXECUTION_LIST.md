@@ -57,3 +57,4 @@ _Last updated: 2026-02-13_
 25. [x] Add scalable locale registry and fallback support for RU/UA/EN/PL/RO-MD/TR/HU
 26. [x] Add mortgage pack index export (JSON manifest + PDF evidence map)
 27. [x] Add mortgage evidence quality checks (staleness, name mismatch, period mismatch, unreadable OCR)
+28. [x] Add compliance disclaimer and advisor-review submission gate for broker handoff

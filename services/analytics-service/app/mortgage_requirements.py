@@ -610,6 +610,12 @@ YEAR_MONTH_PATTERN = re.compile(r"(20\d{2})[_\-]?(0[1-9]|1[0-2])")
 YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
 NAME_TOKEN_PATTERN = re.compile(r"[a-z]{3,}")
 
+MORTGAGE_COMPLIANCE_DISCLAIMER = (
+    "This readiness output is for document preparation support only and is not regulated mortgage advice. "
+    "A qualified UK mortgage adviser must review affordability, suitability, and lender policy alignment "
+    "before any broker/lender submission."
+)
+
 
 def _normalize_filename(value: str) -> str:
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
@@ -874,6 +880,34 @@ def build_mortgage_evidence_quality_checks(
             "has_blockers": critical_count > 0,
         },
         "evidence_quality_issues": issues,
+    }
+
+
+def build_mortgage_submission_gate(
+    *,
+    readiness_status: str,
+    evidence_quality_summary: dict[str, object] | None,
+    advisor_review_confirmed: bool,
+) -> dict[str, object]:
+    blockers: list[str] = []
+    if readiness_status != "ready_for_broker_review":
+        blockers.append(
+            "Document readiness is not yet at 'ready_for_broker_review' level."
+        )
+    has_quality_blockers = False
+    if isinstance(evidence_quality_summary, dict):
+        has_quality_blockers = bool(evidence_quality_summary.get("has_blockers"))
+    if has_quality_blockers:
+        blockers.append("Critical evidence-quality issues must be resolved first.")
+    if not advisor_review_confirmed:
+        blockers.append("Advisor review confirmation is required before broker submission.")
+
+    return {
+        "compliance_disclaimer": MORTGAGE_COMPLIANCE_DISCLAIMER,
+        "advisor_review_required": True,
+        "advisor_review_confirmed": advisor_review_confirmed,
+        "broker_submission_allowed": len(blockers) == 0,
+        "broker_submission_blockers": blockers,
     }
 
 

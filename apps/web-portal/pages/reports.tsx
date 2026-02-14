@@ -57,6 +57,14 @@ type MortgageEvidenceQualitySummary = {
   warning_count: number;
 };
 
+type MortgageSubmissionGate = {
+  advisor_review_confirmed: boolean;
+  advisor_review_required: boolean;
+  broker_submission_allowed: boolean;
+  broker_submission_blockers: string[];
+  compliance_disclaimer: string;
+};
+
 type MortgageReadinessResponse = MortgageChecklistResponse & {
   detected_document_codes: string[];
   evidence_quality_issues: MortgageEvidenceQualityIssue[];
@@ -69,6 +77,7 @@ type MortgageReadinessResponse = MortgageChecklistResponse & {
   readiness_status: 'not_ready' | 'almost_ready' | 'ready_for_broker_review';
   readiness_summary: string;
   required_completion_percent: number;
+  submission_gate: MortgageSubmissionGate;
   uploaded_document_count: number;
 };
 
@@ -135,6 +144,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     'sole_trader'
   );
   const [includeAdverseCreditPack, setIncludeAdverseCreditPack] = useState(false);
+  const [advisorReviewConfirmed, setAdvisorReviewConfirmed] = useState(false);
   const [checklist, setChecklist] = useState<MortgageChecklistResponse | null>(null);
   const [readiness, setReadiness] = useState<MortgageReadinessResponse | null>(null);
   const [readinessMatrix, setReadinessMatrix] = useState<MortgageReadinessMatrixResponse | null>(null);
@@ -244,6 +254,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
           lender_profile: selectedLenderProfile,
           employment_profile: employmentProfile,
           include_adverse_credit_pack: includeAdverseCreditPack,
+          advisor_review_confirmed: advisorReviewConfirmed,
         }),
       });
       const payload = (await response.json()) as MortgageChecklistResponse | { detail?: string };
@@ -334,6 +345,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     lender_profile: selectedLenderProfile,
     employment_profile: employmentProfile,
     include_adverse_credit_pack: includeAdverseCreditPack,
+    advisor_review_confirmed: advisorReviewConfirmed,
   });
 
   const handleExportPackIndexJson = async () => {
@@ -486,6 +498,17 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                   Include adverse credit pack
                 </label>
               </label>
+              <label className={styles.filterField}>
+                <span>Submission gate</span>
+                <label className={styles.checkboxPill}>
+                  <input
+                    checked={advisorReviewConfirmed}
+                    onChange={(event) => setAdvisorReviewConfirmed(event.target.checked)}
+                    type="checkbox"
+                  />
+                  Advisor review confirmed
+                </label>
+              </label>
             </div>
             {selectedMortgageTypeDescription && <p className={styles.tableCaption}>{selectedMortgageTypeDescription}</p>}
             {selectedLenderProfileDescription && <p className={styles.tableCaption}>{selectedLenderProfileDescription}</p>}
@@ -593,6 +616,26 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                   <p className={styles.error}>
                     Critical evidence-quality blockers detected. Resolve these before broker submission.
                   </p>
+                )}
+                <h4>Compliance and submission gate</h4>
+                <p>{readiness.submission_gate.compliance_disclaimer}</p>
+                <div className={styles.resultItem}>
+                  <span>Advisor review confirmed</span>
+                  <span>{readiness.submission_gate.advisor_review_confirmed ? 'Yes' : 'No'}</span>
+                </div>
+                <div className={styles.resultItem}>
+                  <span>Broker submission allowed</span>
+                  <strong>{readiness.submission_gate.broker_submission_allowed ? 'Yes' : 'No'}</strong>
+                </div>
+                {!readiness.submission_gate.broker_submission_allowed && (
+                  <>
+                    <p className={styles.tableCaption}>Submission blockers:</p>
+                    <ul>
+                      {readiness.submission_gate.broker_submission_blockers.map((blocker, index) => (
+                        <li key={`${blocker}-${index}`}>{blocker}</li>
+                      ))}
+                    </ul>
+                  </>
                 )}
                 <h4>Evidence quality alerts</h4>
                 {readiness.evidence_quality_issues.length === 0 ? (

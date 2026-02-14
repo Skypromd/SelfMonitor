@@ -84,7 +84,7 @@ MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [x] M2.3 Add all-mortgage-type readiness matrix in UI (coverage dashboard across mortgage types).
 [x] M2.4 Export final mortgage pack index (PDF + JSON manifest + evidence map).
 [x] M3.1 Add evidence quality checks (staleness, name mismatch, period mismatch, unreadable OCR).
-[ ] M3.2 Add compliance disclaimer and "advisor review required" gates before submission to brokers.
+[x] M3.2 Add compliance disclaimer and "advisor review required" gates before submission to brokers.
 [ ] M3.3 Add monthly refresh reminders for expiring statements and IDs.
 
 LANGUAGE SUPPORT TRACK (SCALABLE)

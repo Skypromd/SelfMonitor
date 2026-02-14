@@ -30,6 +30,7 @@ from .mortgage_requirements import (
     build_mortgage_pack_index,
     build_mortgage_readiness_assessment,
     build_mortgage_readiness_matrix,
+    build_mortgage_submission_gate,
 )
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
@@ -167,6 +168,14 @@ class MortgageEvidenceQualitySummary(BaseModel):
     has_blockers: bool
 
 
+class MortgageSubmissionGate(BaseModel):
+    compliance_disclaimer: str
+    advisor_review_required: bool
+    advisor_review_confirmed: bool
+    broker_submission_allowed: bool
+    broker_submission_blockers: list[str]
+
+
 class MortgageChecklistResponse(BaseModel):
     jurisdiction: str
     mortgage_type: str
@@ -187,6 +196,7 @@ class MortgageReadinessRequest(BaseModel):
     include_adverse_credit_pack: bool = False
     lender_profile: str = "high_street_mainstream"
     max_documents_scan: int = Field(default=300, ge=10, le=2000)
+    advisor_review_confirmed: bool = False
 
 
 class MortgageReadinessResponse(BaseModel):
@@ -213,6 +223,7 @@ class MortgageReadinessResponse(BaseModel):
     readiness_summary: str
     evidence_quality_summary: MortgageEvidenceQualitySummary
     evidence_quality_issues: list[MortgageEvidenceQualityIssue]
+    submission_gate: MortgageSubmissionGate
 
 
 class MortgageReadinessMatrixRequest(BaseModel):
@@ -256,6 +267,7 @@ class MortgagePackIndexRequest(BaseModel):
     include_adverse_credit_pack: bool = False
     lender_profile: str = "high_street_mainstream"
     max_documents_scan: int = Field(default=300, ge=10, le=2000)
+    advisor_review_confirmed: bool = False
 
 
 class MortgageDocumentEvidenceItem(BaseModel):
@@ -292,6 +304,7 @@ class MortgagePackIndexResponse(BaseModel):
     conditional_document_evidence: list[MortgageDocumentEvidenceItem]
     evidence_quality_summary: MortgageEvidenceQualitySummary
     evidence_quality_issues: list[MortgageEvidenceQualityIssue]
+    submission_gate: MortgageSubmissionGate
     generated_at: datetime.datetime
 
 # --- Forecasting Endpoint ---
@@ -534,6 +547,33 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
                 pdf.multi_cell(0, 6, f"[{severity}] {filename}: {message}")
             pdf.ln(2)
 
+    submission_gate = pack_index.get("submission_gate", {})
+    if isinstance(submission_gate, dict):
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Compliance and submission gate", 0, 1)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.multi_cell(0, 7, str(submission_gate.get("compliance_disclaimer", "")))
+        pdf.cell(
+            0,
+            7,
+            f"Advisor review confirmed: {'yes' if submission_gate.get('advisor_review_confirmed') else 'no'}",
+            0,
+            1,
+        )
+        pdf.cell(
+            0,
+            7,
+            f"Broker submission allowed: {'yes' if submission_gate.get('broker_submission_allowed') else 'no'}",
+            0,
+            1,
+        )
+        blockers = submission_gate.get("broker_submission_blockers", [])
+        if isinstance(blockers, list) and blockers:
+            pdf.multi_cell(0, 7, "Blockers:")
+            for blocker in blockers[:5]:
+                pdf.multi_cell(0, 6, f"- {blocker}")
+        pdf.ln(2)
+
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Required document evidence", 0, 1)
     pdf.set_font("Helvetica", "", 10)
@@ -599,12 +639,25 @@ async def evaluate_mortgage_readiness(
         applicant_last_name=last_name,
     )
     readiness.update(quality_checks)
+    submission_gate = build_mortgage_submission_gate(
+        readiness_status=str(readiness.get("readiness_status", "")),
+        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
+        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
+        else None,
+        advisor_review_confirmed=request.advisor_review_confirmed,
+    )
+    readiness["submission_gate"] = submission_gate
     quality_summary = quality_checks.get("evidence_quality_summary")
     if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
         next_actions = list(readiness.get("next_actions", []))
         blocker_action = "Resolve critical evidence-quality blockers before broker submission."
         if blocker_action not in next_actions:
             readiness["next_actions"] = [blocker_action, *next_actions]
+    if not request.advisor_review_confirmed:
+        next_actions = list(readiness.get("next_actions", []))
+        advisor_action = "Get a qualified mortgage adviser review before broker submission."
+        if advisor_action not in next_actions:
+            readiness["next_actions"] = [advisor_action, *next_actions]
     return MortgageReadinessResponse(**readiness)
 
 
@@ -666,12 +719,25 @@ async def generate_mortgage_pack_index(
         applicant_last_name=last_name,
     )
     pack_index.update(quality_checks)
+    submission_gate = build_mortgage_submission_gate(
+        readiness_status=str(pack_index.get("readiness_status", "")),
+        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
+        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
+        else None,
+        advisor_review_confirmed=request.advisor_review_confirmed,
+    )
+    pack_index["submission_gate"] = submission_gate
     quality_summary = quality_checks.get("evidence_quality_summary")
     if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
         next_actions = list(pack_index.get("next_actions", []))
         blocker_action = "Resolve critical evidence-quality blockers before broker submission."
         if blocker_action not in next_actions:
             pack_index["next_actions"] = [blocker_action, *next_actions]
+    if not request.advisor_review_confirmed:
+        next_actions = list(pack_index.get("next_actions", []))
+        advisor_action = "Get a qualified mortgage adviser review before broker submission."
+        if advisor_action not in next_actions:
+            pack_index["next_actions"] = [advisor_action, *next_actions]
     pack_index["generated_at"] = datetime.datetime.now(datetime.UTC)
     return MortgagePackIndexResponse(**pack_index)
 
@@ -709,12 +775,25 @@ async def generate_mortgage_pack_index_pdf(
         applicant_last_name=last_name,
     )
     pack_index.update(quality_checks)
+    submission_gate = build_mortgage_submission_gate(
+        readiness_status=str(pack_index.get("readiness_status", "")),
+        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
+        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
+        else None,
+        advisor_review_confirmed=request.advisor_review_confirmed,
+    )
+    pack_index["submission_gate"] = submission_gate
     quality_summary = quality_checks.get("evidence_quality_summary")
     if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
         next_actions = list(pack_index.get("next_actions", []))
         blocker_action = "Resolve critical evidence-quality blockers before broker submission."
         if blocker_action not in next_actions:
             pack_index["next_actions"] = [blocker_action, *next_actions]
+    if not request.advisor_review_confirmed:
+        next_actions = list(pack_index.get("next_actions", []))
+        advisor_action = "Get a qualified mortgage adviser review before broker submission."
+        if advisor_action not in next_actions:
+            pack_index["next_actions"] = [advisor_action, *next_actions]
     generated_at = datetime.datetime.now(datetime.UTC)
     pack_index["generated_at"] = generated_at.isoformat()
     pdf_bytes = _build_mortgage_pack_index_pdf_bytes(pack_index)

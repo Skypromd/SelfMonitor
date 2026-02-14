@@ -11,6 +11,7 @@ from app.mortgage_requirements import (
     build_mortgage_pack_index,
     build_mortgage_readiness_assessment,
     build_mortgage_readiness_matrix,
+    build_mortgage_submission_gate,
     build_mortgage_document_checklist,
     detect_document_codes_from_filenames,
 )
@@ -302,3 +303,24 @@ def test_build_mortgage_evidence_quality_checks_detects_name_mismatch():
     )
     issues = quality["evidence_quality_issues"]
     assert any(item["check_type"] == "name_mismatch" for item in issues)
+
+
+def test_build_mortgage_submission_gate_blocks_when_advisor_not_confirmed():
+    gate = build_mortgage_submission_gate(
+        readiness_status="ready_for_broker_review",
+        evidence_quality_summary={"has_blockers": False},
+        advisor_review_confirmed=False,
+    )
+    assert gate["advisor_review_required"] is True
+    assert gate["broker_submission_allowed"] is False
+    assert any("Advisor review confirmation" in blocker for blocker in gate["broker_submission_blockers"])
+
+
+def test_build_mortgage_submission_gate_allows_when_all_conditions_pass():
+    gate = build_mortgage_submission_gate(
+        readiness_status="ready_for_broker_review",
+        evidence_quality_summary={"has_blockers": False},
+        advisor_review_confirmed=True,
+    )
+    assert gate["broker_submission_allowed"] is True
+    assert gate["broker_submission_blockers"] == []
