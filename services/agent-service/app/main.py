@@ -3,6 +3,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -94,6 +95,14 @@ WRITE_ACTION_ALLOWLIST: set[str] = {
     "transactions.ignore_receipt_draft",
     "tax.calculate_and_submit",
 }
+UNTRUSTED_TEXT_MAX_LENGTH = int(os.getenv("AGENT_UNTRUSTED_TEXT_MAX_LENGTH", "300"))
+PROMPT_INJECTION_PATTERN = re.compile(
+    r"(?i)(ignore\s+(all|any|previous|prior)\s+instructions|"
+    r"system\s+prompt|developer\s+message|"
+    r"you\s+are\s+chatgpt|act\s+as\s+an?\s+assistant|"
+    r"tool\s+call|function\s+call|"
+    r"<script|```|jailbreak|do\s+anything\s+now)",
+)
 
 
 class AgentChatRequest(BaseModel):
@@ -262,6 +271,54 @@ def _hash_action_payload(payload: dict[str, Any]) -> str:
 def _hash_prompt_text(prompt: str) -> str:
     normalized = prompt.strip()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _normalize_untrusted_text(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    normalized = value.replace("\r", "\n")
+    normalized = "".join(
+        character if character.isprintable() or character in {"\n", "\t"} else " "
+        for character in normalized
+    )
+    normalized = " ".join(normalized.split())
+    if len(normalized) > UNTRUSTED_TEXT_MAX_LENGTH:
+        normalized = normalized[:UNTRUSTED_TEXT_MAX_LENGTH]
+    return normalized.strip()
+
+
+def _sanitize_untrusted_document_text(value: Any) -> tuple[str, bool]:
+    normalized = _normalize_untrusted_text(value)
+    if not normalized:
+        return "", False
+    if PROMPT_INJECTION_PATTERN.search(normalized):
+        return "[redacted suspicious OCR text]", True
+    return normalized, False
+
+
+def _scan_document_context_for_prompt_injection(items: list[dict[str, Any]]) -> tuple[int, int]:
+    scanned_fields = 0
+    suspicious_fields = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        extracted_data_raw = item.get("extracted_data")
+        extracted_data = extracted_data_raw if isinstance(extracted_data_raw, dict) else {}
+        candidates = (
+            item.get("filename"),
+            extracted_data.get("vendor_name"),
+            extracted_data.get("suggested_category"),
+            extracted_data.get("expense_article"),
+            extracted_data.get("review_reason"),
+            extracted_data.get("text_excerpt"),
+        )
+        for candidate in candidates:
+            sanitized, flagged = _sanitize_untrusted_document_text(candidate)
+            if sanitized:
+                scanned_fields += 1
+            if flagged:
+                suspicious_fields += 1
+    return scanned_fields, suspicious_fields
 
 
 def _parse_datetime_iso(value: Any) -> datetime.datetime | None:
@@ -739,6 +796,13 @@ def _build_ocr_review_assist_response(payload: dict[str, Any] | None, error: str
     items_raw = payload.get("items")
     items = items_raw if isinstance(items_raw, list) else []
     total = _to_int(payload.get("total"), len(items))
+    scanned_fields, suspicious_fields = _scan_document_context_for_prompt_injection(
+        [item for item in items if isinstance(item, dict)]
+    )
+    guard_summary = (
+        f"Prompt guard scanned {scanned_fields} OCR text field(s) and "
+        f"filtered {suspicious_fields} suspicious snippet(s)."
+    )
     evidence = [
         AgentEvidence(
             source_service="documents-service",
@@ -748,13 +812,15 @@ def _build_ocr_review_assist_response(payload: dict[str, Any] | None, error: str
                 key="id",
                 limit=8,
             ),
-            summary=f"{total} documents currently require OCR confirmation or correction.",
+            summary=f"{total} documents currently require OCR confirmation or correction. {guard_summary}",
         )
     ]
     if total == 0:
         answer = "Great news: no documents are currently waiting in the OCR review queue."
     else:
         answer = f"OCR review queue has {total} document(s). Start with the oldest low-confidence receipts first."
+        if suspicious_fields > 0:
+            answer += " Guardrails detected suspicious OCR text and excluded it from agent context."
     actions = [
         AgentSuggestedAction(
             action_id="open_documents_review_queue",
@@ -782,6 +848,14 @@ def _build_ocr_review_assist_response(payload: dict[str, Any] | None, error: str
                         },
                     )
                 )
+    if suspicious_fields > 0:
+        actions.append(
+            AgentSuggestedAction(
+                action_id="review_prompt_injection_flags",
+                label="Review suspicious OCR snippets manually",
+                description="Open flagged documents and verify text fields before trusting extracted context.",
+            )
+        )
     return answer, evidence, actions
 
 
@@ -985,17 +1059,23 @@ def _build_readiness_check_response(
     else:
         docs_items_raw = docs_payload.get("items")
         docs_items = docs_items_raw if isinstance(docs_items_raw, list) else []
+        docs_records = [item for item in docs_items if isinstance(item, dict)]
+        scanned_fields, suspicious_fields = _scan_document_context_for_prompt_injection(docs_records)
+        guard_summary = (
+            f"Prompt guard scanned {scanned_fields} OCR text field(s), "
+            f"filtered {suspicious_fields} suspicious snippet(s)."
+        )
         ocr_total = _to_int(docs_payload.get("total"), len(docs_items))
         evidence.append(
             AgentEvidence(
                 source_service="documents-service",
                 source_endpoint="/documents/review-queue",
                 record_ids=_extract_record_ids(
-                    [item for item in docs_items if isinstance(item, dict)],
+                    docs_records,
                     key="id",
                     limit=6,
                 ),
-                summary=f"OCR review queue: {ocr_total} item(s).",
+                summary=f"OCR review queue: {ocr_total} item(s). {guard_summary}",
             )
         )
         if ocr_total > 0:
@@ -1004,6 +1084,14 @@ def _build_readiness_check_response(
                     action_id="resolve_ocr_queue",
                     label="Resolve OCR review queue",
                     description="Confirm/correct extracted receipt fields before further automation.",
+                )
+            )
+        if suspicious_fields > 0:
+            actions.append(
+                AgentSuggestedAction(
+                    action_id="review_prompt_injection_flags",
+                    label="Review suspicious OCR snippets manually",
+                    description="Verify flagged OCR text fields before relying on agent recommendations.",
                 )
             )
 

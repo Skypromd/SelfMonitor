@@ -71,3 +71,4 @@ _Last updated: 2026-02-13_
 39. [x] Add suggested action cards with explicit confirmation flow in dashboard
 40. [x] Add "why this suggestion" drill-down in AI Copilot action cards
 41. [x] Add fallback UX for Copilot outages with manual workflow shortcuts
+42. [x] Add OCR/document prompt-injection guardrails in agent context handling
