@@ -53,6 +53,30 @@ type MortgageReadinessResponse = MortgageChecklistResponse & {
   uploaded_document_count: number;
 };
 
+type MortgageReadinessMatrixItem = {
+  missing_required_count: number;
+  mortgage_label: string;
+  mortgage_type: string;
+  overall_completion_percent: number;
+  readiness_status: 'not_ready' | 'almost_ready' | 'ready_for_broker_review';
+  required_completion_percent: number;
+};
+
+type MortgageReadinessMatrixResponse = {
+  almost_ready_count: number;
+  average_overall_completion_percent: number;
+  average_required_completion_percent: number;
+  include_adverse_credit_pack: boolean;
+  items: MortgageReadinessMatrixItem[];
+  lender_profile: string;
+  lender_profile_label: string;
+  not_ready_count: number;
+  overall_status: 'not_ready' | 'almost_ready' | 'ready_for_broker_review';
+  ready_for_broker_review_count: number;
+  total_mortgage_types: number;
+  uploaded_document_count: number;
+};
+
 const EMPLOYMENT_PROFILE_OPTIONS = [
   { label: 'Self-employed sole trader', value: 'sole_trader' },
   { label: 'Limited company director', value: 'limited_company_director' },
@@ -65,6 +89,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingChecklist, setIsLoadingChecklist] = useState(false);
   const [isAssessingReadiness, setIsAssessingReadiness] = useState(false);
+  const [isBuildingMatrix, setIsBuildingMatrix] = useState(false);
   const [isLoadingMortgageTypes, setIsLoadingMortgageTypes] = useState(true);
   const [isLoadingLenderProfiles, setIsLoadingLenderProfiles] = useState(true);
   const [mortgageTypes, setMortgageTypes] = useState<MortgageTypeSummary[]>([]);
@@ -77,9 +102,11 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [includeAdverseCreditPack, setIncludeAdverseCreditPack] = useState(false);
   const [checklist, setChecklist] = useState<MortgageChecklistResponse | null>(null);
   const [readiness, setReadiness] = useState<MortgageReadinessResponse | null>(null);
+  const [readinessMatrix, setReadinessMatrix] = useState<MortgageReadinessMatrixResponse | null>(null);
   const [error, setError] = useState('');
   const [checklistError, setChecklistError] = useState('');
   const [readinessError, setReadinessError] = useState('');
+  const [matrixError, setMatrixError] = useState('');
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -164,6 +191,10 @@ export default function ReportsPage({ token }: ReportsPageProps) {
       setChecklistError('Please select a mortgage type first.');
       return;
     }
+    if (!selectedLenderProfile) {
+      setChecklistError('Please select a lender profile first.');
+      return;
+    }
 
     setIsLoadingChecklist(true);
     try {
@@ -199,6 +230,10 @@ export default function ReportsPage({ token }: ReportsPageProps) {
       setReadinessError('Please select a mortgage type first.');
       return;
     }
+    if (!selectedLenderProfile) {
+      setReadinessError('Please select a lender profile first.');
+      return;
+    }
     setIsAssessingReadiness(true);
     try {
       const response = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/readiness`, {
@@ -223,6 +258,39 @@ export default function ReportsPage({ token }: ReportsPageProps) {
       setReadinessError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
       setIsAssessingReadiness(false);
+    }
+  };
+
+  const handleBuildMatrix = async () => {
+    setMatrixError('');
+    setReadinessMatrix(null);
+    if (!selectedLenderProfile) {
+      setMatrixError('Please select a lender profile first.');
+      return;
+    }
+    setIsBuildingMatrix(true);
+    try {
+      const response = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/readiness-matrix`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          employment_profile: employmentProfile,
+          lender_profile: selectedLenderProfile,
+          include_adverse_credit_pack: includeAdverseCreditPack,
+        }),
+      });
+      const payload = (await response.json()) as MortgageReadinessMatrixResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error('detail' in payload && payload.detail ? payload.detail : 'Failed to build readiness matrix');
+      }
+      setReadinessMatrix(payload as MortgageReadinessMatrixResponse);
+    } catch (err) {
+      setMatrixError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsBuildingMatrix(false);
     }
   };
 
@@ -319,9 +387,13 @@ export default function ReportsPage({ token }: ReportsPageProps) {
               >
                 {isAssessingReadiness ? 'Assessing readiness...' : 'Assess readiness from uploaded docs'}
               </button>
+              <button className={styles.button} disabled={isBuildingMatrix} onClick={handleBuildMatrix} type="button">
+                {isBuildingMatrix ? 'Building matrix...' : 'Build all-types matrix'}
+              </button>
             </div>
             {checklistError && <p className={styles.error}>{checklistError}</p>}
             {readinessError && <p className={styles.error}>{readinessError}</p>}
+            {matrixError && <p className={styles.error}>{matrixError}</p>}
             {checklist && (
               <div className={styles.resultsContainer}>
                 <h3>
@@ -398,6 +470,50 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                     <li key={index}>{action}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {readinessMatrix && (
+              <div className={styles.resultsContainer}>
+                <h3>All mortgage types readiness matrix</h3>
+                <div className={styles.resultItem}>
+                  <span>Overall status</span>
+                  <strong>{readinessMatrix.overall_status.replace(/_/g, ' ')}</strong>
+                </div>
+                <div className={styles.resultItem}>
+                  <span>Average required completion</span>
+                  <span>{readinessMatrix.average_required_completion_percent.toFixed(1)}%</span>
+                </div>
+                <div className={styles.resultItem}>
+                  <span>Ready / Almost / Not ready</span>
+                  <span>
+                    {readinessMatrix.ready_for_broker_review_count} / {readinessMatrix.almost_ready_count} /{' '}
+                    {readinessMatrix.not_ready_count}
+                  </span>
+                </div>
+                <div className={styles.tableResponsive}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr>
+                        <th>Mortgage type</th>
+                        <th>Required %</th>
+                        <th>Overall %</th>
+                        <th>Status</th>
+                        <th>Missing required</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {readinessMatrix.items.map((item) => (
+                        <tr key={item.mortgage_type}>
+                          <td>{item.mortgage_label}</td>
+                          <td>{item.required_completion_percent.toFixed(1)}%</td>
+                          <td>{item.overall_completion_percent.toFixed(1)}%</td>
+                          <td>{item.readiness_status.replace(/_/g, ' ')}</td>
+                          <td>{item.missing_required_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </>

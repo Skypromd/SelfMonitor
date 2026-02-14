@@ -7,6 +7,7 @@ from app.mortgage_requirements import (
     LENDER_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
     build_mortgage_readiness_assessment,
+    build_mortgage_readiness_matrix,
     build_mortgage_document_checklist,
     detect_document_codes_from_filenames,
 )
@@ -178,3 +179,54 @@ def test_specialist_self_employed_profile_adds_profile_specific_documents():
     required_codes = _codes(checklist["required_documents"])
     assert "business_bank_statements_12m" in required_codes
     assert "management_accounts_ytd" in required_codes
+
+
+def test_build_mortgage_readiness_matrix_returns_all_types():
+    matrix = build_mortgage_readiness_matrix(
+        employment_profile="sole_trader",
+        include_adverse_credit_pack=False,
+        lender_profile="high_street_mainstream",
+        uploaded_filenames=["passport.pdf", "bank_statement.pdf"],
+    )
+    assert matrix["total_mortgage_types"] == len(MORTGAGE_TYPE_METADATA)
+    assert len(matrix["items"]) == len(MORTGAGE_TYPE_METADATA)
+    assert matrix["overall_status"] in {"not_ready", "almost_ready", "ready_for_broker_review"}
+    assert matrix["ready_for_broker_review_count"] + matrix["almost_ready_count"] + matrix["not_ready_count"] == len(
+        MORTGAGE_TYPE_METADATA
+    )
+
+
+def test_build_mortgage_readiness_matrix_rejects_unsupported_profiles():
+    try:
+        build_mortgage_readiness_matrix(
+            employment_profile="unknown",
+            include_adverse_credit_pack=False,
+            lender_profile="high_street_mainstream",
+            uploaded_filenames=[],
+        )
+        assert False, "Expected ValueError for unsupported employment profile"
+    except ValueError as exc:
+        assert str(exc) == "unsupported_employment_profile"
+
+    try:
+        build_mortgage_readiness_matrix(
+            employment_profile="sole_trader",
+            include_adverse_credit_pack=False,
+            lender_profile="unknown",
+            uploaded_filenames=[],
+        )
+        assert False, "Expected ValueError for unsupported lender profile"
+    except ValueError as exc:
+        assert str(exc) == "unsupported_lender_profile"
+
+    try:
+        build_mortgage_readiness_matrix(
+            employment_profile="sole_trader",
+            include_adverse_credit_pack=False,
+            lender_profile="high_street_mainstream",
+            uploaded_filenames=[],
+            mortgage_types=["first_time_buyer", "unknown"],
+        )
+        assert False, "Expected ValueError for unsupported mortgage type in matrix list"
+    except ValueError as exc:
+        assert str(exc) == "unsupported_mortgage_type"

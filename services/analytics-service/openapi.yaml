@@ -145,6 +145,30 @@ paths:
           description: Unsupported mortgage type, lender profile, or employment profile.
         '502':
           description: Documents service unavailable.
+  /mortgage/readiness-matrix:
+    post:
+      summary: Evaluate readiness coverage across all supported mortgage types
+      tags:
+        - Mortgage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MortgageReadinessMatrixRequest'
+      responses:
+        '200':
+          description: Readiness matrix for all mortgage types.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MortgageReadinessMatrixResponse'
+        '400':
+          description: Unsupported lender profile or employment profile.
+        '502':
+          description: Documents service unavailable.
   /reports/mortgage-readiness:
     get:
       summary: Generate a Mortgage Readiness PDF Report
@@ -412,6 +436,111 @@ components:
         - overall_completion_percent
         - readiness_status
         - readiness_summary
+    MortgageReadinessMatrixRequest:
+      type: object
+      properties:
+        employment_profile:
+          type: string
+          example: sole_trader
+          default: sole_trader
+        include_adverse_credit_pack:
+          type: boolean
+          default: false
+        lender_profile:
+          type: string
+          example: high_street_mainstream
+          default: high_street_mainstream
+        max_documents_scan:
+          type: integer
+          default: 300
+          minimum: 10
+          maximum: 2000
+    MortgageReadinessMatrixItem:
+      type: object
+      properties:
+        mortgage_type:
+          type: string
+        mortgage_label:
+          type: string
+        required_completion_percent:
+          type: number
+          format: float
+        overall_completion_percent:
+          type: number
+          format: float
+        readiness_status:
+          type: string
+          enum: [not_ready, almost_ready, ready_for_broker_review]
+        missing_required_count:
+          type: integer
+        missing_required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        next_actions:
+          type: array
+          items:
+            type: string
+      required:
+        - mortgage_type
+        - mortgage_label
+        - required_completion_percent
+        - overall_completion_percent
+        - readiness_status
+        - missing_required_count
+        - missing_required_documents
+        - next_actions
+    MortgageReadinessMatrixResponse:
+      type: object
+      properties:
+        jurisdiction:
+          type: string
+        employment_profile:
+          type: string
+        lender_profile:
+          type: string
+        lender_profile_label:
+          type: string
+        include_adverse_credit_pack:
+          type: boolean
+        uploaded_document_count:
+          type: integer
+        total_mortgage_types:
+          type: integer
+        ready_for_broker_review_count:
+          type: integer
+        almost_ready_count:
+          type: integer
+        not_ready_count:
+          type: integer
+        average_required_completion_percent:
+          type: number
+          format: float
+        average_overall_completion_percent:
+          type: number
+          format: float
+        overall_status:
+          type: string
+          enum: [not_ready, almost_ready, ready_for_broker_review]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageReadinessMatrixItem'
+      required:
+        - jurisdiction
+        - employment_profile
+        - lender_profile
+        - lender_profile_label
+        - include_adverse_credit_pack
+        - uploaded_document_count
+        - total_mortgage_types
+        - ready_for_broker_review_count
+        - almost_ready_count
+        - not_ready_count
+        - average_required_completion_percent
+        - average_overall_completion_percent
+        - overall_status
+        - items
     JobRequest:
       type: object
       properties:

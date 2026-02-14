@@ -27,6 +27,7 @@ from .mortgage_requirements import (
     MORTGAGE_TYPE_METADATA,
     build_mortgage_document_checklist,
     build_mortgage_readiness_assessment,
+    build_mortgage_readiness_matrix,
 )
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
@@ -190,6 +191,41 @@ class MortgageReadinessResponse(BaseModel):
     overall_completion_percent: float
     readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
     readiness_summary: str
+
+
+class MortgageReadinessMatrixRequest(BaseModel):
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+
+
+class MortgageReadinessMatrixItem(BaseModel):
+    mortgage_type: str
+    mortgage_label: str
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    missing_required_count: int
+    missing_required_documents: list[MortgageDocumentItem]
+    next_actions: list[str]
+
+
+class MortgageReadinessMatrixResponse(BaseModel):
+    jurisdiction: str
+    employment_profile: str
+    lender_profile: str
+    lender_profile_label: str
+    include_adverse_credit_pack: bool
+    uploaded_document_count: int
+    total_mortgage_types: int
+    ready_for_broker_review_count: int
+    almost_ready_count: int
+    not_ready_count: int
+    average_required_completion_percent: float
+    average_overall_completion_percent: float
+    overall_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    items: list[MortgageReadinessMatrixItem]
 
 # --- Forecasting Endpoint ---
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
@@ -364,6 +400,35 @@ async def evaluate_mortgage_readiness(
         uploaded_filenames=filenames,
     )
     return MortgageReadinessResponse(**readiness)
+
+
+@app.post("/mortgage/readiness-matrix", response_model=MortgageReadinessMatrixResponse)
+async def evaluate_mortgage_readiness_matrix(
+    request: MortgageReadinessMatrixRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    if request.employment_profile not in EMPLOYMENT_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported employment_profile '{request.employment_profile}'",
+        )
+    if request.lender_profile not in LENDER_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported lender_profile '{request.lender_profile}'",
+        )
+    filenames = await _load_user_uploaded_document_filenames(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    matrix = build_mortgage_readiness_matrix(
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+        uploaded_filenames=filenames,
+    )
+    return MortgageReadinessMatrixResponse(**matrix)
 
 # --- PDF Report Generation ---
 @app.get("/reports/mortgage-readiness", response_class=StreamingResponse)

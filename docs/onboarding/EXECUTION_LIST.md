@@ -53,3 +53,4 @@ _Last updated: 2026-02-13_
 21. [x] Add England mortgage document checklist engine for all major mortgage types
 22. [x] Add mortgage readiness scoring from uploaded docs with missing-pack guidance
 23. [x] Add lender-profile presets for mortgage checklist/readiness (high-street/specialist/BTL/adverse)
+24. [x] Add all-types mortgage readiness matrix dashboard for coverage tracking

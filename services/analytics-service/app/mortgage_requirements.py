@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Literal
 import re
 
 MORTGAGE_TYPE_METADATA: dict[str, dict[str, str]] = {
@@ -590,3 +590,106 @@ def build_mortgage_readiness_assessment(
         }
     )
     return result
+
+
+def build_mortgage_readiness_matrix(
+    *,
+    employment_profile: str,
+    include_adverse_credit_pack: bool,
+    lender_profile: str,
+    uploaded_filenames: Iterable[str],
+    mortgage_types: Iterable[str] | None = None,
+) -> dict[str, object]:
+    if employment_profile not in EMPLOYMENT_PROFILE_METADATA:
+        raise ValueError("unsupported_employment_profile")
+    if lender_profile not in LENDER_PROFILE_METADATA:
+        raise ValueError("unsupported_lender_profile")
+
+    selected_mortgage_types = list(mortgage_types or MORTGAGE_TYPE_METADATA.keys())
+    for mortgage_type in selected_mortgage_types:
+        if mortgage_type not in MORTGAGE_TYPE_METADATA:
+            raise ValueError("unsupported_mortgage_type")
+
+    filenames = [filename for filename in uploaded_filenames if filename]
+    items: list[dict[str, object]] = []
+    ready_count = 0
+    almost_ready_count = 0
+    not_ready_count = 0
+    sum_required_completion = 0.0
+    sum_overall_completion = 0.0
+
+    for mortgage_type in selected_mortgage_types:
+        checklist = build_mortgage_document_checklist(
+            mortgage_type=mortgage_type,
+            employment_profile=employment_profile,
+            include_adverse_credit_pack=include_adverse_credit_pack,
+            lender_profile=lender_profile,
+        )
+        readiness = build_mortgage_readiness_assessment(
+            checklist=checklist,
+            uploaded_filenames=filenames,
+        )
+        readiness_status = str(readiness["readiness_status"])
+        if readiness_status == "ready_for_broker_review":
+            ready_count += 1
+        elif readiness_status == "almost_ready":
+            almost_ready_count += 1
+        else:
+            not_ready_count += 1
+
+        required_completion = float(readiness["required_completion_percent"])
+        overall_completion = float(readiness["overall_completion_percent"])
+        sum_required_completion += required_completion
+        sum_overall_completion += overall_completion
+        missing_required_documents = list(readiness["missing_required_documents"])
+
+        items.append(
+            {
+                "mortgage_type": mortgage_type,
+                "mortgage_label": checklist["mortgage_label"],
+                "required_completion_percent": required_completion,
+                "overall_completion_percent": overall_completion,
+                "readiness_status": readiness_status,
+                "missing_required_count": len(missing_required_documents),
+                "missing_required_documents": missing_required_documents,
+                "next_actions": list(readiness["next_actions"]),
+            }
+        )
+
+    items.sort(
+        key=lambda item: (
+            float(item["required_completion_percent"]),
+            float(item["overall_completion_percent"]),
+            -int(item["missing_required_count"]),
+        ),
+        reverse=True,
+    )
+
+    total_types = len(items)
+    average_required_completion = round(sum_required_completion / total_types, 1) if total_types else 0.0
+    average_overall_completion = round(sum_overall_completion / total_types, 1) if total_types else 0.0
+
+    overall_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    if ready_count == total_types and total_types > 0:
+        overall_status = "ready_for_broker_review"
+    elif ready_count > 0 or almost_ready_count > 0:
+        overall_status = "almost_ready"
+    else:
+        overall_status = "not_ready"
+
+    return {
+        "jurisdiction": "England",
+        "employment_profile": employment_profile,
+        "lender_profile": lender_profile,
+        "lender_profile_label": LENDER_PROFILE_METADATA[lender_profile]["label"],
+        "include_adverse_credit_pack": include_adverse_credit_pack,
+        "uploaded_document_count": len(filenames),
+        "total_mortgage_types": total_types,
+        "ready_for_broker_review_count": ready_count,
+        "almost_ready_count": almost_ready_count,
+        "not_ready_count": not_ready_count,
+        "average_required_completion_percent": average_required_completion,
+        "average_overall_completion_percent": average_overall_completion,
+        "overall_status": overall_status,
+        "items": items,
+    }
