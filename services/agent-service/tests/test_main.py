@@ -451,3 +451,104 @@ def test_audit_events_capture_chat_and_execution(client: TestClient):
     assert "confirmed_action_execution" in event_types
     chat_event = next(item for item in payload["items"] if item["event_type"] == "chat_read_only")
     assert chat_event["prompt_hash"]
+
+
+def test_session_memory_is_isolated_between_users(client: TestClient):
+    alice_headers = _auth_headers("alice@example.com")
+    bob_headers = _auth_headers("bob@example.com")
+
+    alice_response = client.post(
+        "/agent/chat",
+        headers=alice_headers,
+        json={"message": "Please help with OCR review queue", "session_id": "shared-session"},
+    )
+    assert alice_response.status_code == 200
+    assert alice_response.json()["intent"] == "ocr_review_assist"
+
+    bob_response = client.post(
+        "/agent/chat",
+        headers=bob_headers,
+        json={"message": "continue", "session_id": "shared-session"},
+    )
+    assert bob_response.status_code == 200
+    bob_payload = bob_response.json()
+    assert bob_payload["intent"] == "readiness_check"
+    assert bob_payload["last_intent_from_memory"] is None
+
+
+def test_confirmation_token_cannot_be_used_by_another_user(client: TestClient):
+    alice_headers = _auth_headers("alice@example.com")
+    bob_headers = _auth_headers("bob@example.com")
+
+    token_response = client.post(
+        "/agent/actions/request-confirmation",
+        headers=alice_headers,
+        json={
+            "session_id": "session-cross-user",
+            "action_id": "transactions.ignore_receipt_draft",
+            "action_payload": {"draft_transaction_id": "draft-1"},
+        },
+    )
+    assert token_response.status_code == 200
+    token = token_response.json()["confirmation_token"]
+
+    validate_response = client.post(
+        "/agent/actions/validate-confirmation",
+        headers=bob_headers,
+        json={
+            "session_id": "session-cross-user",
+            "action_id": "transactions.ignore_receipt_draft",
+            "confirmation_token": token,
+            "action_payload": {"draft_transaction_id": "draft-1"},
+            "consume": False,
+        },
+    )
+    assert validate_response.status_code == 200
+    validate_payload = validate_response.json()
+    assert validate_payload["valid"] is False
+    assert validate_payload["reason"] == "token_not_found_or_expired"
+
+    execute_response = client.post(
+        "/agent/actions/execute",
+        headers=bob_headers,
+        json={
+            "session_id": "session-cross-user",
+            "action_id": "transactions.ignore_receipt_draft",
+            "confirmation_token": token,
+            "action_payload": {"draft_transaction_id": "draft-1"},
+        },
+    )
+    assert execute_response.status_code == 200
+    execute_payload = execute_response.json()
+    assert execute_payload["executed"] is False
+    assert execute_payload["valid_confirmation"] is False
+    assert execute_payload["confirmation_reason"] == "token_not_found_or_expired"
+
+
+def test_audit_log_is_isolated_between_users(client: TestClient):
+    alice_headers = _auth_headers("alice@example.com")
+    bob_headers = _auth_headers("bob@example.com")
+    alice_prompt = "Alice-only OCR context request"
+    bob_prompt = "Bob-only OCR context request"
+
+    alice_chat = client.post(
+        "/agent/chat",
+        headers=alice_headers,
+        json={"message": alice_prompt, "session_id": "session-audit-cross"},
+    )
+    assert alice_chat.status_code == 200
+
+    bob_chat = client.post(
+        "/agent/chat",
+        headers=bob_headers,
+        json={"message": bob_prompt, "session_id": "session-audit-cross"},
+    )
+    assert bob_chat.status_code == 200
+
+    bob_audit_response = client.get("/agent/audit/events?limit=20", headers=bob_headers)
+    assert bob_audit_response.status_code == 200
+    bob_items = bob_audit_response.json()["items"]
+    bob_hash = agent_main._hash_prompt_text(bob_prompt)
+    alice_hash = agent_main._hash_prompt_text(alice_prompt)
+    assert any(item.get("prompt_hash") == bob_hash for item in bob_items)
+    assert all(item.get("prompt_hash") != alice_hash for item in bob_items)

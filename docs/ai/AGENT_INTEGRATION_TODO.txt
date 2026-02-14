@@ -55,7 +55,7 @@ PHASE 3 - UX Integration (P1)
 
 PHASE 4 - Quality, Compliance, and Operations (P0/P1)
 [x] P4.1 Add prompt-injection protection for OCR/document text context.
-[ ] P4.2 Add guardrail tests for unauthorized cross-user data access.
+[x] P4.2 Add guardrail tests for unauthorized cross-user data access.
 [ ] P4.3 Add dashboards:
       - agent action success rate
       - human override rate
@@ -72,7 +72,7 @@ IMPLEMENTATION ORDER FOR NEXT ITERATIONS
 4) Polish PHASE 3 UX and PHASE 4 operations.
 
 CURRENT EXECUTION STATUS
-- In progress: P4.2.
+- In progress: P4.3.
 
 MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [x] M1.1 Define mortgage type catalog for England (core + specialist mortgage journeys).
