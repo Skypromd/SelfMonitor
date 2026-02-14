@@ -51,3 +51,4 @@ _Last updated: 2026-02-13_
 19. [x] Add OCR review diff audit trail and UI highlight of manual corrections
 20. [x] Add feedback loop to reuse manual OCR categorization fixes for future receipts
 21. [x] Add England mortgage document checklist engine for all major mortgage types
+22. [x] Add mortgage readiness scoring from uploaded docs with missing-pack guidance

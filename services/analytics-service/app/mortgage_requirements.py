@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable
+import re
 
 MORTGAGE_TYPE_METADATA: dict[str, dict[str, str]] = {
     "first_time_buyer": {
@@ -354,3 +355,136 @@ def build_mortgage_document_checklist(
         "lender_notes": lender_notes,
         "next_steps": next_steps,
     }
+
+
+DOCUMENT_CODE_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "photo_id": ("passport", "driving_licence", "driving-license", "photo_id", "id_card"),
+    "proof_of_address": ("proof_of_address", "utility_bill", "council_tax", "bank_statement_address"),
+    "bank_statements_6m": ("bank_statement", "current_account", "statement"),
+    "deposit_source_evidence": ("deposit", "source_of_funds", "gift_letter", "savings_statement"),
+    "credit_commitments": ("credit_commitment", "loan_statement", "credit_card_statement"),
+    "sa302_2y": ("sa302", "tax_calculation"),
+    "tax_year_overviews_2y": ("tax_year_overview", "hmrc_overview"),
+    "company_accounts_2y": ("company_accounts", "statutory_accounts"),
+    "dividend_vouchers": ("dividend", "director_payslip"),
+    "current_contract": ("contract", "engagement_letter"),
+    "invoice_history_6m": ("invoice", "remittance"),
+    "payslips_3m": ("payslip",),
+    "p60_latest": ("p60",),
+    "mixed_income_pack": ("mixed_income", "income_pack"),
+    "deposit_gift_letter": ("gift_letter", "gifted_deposit"),
+    "sale_memorandum": ("sale_memorandum", "memorandum_of_sale"),
+    "existing_mortgage_statement": ("mortgage_statement",),
+    "expected_rental_income": ("rental_income", "ast", "tenancy_agreement", "rent_valuation"),
+    "property_portfolio_schedule": ("portfolio", "property_schedule"),
+    "consent_to_let_or_btl_offer": ("consent_to_let", "btl_offer"),
+    "housing_association_pack": ("housing_association", "shared_ownership", "lease_pack"),
+    "right_to_buy_notice": ("right_to_buy", "section_125"),
+    "reservation_form": ("reservation_form", "developer_reservation"),
+    "planning_permission": ("planning_permission", "building_regulations"),
+    "build_cost_schedule": ("build_cost", "contractor_quote", "cost_schedule"),
+    "repayment_vehicle_evidence": ("repayment_vehicle", "endowment", "isa_statement"),
+    "credit_issue_explanation": ("credit_explanation", "adverse_credit"),
+    "guarantor_income_pack": ("guarantor", "guarantor_income"),
+    "jbsp_declaration": ("jbsp", "sole_proprietor_declaration", "occupier_waiver"),
+    "offset_account_statements": ("offset", "savings_statement"),
+    "credit_report_copy": ("credit_report", "experian", "equifax", "transunion"),
+    "accountant_reference": ("accountant_reference", "accountant_letter"),
+    "proof_of_residency_status": ("visa", "residency", "brp", "settled_status"),
+}
+
+
+def _normalize_filename(value: str) -> str:
+    normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
+    normalized = re.sub(r"[^a-z0-9_\.]+", "", normalized)
+    return normalized
+
+
+def detect_document_codes_from_filenames(filenames: Iterable[str]) -> set[str]:
+    detected_codes: set[str] = set()
+    for raw_name in filenames:
+        name = _normalize_filename(raw_name)
+        if not name:
+            continue
+        for code, keywords in DOCUMENT_CODE_KEYWORDS.items():
+            if any(keyword in name for keyword in keywords):
+                detected_codes.add(code)
+    return detected_codes
+
+
+def _documents_by_match_state(
+    *,
+    documents: list[dict[str, str]],
+    detected_codes: set[str],
+) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
+    matched: list[dict[str, str]] = []
+    missing: list[dict[str, str]] = []
+    for document in documents:
+        if document["code"] in detected_codes:
+            matched.append(document)
+        else:
+            missing.append(document)
+    return matched, missing
+
+
+def build_mortgage_readiness_assessment(
+    *,
+    checklist: dict[str, object],
+    uploaded_filenames: Iterable[str],
+) -> dict[str, object]:
+    filenames = [filename for filename in uploaded_filenames if filename]
+    detected_codes = detect_document_codes_from_filenames(filenames)
+    required_documents = list(checklist["required_documents"])
+    conditional_documents = list(checklist["conditional_documents"])
+    matched_required, missing_required = _documents_by_match_state(
+        documents=required_documents,
+        detected_codes=detected_codes,
+    )
+    _, missing_conditional = _documents_by_match_state(
+        documents=conditional_documents,
+        detected_codes=detected_codes,
+    )
+    total_required = len(required_documents)
+    total_conditional = len(conditional_documents)
+    required_completion = round((len(matched_required) / total_required) * 100, 1) if total_required > 0 else 100.0
+    total_target = total_required + total_conditional
+    overall_completion = (
+        round(((total_target - len(missing_required) - len(missing_conditional)) / total_target) * 100, 1)
+        if total_target > 0
+        else 100.0
+    )
+
+    if required_completion == 100.0 and overall_completion >= 70.0:
+        readiness_status = "ready_for_broker_review"
+    elif required_completion >= 70.0:
+        readiness_status = "almost_ready"
+    else:
+        readiness_status = "not_ready"
+
+    next_actions = [f"Upload: {item['title']}" for item in missing_required[:5]]
+    if not next_actions:
+        next_actions = [
+            "All required documents detected. Validate freshness (typically last 30-90 days) before broker submission."
+        ]
+
+    readiness_summary = (
+        f"Detected {len(matched_required)} of {total_required} required documents "
+        f"({required_completion}%). Readiness status: {readiness_status}."
+    )
+
+    result = dict(checklist)
+    result.update(
+        {
+            "uploaded_document_count": len(filenames),
+            "detected_document_codes": sorted(detected_codes),
+            "matched_required_documents": matched_required,
+            "missing_required_documents": missing_required,
+            "missing_conditional_documents": missing_conditional,
+            "required_completion_percent": required_completion,
+            "overall_completion_percent": overall_completion,
+            "readiness_status": readiness_status,
+            "readiness_summary": readiness_summary,
+            "next_actions": next_actions,
+        }
+    )
+    return result

@@ -32,6 +32,19 @@ type MortgageChecklistResponse = {
   required_documents: MortgageDocumentItem[];
 };
 
+type MortgageReadinessResponse = MortgageChecklistResponse & {
+  detected_document_codes: string[];
+  matched_required_documents: MortgageDocumentItem[];
+  missing_conditional_documents: MortgageDocumentItem[];
+  missing_required_documents: MortgageDocumentItem[];
+  next_actions: string[];
+  overall_completion_percent: number;
+  readiness_status: 'not_ready' | 'almost_ready' | 'ready_for_broker_review';
+  readiness_summary: string;
+  required_completion_percent: number;
+  uploaded_document_count: number;
+};
+
 const EMPLOYMENT_PROFILE_OPTIONS = [
   { label: 'Self-employed sole trader', value: 'sole_trader' },
   { label: 'Limited company director', value: 'limited_company_director' },
@@ -43,6 +56,7 @@ const EMPLOYMENT_PROFILE_OPTIONS = [
 export default function ReportsPage({ token }: ReportsPageProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingChecklist, setIsLoadingChecklist] = useState(false);
+  const [isAssessingReadiness, setIsAssessingReadiness] = useState(false);
   const [isLoadingMortgageTypes, setIsLoadingMortgageTypes] = useState(true);
   const [mortgageTypes, setMortgageTypes] = useState<MortgageTypeSummary[]>([]);
   const [selectedMortgageType, setSelectedMortgageType] = useState('');
@@ -51,8 +65,10 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   );
   const [includeAdverseCreditPack, setIncludeAdverseCreditPack] = useState(false);
   const [checklist, setChecklist] = useState<MortgageChecklistResponse | null>(null);
+  const [readiness, setReadiness] = useState<MortgageReadinessResponse | null>(null);
   const [error, setError] = useState('');
   const [checklistError, setChecklistError] = useState('');
+  const [readinessError, setReadinessError] = useState('');
   const { t } = useTranslation();
 
   useEffect(() => {
@@ -114,7 +130,9 @@ export default function ReportsPage({ token }: ReportsPageProps) {
 
   const handleGenerateChecklist = async () => {
     setChecklistError('');
+    setReadinessError('');
     setChecklist(null);
+    setReadiness(null);
     if (!selectedMortgageType) {
       setChecklistError('Please select a mortgage type first.');
       return;
@@ -143,6 +161,39 @@ export default function ReportsPage({ token }: ReportsPageProps) {
       setChecklistError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
       setIsLoadingChecklist(false);
+    }
+  };
+
+  const handleAssessReadiness = async () => {
+    setReadinessError('');
+    setReadiness(null);
+    if (!selectedMortgageType) {
+      setReadinessError('Please select a mortgage type first.');
+      return;
+    }
+    setIsAssessingReadiness(true);
+    try {
+      const response = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/readiness`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          mortgage_type: selectedMortgageType,
+          employment_profile: employmentProfile,
+          include_adverse_credit_pack: includeAdverseCreditPack,
+        }),
+      });
+      const payload = (await response.json()) as MortgageReadinessResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error('detail' in payload && payload.detail ? payload.detail : 'Failed to assess readiness');
+      }
+      setReadiness(payload as MortgageReadinessResponse);
+    } catch (err) {
+      setReadinessError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsAssessingReadiness(false);
     }
   };
 
@@ -212,10 +263,21 @@ export default function ReportsPage({ token }: ReportsPageProps) {
               </label>
             </div>
             {selectedMortgageTypeDescription && <p className={styles.tableCaption}>{selectedMortgageTypeDescription}</p>}
-            <button className={styles.button} disabled={isLoadingChecklist} onClick={handleGenerateChecklist} type="button">
-              {isLoadingChecklist ? 'Building checklist...' : 'Generate checklist'}
-            </button>
+            <div className={styles.adminActionsRow}>
+              <button className={styles.button} disabled={isLoadingChecklist} onClick={handleGenerateChecklist} type="button">
+                {isLoadingChecklist ? 'Building checklist...' : 'Generate checklist'}
+              </button>
+              <button
+                className={styles.button}
+                disabled={isAssessingReadiness}
+                onClick={handleAssessReadiness}
+                type="button"
+              >
+                {isAssessingReadiness ? 'Assessing readiness...' : 'Assess readiness from uploaded docs'}
+              </button>
+            </div>
             {checklistError && <p className={styles.error}>{checklistError}</p>}
+            {readinessError && <p className={styles.error}>{readinessError}</p>}
             {checklist && (
               <div className={styles.resultsContainer}>
                 <h3>
@@ -248,6 +310,46 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                 <ul>
                   {checklist.next_steps.map((step, index) => (
                     <li key={index}>{step}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {readiness && (
+              <div className={styles.resultsContainer}>
+                <h3>Mortgage pack readiness</h3>
+                <div className={styles.resultItemMain}>
+                  <span>Status</span>
+                  <strong>{readiness.readiness_status.replace(/_/g, ' ')}</strong>
+                </div>
+                <div className={styles.resultItem}>
+                  <span>Required completion</span>
+                  <span>{readiness.required_completion_percent.toFixed(1)}%</span>
+                </div>
+                <div className={styles.resultItem}>
+                  <span>Overall completion</span>
+                  <span>{readiness.overall_completion_percent.toFixed(1)}%</span>
+                </div>
+                <div className={styles.resultItem}>
+                  <span>Uploaded documents detected</span>
+                  <span>{readiness.uploaded_document_count}</span>
+                </div>
+                <p>{readiness.readiness_summary}</p>
+                <h4>Missing required documents</h4>
+                {readiness.missing_required_documents.length === 0 ? (
+                  <p className={styles.emptyState}>All required documents detected.</p>
+                ) : (
+                  <ul>
+                    {readiness.missing_required_documents.map((item) => (
+                      <li key={item.code}>
+                        <strong>{item.title}</strong> — {item.reason}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <h4>Immediate actions</h4>
+                <ul>
+                  {readiness.next_actions.map((action, index) => (
+                    <li key={index}>{action}</li>
                   ))}
                 </ul>
               </div>

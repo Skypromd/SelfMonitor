@@ -105,6 +105,30 @@ paths:
                 $ref: '#/components/schemas/MortgageChecklistResponse'
         '400':
           description: Unsupported mortgage type or employment profile.
+  /mortgage/readiness:
+    post:
+      summary: Evaluate mortgage pack readiness from uploaded user documents
+      tags:
+        - Mortgage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MortgageReadinessRequest'
+      responses:
+        '200':
+          description: Mortgage readiness assessment with missing document gaps.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MortgageReadinessResponse'
+        '400':
+          description: Unsupported mortgage type or employment profile.
+        '502':
+          description: Documents service unavailable.
   /reports/mortgage-readiness:
     get:
       summary: Generate a Mortgage Readiness PDF Report
@@ -230,6 +254,112 @@ components:
         - conditional_documents
         - lender_notes
         - next_steps
+    MortgageReadinessRequest:
+      type: object
+      properties:
+        mortgage_type:
+          type: string
+          example: first_time_buyer
+        employment_profile:
+          type: string
+          example: sole_trader
+          default: sole_trader
+        include_adverse_credit_pack:
+          type: boolean
+          default: false
+        max_documents_scan:
+          type: integer
+          default: 300
+          minimum: 10
+          maximum: 2000
+      required:
+        - mortgage_type
+    MortgageReadinessResponse:
+      type: object
+      properties:
+        jurisdiction:
+          type: string
+          example: England
+        mortgage_type:
+          type: string
+        mortgage_label:
+          type: string
+        mortgage_description:
+          type: string
+        employment_profile:
+          type: string
+        required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        conditional_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        lender_notes:
+          type: array
+          items:
+            type: string
+        next_steps:
+          type: array
+          items:
+            type: string
+        next_actions:
+          type: array
+          items:
+            type: string
+        uploaded_document_count:
+          type: integer
+          example: 12
+        detected_document_codes:
+          type: array
+          items:
+            type: string
+        matched_required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        missing_required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        missing_conditional_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        required_completion_percent:
+          type: number
+          format: float
+          example: 62.5
+        overall_completion_percent:
+          type: number
+          format: float
+          example: 48.3
+        readiness_status:
+          type: string
+          enum: [not_ready, almost_ready, ready_for_broker_review]
+        readiness_summary:
+          type: string
+      required:
+        - jurisdiction
+        - mortgage_type
+        - mortgage_label
+        - mortgage_description
+        - employment_profile
+        - required_documents
+        - conditional_documents
+        - lender_notes
+        - next_steps
+        - next_actions
+        - uploaded_document_count
+        - detected_document_codes
+        - matched_required_documents
+        - missing_required_documents
+        - missing_conditional_documents
+        - required_completion_percent
+        - overall_completion_percent
+        - readiness_status
+        - readiness_summary
     JobRequest:
       type: object
       properties:

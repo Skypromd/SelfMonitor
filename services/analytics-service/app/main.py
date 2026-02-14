@@ -25,6 +25,7 @@ from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
     build_mortgage_document_checklist,
+    build_mortgage_readiness_assessment,
 )
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
@@ -34,6 +35,8 @@ app = FastAPI(
     description="Handles background analytical tasks and data analysis.",
     version="1.0.0"
 )
+
+DOCUMENTS_SERVICE_URL = os.getenv("DOCUMENTS_SERVICE_URL", "http://documents-service/documents")
 
 # --- Models ---
 
@@ -146,6 +149,35 @@ class MortgageChecklistResponse(BaseModel):
     lender_notes: list[str]
     next_steps: list[str]
 
+
+class MortgageReadinessRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+
+
+class MortgageReadinessResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    mortgage_description: str
+    employment_profile: str
+    required_documents: list[MortgageDocumentItem]
+    conditional_documents: list[MortgageDocumentItem]
+    lender_notes: list[str]
+    next_steps: list[str]
+    next_actions: list[str]
+    uploaded_document_count: int
+    detected_document_codes: list[str]
+    matched_required_documents: list[MortgageDocumentItem]
+    missing_required_documents: list[MortgageDocumentItem]
+    missing_conditional_documents: list[MortgageDocumentItem]
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    readiness_summary: str
+
 # --- Forecasting Endpoint ---
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow_forecast(
@@ -230,6 +262,71 @@ async def generate_mortgage_document_checklist(
         include_adverse_credit_pack=request.include_adverse_credit_pack,
     )
     return MortgageChecklistResponse(**checklist)
+
+
+async def _load_user_uploaded_document_filenames(
+    *,
+    bearer_token: str,
+    max_documents_scan: int,
+) -> list[str]:
+    headers = {"Authorization": f"Bearer {bearer_token}"}
+    try:
+        payload = await get_json_with_retry(
+            DOCUMENTS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to documents-service: {exc}",
+        ) from exc
+
+    if not isinstance(payload, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Invalid documents-service response format",
+        )
+    filenames: list[str] = []
+    for item in payload[:max_documents_scan]:
+        if not isinstance(item, dict):
+            continue
+        filename = item.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            filenames.append(filename.strip())
+    return filenames
+
+
+@app.post("/mortgage/readiness", response_model=MortgageReadinessResponse)
+async def evaluate_mortgage_readiness(
+    request: MortgageReadinessRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    if request.mortgage_type not in MORTGAGE_TYPE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported mortgage_type '{request.mortgage_type}'",
+        )
+    if request.employment_profile not in EMPLOYMENT_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported employment_profile '{request.employment_profile}'",
+        )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+    )
+    filenames = await _load_user_uploaded_document_filenames(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    readiness = build_mortgage_readiness_assessment(
+        checklist=checklist,
+        uploaded_filenames=filenames,
+    )
+    return MortgageReadinessResponse(**readiness)
 
 # --- PDF Report Generation ---
 @app.get("/reports/mortgage-readiness", response_class=StreamingResponse)
