@@ -76,6 +76,31 @@ paths:
           description: Unsupported action id or invalid payload for action.
         '401':
           description: Missing or invalid token.
+  /agent/audit/events:
+    get:
+      summary: List agent audit events for current user
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          description: Recent audit events in reverse chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentAuditLogResponse'
+        '401':
+          description: Missing or invalid token.
   /agent/chat:
     post:
       summary: Chat with self-assessment copilot
@@ -251,6 +276,73 @@ components:
         - executed
         - valid_confirmation
         - message
+    AgentToolCallLog:
+      type: object
+      properties:
+        service:
+          type: string
+        endpoint:
+          type: string
+        status:
+          type: string
+          enum:
+            - success
+            - error
+        error:
+          type: string
+          nullable: true
+      required:
+        - service
+        - endpoint
+        - status
+    AgentAuditEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+        session_id:
+          type: string
+          nullable: true
+        action_id:
+          type: string
+          nullable: true
+        prompt_hash:
+          type: string
+          nullable: true
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentToolCallLog'
+        payload_summary:
+          type: object
+          additionalProperties: true
+        action_result:
+          type: object
+          additionalProperties: true
+      required:
+        - event_id
+        - timestamp
+        - event_type
+        - tool_calls
+        - payload_summary
+        - action_result
+    AgentAuditLogResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentAuditEvent'
+      required:
+        - total
+        - items
     AgentEvidence:
       type: object
       properties:

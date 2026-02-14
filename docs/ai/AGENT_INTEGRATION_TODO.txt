@@ -41,7 +41,7 @@ PHASE 2 - Safe Action Mode (P0)
 [x] P2.3 Add policy gate:
       - default deny for write tools
       - explicit allowlist per action
-[ ] P2.4 Add full audit logging of:
+[x] P2.4 Add full audit logging of:
       - prompt hash
       - tool calls
       - payload summary
@@ -72,7 +72,7 @@ IMPLEMENTATION ORDER FOR NEXT ITERATIONS
 4) Polish PHASE 3 UX and PHASE 4 operations.
 
 CURRENT EXECUTION STATUS
-- In progress: P2.4.
+- In progress: P3.1.
 
 MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [x] M1.1 Define mortgage type catalog for England (core + specialist mortgage journeys).

@@ -84,6 +84,11 @@ def test_agent_chat_requires_auth(client: TestClient):
     assert response.status_code == 401
 
 
+def test_audit_events_require_auth(client: TestClient):
+    response = client.get("/agent/audit/events")
+    assert response.status_code == 401
+
+
 def test_agent_chat_routes_ocr_intent(client: TestClient):
     response = client.post(
         "/agent/chat",
@@ -360,3 +365,49 @@ def test_execute_confirmed_action_rejects_replay(client: TestClient):
     second_payload = second_execute.json()
     assert second_payload["executed"] is False
     assert second_payload["confirmation_reason"] == "token_already_used"
+
+
+def test_audit_events_capture_chat_and_execution(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    chat_response = client.post(
+        "/agent/chat",
+        headers=headers,
+        json={"message": "Please help with OCR review queue", "session_id": "session-audit"},
+    )
+    assert chat_response.status_code == 200
+
+    token_response = client.post(
+        "/agent/actions/request-confirmation",
+        headers=headers,
+        json={
+            "session_id": "session-audit",
+            "action_id": "transactions.ignore_receipt_draft",
+            "action_payload": {"draft_transaction_id": "draft-1"},
+        },
+    )
+    assert token_response.status_code == 200
+    token = token_response.json()["confirmation_token"]
+
+    execute_response = client.post(
+        "/agent/actions/execute",
+        headers=headers,
+        json={
+            "session_id": "session-audit",
+            "action_id": "transactions.ignore_receipt_draft",
+            "confirmation_token": token,
+            "action_payload": {"draft_transaction_id": "draft-1"},
+        },
+    )
+    assert execute_response.status_code == 200
+    assert execute_response.json()["executed"] is True
+
+    audit_response = client.get("/agent/audit/events?limit=20", headers=headers)
+    assert audit_response.status_code == 200
+    payload = audit_response.json()
+    assert payload["total"] >= 3
+    event_types = {item["event_type"] for item in payload["items"]}
+    assert "chat_read_only" in event_types
+    assert "confirmation_token_issued" in event_types
+    assert "confirmed_action_execution" in event_types
+    chat_event = next(item for item in payload["items"] if item["event_type"] == "chat_read_only")
+    assert chat_event["prompt_hash"]

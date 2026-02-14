@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 for parent in Path(__file__).resolve().parents:
@@ -42,6 +42,8 @@ DEFAULT_TAX_LOOKBACK_DAYS = int(os.getenv("AGENT_DEFAULT_TAX_LOOKBACK_DAYS", "36
 AGENT_REDIS_URL = os.getenv("AGENT_REDIS_URL", "redis://redis:6379/0")
 AGENT_SESSION_TTL_SECONDS = int(os.getenv("AGENT_SESSION_TTL_SECONDS", "86400"))
 AGENT_CONFIRMATION_TOKEN_TTL_SECONDS = int(os.getenv("AGENT_CONFIRMATION_TOKEN_TTL_SECONDS", "900"))
+AGENT_AUDIT_MAX_EVENTS = int(os.getenv("AGENT_AUDIT_MAX_EVENTS", "500"))
+AGENT_AUDIT_TTL_SECONDS = int(os.getenv("AGENT_AUDIT_TTL_SECONDS", "604800"))
 DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE = os.getenv(
     "DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE",
     "http://documents-service/documents/{document_id}/review",
@@ -84,6 +86,7 @@ INTENT_VALUES: tuple[AgentIntent, ...] = (
 _redis_client: Any | None = None
 _in_memory_session_store: dict[str, dict[str, Any]] = {}
 _in_memory_confirmation_store: dict[str, dict[str, Any]] = {}
+_in_memory_audit_store: dict[str, list[dict[str, Any]]] = {}
 
 WRITE_ACTION_ALLOWLIST: set[str] = {
     "documents.review_document",
@@ -172,6 +175,30 @@ class AgentExecuteActionResponse(BaseModel):
     message: str
 
 
+class AgentToolCallLog(BaseModel):
+    service: str
+    endpoint: str
+    status: Literal["success", "error"]
+    error: str | None = None
+
+
+class AgentAuditEvent(BaseModel):
+    event_id: str
+    timestamp: datetime.datetime
+    event_type: str
+    session_id: str | None = None
+    action_id: str | None = None
+    prompt_hash: str | None = None
+    tool_calls: list[AgentToolCallLog] = Field(default_factory=list)
+    payload_summary: dict[str, Any] = Field(default_factory=dict)
+    action_result: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentAuditLogResponse(BaseModel):
+    total: int
+    items: list[AgentAuditEvent]
+
+
 def _to_int(value: Any, default: int = 0) -> int:
     if isinstance(value, bool):
         return default
@@ -222,9 +249,18 @@ def _build_confirmation_key(user_id: str, confirmation_token: str) -> str:
     return f"agent-confirmation:{user_id}:{confirmation_token}"
 
 
+def _build_audit_key(user_id: str) -> str:
+    return f"agent-audit:{user_id}"
+
+
 def _hash_action_payload(payload: dict[str, Any]) -> str:
     canonical_payload = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+
+
+def _hash_prompt_text(prompt: str) -> str:
+    normalized = prompt.strip()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _parse_datetime_iso(value: Any) -> datetime.datetime | None:
@@ -313,6 +349,55 @@ async def _load_confirmation_record(user_id: str, confirmation_token: str) -> di
         _in_memory_confirmation_store.pop(key, None)
         return None
     return payload
+
+
+async def _append_audit_event(user_id: str, event: AgentAuditEvent) -> None:
+    key = _build_audit_key(user_id)
+    event_payload = event.model_dump(mode="json")
+
+    in_memory_rows = _in_memory_audit_store.get(key, [])
+    in_memory_rows.append(event_payload)
+    if len(in_memory_rows) > AGENT_AUDIT_MAX_EVENTS:
+        in_memory_rows = in_memory_rows[-AGENT_AUDIT_MAX_EVENTS:]
+    _in_memory_audit_store[key] = in_memory_rows
+
+    client = _get_redis_client()
+    if client is None:
+        return
+    try:
+        await client.rpush(key, json.dumps(event_payload, ensure_ascii=False))
+        await client.ltrim(key, -AGENT_AUDIT_MAX_EVENTS, -1)
+        await client.expire(key, AGENT_AUDIT_TTL_SECONDS)
+    except Exception:
+        pass
+
+
+async def _load_audit_events(user_id: str, limit: int) -> list[AgentAuditEvent]:
+    key = _build_audit_key(user_id)
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            raw_items = await client.lrange(key, -limit, -1)
+            events: list[AgentAuditEvent] = []
+            for raw in raw_items:
+                try:
+                    payload = json.loads(raw)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(payload, dict):
+                    events.append(AgentAuditEvent(**payload))
+            if events:
+                return list(reversed(events))
+        except Exception:
+            pass
+
+    in_memory_items = _in_memory_audit_store.get(key, [])
+    sliced = in_memory_items[-limit:]
+    events: list[AgentAuditEvent] = []
+    for payload in sliced:
+        if isinstance(payload, dict):
+            events.append(AgentAuditEvent(**payload))
+    return list(reversed(events))
 
 
 def _detect_intent(message: str, last_intent: AgentIntent | None = None) -> tuple[AgentIntent, float]:
@@ -961,6 +1046,15 @@ def _build_readiness_check_response(
     return answer, evidence, actions
 
 
+@app.get("/agent/audit/events", response_model=AgentAuditLogResponse)
+async def list_agent_audit_events(
+    limit: int = Query(default=50, ge=1, le=500),
+    user_id: str = Depends(get_current_user_id),
+):
+    items = await _load_audit_events(user_id, limit)
+    return AgentAuditLogResponse(total=len(items), items=items)
+
+
 @app.post("/agent/actions/request-confirmation", response_model=AgentConfirmationTokenResponse)
 async def request_action_confirmation_token(
     request: AgentConfirmationTokenRequest,
@@ -980,6 +1074,24 @@ async def request_action_confirmation_token(
         "consumed": False,
     }
     await _save_confirmation_record(user_id, confirmation_token, record)
+    await _append_audit_event(
+        user_id,
+        AgentAuditEvent(
+            event_id=str(uuid.uuid4()),
+            timestamp=now,
+            event_type="confirmation_token_issued",
+            session_id=request.session_id,
+            action_id=request.action_id,
+            payload_summary={
+                "action_payload_keys": sorted(request.action_payload.keys()),
+                "action_payload_hash": payload_hash,
+            },
+            action_result={
+                "issued": True,
+                "expires_at": expires_at.isoformat(),
+            },
+        ),
+    )
     return AgentConfirmationTokenResponse(
         session_id=request.session_id,
         action_id=request.action_id,
@@ -994,7 +1106,7 @@ async def validate_action_confirmation_token(
     user_id: str = Depends(get_current_user_id),
 ):
     _ensure_supported_write_action(request.action_id)
-    return await _validate_confirmation_token_for_action(
+    validation_result = await _validate_confirmation_token_for_action(
         user_id=user_id,
         session_id=request.session_id,
         action_id=request.action_id,
@@ -1002,6 +1114,26 @@ async def validate_action_confirmation_token(
         action_payload=request.action_payload,
         consume=request.consume,
     )
+    await _append_audit_event(
+        user_id,
+        AgentAuditEvent(
+            event_id=str(uuid.uuid4()),
+            timestamp=datetime.datetime.now(datetime.UTC),
+            event_type="confirmation_token_validated",
+            session_id=request.session_id,
+            action_id=request.action_id,
+            payload_summary={
+                "consume": request.consume,
+                "action_payload_keys": sorted(request.action_payload.keys()),
+            },
+            action_result={
+                "valid": validation_result.valid,
+                "reason": validation_result.reason,
+                "consumed": validation_result.consumed,
+            },
+        ),
+    )
+    return validation_result
 
 
 @app.post("/agent/actions/execute", response_model=AgentExecuteActionResponse)
@@ -1020,7 +1152,7 @@ async def execute_confirmed_action(
         consume=True,
     )
     if not validation_result.valid:
-        return AgentExecuteActionResponse(
+        failed_result = AgentExecuteActionResponse(
             session_id=request.session_id,
             action_id=request.action_id,
             executed=False,
@@ -1028,6 +1160,25 @@ async def execute_confirmed_action(
             confirmation_reason=validation_result.reason,
             message="Confirmation token validation failed.",
         )
+        await _append_audit_event(
+            user_id,
+            AgentAuditEvent(
+                event_id=str(uuid.uuid4()),
+                timestamp=datetime.datetime.now(datetime.UTC),
+                event_type="confirmed_action_execution",
+                session_id=request.session_id,
+                action_id=request.action_id,
+                payload_summary={
+                    "action_payload_keys": sorted(request.action_payload.keys()),
+                },
+                action_result={
+                    "executed": False,
+                    "valid_confirmation": False,
+                    "confirmation_reason": validation_result.reason,
+                },
+            ),
+        )
+        return failed_result
 
     try:
         endpoint, status_code, result = await _execute_write_action(
@@ -1038,7 +1189,7 @@ async def execute_confirmed_action(
     except HTTPException as exc:
         raise exc
     except httpx.HTTPStatusError as exc:
-        return AgentExecuteActionResponse(
+        failed_result = AgentExecuteActionResponse(
             session_id=request.session_id,
             action_id=request.action_id,
             executed=False,
@@ -1047,16 +1198,69 @@ async def execute_confirmed_action(
             downstream_status_code=exc.response.status_code,
             message=f"Downstream service rejected execution: {exc.response.text}",
         )
+        await _append_audit_event(
+            user_id,
+            AgentAuditEvent(
+                event_id=str(uuid.uuid4()),
+                timestamp=datetime.datetime.now(datetime.UTC),
+                event_type="confirmed_action_execution",
+                session_id=request.session_id,
+                action_id=request.action_id,
+                tool_calls=[
+                    AgentToolCallLog(
+                        service="downstream",
+                        endpoint=str(exc.request.url),
+                        status="error",
+                        error=str(exc),
+                    )
+                ],
+                payload_summary={
+                    "action_payload_keys": sorted(request.action_payload.keys()),
+                },
+                action_result={
+                    "executed": False,
+                    "valid_confirmation": True,
+                    "downstream_status_code": exc.response.status_code,
+                },
+            ),
+        )
+        return failed_result
     except httpx.HTTPError as exc:
-        return AgentExecuteActionResponse(
+        failed_result = AgentExecuteActionResponse(
             session_id=request.session_id,
             action_id=request.action_id,
             executed=False,
             valid_confirmation=True,
             message=f"Downstream service unavailable: {exc}",
         )
+        await _append_audit_event(
+            user_id,
+            AgentAuditEvent(
+                event_id=str(uuid.uuid4()),
+                timestamp=datetime.datetime.now(datetime.UTC),
+                event_type="confirmed_action_execution",
+                session_id=request.session_id,
+                action_id=request.action_id,
+                tool_calls=[
+                    AgentToolCallLog(
+                        service="downstream",
+                        endpoint="unknown",
+                        status="error",
+                        error=str(exc),
+                    )
+                ],
+                payload_summary={
+                    "action_payload_keys": sorted(request.action_payload.keys()),
+                },
+                action_result={
+                    "executed": False,
+                    "valid_confirmation": True,
+                },
+            ),
+        )
+        return failed_result
 
-    return AgentExecuteActionResponse(
+    success_result = AgentExecuteActionResponse(
         session_id=request.session_id,
         action_id=request.action_id,
         executed=True,
@@ -1066,6 +1270,32 @@ async def execute_confirmed_action(
         result=result,
         message="Confirmed action executed successfully.",
     )
+    await _append_audit_event(
+        user_id,
+        AgentAuditEvent(
+            event_id=str(uuid.uuid4()),
+            timestamp=datetime.datetime.now(datetime.UTC),
+            event_type="confirmed_action_execution",
+            session_id=request.session_id,
+            action_id=request.action_id,
+            tool_calls=[
+                AgentToolCallLog(
+                    service="downstream",
+                    endpoint=endpoint,
+                    status="success",
+                )
+            ],
+            payload_summary={
+                "action_payload_keys": sorted(request.action_payload.keys()),
+            },
+            action_result={
+                "executed": True,
+                "valid_confirmation": True,
+                "downstream_status_code": status_code,
+            },
+        ),
+    )
+    return success_result
 
 
 @app.post("/agent/chat", response_model=AgentChatResponse)
@@ -1081,12 +1311,29 @@ async def agent_chat(
     if isinstance(last_intent_raw, str) and last_intent_raw in INTENT_VALUES:
         last_intent = last_intent_raw
     intent, confidence = _detect_intent(request.message, last_intent)
+    tool_calls: list[AgentToolCallLog] = []
 
     if intent == "ocr_review_assist":
         docs_payload, docs_error = await _safe_call(_fetch_documents_review_queue(bearer_token))
+        tool_calls = [
+            AgentToolCallLog(
+                service="documents-service",
+                endpoint="/documents/review-queue",
+                status="error" if docs_error else "success",
+                error=docs_error,
+            )
+        ]
         answer, evidence, suggested_actions = _build_ocr_review_assist_response(docs_payload, docs_error)
     elif intent == "reconciliation_assist":
         unmatched_payload, unmatched_error = await _safe_call(_fetch_unmatched_receipt_drafts(bearer_token))
+        tool_calls = [
+            AgentToolCallLog(
+                service="transactions-service",
+                endpoint="/transactions/receipt-drafts/unmatched",
+                status="error" if unmatched_error else "success",
+                error=unmatched_error,
+            )
+        ]
         answer, evidence, suggested_actions = _build_reconciliation_assist_response(
             unmatched_payload,
             unmatched_error,
@@ -1094,6 +1341,20 @@ async def agent_chat(
     elif intent == "tax_pre_submit":
         transactions_payload, transactions_error = await _safe_call(_fetch_transactions_me(bearer_token))
         tax_snapshot, tax_error = await _safe_call(_fetch_tax_snapshot(bearer_token))
+        tool_calls = [
+            AgentToolCallLog(
+                service="transactions-service",
+                endpoint="/transactions/me",
+                status="error" if transactions_error else "success",
+                error=transactions_error,
+            ),
+            AgentToolCallLog(
+                service="tax-engine",
+                endpoint="/calculate",
+                status="error" if tax_error else "success",
+                error=tax_error,
+            ),
+        ]
         answer, evidence, suggested_actions = _build_tax_pre_submit_response(
             tax_snapshot,
             tax_error,
@@ -1114,6 +1375,32 @@ async def agent_chat(
             transactions_task,
             tax_task,
         )
+        tool_calls = [
+            AgentToolCallLog(
+                service="documents-service",
+                endpoint="/documents/review-queue",
+                status="error" if docs_error else "success",
+                error=docs_error,
+            ),
+            AgentToolCallLog(
+                service="transactions-service",
+                endpoint="/transactions/receipt-drafts/unmatched",
+                status="error" if unmatched_error else "success",
+                error=unmatched_error,
+            ),
+            AgentToolCallLog(
+                service="transactions-service",
+                endpoint="/transactions/me",
+                status="error" if transactions_error else "success",
+                error=transactions_error,
+            ),
+            AgentToolCallLog(
+                service="tax-engine",
+                endpoint="/calculate",
+                status="error" if tax_error else "success",
+                error=tax_error,
+            ),
+        ]
         answer, evidence, suggested_actions = _build_readiness_check_response(
             docs_payload,
             docs_error,
@@ -1141,6 +1428,27 @@ async def agent_chat(
         "last_intent": intent,
     }
     await _save_session_memory(user_id, session_id, updated_memory)
+    await _append_audit_event(
+        user_id,
+        AgentAuditEvent(
+            event_id=str(uuid.uuid4()),
+            timestamp=datetime.datetime.now(datetime.UTC),
+            event_type="chat_read_only",
+            session_id=session_id,
+            action_id=intent,
+            prompt_hash=_hash_prompt_text(request.message),
+            tool_calls=tool_calls,
+            payload_summary={
+                "message_length": len(request.message),
+                "detected_intent": intent,
+                "session_turn_count_before_response": len(turns),
+            },
+            action_result={
+                "suggested_actions_count": len(suggested_actions),
+                "evidence_count": len(evidence),
+            },
+        ),
+    )
 
     return AgentChatResponse(
         session_id=session_id,
