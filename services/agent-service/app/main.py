@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from pydantic import BaseModel, Field
 
 for parent in Path(__file__).resolve().parents:
@@ -45,6 +46,12 @@ AGENT_SESSION_TTL_SECONDS = int(os.getenv("AGENT_SESSION_TTL_SECONDS", "86400"))
 AGENT_CONFIRMATION_TOKEN_TTL_SECONDS = int(os.getenv("AGENT_CONFIRMATION_TOKEN_TTL_SECONDS", "900"))
 AGENT_AUDIT_MAX_EVENTS = int(os.getenv("AGENT_AUDIT_MAX_EVENTS", "500"))
 AGENT_AUDIT_TTL_SECONDS = int(os.getenv("AGENT_AUDIT_TTL_SECONDS", "604800"))
+AGENT_WRITE_ACTIONS_ENABLED = os.getenv("AGENT_WRITE_ACTIONS_ENABLED", "true").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE = os.getenv(
     "DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE",
     "http://documents-service/documents/{document_id}/review",
@@ -102,6 +109,16 @@ PROMPT_INJECTION_PATTERN = re.compile(
     r"you\s+are\s+chatgpt|act\s+as\s+an?\s+assistant|"
     r"tool\s+call|function\s+call|"
     r"<script|```|jailbreak|do\s+anything\s+now)",
+)
+AGENT_ACTION_EXECUTIONS_TOTAL = Counter(
+    "agent_action_executions_total",
+    "Total confirmed action execution attempts.",
+    labelnames=("action_id", "result"),
+)
+AGENT_HUMAN_OVERRIDE_ACTIONS_TOTAL = Counter(
+    "agent_human_override_actions_total",
+    "Total successful agent actions classified as human override operations.",
+    labelnames=("action_id",),
 )
 
 
@@ -479,6 +496,19 @@ def _ensure_supported_write_action(action_id: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported action_id '{action_id}'",
         )
+
+
+def _is_human_override_action(action_id: str, action_payload: dict[str, Any]) -> bool:
+    if action_id == "transactions.ignore_receipt_draft":
+        return True
+    if action_id != "documents.review_document":
+        return False
+    review_payload = action_payload.get("review_payload")
+    if isinstance(review_payload, dict):
+        status_value = str(review_payload.get("review_status") or "").strip().lower()
+    else:
+        status_value = str(action_payload.get("review_status") or "").strip().lower()
+    return status_value in {"corrected", "ignored"}
 
 
 def _build_confirmation_validation_response(
@@ -1197,6 +1227,11 @@ def _build_readiness_check_response(
     return answer, evidence, actions
 
 
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.get("/agent/audit/events", response_model=AgentAuditLogResponse)
 async def list_agent_audit_events(
     limit: int = Query(default=50, ge=1, le=500),
@@ -1294,6 +1329,20 @@ async def execute_confirmed_action(
     bearer_token: str = Depends(get_bearer_token),
 ):
     _ensure_supported_write_action(request.action_id)
+    if not AGENT_WRITE_ACTIONS_ENABLED:
+        AGENT_ACTION_EXECUTIONS_TOTAL.labels(
+            action_id=request.action_id,
+            result="write_actions_disabled",
+        ).inc()
+        return AgentExecuteActionResponse(
+            session_id=request.session_id,
+            action_id=request.action_id,
+            executed=False,
+            valid_confirmation=False,
+            confirmation_reason="write_actions_disabled",
+            message="Agent write actions are disabled by feature flag.",
+        )
+
     validation_result = await _validate_confirmation_token_for_action(
         user_id=user_id,
         session_id=request.session_id,
@@ -1329,6 +1378,10 @@ async def execute_confirmed_action(
                 },
             ),
         )
+        AGENT_ACTION_EXECUTIONS_TOTAL.labels(
+            action_id=request.action_id,
+            result="confirmation_failed",
+        ).inc()
         return failed_result
 
     try:
@@ -1338,6 +1391,10 @@ async def execute_confirmed_action(
             action_payload=request.action_payload,
         )
     except HTTPException as exc:
+        AGENT_ACTION_EXECUTIONS_TOTAL.labels(
+            action_id=request.action_id,
+            result="invalid_payload",
+        ).inc()
         raise exc
     except httpx.HTTPStatusError as exc:
         failed_result = AgentExecuteActionResponse(
@@ -1375,6 +1432,10 @@ async def execute_confirmed_action(
                 },
             ),
         )
+        AGENT_ACTION_EXECUTIONS_TOTAL.labels(
+            action_id=request.action_id,
+            result="downstream_rejected",
+        ).inc()
         return failed_result
     except httpx.HTTPError as exc:
         failed_result = AgentExecuteActionResponse(
@@ -1409,6 +1470,10 @@ async def execute_confirmed_action(
                 },
             ),
         )
+        AGENT_ACTION_EXECUTIONS_TOTAL.labels(
+            action_id=request.action_id,
+            result="downstream_unavailable",
+        ).inc()
         return failed_result
 
     success_result = AgentExecuteActionResponse(
@@ -1446,6 +1511,12 @@ async def execute_confirmed_action(
             },
         ),
     )
+    AGENT_ACTION_EXECUTIONS_TOTAL.labels(
+        action_id=request.action_id,
+        result="success",
+    ).inc()
+    if _is_human_override_action(request.action_id, request.action_payload):
+        AGENT_HUMAN_OVERRIDE_ACTIONS_TOTAL.labels(action_id=request.action_id).inc()
     return success_result
 
 

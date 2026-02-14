@@ -73,3 +73,6 @@ _Last updated: 2026-02-13_
 41. [x] Add fallback UX for Copilot outages with manual workflow shortcuts
 42. [x] Add OCR/document prompt-injection guardrails in agent context handling
 43. [x] Add cross-user guardrail tests for session, token, and audit isolation
+44. [x] Add agent/documents/tax Prometheus metrics for quality and conversion KPIs
+45. [x] Add Grafana dashboard provisioning for agent quality operations KPIs
+46. [x] Add runbook guidance for agent safe mode and feature-flag rollback path

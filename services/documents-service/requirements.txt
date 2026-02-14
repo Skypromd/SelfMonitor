@@ -12,6 +12,7 @@ aiofiles
 celery
 redis
 httpx
+prometheus-client
 
 # Dependencies for testing
 pytest

@@ -64,3 +64,32 @@ Use admin console and/or API checks to verify:
 - Announce release completion with validation summary.
 - Keep heightened monitoring for at least one hour.
 - Record issues and follow-up actions in release notes.
+
+## 8. Agent safe mode operations
+
+Use safe mode whenever downstream write actions show instability or abnormal error spikes:
+
+1. Keep chat/read-only guidance enabled.
+2. Disable write execution only by setting:
+   - `AGENT_WRITE_ACTIONS_ENABLED=false`
+3. Redeploy `agent-service`.
+4. Verify expected behavior:
+   - `POST /agent/chat` still responds.
+   - `POST /agent/actions/execute` returns `write_actions_disabled`.
+5. Track incident timeline in release notes and audit review.
+
+## 9. Rollback and feature flag procedure
+
+When a partial rollback is preferred over full version rollback:
+
+1. Apply feature-flag rollback first:
+   - disable agent writes (`AGENT_WRITE_ACTIONS_ENABLED=false`);
+   - keep read-only advisory traffic online.
+2. If issue persists, perform service rollback using `docs/release/ROLLBACK_DRILL.md`.
+3. After rollback/safe mode:
+   - run `python3 tools/release_preflight.py --quick`;
+   - verify dashboard KPIs:
+     - agent action success rate,
+     - human override rate,
+     - OCR review completion time,
+     - tax submission conversion rate.

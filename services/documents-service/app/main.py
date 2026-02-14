@@ -1,9 +1,11 @@
+import datetime
 import os
 import sys
 import uuid
 from pathlib import Path
 from typing import List
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile, status
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy.ext.asyncio import AsyncSession
 import boto3
 from botocore.client import Config
@@ -41,6 +43,21 @@ for parent in Path(__file__).resolve().parents:
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+OCR_REVIEW_COMPLETION_SECONDS = Histogram(
+    "ocr_review_completion_seconds",
+    "Time from document upload to review completion.",
+    buckets=(60, 120, 300, 600, 1800, 3600, 7200, 21600, 43200, 86400, float("inf")),
+)
+OCR_MANUAL_OVERRIDES_TOTAL = Counter(
+    "ocr_manual_overrides_total",
+    "Total OCR manual overrides by review status.",
+    labelnames=("review_status",),
+)
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.post("/documents/upload", response_model=schemas.Document, status_code=status.HTTP_201_CREATED)
 async def upload_document(
@@ -122,4 +139,17 @@ async def review_document(
     )
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    uploaded_at = getattr(updated, "uploaded_at", None)
+    if isinstance(uploaded_at, datetime.datetime):
+        elapsed_seconds = (datetime.datetime.now(datetime.UTC) - uploaded_at).total_seconds()
+        if elapsed_seconds >= 0:
+            OCR_REVIEW_COMPLETION_SECONDS.observe(elapsed_seconds)
+
+    extracted_data_raw = getattr(updated, "extracted_data", None)
+    extracted_data = extracted_data_raw if isinstance(extracted_data_raw, dict) else {}
+    review_status = str(extracted_data.get("review_status") or "").strip().lower()
+    if review_status in {"corrected", "ignored"}:
+        OCR_MANUAL_OVERRIDES_TOTAL.labels(review_status=review_status).inc()
+
     return updated

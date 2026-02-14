@@ -35,15 +35,19 @@ Rollback immediately when:
    - Identify last known good release tag/image for each changed service.
    - Confirm image availability before rollback command execution.
 
-3. **Roll back application services**
+3. **Apply feature-flag safe rollback (first response)**
+   - Disable agent writes by setting `AGENT_WRITE_ACTIONS_ENABLED=false`.
+   - Redeploy only `agent-service` and validate read-only mode.
+
+4. **Roll back application services**
    - Roll back backend services first (auth, transactions, partner-registry, related dependencies).
    - Roll back frontend/web portal after backend stabilization.
 
-4. **Migration decision**
+5. **Migration decision**
    - If migrations are backward compatible, keep schema and revert app versions.
    - If migration is non-reversible, apply a forward-fix strategy and do not perform destructive rollback.
 
-5. **Post-rollback verification**
+6. **Post-rollback verification**
    - Run quick preflight:
      ```bash
      python3 tools/release_preflight.py --quick
@@ -53,7 +57,7 @@ Rollback immediately when:
      - core transaction flow works,
      - invoice generation/export endpoints are healthy.
 
-6. **Close incident**
+7. **Close incident**
    - Record timeline and root cause.
    - Capture corrective actions with owners and due dates.
 

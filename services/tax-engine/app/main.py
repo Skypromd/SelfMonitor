@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from pydantic import BaseModel
 from .telemetry import setup_telemetry
 
@@ -16,6 +17,16 @@ CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/
 DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"}
 UK_PERSONAL_ALLOWANCE = 12570.0
 UK_BASIC_TAX_RATE = 0.20
+TAX_CALCULATIONS_TOTAL = Counter(
+    "tax_calculations_total",
+    "Total tax calculation attempts grouped by result.",
+    labelnames=("result",),
+)
+TAX_SUBMISSIONS_TOTAL = Counter(
+    "tax_submissions_total",
+    "Total tax submission attempts grouped by result.",
+    labelnames=("result",),
+)
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "libs").exists():
@@ -64,6 +75,11 @@ class TaxCalculationResult(BaseModel):
     summary_by_category: List[TaxSummaryItem]
 
 # --- Endpoints ---
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
 @app.post("/calculate", response_model=TaxCalculationResult)
 async def calculate_tax(
     request: TaxCalculationRequest, 
@@ -71,8 +87,10 @@ async def calculate_tax(
     bearer_token: str = Depends(get_bearer_token),
 ):
     if request.start_date > request.end_date:
+        TAX_CALCULATIONS_TOTAL.labels(result="validation_error").inc()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End date cannot be before start date.")
     if request.jurisdiction != "UK":
+        TAX_CALCULATIONS_TOTAL.labels(result="validation_error").inc()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only 'UK' jurisdiction is supported.")
 
     # 1. Fetch all transactions for the user from the transactions-service
@@ -85,6 +103,7 @@ async def calculate_tax(
         )
         transactions = [Transaction(**t) for t in transactions_data]
     except httpx.HTTPError as exc:
+        TAX_CALCULATIONS_TOTAL.labels(result="upstream_error").inc()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Could not connect to transactions-service: {exc}",
@@ -117,6 +136,7 @@ async def calculate_tax(
         for cat, amount in summary_map.items()
     ]
 
+    TAX_CALCULATIONS_TOTAL.labels(result="success").inc()
     return TaxCalculationResult(
         user_id=user_id,
         start_date=request.start_date,
@@ -152,6 +172,7 @@ async def calculate_and_submit_tax(
             timeout=15.0,
         )
     except httpx.HTTPError as exc:
+        TAX_SUBMISSIONS_TOTAL.labels(result="upstream_error").inc()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Could not connect to integrations-service: {exc}",
@@ -180,6 +201,7 @@ async def calculate_and_submit_tax(
         print("Warning: Could not create calendar event.")
 
 
+    TAX_SUBMISSIONS_TOTAL.labels(result="success").inc()
     return {
         "submission_id": submission_data.get("submission_id"),
         "message": "Tax return submission has been successfully initiated via integrations service."

@@ -7,6 +7,7 @@ httpx
 opentelemetry-distro
 opentelemetry-instrumentation-fastapi
 opentelemetry-instrumentation-httpx
+prometheus-client
 
 # Dependencies for testing
 pytest
