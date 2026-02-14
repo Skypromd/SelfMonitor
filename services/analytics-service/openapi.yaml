@@ -67,6 +67,44 @@ paths:
                 $ref: '#/components/schemas/CashFlowResponse'
         '502':
           description: Error communicating with a downstream service.
+  /mortgage/types:
+    get:
+      summary: List supported mortgage types for England checklist generation
+      tags:
+        - Mortgage
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Supported mortgage type catalog.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MortgageTypeSummary'
+  /mortgage/checklist:
+    post:
+      summary: Generate mortgage document checklist for selected mortgage type
+      tags:
+        - Mortgage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MortgageChecklistRequest'
+      responses:
+        '200':
+          description: Mortgage checklist and next steps.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MortgageChecklistResponse'
+        '400':
+          description: Unsupported mortgage type or employment profile.
   /reports/mortgage-readiness:
     get:
       summary: Generate a Mortgage Readiness PDF Report
@@ -107,6 +145,91 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DataPoint'
+    MortgageTypeSummary:
+      type: object
+      properties:
+        code:
+          type: string
+          example: buy_to_let
+        label:
+          type: string
+          example: Buy-to-let mortgage
+        description:
+          type: string
+          example: Purchase or refinance of rental investment property.
+      required:
+        - code
+        - label
+        - description
+    MortgageChecklistRequest:
+      type: object
+      properties:
+        mortgage_type:
+          type: string
+          example: first_time_buyer
+        employment_profile:
+          type: string
+          example: sole_trader
+          default: sole_trader
+        include_adverse_credit_pack:
+          type: boolean
+          default: false
+      required:
+        - mortgage_type
+    MortgageDocumentItem:
+      type: object
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        reason:
+          type: string
+      required:
+        - code
+        - title
+        - reason
+    MortgageChecklistResponse:
+      type: object
+      properties:
+        jurisdiction:
+          type: string
+          example: England
+        mortgage_type:
+          type: string
+          example: buy_to_let
+        mortgage_label:
+          type: string
+        mortgage_description:
+          type: string
+        employment_profile:
+          type: string
+        required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        conditional_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        lender_notes:
+          type: array
+          items:
+            type: string
+        next_steps:
+          type: array
+          items:
+            type: string
+      required:
+        - jurisdiction
+        - mortgage_type
+        - mortgage_label
+        - mortgage_description
+        - employment_profile
+        - required_documents
+        - conditional_documents
+        - lender_notes
+        - next_steps
     JobRequest:
       type: object
       properties:
@@ -152,3 +275,8 @@ components:
         - job_type
         - status
         - created_at
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

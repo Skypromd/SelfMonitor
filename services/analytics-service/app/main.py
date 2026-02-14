@@ -21,6 +21,11 @@ for parent in Path(__file__).resolve().parents:
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 from libs.shared_http.retry import get_json_with_retry
+from .mortgage_requirements import (
+    EMPLOYMENT_PROFILE_METADATA,
+    MORTGAGE_TYPE_METADATA,
+    build_mortgage_document_checklist,
+)
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -111,6 +116,36 @@ class Transaction(BaseModel):
     date: datetime.date
     amount: float
 
+
+class MortgageTypeSummary(BaseModel):
+    code: str
+    label: str
+    description: str
+
+
+class MortgageChecklistRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+
+
+class MortgageDocumentItem(BaseModel):
+    code: str
+    title: str
+    reason: str
+
+
+class MortgageChecklistResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    mortgage_description: str
+    employment_profile: str
+    required_documents: list[MortgageDocumentItem]
+    conditional_documents: list[MortgageDocumentItem]
+    lender_notes: list[str]
+    next_steps: list[str]
+
 # --- Forecasting Endpoint ---
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow_forecast(
@@ -160,6 +195,41 @@ async def get_cash_flow_forecast(
         forecast_points.append(DataPoint(date=future_date, balance=round(projected_balance, 2)))
 
     return CashFlowResponse(forecast=forecast_points)
+
+
+@app.get("/mortgage/types", response_model=list[MortgageTypeSummary])
+async def list_supported_mortgage_types(_user_id: str = Depends(get_current_user_id)):
+    return [
+        MortgageTypeSummary(
+            code=code,
+            label=metadata["label"],
+            description=metadata["description"],
+        )
+        for code, metadata in MORTGAGE_TYPE_METADATA.items()
+    ]
+
+
+@app.post("/mortgage/checklist", response_model=MortgageChecklistResponse)
+async def generate_mortgage_document_checklist(
+    request: MortgageChecklistRequest,
+    _user_id: str = Depends(get_current_user_id),
+):
+    if request.mortgage_type not in MORTGAGE_TYPE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported mortgage_type '{request.mortgage_type}'",
+        )
+    if request.employment_profile not in EMPLOYMENT_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported employment_profile '{request.employment_profile}'",
+        )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+    )
+    return MortgageChecklistResponse(**checklist)
 
 # --- PDF Report Generation ---
 @app.get("/reports/mortgage-readiness", response_class=StreamingResponse)
