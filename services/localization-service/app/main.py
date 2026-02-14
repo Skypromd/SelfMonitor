@@ -1,5 +1,8 @@
-from fastapi import FastAPI, HTTPException, status, Path
-from typing import Dict
+from copy import deepcopy
+from typing import Dict, Optional
+
+from fastapi import FastAPI, HTTPException, Path, status
+from pydantic import BaseModel
 
 app = FastAPI(
     title="Localization Service",
@@ -165,7 +168,64 @@ fake_translations_db = {
     }
 }
 
+DEFAULT_LOCALE = "en-GB"
+SUPPORTED_LOCALE_METADATA: dict[str, dict[str, Optional[str]]] = {
+    "en-GB": {"native_name": "English (UK)", "fallback_locale": None, "status": "translated"},
+    "de-DE": {"native_name": "Deutsch (Deutschland)", "fallback_locale": DEFAULT_LOCALE, "status": "translated"},
+    "ru-RU": {"native_name": "Русский", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "uk-UA": {"native_name": "Українська", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "pl-PL": {"native_name": "Polski", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "ro-MD": {"native_name": "Română (Moldova)", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "tr-TR": {"native_name": "Türkçe", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "hu-HU": {"native_name": "Magyar", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+}
+
+
+class SupportedLocale(BaseModel):
+    code: str
+    native_name: str
+    fallback_locale: Optional[str] = None
+    status: str
+
+
+def _merge_locale_data(base: Dict[str, Dict[str, str]], override: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+    merged = deepcopy(base)
+    for namespace, namespace_values in override.items():
+        if namespace not in merged:
+            merged[namespace] = {}
+        merged[namespace].update(namespace_values)
+    return merged
+
+
+def _resolve_locale_data(locale: str) -> Dict[str, Dict[str, str]] | None:
+    locale_metadata = SUPPORTED_LOCALE_METADATA.get(locale)
+    if locale_metadata is None:
+        return None
+
+    base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
+    resolved = deepcopy(base_locale_data)
+    locale_specific = fake_translations_db.get(locale)
+    if locale_specific:
+        resolved = _merge_locale_data(resolved, locale_specific)
+    return resolved
+
 # --- Endpoints ---
+
+@app.get(
+    "/translations/locales",
+    response_model=list[SupportedLocale],
+    summary="List supported locales and fallback policy"
+)
+async def list_supported_locales():
+    return [
+        SupportedLocale(
+            code=code,
+            native_name=str(metadata.get("native_name") or code),
+            fallback_locale=metadata.get("fallback_locale"),
+            status=str(metadata.get("status") or "fallback_en_gb"),
+        )
+        for code, metadata in SUPPORTED_LOCALE_METADATA.items()
+    ]
 
 @app.get(
     "/translations/{locale}/{component}",
@@ -180,9 +240,9 @@ async def get_translations_by_component(
     """
     Retrieves a key-value map for a given locale and component.
     """
-    if locale_data := fake_translations_db.get(locale):
-        if component_data := locale_data.get(component):
-            return component_data
+    locale_data = _resolve_locale_data(locale)
+    if locale_data and (component_data := locale_data.get(component)):
+        return component_data
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -199,7 +259,7 @@ async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB
     Retrieves all translation namespaces for a given locale.
     This is useful for loading all strings for a single-page application.
     """
-    if locale_data := fake_translations_db.get(locale):
+    if locale_data := _resolve_locale_data(locale):
         return locale_data
 
     raise HTTPException(

@@ -4,6 +4,20 @@ info:
   description: Provides translation strings (i18n) for different locales.
   version: 1.0.0
 paths:
+  /translations/locales:
+    get:
+      summary: List supported locales and fallback policy
+      tags:
+        - Translations
+      responses:
+        '200':
+          description: Supported locale catalog for scalable i18n rollout.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportedLocale'
   /translations/{locale}/all:
     get:
       summary: Get all translations for a locale
@@ -66,4 +80,25 @@ paths:
         '404':
           description: Translations not found for the given locale or component.
 
-components: {}
+components:
+  schemas:
+    SupportedLocale:
+      type: object
+      properties:
+        code:
+          type: string
+          example: ru-RU
+        native_name:
+          type: string
+          example: Русский
+        fallback_locale:
+          type: string
+          nullable: true
+          example: en-GB
+        status:
+          type: string
+          example: fallback_en_gb
+      required:
+        - code
+        - native_name
+        - status

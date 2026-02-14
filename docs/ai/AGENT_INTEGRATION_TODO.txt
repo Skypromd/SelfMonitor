@@ -86,3 +86,11 @@ MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [ ] M3.1 Add evidence quality checks (staleness, name mismatch, period mismatch, unreadable OCR).
 [ ] M3.2 Add compliance disclaimer and "advisor review required" gates before submission to brokers.
 [ ] M3.3 Add monthly refresh reminders for expiring statements and IDs.
+
+LANGUAGE SUPPORT TRACK (SCALABLE)
+[x] L1.1 Register required locales: en-GB, ru-RU, uk-UA, pl-PL, ro-MD, tr-TR, hu-HU.
+[x] L1.2 Add locale fallback model (launch-ready even with partial translations).
+[x] L1.3 Add supported locales endpoint for dynamic UI and agent prompts.
+[ ] L2.1 Add translation health telemetry (missing keys, fallback hit-rate).
+[ ] L2.2 Externalize translations into scalable catalog/TMS pipeline.
+[ ] L2.3 Add ICU/pluralization and locale-aware formatting standards.
