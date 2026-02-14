@@ -1,11 +1,13 @@
 import os
 import sys
+import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.mortgage_requirements import (
     LENDER_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
+    build_mortgage_evidence_quality_checks,
     build_mortgage_pack_index,
     build_mortgage_readiness_assessment,
     build_mortgage_readiness_matrix,
@@ -255,3 +257,48 @@ def test_build_mortgage_pack_index_contains_evidence_map():
     required_evidence = pack_index["required_document_evidence"]
     assert any(item["code"] == "existing_mortgage_statement" and item["match_status"] == "matched" for item in required_evidence)
     assert any(item["match_status"] in {"matched", "missing"} for item in required_evidence)
+
+
+def test_build_mortgage_evidence_quality_checks_flags_stale_period_and_low_ocr():
+    quality = build_mortgage_evidence_quality_checks(
+        uploaded_documents=[
+            {
+                "filename": "bank_statement_2024_01.pdf",
+                "status": "completed",
+                "uploaded_at": "2025-03-01T12:00:00Z",
+                "extracted_data": {
+                    "ocr_confidence": 0.4,
+                    "needs_review": True,
+                    "review_reason": "low_text_density",
+                    "transaction_date": "2024-01-15",
+                },
+            }
+        ],
+        today=datetime.date(2026, 2, 1),
+    )
+    summary = quality["evidence_quality_summary"]
+    issues = quality["evidence_quality_issues"]
+
+    assert summary["total_issues"] >= 3
+    assert summary["critical_count"] >= 1
+    assert any(item["check_type"] == "unreadable_ocr" for item in issues)
+    assert any(item["check_type"] == "staleness" for item in issues)
+    assert any(item["check_type"] == "period_mismatch" for item in issues)
+
+
+def test_build_mortgage_evidence_quality_checks_detects_name_mismatch():
+    quality = build_mortgage_evidence_quality_checks(
+        uploaded_documents=[
+            {
+                "filename": "passport_john_doe_scan.pdf",
+                "status": "completed",
+                "uploaded_at": "2026-01-20T12:00:00Z",
+                "extracted_data": {"ocr_confidence": 0.95},
+            }
+        ],
+        applicant_first_name="Alice",
+        applicant_last_name="Smith",
+        today=datetime.date(2026, 2, 1),
+    )
+    issues = quality["evidence_quality_issues"]
+    assert any(item["check_type"] == "name_mismatch" for item in issues)

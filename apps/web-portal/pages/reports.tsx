@@ -40,8 +40,27 @@ type MortgageChecklistResponse = {
   required_documents: MortgageDocumentItem[];
 };
 
+type MortgageEvidenceQualityIssue = {
+  check_type: 'staleness' | 'name_mismatch' | 'period_mismatch' | 'unreadable_ocr';
+  document_code?: string | null;
+  document_filename: string;
+  message: string;
+  severity: 'critical' | 'warning' | 'info';
+  suggested_action: string;
+};
+
+type MortgageEvidenceQualitySummary = {
+  critical_count: number;
+  has_blockers: boolean;
+  info_count: number;
+  total_issues: number;
+  warning_count: number;
+};
+
 type MortgageReadinessResponse = MortgageChecklistResponse & {
   detected_document_codes: string[];
+  evidence_quality_issues: MortgageEvidenceQualityIssue[];
+  evidence_quality_summary: MortgageEvidenceQualitySummary;
   matched_required_documents: MortgageDocumentItem[];
   missing_conditional_documents: MortgageDocumentItem[];
   missing_required_documents: MortgageDocumentItem[];
@@ -562,7 +581,32 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                   <span>Uploaded documents detected</span>
                   <span>{readiness.uploaded_document_count}</span>
                 </div>
+                <div className={styles.resultItem}>
+                  <span>Evidence quality issues (critical / warning / info)</span>
+                  <span>
+                    {readiness.evidence_quality_summary.critical_count} / {readiness.evidence_quality_summary.warning_count} /{' '}
+                    {readiness.evidence_quality_summary.info_count}
+                  </span>
+                </div>
                 <p>{readiness.readiness_summary}</p>
+                {readiness.evidence_quality_summary.has_blockers && (
+                  <p className={styles.error}>
+                    Critical evidence-quality blockers detected. Resolve these before broker submission.
+                  </p>
+                )}
+                <h4>Evidence quality alerts</h4>
+                {readiness.evidence_quality_issues.length === 0 ? (
+                  <p className={styles.emptyState}>No evidence-quality issues detected.</p>
+                ) : (
+                  <ul>
+                    {readiness.evidence_quality_issues.slice(0, 8).map((issue, index) => (
+                      <li key={`${issue.document_filename}-${issue.check_type}-${index}`}>
+                        <strong>{issue.severity.toUpperCase()}</strong> — {issue.document_filename}: {issue.message}{' '}
+                        <em>({issue.suggested_action})</em>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <h4>Missing required documents</h4>
                 {readiness.missing_required_documents.length === 0 ? (
                   <p className={styles.emptyState}>All required documents detected.</p>

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import datetime
 from typing import Iterable, Literal
 import re
 
@@ -495,6 +496,120 @@ DOCUMENT_CODE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "landlord_experience_statement": ("landlord_experience",),
 }
 
+PERIOD_FRESHNESS_DAYS_BY_CODE: dict[str, int] = {
+    "proof_of_address": 120,
+    "bank_statements_6m": 210,
+    "invoice_history_6m": 210,
+    "payslips_3m": 120,
+    "existing_mortgage_statement": 120,
+    "offset_account_statements": 120,
+    "business_bank_statements_12m": 400,
+    "management_accounts_ytd": 400,
+}
+
+UPLOAD_STALENESS_DAYS_BY_CODE: dict[str, int] = {
+    "proof_of_address": 120,
+    "bank_statements_6m": 120,
+    "invoice_history_6m": 120,
+    "payslips_3m": 90,
+    "existing_mortgage_statement": 120,
+    "offset_account_statements": 120,
+}
+
+NAME_VALIDATION_CODES: set[str] = {
+    "photo_id",
+    "proof_of_address",
+    "payslips_3m",
+    "p60_latest",
+    "sa302_2y",
+    "tax_year_overviews_2y",
+}
+
+MONTH_TOKEN_TO_NUMBER: dict[str, int] = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+DOCUMENT_NAME_GENERIC_TOKENS: set[str] = {
+    "scan",
+    "statement",
+    "statements",
+    "bank",
+    "utility",
+    "bill",
+    "proof",
+    "address",
+    "passport",
+    "license",
+    "licence",
+    "driving",
+    "photo",
+    "id",
+    "tax",
+    "overview",
+    "hmrc",
+    "latest",
+    "final",
+    "signed",
+    "copy",
+    "document",
+    "docs",
+    "mortgage",
+    "report",
+    "income",
+    "evidence",
+    "deposit",
+    "source",
+    "funds",
+    "credit",
+    "commitment",
+    "commitments",
+    "company",
+    "accounts",
+    "invoice",
+    "payslip",
+    "p60",
+    "current",
+    "account",
+    "business",
+    "rental",
+    "valuation",
+    "agreement",
+    "tenancy",
+    "schedule",
+    "portfolio",
+    "offer",
+    "consent",
+    "letter",
+}
+DOCUMENT_NAME_GENERIC_TOKENS.update(MONTH_TOKEN_TO_NUMBER.keys())
+
+YEAR_MONTH_PATTERN = re.compile(r"(20\d{2})[_\-]?(0[1-9]|1[0-2])")
+YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
+NAME_TOKEN_PATTERN = re.compile(r"[a-z]{3,}")
+
 
 def _normalize_filename(value: str) -> str:
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
@@ -524,6 +639,242 @@ def detect_document_evidence_from_filenames(
 def detect_document_codes_from_filenames(filenames: Iterable[str]) -> set[str]:
     detected_codes, _ = detect_document_evidence_from_filenames(filenames)
     return detected_codes
+
+
+def _coerce_float(value: object) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_date(value: object) -> datetime.date | None:
+    if isinstance(value, datetime.datetime):
+        return value.date()
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.date.fromisoformat(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def _coerce_datetime(value: object) -> datetime.datetime | None:
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, datetime.date):
+        return datetime.datetime.combine(value, datetime.time.min)
+    if isinstance(value, str):
+        iso_value = value.strip()
+        if iso_value.endswith("Z"):
+            iso_value = iso_value.replace("Z", "+00:00")
+        try:
+            return datetime.datetime.fromisoformat(iso_value)
+        except ValueError:
+            return None
+    return None
+
+
+def _extract_period_date_from_filename(normalized_filename: str) -> datetime.date | None:
+    year_month_match = YEAR_MONTH_PATTERN.search(normalized_filename)
+    if year_month_match:
+        year = int(year_month_match.group(1))
+        month = int(year_month_match.group(2))
+        return datetime.date(year, month, 1)
+
+    tokens = [token for token in re.split(r"[_\.]+", normalized_filename) if token]
+    for idx, token in enumerate(tokens):
+        month = MONTH_TOKEN_TO_NUMBER.get(token)
+        if month is None:
+            continue
+        for offset in (-1, 1):
+            neighbor_idx = idx + offset
+            if neighbor_idx < 0 or neighbor_idx >= len(tokens):
+                continue
+            neighbor = tokens[neighbor_idx]
+            if neighbor.isdigit() and len(neighbor) == 4 and neighbor.startswith("20"):
+                return datetime.date(int(neighbor), month, 1)
+
+    year_match = YEAR_PATTERN.search(normalized_filename)
+    if year_match:
+        return datetime.date(int(year_match.group(1)), 12, 1)
+    return None
+
+
+def _extract_name_tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in NAME_TOKEN_PATTERN.findall(value.lower())
+        if token not in DOCUMENT_NAME_GENERIC_TOKENS and len(token) >= 3
+    }
+
+
+def _resolve_max_period_age_days(detected_codes: set[str]) -> int | None:
+    thresholds = [PERIOD_FRESHNESS_DAYS_BY_CODE[code] for code in detected_codes if code in PERIOD_FRESHNESS_DAYS_BY_CODE]
+    if not thresholds:
+        return None
+    return min(thresholds)
+
+
+def _resolve_upload_staleness_days(detected_codes: set[str]) -> int:
+    thresholds = [UPLOAD_STALENESS_DAYS_BY_CODE[code] for code in detected_codes if code in UPLOAD_STALENESS_DAYS_BY_CODE]
+    if not thresholds:
+        return 180
+    return min(thresholds)
+
+
+def build_mortgage_evidence_quality_checks(
+    *,
+    uploaded_documents: Iterable[dict[str, object]],
+    applicant_first_name: str | None = None,
+    applicant_last_name: str | None = None,
+    today: datetime.date | None = None,
+) -> dict[str, object]:
+    reference_date = today or datetime.date.today()
+    applicant_tokens = _extract_name_tokens(
+        " ".join(part for part in (applicant_first_name, applicant_last_name) if isinstance(part, str))
+    )
+
+    issues: list[dict[str, object]] = []
+
+    for raw_document in uploaded_documents:
+        if not isinstance(raw_document, dict):
+            continue
+        raw_filename = raw_document.get("filename")
+        if not isinstance(raw_filename, str) or not raw_filename.strip():
+            continue
+        filename = raw_filename.strip()
+        normalized_filename = _normalize_filename(filename)
+        detected_codes = detect_document_codes_from_filenames([filename])
+        primary_code = sorted(detected_codes)[0] if detected_codes else None
+        extracted_data = raw_document.get("extracted_data")
+        if not isinstance(extracted_data, dict):
+            extracted_data = {}
+
+        status_value = str(raw_document.get("status", "")).strip().lower()
+        ocr_confidence = _coerce_float(extracted_data.get("ocr_confidence"))
+        needs_review = extracted_data.get("needs_review") is True
+        review_reason_value = extracted_data.get("review_reason")
+        review_reason = review_reason_value.strip() if isinstance(review_reason_value, str) else ""
+
+        if status_value == "failed":
+            issues.append(
+                {
+                    "check_type": "unreadable_ocr",
+                    "severity": "critical",
+                    "document_filename": filename,
+                    "document_code": primary_code,
+                    "message": "OCR extraction failed for this document.",
+                    "suggested_action": "Re-upload a clearer scan or provide a native PDF copy.",
+                }
+            )
+        elif needs_review or (ocr_confidence is not None and ocr_confidence < 0.6):
+            severity = "critical" if ocr_confidence is not None and ocr_confidence < 0.45 else "warning"
+            reason_suffix = f" Reason: {review_reason}" if review_reason else ""
+            confidence_suffix = (
+                f" OCR confidence {ocr_confidence:.2f} is below threshold." if ocr_confidence is not None else ""
+            )
+            issues.append(
+                {
+                    "check_type": "unreadable_ocr",
+                    "severity": severity,
+                    "document_filename": filename,
+                    "document_code": primary_code,
+                    "message": f"Document OCR quality is low.{confidence_suffix}{reason_suffix}".strip(),
+                    "suggested_action": "Review OCR fields and replace with a higher-quality scan if needed.",
+                }
+            )
+
+        uploaded_at = _coerce_datetime(raw_document.get("uploaded_at"))
+        if uploaded_at is not None:
+            upload_age_days = (reference_date - uploaded_at.date()).days
+            staleness_limit_days = _resolve_upload_staleness_days(detected_codes)
+            if upload_age_days > staleness_limit_days:
+                severity = "critical" if staleness_limit_days <= 120 else "warning"
+                issues.append(
+                    {
+                        "check_type": "staleness",
+                        "severity": severity,
+                        "document_filename": filename,
+                        "document_code": primary_code,
+                        "message": (
+                            f"Document was uploaded {upload_age_days} days ago and may be stale for current "
+                            "underwriting."
+                        ),
+                        "suggested_action": "Refresh this evidence with a newly issued document.",
+                    }
+                )
+
+        period_date = _coerce_date(extracted_data.get("transaction_date")) or _extract_period_date_from_filename(
+            normalized_filename
+        )
+        period_limit_days = _resolve_max_period_age_days(detected_codes)
+        if period_date is not None and period_limit_days is not None:
+            period_age_days = (reference_date - period_date).days
+            if period_age_days > period_limit_days:
+                severity = (
+                    "critical"
+                    if any(code in {"proof_of_address", "bank_statements_6m", "payslips_3m"} for code in detected_codes)
+                    else "warning"
+                )
+                issues.append(
+                    {
+                        "check_type": "period_mismatch",
+                        "severity": severity,
+                        "document_filename": filename,
+                        "document_code": primary_code,
+                        "message": (
+                            f"Document period appears {period_age_days} days old, exceeding expected window "
+                            f"({period_limit_days} days)."
+                        ),
+                        "suggested_action": "Upload a document covering the required recent period.",
+                    }
+                )
+
+        if applicant_tokens and detected_codes.intersection(NAME_VALIDATION_CODES):
+            filename_name_tokens = _extract_name_tokens(normalized_filename)
+            if len(filename_name_tokens) >= 2 and filename_name_tokens.isdisjoint(applicant_tokens):
+                issues.append(
+                    {
+                        "check_type": "name_mismatch",
+                        "severity": "warning",
+                        "document_filename": filename,
+                        "document_code": primary_code,
+                        "message": (
+                            "Document filename appears to include a different person name than the profile name "
+                            "on this application."
+                        ),
+                        "suggested_action": "Verify this file belongs to the applicant and replace if mismatched.",
+                    }
+                )
+
+    severity_rank = {"critical": 0, "warning": 1, "info": 2}
+    issues.sort(
+        key=lambda issue: (
+            severity_rank.get(str(issue.get("severity", "info")), 3),
+            str(issue.get("document_filename", "")).lower(),
+            str(issue.get("check_type", "")).lower(),
+        )
+    )
+    critical_count = sum(1 for issue in issues if issue.get("severity") == "critical")
+    warning_count = sum(1 for issue in issues if issue.get("severity") == "warning")
+    info_count = sum(1 for issue in issues if issue.get("severity") == "info")
+    return {
+        "evidence_quality_summary": {
+            "total_issues": len(issues),
+            "critical_count": critical_count,
+            "warning_count": warning_count,
+            "info_count": info_count,
+            "has_blockers": critical_count > 0,
+        },
+        "evidence_quality_issues": issues,
+    }
 
 
 def _documents_by_match_state(

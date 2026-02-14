@@ -463,6 +463,12 @@ components:
           enum: [not_ready, almost_ready, ready_for_broker_review]
         readiness_summary:
           type: string
+        evidence_quality_summary:
+          $ref: '#/components/schemas/MortgageEvidenceQualitySummary'
+        evidence_quality_issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
       required:
         - jurisdiction
         - mortgage_type
@@ -485,6 +491,8 @@ components:
         - overall_completion_percent
         - readiness_status
         - readiness_summary
+        - evidence_quality_summary
+        - evidence_quality_issues
     MortgageReadinessMatrixRequest:
       type: object
       properties:
@@ -636,6 +644,49 @@ components:
         - reason
         - match_status
         - matched_filenames
+    MortgageEvidenceQualityIssue:
+      type: object
+      properties:
+        check_type:
+          type: string
+          enum: [staleness, name_mismatch, period_mismatch, unreadable_ocr]
+        severity:
+          type: string
+          enum: [critical, warning, info]
+        document_filename:
+          type: string
+        document_code:
+          type: string
+          nullable: true
+        message:
+          type: string
+        suggested_action:
+          type: string
+      required:
+        - check_type
+        - severity
+        - document_filename
+        - message
+        - suggested_action
+    MortgageEvidenceQualitySummary:
+      type: object
+      properties:
+        total_issues:
+          type: integer
+        critical_count:
+          type: integer
+        warning_count:
+          type: integer
+        info_count:
+          type: integer
+        has_blockers:
+          type: boolean
+      required:
+        - total_issues
+        - critical_count
+        - warning_count
+        - info_count
+        - has_blockers
     MortgagePackIndexResponse:
       type: object
       properties:
@@ -710,6 +761,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MortgageDocumentEvidenceItem'
+        evidence_quality_summary:
+          $ref: '#/components/schemas/MortgageEvidenceQualitySummary'
+        evidence_quality_issues:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
         generated_at:
           type: string
           format: date-time
@@ -737,6 +794,8 @@ components:
         - missing_conditional_documents
         - required_document_evidence
         - conditional_document_evidence
+        - evidence_quality_summary
+        - evidence_quality_issues
         - generated_at
     JobRequest:
       type: object

@@ -25,6 +25,7 @@ from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
     LENDER_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
+    build_mortgage_evidence_quality_checks,
     build_mortgage_document_checklist,
     build_mortgage_pack_index,
     build_mortgage_readiness_assessment,
@@ -40,6 +41,7 @@ app = FastAPI(
 )
 
 DOCUMENTS_SERVICE_URL = os.getenv("DOCUMENTS_SERVICE_URL", "http://documents-service/documents")
+USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://user-profile-service/profiles/me")
 
 # --- Models ---
 
@@ -148,6 +150,23 @@ class MortgageDocumentItem(BaseModel):
     reason: str
 
 
+class MortgageEvidenceQualityIssue(BaseModel):
+    check_type: Literal["staleness", "name_mismatch", "period_mismatch", "unreadable_ocr"]
+    severity: Literal["critical", "warning", "info"]
+    document_filename: str
+    document_code: Optional[str] = None
+    message: str
+    suggested_action: str
+
+
+class MortgageEvidenceQualitySummary(BaseModel):
+    total_issues: int
+    critical_count: int
+    warning_count: int
+    info_count: int
+    has_blockers: bool
+
+
 class MortgageChecklistResponse(BaseModel):
     jurisdiction: str
     mortgage_type: str
@@ -192,6 +211,8 @@ class MortgageReadinessResponse(BaseModel):
     overall_completion_percent: float
     readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
     readiness_summary: str
+    evidence_quality_summary: MortgageEvidenceQualitySummary
+    evidence_quality_issues: list[MortgageEvidenceQualityIssue]
 
 
 class MortgageReadinessMatrixRequest(BaseModel):
@@ -269,6 +290,8 @@ class MortgagePackIndexResponse(BaseModel):
     missing_conditional_documents: list[MortgageDocumentItem]
     required_document_evidence: list[MortgageDocumentEvidenceItem]
     conditional_document_evidence: list[MortgageDocumentEvidenceItem]
+    evidence_quality_summary: MortgageEvidenceQualitySummary
+    evidence_quality_issues: list[MortgageEvidenceQualityIssue]
     generated_at: datetime.datetime
 
 # --- Forecasting Endpoint ---
@@ -365,11 +388,20 @@ async def generate_mortgage_document_checklist(
     return MortgageChecklistResponse(**checklist)
 
 
-async def _load_user_uploaded_document_filenames(
+def _extract_document_filenames(documents: list[dict[str, object]]) -> list[str]:
+    filenames: list[str] = []
+    for item in documents:
+        filename = item.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            filenames.append(filename.strip())
+    return filenames
+
+
+async def _load_user_uploaded_documents(
     *,
     bearer_token: str,
     max_documents_scan: int,
-) -> list[str]:
+) -> list[dict[str, object]]:
     headers = {"Authorization": f"Bearer {bearer_token}"}
     try:
         payload = await get_json_with_retry(
@@ -388,14 +420,43 @@ async def _load_user_uploaded_document_filenames(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Invalid documents-service response format",
         )
-    filenames: list[str] = []
+    documents: list[dict[str, object]] = []
     for item in payload[:max_documents_scan]:
         if not isinstance(item, dict):
             continue
         filename = item.get("filename")
-        if isinstance(filename, str) and filename.strip():
-            filenames.append(filename.strip())
-    return filenames
+        if not isinstance(filename, str) or not filename.strip():
+            continue
+        documents.append(item)
+    return documents
+
+
+async def _load_user_profile_name(
+    *,
+    bearer_token: str,
+) -> tuple[str | None, str | None]:
+    headers = {"Authorization": f"Bearer {bearer_token}"}
+    try:
+        payload = await get_json_with_retry(
+            USER_PROFILE_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == status.HTTP_404_NOT_FOUND:
+            return None, None
+        return None, None
+    except httpx.HTTPError:
+        return None, None
+
+    if not isinstance(payload, dict):
+        return None, None
+    first_name = payload.get("first_name")
+    last_name = payload.get("last_name")
+    return (
+        first_name.strip() if isinstance(first_name, str) and first_name.strip() else None,
+        last_name.strip() if isinstance(last_name, str) and last_name.strip() else None,
+    )
 
 
 def _validate_mortgage_selector_inputs(
@@ -442,6 +503,36 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
     pdf.cell(0, 7, f"Overall completion: {pack_index.get('overall_completion_percent', 0)}%", 0, 1)
     pdf.cell(0, 7, f"Status: {pack_index.get('readiness_status', '')}", 0, 1)
     pdf.ln(3)
+
+    quality_summary = pack_index.get("evidence_quality_summary", {})
+    if isinstance(quality_summary, dict):
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Evidence quality checks", 0, 1)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, f"Total issues: {quality_summary.get('total_issues', 0)}", 0, 1)
+        pdf.cell(
+            0,
+            7,
+            (
+                "Critical / Warning / Info: "
+                f"{quality_summary.get('critical_count', 0)} / "
+                f"{quality_summary.get('warning_count', 0)} / "
+                f"{quality_summary.get('info_count', 0)}"
+            ),
+            0,
+            1,
+        )
+        pdf.ln(2)
+        quality_issues = pack_index.get("evidence_quality_issues", [])
+        if isinstance(quality_issues, list):
+            for issue in quality_issues[:6]:
+                if not isinstance(issue, dict):
+                    continue
+                severity = str(issue.get("severity", "info")).upper()
+                filename = str(issue.get("document_filename", ""))
+                message = str(issue.get("message", ""))
+                pdf.multi_cell(0, 6, f"[{severity}] {filename}: {message}")
+            pdf.ln(2)
 
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Required document evidence", 0, 1)
@@ -492,14 +583,28 @@ async def evaluate_mortgage_readiness(
         include_adverse_credit_pack=request.include_adverse_credit_pack,
         lender_profile=request.lender_profile,
     )
-    filenames = await _load_user_uploaded_document_filenames(
+    uploaded_documents = await _load_user_uploaded_documents(
         bearer_token=bearer_token,
         max_documents_scan=request.max_documents_scan,
     )
+    filenames = _extract_document_filenames(uploaded_documents)
     readiness = build_mortgage_readiness_assessment(
         checklist=checklist,
         uploaded_filenames=filenames,
     )
+    first_name, last_name = await _load_user_profile_name(bearer_token=bearer_token)
+    quality_checks = build_mortgage_evidence_quality_checks(
+        uploaded_documents=uploaded_documents,
+        applicant_first_name=first_name,
+        applicant_last_name=last_name,
+    )
+    readiness.update(quality_checks)
+    quality_summary = quality_checks.get("evidence_quality_summary")
+    if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
+        next_actions = list(readiness.get("next_actions", []))
+        blocker_action = "Resolve critical evidence-quality blockers before broker submission."
+        if blocker_action not in next_actions:
+            readiness["next_actions"] = [blocker_action, *next_actions]
     return MortgageReadinessResponse(**readiness)
 
 
@@ -514,10 +619,11 @@ async def evaluate_mortgage_readiness_matrix(
         employment_profile=request.employment_profile,
         lender_profile=request.lender_profile,
     )
-    filenames = await _load_user_uploaded_document_filenames(
+    uploaded_documents = await _load_user_uploaded_documents(
         bearer_token=bearer_token,
         max_documents_scan=request.max_documents_scan,
     )
+    filenames = _extract_document_filenames(uploaded_documents)
     matrix = build_mortgage_readiness_matrix(
         employment_profile=request.employment_profile,
         include_adverse_credit_pack=request.include_adverse_credit_pack,
@@ -544,14 +650,28 @@ async def generate_mortgage_pack_index(
         include_adverse_credit_pack=request.include_adverse_credit_pack,
         lender_profile=request.lender_profile,
     )
-    filenames = await _load_user_uploaded_document_filenames(
+    uploaded_documents = await _load_user_uploaded_documents(
         bearer_token=bearer_token,
         max_documents_scan=request.max_documents_scan,
     )
+    filenames = _extract_document_filenames(uploaded_documents)
     pack_index = build_mortgage_pack_index(
         checklist=checklist,
         uploaded_filenames=filenames,
     )
+    first_name, last_name = await _load_user_profile_name(bearer_token=bearer_token)
+    quality_checks = build_mortgage_evidence_quality_checks(
+        uploaded_documents=uploaded_documents,
+        applicant_first_name=first_name,
+        applicant_last_name=last_name,
+    )
+    pack_index.update(quality_checks)
+    quality_summary = quality_checks.get("evidence_quality_summary")
+    if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
+        next_actions = list(pack_index.get("next_actions", []))
+        blocker_action = "Resolve critical evidence-quality blockers before broker submission."
+        if blocker_action not in next_actions:
+            pack_index["next_actions"] = [blocker_action, *next_actions]
     pack_index["generated_at"] = datetime.datetime.now(datetime.UTC)
     return MortgagePackIndexResponse(**pack_index)
 
@@ -573,14 +693,28 @@ async def generate_mortgage_pack_index_pdf(
         include_adverse_credit_pack=request.include_adverse_credit_pack,
         lender_profile=request.lender_profile,
     )
-    filenames = await _load_user_uploaded_document_filenames(
+    uploaded_documents = await _load_user_uploaded_documents(
         bearer_token=bearer_token,
         max_documents_scan=request.max_documents_scan,
     )
+    filenames = _extract_document_filenames(uploaded_documents)
     pack_index = build_mortgage_pack_index(
         checklist=checklist,
         uploaded_filenames=filenames,
     )
+    first_name, last_name = await _load_user_profile_name(bearer_token=bearer_token)
+    quality_checks = build_mortgage_evidence_quality_checks(
+        uploaded_documents=uploaded_documents,
+        applicant_first_name=first_name,
+        applicant_last_name=last_name,
+    )
+    pack_index.update(quality_checks)
+    quality_summary = quality_checks.get("evidence_quality_summary")
+    if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
+        next_actions = list(pack_index.get("next_actions", []))
+        blocker_action = "Resolve critical evidence-quality blockers before broker submission."
+        if blocker_action not in next_actions:
+            pack_index["next_actions"] = [blocker_action, *next_actions]
     generated_at = datetime.datetime.now(datetime.UTC)
     pack_index["generated_at"] = generated_at.isoformat()
     pdf_bytes = _build_mortgage_pack_index_pdf_bytes(pack_index)

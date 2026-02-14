@@ -285,10 +285,12 @@ services:
     depends_on:
       - transactions-service
       - documents-service
+      - user-profile-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       TRANSACTIONS_SERVICE_URL: "${ANALYTICS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       DOCUMENTS_SERVICE_URL: "${ANALYTICS_DOCUMENTS_SERVICE_URL:-http://documents-service/documents}"
+      USER_PROFILE_SERVICE_URL: "${ANALYTICS_USER_PROFILE_SERVICE_URL:-http://user-profile-service/profiles/me}"
     networks:
       - default_network
 
