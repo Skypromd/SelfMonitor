@@ -390,6 +390,72 @@
   color: #0f7a4a;
 }
 
+.reviewQueueActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reviewDangerAction {
+  border-color: rgba(209, 67, 97, 0.4);
+  color: #b72849;
+}
+
+.reviewDangerAction:hover {
+  border-color: #b72849;
+  color: #b72849;
+}
+
+.reviewEditorRow td {
+  background: var(--color-surface-muted);
+}
+
+.reviewEditorCell {
+  padding-top: 12px;
+}
+
+.reviewEditorGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.reviewField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reviewField span {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reviewInput,
+.reviewTextarea,
+.reviewSelect {
+  margin: 0;
+}
+
+.reviewSelect {
+  min-height: 40px;
+}
+
+.reviewTextarea {
+  resize: vertical;
+  min-height: 70px;
+}
+
+.reviewEditorActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .actionableAdviceCard {
   background: linear-gradient(135deg, rgba(69, 117, 255, 0.09) 0%, var(--color-surface-muted) 100%);
   border-color: rgba(69, 117, 255, 0.3);
@@ -1096,6 +1162,18 @@
 
   .invoiceExportGroup {
     flex-direction: column;
+  }
+
+  .reviewEditorGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .reviewEditorActions {
+    justify-content: stretch;
+  }
+
+  .reviewEditorActions .tableActionButton {
+    width: 100%;
   }
 
   .modalCard {

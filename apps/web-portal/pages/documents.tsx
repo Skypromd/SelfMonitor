@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
@@ -36,6 +36,37 @@ type SearchResult = {
   filename: string;
   score: number;
 };
+
+type DeductibleSelection = 'unknown' | 'true' | 'false';
+
+type ReviewDraft = {
+  expense_article: string;
+  is_potentially_deductible: DeductibleSelection;
+  review_notes: string;
+  suggested_category: string;
+  total_amount: string;
+  transaction_date: string;
+  vendor_name: string;
+};
+
+function toReviewDraft(document: DocumentRecord): ReviewDraft {
+  const extracted = document.extracted_data;
+  const transactionDateRaw = extracted?.transaction_date ?? '';
+  return {
+    vendor_name: extracted?.vendor_name ?? '',
+    total_amount: typeof extracted?.total_amount === 'number' ? extracted.total_amount.toFixed(2) : '',
+    transaction_date: transactionDateRaw.includes('T') ? transactionDateRaw.slice(0, 10) : transactionDateRaw,
+    suggested_category: extracted?.suggested_category ?? '',
+    expense_article: extracted?.expense_article ?? '',
+    is_potentially_deductible:
+      extracted?.is_potentially_deductible === true
+        ? 'true'
+        : extracted?.is_potentially_deductible === false
+          ? 'false'
+          : 'unknown',
+    review_notes: extracted?.review_notes ?? '',
+  };
+}
 
 function SemanticSearch({ token }: { token: string }) {
   const [query, setQuery] = useState('');
@@ -122,6 +153,7 @@ function SemanticSearch({ token }: { token: string }) {
 export default function DocumentsPage({ token }: DocumentsPageProps) {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [reviewQueue, setReviewQueue] = useState<DocumentRecord[]>([]);
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
@@ -158,7 +190,15 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         throw new Error('Failed to fetch review queue');
       }
       const payload = (await response.json()) as { items?: DocumentRecord[] };
-      setReviewQueue(payload.items ?? []);
+      const items = payload.items ?? [];
+      setReviewQueue(items);
+      setReviewDrafts((previous) => {
+        const next: Record<string, ReviewDraft> = {};
+        items.forEach((document) => {
+          next[document.id] = previous[document.id] ?? toReviewDraft(document);
+        });
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
@@ -214,23 +254,83 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
     }
   };
 
-  const handleMarkReviewed = useCallback(
-    async (documentId: string) => {
+  const handleReviewDraftChange = useCallback(
+    (documentId: string, field: keyof ReviewDraft, value: string) => {
+      setReviewDrafts((previous) => ({
+        ...previous,
+        [documentId]: {
+          ...(previous[documentId] ?? {
+            expense_article: '',
+            is_potentially_deductible: 'unknown',
+            review_notes: '',
+            suggested_category: '',
+            total_amount: '',
+            transaction_date: '',
+            vendor_name: '',
+          }),
+          [field]: value,
+        },
+      }));
+    },
+    []
+  );
+
+  const handleReviewAction = useCallback(
+    async (document: DocumentRecord, reviewStatus: 'confirmed' | 'corrected' | 'ignored') => {
       setError('');
-      setReviewActionDocumentId(documentId);
+      setReviewActionDocumentId(document.id);
       try {
-        const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents/${documentId}/review`, {
+        const draft = reviewDrafts[document.id] ?? toReviewDraft(document);
+        const payload: Record<string, boolean | number | string> = { review_status: reviewStatus };
+        const reviewNotes = draft.review_notes.trim();
+        if (reviewNotes) {
+          payload.review_notes = reviewNotes;
+        }
+
+        if (reviewStatus === 'corrected') {
+          const vendorName = draft.vendor_name.trim();
+          const suggestedCategory = draft.suggested_category.trim();
+          const expenseArticle = draft.expense_article.trim();
+          const totalAmount = draft.total_amount.trim();
+          const transactionDate = draft.transaction_date.trim();
+
+          if (vendorName) {
+            payload.vendor_name = vendorName;
+          }
+          if (suggestedCategory) {
+            payload.suggested_category = suggestedCategory;
+          }
+          if (expenseArticle) {
+            payload.expense_article = expenseArticle;
+          }
+          if (transactionDate) {
+            payload.transaction_date = transactionDate;
+          }
+          if (totalAmount) {
+            const parsedAmount = Number(totalAmount);
+            if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+              throw new Error('Amount must be a positive number.');
+            }
+            payload.total_amount = parsedAmount;
+          }
+          if (draft.is_potentially_deductible === 'true' || draft.is_potentially_deductible === 'false') {
+            payload.is_potentially_deductible = draft.is_potentially_deductible === 'true';
+          }
+        }
+
+        const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents/${document.id}/review`, {
           method: 'PATCH',
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ review_status: 'confirmed' }),
+          body: JSON.stringify(payload),
         });
-        const payload = await response.json();
+        const responsePayload = await response.json();
         if (!response.ok) {
-          throw new Error(payload.detail || 'Failed to confirm OCR review');
+          throw new Error(responsePayload.detail || 'Failed to update OCR review');
         }
+        setMessage(`Review status saved for '${document.filename}'.`);
         await Promise.all([fetchDocuments(), fetchReviewQueue()]);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unexpected error');
@@ -238,7 +338,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         setReviewActionDocumentId(null);
       }
     },
-    [token, fetchDocuments, fetchReviewQueue]
+    [token, fetchDocuments, fetchReviewQueue, reviewDrafts]
   );
 
   const renderReviewBadge = (document: DocumentRecord) => {
@@ -297,30 +397,143 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                 </tr>
               </thead>
               <tbody>
-                {reviewQueue.map((document) => (
-                  <tr key={`review-${document.id}`}>
-                    <td>{document.filename}</td>
-                    <td>{renderConfidence(document)}</td>
-                    <td>{document.extracted_data?.review_reason || '—'}</td>
-                    <td>{document.extracted_data?.vendor_name || '—'}</td>
-                    <td>
-                      {typeof document.extracted_data?.total_amount === 'number'
-                        ? `£${document.extracted_data.total_amount.toFixed(2)}`
-                        : '—'}
-                    </td>
-                    <td>{document.extracted_data?.transaction_date || '—'}</td>
-                    <td>
-                      <button
-                        className={styles.tableActionButton}
-                        disabled={reviewActionDocumentId === document.id}
-                        onClick={() => handleMarkReviewed(document.id)}
-                        type="button"
-                      >
-                        {reviewActionDocumentId === document.id ? 'Saving...' : 'Mark reviewed'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {reviewQueue.map((document) => {
+                  const draft = reviewDrafts[document.id] ?? toReviewDraft(document);
+                  const isSavingThisDocument = reviewActionDocumentId === document.id;
+                  const disableReviewActions = reviewActionDocumentId !== null;
+                  return (
+                    <Fragment key={`review-${document.id}`}>
+                      <tr>
+                        <td>{document.filename}</td>
+                        <td>{renderConfidence(document)}</td>
+                        <td>{document.extracted_data?.review_reason || '—'}</td>
+                        <td>{document.extracted_data?.vendor_name || '—'}</td>
+                        <td>
+                          {typeof document.extracted_data?.total_amount === 'number'
+                            ? `£${document.extracted_data.total_amount.toFixed(2)}`
+                            : '—'}
+                        </td>
+                        <td>{document.extracted_data?.transaction_date || '—'}</td>
+                        <td>
+                          <div className={styles.reviewQueueActions}>
+                            <button
+                              className={styles.tableActionButton}
+                              disabled={disableReviewActions}
+                              onClick={() => handleReviewAction(document, 'confirmed')}
+                              type="button"
+                            >
+                              {isSavingThisDocument ? 'Saving...' : 'Confirm'}
+                            </button>
+                            <button
+                              className={`${styles.tableActionButton} ${styles.reviewDangerAction}`}
+                              disabled={disableReviewActions}
+                              onClick={() => handleReviewAction(document, 'ignored')}
+                              type="button"
+                            >
+                              Ignore
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr className={styles.reviewEditorRow}>
+                        <td className={styles.reviewEditorCell} colSpan={7}>
+                          <div className={styles.reviewEditorGrid}>
+                            <label className={styles.reviewField}>
+                              <span>Vendor</span>
+                              <input
+                                className={`${styles.input} ${styles.reviewInput}`}
+                                onChange={(event) => handleReviewDraftChange(document.id, 'vendor_name', event.target.value)}
+                                type="text"
+                                value={draft.vendor_name}
+                              />
+                            </label>
+                            <label className={styles.reviewField}>
+                              <span>Amount</span>
+                              <input
+                                className={`${styles.input} ${styles.reviewInput}`}
+                                min="0"
+                                onChange={(event) => handleReviewDraftChange(document.id, 'total_amount', event.target.value)}
+                                step="0.01"
+                                type="number"
+                                value={draft.total_amount}
+                              />
+                            </label>
+                            <label className={styles.reviewField}>
+                              <span>Date</span>
+                              <input
+                                className={`${styles.input} ${styles.reviewInput}`}
+                                onChange={(event) =>
+                                  handleReviewDraftChange(document.id, 'transaction_date', event.target.value)
+                                }
+                                type="date"
+                                value={draft.transaction_date}
+                              />
+                            </label>
+                            <label className={styles.reviewField}>
+                              <span>Category</span>
+                              <input
+                                className={`${styles.input} ${styles.reviewInput}`}
+                                onChange={(event) =>
+                                  handleReviewDraftChange(document.id, 'suggested_category', event.target.value)
+                                }
+                                type="text"
+                                value={draft.suggested_category}
+                              />
+                            </label>
+                            <label className={styles.reviewField}>
+                              <span>Expense article</span>
+                              <input
+                                className={`${styles.input} ${styles.reviewInput}`}
+                                onChange={(event) =>
+                                  handleReviewDraftChange(document.id, 'expense_article', event.target.value)
+                                }
+                                type="text"
+                                value={draft.expense_article}
+                              />
+                            </label>
+                            <label className={styles.reviewField}>
+                              <span>Deductible</span>
+                              <select
+                                className={`${styles.categorySelect} ${styles.reviewSelect}`}
+                                onChange={(event) =>
+                                  handleReviewDraftChange(
+                                    document.id,
+                                    'is_potentially_deductible',
+                                    event.target.value as DeductibleSelection
+                                  )
+                                }
+                                value={draft.is_potentially_deductible}
+                              >
+                                <option value="unknown">Unknown</option>
+                                <option value="true">Yes</option>
+                                <option value="false">No</option>
+                              </select>
+                            </label>
+                          </div>
+                          <label className={styles.reviewField}>
+                            <span>Review notes</span>
+                            <textarea
+                              className={`${styles.input} ${styles.reviewTextarea}`}
+                              onChange={(event) => handleReviewDraftChange(document.id, 'review_notes', event.target.value)}
+                              rows={2}
+                              value={draft.review_notes}
+                            />
+                          </label>
+                          <div className={styles.reviewEditorActions}>
+                            <button
+                              className={styles.tableActionButton}
+                              disabled={disableReviewActions}
+                              onClick={() => handleReviewAction(document, 'corrected')}
+                              type="button"
+                            >
+                              {isSavingThisDocument ? 'Saving...' : 'Save correction'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           )}
