@@ -69,3 +69,5 @@ _Last updated: 2026-02-13_
 37. [x] Add structured agent audit logging (prompt hash, tool calls, payload summary, action result)
 38. [x] Add dashboard AI Copilot panel wired to agent-service chat endpoint
 39. [x] Add suggested action cards with explicit confirmation flow in dashboard
+40. [x] Add "why this suggestion" drill-down in AI Copilot action cards
+41. [x] Add fallback UX for Copilot outages with manual workflow shortcuts

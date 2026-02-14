@@ -280,14 +280,31 @@ function ActionCenter({ token }: { token: string }) {
 }
 
 function AICopilotPanel({ token }: { token: string }) {
+  const router = useRouter();
   const [message, setMessage] = useState('Give me a readiness snapshot and next action.');
   const [response, setResponse] = useState<CopilotChatResponse | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [whyOpenForActionKey, setWhyOpenForActionKey] = useState<string | null>(null);
   const [actionState, setActionState] = useState<Record<string, { error?: string; isLoading: boolean; message?: string }>>({});
 
   const buildActionKey = (action: CopilotSuggestedAction, index: number) => `${action.action_id}:${index}`;
+  const getEvidenceForAction = (action: CopilotSuggestedAction) => {
+    if (!response) {
+      return [];
+    }
+    if (action.action_id.startsWith('documents.') || action.action_id.includes('ocr')) {
+      return response.evidence.filter((item) => item.source_service === 'documents-service');
+    }
+    if (action.action_id.startsWith('transactions.') || action.action_id.includes('reconcile')) {
+      return response.evidence.filter((item) => item.source_service === 'transactions-service');
+    }
+    if (action.action_id.startsWith('tax.')) {
+      return response.evidence.filter((item) => item.source_service === 'tax-engine');
+    }
+    return response.evidence;
+  };
 
   const handleAskCopilot = async (event: FormEvent) => {
     event.preventDefault();
@@ -318,6 +335,7 @@ function AICopilotPanel({ token }: { token: string }) {
       const chatPayload = payload as CopilotChatResponse;
       setResponse(chatPayload);
       setSessionId(chatPayload.session_id);
+      setWhyOpenForActionKey(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected Copilot error');
     } finally {
@@ -406,7 +424,23 @@ function AICopilotPanel({ token }: { token: string }) {
           {isLoading ? 'Thinking...' : 'Ask Copilot'}
         </button>
       </form>
-      {error && <p className={styles.error}>{error}</p>}
+      {error && (
+        <div className={styles.copilotFallback}>
+          <p className={styles.error}>{error}</p>
+          <p>Copilot is temporarily unavailable. Continue with manual control paths:</p>
+          <div className={styles.copilotFallbackActions}>
+            <button className={styles.tableActionButton} onClick={() => router.push('/documents')} type="button">
+              Open OCR review queue
+            </button>
+            <button className={styles.tableActionButton} onClick={() => router.push('/transactions')} type="button">
+              Open reconciliation screen
+            </button>
+            <button className={styles.tableActionButton} onClick={() => router.push('/submission')} type="button">
+              Open submission flow
+            </button>
+          </div>
+        </div>
+      )}
 
       {response && (
         <div className={styles.copilotResults}>
@@ -433,6 +467,8 @@ function AICopilotPanel({ token }: { token: string }) {
               const actionKey = buildActionKey(action, index);
               const currentState = actionState[actionKey];
               const hasPayload = Boolean(action.action_payload);
+              const isWhyOpen = whyOpenForActionKey === actionKey;
+              const actionEvidence = getEvidenceForAction(action);
               return (
                 <article className={styles.copilotActionCard} key={actionKey}>
                   <div className={styles.copilotActionHeader}>
@@ -444,6 +480,29 @@ function AICopilotPanel({ token }: { token: string }) {
                   <p>{action.description}</p>
                   {hasPayload && (
                     <pre className={styles.copilotPayloadPreview}>{JSON.stringify(action.action_payload, null, 2)}</pre>
+                  )}
+                  <button
+                    className={styles.tableActionButton}
+                    onClick={() => setWhyOpenForActionKey(isWhyOpen ? null : actionKey)}
+                    type="button"
+                  >
+                    {isWhyOpen ? 'Hide why this suggestion' : 'Why this suggestion?'}
+                  </button>
+                  {isWhyOpen && (
+                    <div className={styles.copilotWhyBlock}>
+                      <p>Confidence: {response.confidence.toFixed(2)}</p>
+                      {actionEvidence.length === 0 ? (
+                        <p>No direct evidence mapping was found; this recommendation is based on overall readiness context.</p>
+                      ) : (
+                        <ul>
+                          {actionEvidence.slice(0, 3).map((item, evidenceIndex) => (
+                            <li key={`${actionKey}-evidence-${evidenceIndex}`}>
+                              <strong>{item.source_service}</strong>: {item.summary}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   )}
                   {action.requires_confirmation && (
                     <button

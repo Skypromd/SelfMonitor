@@ -1210,6 +1210,39 @@
   font-size: 0.74rem;
 }
 
+.copilotWhyBlock {
+  margin-top: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  padding: 10px;
+  font-size: 0.86rem;
+  color: var(--color-text-muted);
+}
+
+.copilotWhyBlock p {
+  margin: 0 0 8px;
+}
+
+.copilotWhyBlock ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.copilotFallback {
+  border: 1px solid rgba(209, 67, 97, 0.35);
+  border-radius: 12px;
+  background: var(--color-danger-bg);
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.copilotFallbackActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @keyframes shimmer {
   from {
     background-position: 100% 0;
