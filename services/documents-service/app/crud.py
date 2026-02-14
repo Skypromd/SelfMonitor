@@ -7,6 +7,15 @@ import datetime
 
 from .expense_classifier import to_expense_article
 
+_REVIEW_TRACKED_FIELDS: tuple[str, ...] = (
+    "total_amount",
+    "vendor_name",
+    "transaction_date",
+    "suggested_category",
+    "expense_article",
+    "is_potentially_deductible",
+)
+
 async def create_document(db: AsyncSession, user_id: str, filename: str, filepath: str) -> models.Document:
     db_document = models.Document(user_id=user_id, filename=filename, filepath=filepath)
     db.add(db_document)
@@ -46,6 +55,54 @@ async def update_document_with_ocr_results(db: AsyncSession, doc_id: str, status
     return db_document
 
 
+def _normalize_review_value(field: str, value: object) -> float | str | bool | None:
+    if value is None:
+        return None
+    if field == "transaction_date":
+        if isinstance(value, datetime.date):
+            return value.isoformat()
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped.split("T", 1)[0] if stripped else None
+    if field == "total_amount":
+        if isinstance(value, (int, float)):
+            return round(float(value), 2)
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                return round(float(stripped), 2)
+            except ValueError:
+                return stripped
+    if isinstance(value, str):
+        stripped = value.strip()
+        return stripped if stripped else None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return float(value)
+    return str(value)
+
+
+def _build_review_changes(
+    *,
+    before_data: dict[str, object],
+    after_data: dict[str, object],
+) -> dict[str, dict[str, float | str | bool | None]]:
+    changes: dict[str, dict[str, float | str | bool | None]] = {}
+    for field in _REVIEW_TRACKED_FIELDS:
+        before_value = _normalize_review_value(field, before_data.get(field))
+        after_value = _normalize_review_value(field, after_data.get(field))
+        if before_value == after_value:
+            continue
+        changes[field] = {
+            "before": before_value,
+            "after": after_value,
+        }
+    return changes
+
+
 def _needs_review(document: models.Document) -> bool:
     extracted = document.extracted_data if isinstance(document.extracted_data, dict) else {}
     return bool(extracted.get("needs_review") is True)
@@ -75,32 +132,29 @@ async def update_document_review(
     if db_document is None:
         return None
 
-    extracted_dict = dict(db_document.extracted_data or {})
-    changed_fields = False
+    original_extracted = dict(db_document.extracted_data or {})
+    extracted_dict = dict(original_extracted)
 
     if payload.total_amount is not None:
         extracted_dict["total_amount"] = payload.total_amount
-        changed_fields = True
     if payload.vendor_name is not None:
         extracted_dict["vendor_name"] = payload.vendor_name
-        changed_fields = True
     if payload.transaction_date is not None:
         extracted_dict["transaction_date"] = payload.transaction_date.isoformat()
-        changed_fields = True
     if payload.suggested_category is not None:
         extracted_dict["suggested_category"] = payload.suggested_category
-        changed_fields = True
     if payload.expense_article is not None:
         extracted_dict["expense_article"] = payload.expense_article
-        changed_fields = True
     if payload.is_potentially_deductible is not None:
         extracted_dict["is_potentially_deductible"] = payload.is_potentially_deductible
-        changed_fields = True
 
     if payload.suggested_category is not None and payload.expense_article is None and payload.is_potentially_deductible is None:
         expense_article, deductible = to_expense_article(payload.suggested_category)
         extracted_dict["expense_article"] = expense_article
         extracted_dict["is_potentially_deductible"] = deductible
+
+    review_changes = _build_review_changes(before_data=original_extracted, after_data=extracted_dict)
+    changed_fields = bool(review_changes)
 
     status = payload.review_status
     if status == "confirmed" and changed_fields:
@@ -108,6 +162,8 @@ async def update_document_review(
     extracted_dict["review_status"] = status
     extracted_dict["needs_review"] = False
     extracted_dict["reviewed_at"] = datetime.datetime.now(datetime.UTC).isoformat()
+    if changed_fields:
+        extracted_dict["review_changes"] = review_changes
     if payload.review_notes is not None:
         extracted_dict["review_notes"] = payload.review_notes
 

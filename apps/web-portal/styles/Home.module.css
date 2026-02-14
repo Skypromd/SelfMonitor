@@ -456,6 +456,62 @@
   gap: 8px;
 }
 
+.reviewDiffRow td {
+  background: rgba(66, 153, 225, 0.08);
+}
+
+.reviewDiffCell {
+  padding-top: 8px;
+  padding-bottom: 12px;
+}
+
+.reviewDiffHeader {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  font-weight: 800;
+  margin-bottom: 8px;
+}
+
+.reviewDiffList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reviewDiffItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  background: var(--color-surface);
+}
+
+.reviewDiffField {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.reviewDiffBefore {
+  color: #b72849;
+  font-weight: 700;
+}
+
+.reviewDiffArrow {
+  color: var(--color-text-muted);
+}
+
+.reviewDiffAfter {
+  color: #0f7a4a;
+  font-weight: 700;
+}
+
 .actionableAdviceCard {
   background: linear-gradient(135deg, rgba(69, 117, 255, 0.09) 0%, var(--color-surface-muted) 100%);
   border-color: rgba(69, 117, 255, 0.3);

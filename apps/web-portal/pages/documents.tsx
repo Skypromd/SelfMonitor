@@ -9,6 +9,15 @@ type DocumentsPageProps = {
   token: string;
 };
 
+type ReviewChangeValue = string | number | boolean | null;
+
+type ReviewFieldChange = {
+  after?: ReviewChangeValue;
+  before?: ReviewChangeValue;
+};
+
+type ReviewChanges = Record<string, ReviewFieldChange>;
+
 type DocumentRecord = {
   extracted_data?: {
     ocr_confidence?: number | null;
@@ -17,6 +26,7 @@ type DocumentRecord = {
     review_status?: string | null;
     reviewed_at?: string | null;
     review_notes?: string | null;
+    review_changes?: ReviewChanges | null;
     expense_article?: string | null;
     is_potentially_deductible?: boolean | null;
     receipt_draft_transaction_id?: string | null;
@@ -49,6 +59,24 @@ type ReviewDraft = {
   vendor_name: string;
 };
 
+const REVIEW_FIELD_LABELS: Record<string, string> = {
+  expense_article: 'Expense article',
+  is_potentially_deductible: 'Deductible',
+  suggested_category: 'Category',
+  total_amount: 'Amount',
+  transaction_date: 'Date',
+  vendor_name: 'Vendor',
+};
+
+const REVIEW_FIELD_ORDER = [
+  'vendor_name',
+  'total_amount',
+  'transaction_date',
+  'suggested_category',
+  'expense_article',
+  'is_potentially_deductible',
+];
+
 function toReviewDraft(document: DocumentRecord): ReviewDraft {
   const extracted = document.extracted_data;
   const transactionDateRaw = extracted?.transaction_date ?? '';
@@ -66,6 +94,35 @@ function toReviewDraft(document: DocumentRecord): ReviewDraft {
           : 'unknown',
     review_notes: extracted?.review_notes ?? '',
   };
+}
+
+function formatReviewValue(field: string, value: ReviewChangeValue): string {
+  if (value === null || value === undefined || value === '') {
+    return '—';
+  }
+  if (field === 'total_amount' && typeof value === 'number') {
+    return `£${value.toFixed(2)}`;
+  }
+  if (field === 'is_potentially_deductible' && typeof value === 'boolean') {
+    return value ? 'Yes' : 'No';
+  }
+  if (field === 'transaction_date' && typeof value === 'string') {
+    return value.includes('T') ? value.slice(0, 10) : value;
+  }
+  return String(value);
+}
+
+function getReviewChangeEntries(reviewChanges: ReviewChanges | null | undefined): Array<[string, ReviewFieldChange]> {
+  if (!reviewChanges) {
+    return [];
+  }
+  const entries = Object.entries(reviewChanges).filter(([, change]) => change && (change.before !== change.after));
+  const order = new Map(REVIEW_FIELD_ORDER.map((field, index) => [field, index]));
+  return entries.sort((first, second) => {
+    const firstOrder = order.get(first[0]) ?? 999;
+    const secondOrder = order.get(second[0]) ?? 999;
+    return firstOrder - secondOrder;
+  });
 }
 
 function SemanticSearch({ token }: { token: string }) {
@@ -569,33 +626,55 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
               </tr>
             </thead>
             <tbody>
-              {documents.map((document) => (
-                <tr key={document.id}>
-                  <td>{document.filename}</td>
-                  <td>
-                    <span className={`${styles.status} ${styles[document.status]}`}>{document.status}</span>
-                  </td>
-                  <td>{document.extracted_data?.vendor_name || '—'}</td>
-                  <td>
-                    {typeof document.extracted_data?.total_amount === 'number'
-                      ? `£${document.extracted_data.total_amount.toFixed(2)}`
-                      : '—'}
-                  </td>
-                  <td>{document.extracted_data?.suggested_category || '—'}</td>
-                  <td>{document.extracted_data?.expense_article || '—'}</td>
-                  <td>
-                    {document.extracted_data?.is_potentially_deductible === true
-                      ? 'Yes'
-                      : document.extracted_data?.is_potentially_deductible === false
-                        ? 'No'
-                        : '—'}
-                  </td>
-                  <td>{document.extracted_data?.receipt_draft_transaction_id || '—'}</td>
-                  <td>{renderConfidence(document)}</td>
-                  <td>{renderReviewBadge(document)}</td>
-                  <td>{new Date(document.uploaded_at).toLocaleString()}</td>
-                </tr>
-              ))}
+              {documents.map((document) => {
+                const reviewChangeEntries = getReviewChangeEntries(document.extracted_data?.review_changes);
+                return (
+                  <Fragment key={document.id}>
+                    <tr>
+                      <td>{document.filename}</td>
+                      <td>
+                        <span className={`${styles.status} ${styles[document.status]}`}>{document.status}</span>
+                      </td>
+                      <td>{document.extracted_data?.vendor_name || '—'}</td>
+                      <td>
+                        {typeof document.extracted_data?.total_amount === 'number'
+                          ? `£${document.extracted_data.total_amount.toFixed(2)}`
+                          : '—'}
+                      </td>
+                      <td>{document.extracted_data?.suggested_category || '—'}</td>
+                      <td>{document.extracted_data?.expense_article || '—'}</td>
+                      <td>
+                        {document.extracted_data?.is_potentially_deductible === true
+                          ? 'Yes'
+                          : document.extracted_data?.is_potentially_deductible === false
+                            ? 'No'
+                            : '—'}
+                      </td>
+                      <td>{document.extracted_data?.receipt_draft_transaction_id || '—'}</td>
+                      <td>{renderConfidence(document)}</td>
+                      <td>{renderReviewBadge(document)}</td>
+                      <td>{new Date(document.uploaded_at).toLocaleString()}</td>
+                    </tr>
+                    {reviewChangeEntries.length > 0 ? (
+                      <tr className={styles.reviewDiffRow}>
+                        <td className={styles.reviewDiffCell} colSpan={11}>
+                          <div className={styles.reviewDiffHeader}>Manual review changes</div>
+                          <div className={styles.reviewDiffList}>
+                            {reviewChangeEntries.map(([field, change]) => (
+                              <div className={styles.reviewDiffItem} key={`${document.id}-${field}`}>
+                                <span className={styles.reviewDiffField}>{REVIEW_FIELD_LABELS[field] || field}</span>
+                                <span className={styles.reviewDiffBefore}>{formatReviewValue(field, change.before ?? null)}</span>
+                                <span className={styles.reviewDiffArrow}>→</span>
+                                <span className={styles.reviewDiffAfter}>{formatReviewValue(field, change.after ?? null)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ) : null}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}

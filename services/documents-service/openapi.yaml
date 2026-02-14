@@ -189,6 +189,11 @@ components:
           type: string
           nullable: true
           example: Vendor corrected manually.
+        review_changes:
+          type: object
+          nullable: true
+          additionalProperties:
+            $ref: '#/components/schemas/ReviewFieldChange'
         receipt_draft_transaction_id:
           type: string
           nullable: true
@@ -266,6 +271,21 @@ components:
           default: confirmed
         review_notes:
           type: string
+          nullable: true
+    ReviewFieldChange:
+      type: object
+      properties:
+        before:
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
+          nullable: true
+        after:
+          oneOf:
+            - type: string
+            - type: number
+            - type: boolean
           nullable: true
 
   securitySchemes:

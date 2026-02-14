@@ -3,6 +3,12 @@ from typing import List, Optional, Literal
 import uuid
 import datetime
 
+
+class ReviewFieldChange(BaseModel):
+    before: Optional[float | str | bool] = None
+    after: Optional[float | str | bool] = None
+
+
 class ExtractedData(BaseModel):
     total_amount: Optional[float] = None
     vendor_name: Optional[str] = None
@@ -18,6 +24,7 @@ class ExtractedData(BaseModel):
     review_status: Optional[Literal["pending", "confirmed", "corrected", "ignored"]] = None
     reviewed_at: Optional[datetime.datetime] = None
     review_notes: Optional[str] = None
+    review_changes: Optional[dict[str, ReviewFieldChange]] = None
     receipt_draft_transaction_id: Optional[str] = None
     receipt_draft_duplicated: Optional[bool] = None
 
