@@ -7,25 +7,25 @@ GOAL
   OCR review -> transaction reconciliation -> tax calculation -> HMRC submission.
 
 PHASE 0 - Foundation and Security (P0)
-[ ] P0.1 Lock down qna-service with JWT auth and server-side user scoping.
-[ ] P0.2 Remove client-provided user_id from semantic search requests in web portal.
-[ ] P0.3 Sign qna index requests from documents-service (service-to-service auth via existing JWT).
-[ ] P0.4 Add qna-service tests for auth and user isolation behavior.
-[ ] P0.5 Add minimal qna-service OpenAPI contract file.
+[x] P0.1 Lock down qna-service with JWT auth and server-side user scoping.
+[x] P0.2 Remove client-provided user_id from semantic search requests in web portal.
+[x] P0.3 Sign qna index requests from documents-service (service-to-service auth via existing JWT).
+[x] P0.4 Add qna-service tests for auth and user isolation behavior.
+[x] P0.5 Add minimal qna-service OpenAPI contract file.
 
 PHASE 1 - Agent Service MVP (Read-Only + Guided Actions) (P0/P1)
-[ ] P1.1 Create services/agent-service (FastAPI) with POST /agent/chat.
-[ ] P1.2 Implement intent router for:
+[x] P1.1 Create services/agent-service (FastAPI) with POST /agent/chat.
+[x] P1.2 Implement intent router for:
       - readiness_check
       - ocr_review_assist
       - reconciliation_assist
       - tax_pre_submit
-[ ] P1.3 Add read-only tools:
+[x] P1.3 Add read-only tools:
       - documents: GET /documents/review-queue
       - transactions: GET /transactions/receipt-drafts/unmatched
       - transactions: GET /transactions/me
       - tax-engine: POST /calculate
-[ ] P1.4 Add response format with:
+[x] P1.4 Add response format with:
       - answer
       - evidence (source endpoint + ids)
       - suggested_actions (no execution yet)
@@ -72,7 +72,7 @@ IMPLEMENTATION ORDER FOR NEXT ITERATIONS
 4) Polish PHASE 3 UX and PHASE 4 operations.
 
 CURRENT EXECUTION STATUS
-- In progress: P0.1, P0.2, P0.3, P0.4.
+- In progress: P1.5.
 
 MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [x] M1.1 Define mortgage type catalog for England (core + specialist mortgage journeys).

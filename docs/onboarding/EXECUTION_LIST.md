@@ -62,3 +62,4 @@ _Last updated: 2026-02-13_
 30. [x] Add localization translation-health telemetry (missing keys + fallback hit-rate)
 31. [x] Externalize localization dictionaries into JSON catalogs for scalable i18n pipeline
 32. [x] Add ICU/pluralization support and locale-aware formatting standards in localization + web i18n
+33. [x] Add agent-service MVP with intent router and read-only evidence-backed guidance API

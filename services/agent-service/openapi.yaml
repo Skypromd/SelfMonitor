@@ -1,0 +1,112 @@
+openapi: 3.0.3
+info:
+  title: Agent Service
+  description: Self-Assessment Copilot with read-only guided actions.
+  version: 1.0.0
+paths:
+  /agent/chat:
+    post:
+      summary: Chat with self-assessment copilot
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentChatRequest'
+      responses:
+        '200':
+          description: Structured guidance response with evidence and suggested actions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentChatResponse'
+        '401':
+          description: Missing or invalid token.
+components:
+  schemas:
+    AgentChatRequest:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Help me understand what to fix before tax submission.
+        session_id:
+          type: string
+          nullable: true
+          example: session-01
+      required:
+        - message
+    AgentEvidence:
+      type: object
+      properties:
+        source_service:
+          type: string
+          example: documents-service
+        source_endpoint:
+          type: string
+          example: /documents/review-queue
+        record_ids:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+      required:
+        - source_service
+        - source_endpoint
+        - record_ids
+        - summary
+    AgentSuggestedAction:
+      type: object
+      properties:
+        action_id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        requires_confirmation:
+          type: boolean
+      required:
+        - action_id
+        - label
+        - description
+        - requires_confirmation
+    AgentChatResponse:
+      type: object
+      properties:
+        intent:
+          type: string
+          enum:
+            - readiness_check
+            - ocr_review_assist
+            - reconciliation_assist
+            - tax_pre_submit
+        confidence:
+          type: number
+          format: float
+        answer:
+          type: string
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentEvidence'
+        suggested_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSuggestedAction'
+      required:
+        - intent
+        - confidence
+        - answer
+        - evidence
+        - suggested_actions
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

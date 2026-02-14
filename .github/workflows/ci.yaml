@@ -21,6 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         service:
+          - agent-service
           - auth-service
           - banking-connector
           - compliance-service
