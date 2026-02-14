@@ -49,3 +49,4 @@ _Last updated: 2026-02-13_
 17. [x] Replace simulated receipt OCR with production Textract-based extraction pipeline
 18. [x] Add OCR quality loop with confidence scoring and manual review queue
 19. [x] Add OCR review diff audit trail and UI highlight of manual corrections
+20. [x] Add feedback loop to reuse manual OCR categorization fixes for future receipts

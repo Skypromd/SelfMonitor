@@ -4,6 +4,7 @@ from . import models, schemas
 import uuid
 from typing import List
 import datetime
+import re
 
 from .expense_classifier import to_expense_article
 
@@ -11,6 +12,11 @@ _REVIEW_TRACKED_FIELDS: tuple[str, ...] = (
     "total_amount",
     "vendor_name",
     "transaction_date",
+    "suggested_category",
+    "expense_article",
+    "is_potentially_deductible",
+)
+_FEEDBACK_FIELDS: tuple[str, ...] = (
     "suggested_category",
     "expense_article",
     "is_potentially_deductible",
@@ -53,6 +59,13 @@ async def update_document_with_ocr_results(db: AsyncSession, doc_id: str, status
         db_document.extracted_data = extracted_data.model_dump(mode="json")
         await db.commit()
     return db_document
+
+
+def _normalize_vendor_key(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    return normalized or None
 
 
 def _normalize_review_value(field: str, value: object) -> float | str | bool | None:
@@ -101,6 +114,55 @@ def _build_review_changes(
             "after": after_value,
         }
     return changes
+
+
+async def get_latest_category_feedback_for_vendor(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    vendor_name: str | None,
+    scan_limit: int = 300,
+) -> dict[str, str | bool] | None:
+    vendor_key = _normalize_vendor_key(vendor_name)
+    if vendor_key is None:
+        return None
+
+    result = await db.execute(
+        select(models.Document)
+        .filter(models.Document.user_id == user_id)
+        .order_by(models.Document.uploaded_at.desc())
+        .limit(scan_limit)
+    )
+    for document in result.scalars().all():
+        extracted = document.extracted_data if isinstance(document.extracted_data, dict) else {}
+        if extracted.get("review_status") != "corrected":
+            continue
+        feedback_vendor_key = _normalize_vendor_key(str(extracted.get("vendor_name") or ""))
+        if feedback_vendor_key != vendor_key:
+            continue
+
+        review_changes = extracted.get("review_changes")
+        if not isinstance(review_changes, dict):
+            continue
+        if not any(field in review_changes for field in _FEEDBACK_FIELDS):
+            continue
+
+        category = extracted.get("suggested_category")
+        if not isinstance(category, str) or not category.strip():
+            continue
+
+        feedback: dict[str, str | bool] = {
+            "suggested_category": category.strip(),
+        }
+        expense_article = extracted.get("expense_article")
+        if isinstance(expense_article, str) and expense_article.strip():
+            feedback["expense_article"] = expense_article.strip()
+        deductible = extracted.get("is_potentially_deductible")
+        if isinstance(deductible, bool):
+            feedback["is_potentially_deductible"] = deductible
+        feedback["feedback_source"] = "manual_review"
+        return feedback
+    return None
 
 
 def _needs_review(document: models.Document) -> bool:

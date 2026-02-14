@@ -86,6 +86,19 @@ def suggest_expense_category(description: str) -> str | None:
     return suggest_category_from_keywords(normalized_description)
 
 
+async def _load_manual_feedback(
+    *,
+    user_id: str,
+    vendor_name: str | None,
+) -> dict[str, str | bool] | None:
+    async with AsyncSessionLocal() as session:
+        return await crud.get_latest_category_feedback_for_vendor(
+            session,
+            user_id=user_id,
+            vendor_name=vendor_name,
+        )
+
+
 def index_document_content(user_id: str, doc_id: str, filename: str, content: str):
     """Synchronous function to call the Q&A service for indexing."""
     try:
@@ -163,8 +176,9 @@ def _download_document_bytes(filepath: str) -> bytes:
     return data
 
 
-def _build_extracted_data_from_text(
+async def _build_extracted_data_from_text(
     *,
+    user_id: str,
     text: str,
     provider: str,
     filename: str,
@@ -175,8 +189,28 @@ def _build_extracted_data_from_text(
     description = " ".join(
         part for part in [vendor_name or "", filename, build_text_excerpt(text, limit=120) or ""] if part
     )
-    suggested_category = suggest_expense_category(description)
-    expense_article, is_deductible = to_expense_article(suggested_category)
+    manual_feedback = await _load_manual_feedback(user_id=user_id, vendor_name=vendor_name)
+    if manual_feedback and isinstance(manual_feedback.get("suggested_category"), str):
+        suggested_category = str(manual_feedback["suggested_category"])
+        expense_article = (
+            str(manual_feedback["expense_article"])
+            if isinstance(manual_feedback.get("expense_article"), str)
+            else None
+        )
+        is_deductible = (
+            bool(manual_feedback["is_potentially_deductible"])
+            if isinstance(manual_feedback.get("is_potentially_deductible"), bool)
+            else None
+        )
+        if expense_article is None or is_deductible is None:
+            derived_article, derived_deductible = to_expense_article(suggested_category)
+            if expense_article is None:
+                expense_article = derived_article
+            if is_deductible is None:
+                is_deductible = derived_deductible
+    else:
+        suggested_category = suggest_expense_category(description)
+        expense_article, is_deductible = to_expense_article(suggested_category)
     quality = evaluate_ocr_quality(
         text=text,
         total_amount=total_amount,
@@ -276,10 +310,13 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
         ocr_result = extract_document_text(file_bytes)
         if not ocr_result.text.strip():
             raise OCRPipelineError("ocr_empty_text")
-        extracted_data = _build_extracted_data_from_text(
-            text=ocr_result.text,
-            provider=ocr_result.provider,
-            filename=filename,
+        extracted_data = asyncio.run(
+            _build_extracted_data_from_text(
+                user_id=user_id,
+                text=ocr_result.text,
+                provider=ocr_result.provider,
+                filename=filename,
+            )
         )
         receipt_transaction_id, receipt_transaction_duplicated = create_receipt_draft_transaction(
             document_id=document_id,
