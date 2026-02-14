@@ -67,3 +67,5 @@ _Last updated: 2026-02-13_
 35. [x] Add confirmation token flow for agent write actions (safe mode foundation)
 36. [x] Add confirmed safe-action execution with allowlisted policy gate in agent-service
 37. [x] Add structured agent audit logging (prompt hash, tool calls, payload summary, action result)
+38. [x] Add dashboard AI Copilot panel wired to agent-service chat endpoint
+39. [x] Add suggested action cards with explicit confirmation flow in dashboard

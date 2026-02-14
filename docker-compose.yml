@@ -23,6 +23,7 @@ services:
       - categorization-service
       - qna-service
       - calendar-service
+      - agent-service
     networks:
       - default_network
 

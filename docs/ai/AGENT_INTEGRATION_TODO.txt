@@ -48,8 +48,8 @@ PHASE 2 - Safe Action Mode (P0)
       - action result
 
 PHASE 3 - UX Integration (P1)
-[ ] P3.1 Add web portal "AI Copilot" panel.
-[ ] P3.2 Render suggested action cards with explicit Confirm buttons.
+[x] P3.1 Add web portal "AI Copilot" panel.
+[x] P3.2 Render suggested action cards with explicit Confirm buttons.
 [ ] P3.3 Add "why this suggestion" view (evidence + confidence).
 [ ] P3.4 Add fallback UX when tool/service unavailable.
 
@@ -72,7 +72,7 @@ IMPLEMENTATION ORDER FOR NEXT ITERATIONS
 4) Polish PHASE 3 UX and PHASE 4 operations.
 
 CURRENT EXECUTION STATUS
-- In progress: P3.1.
+- In progress: P3.3.
 
 MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [x] M1.1 Define mortgage type catalog for England (core + specialist mortgage journeys).

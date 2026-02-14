@@ -1127,6 +1127,89 @@
   padding: 0;
 }
 
+.copilotPanel {
+  border-color: rgba(69, 117, 255, 0.32);
+}
+
+.copilotComposer {
+  display: grid;
+  gap: 10px;
+}
+
+.copilotTextarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.copilotResults {
+  margin-top: 14px;
+}
+
+.copilotMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.copilotAnswer {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+  padding: 12px;
+  color: var(--color-text-primary);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.copilotEvidenceList {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+}
+
+.copilotEvidenceList li p {
+  margin: 4px 0 0;
+}
+
+.copilotActionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 10px;
+}
+
+.copilotActionCard {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+  padding: 12px;
+}
+
+.copilotActionCard p {
+  margin-top: 8px;
+}
+
+.copilotActionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.copilotPayloadPreview {
+  margin: 10px 0;
+  background: var(--color-surface);
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 150px;
+  overflow: auto;
+  font-size: 0.74rem;
+}
+
 @keyframes shimmer {
   from {
     background-position: 100% 0;

@@ -4,6 +4,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:8011';
+const AGENT_SERVICE_URL = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || 'http://localhost:8000/api/agent';
 
 type DashboardPageProps = {
   token: string;
@@ -25,6 +26,38 @@ type TaxEstimateResult = {
   start_date: string;
   total_expenses: number;
   total_income: number;
+};
+
+type CopilotEvidence = {
+  record_ids: string[];
+  source_endpoint: string;
+  source_service: string;
+  summary: string;
+};
+
+type CopilotSuggestedAction = {
+  action_id: string;
+  action_payload?: Record<string, unknown> | null;
+  description: string;
+  label: string;
+  requires_confirmation: boolean;
+};
+
+type CopilotChatResponse = {
+  answer: string;
+  confidence: number;
+  evidence: CopilotEvidence[];
+  intent: string;
+  session_id: string;
+  suggested_actions: CopilotSuggestedAction[];
+};
+
+type CopilotExecutionResponse = {
+  confirmation_reason?: string | null;
+  downstream_status_code?: number | null;
+  executed: boolean;
+  message: string;
+  valid_confirmation: boolean;
 };
 
 function TaxCalculator({ token }: { token: string }) {
@@ -246,6 +279,194 @@ function ActionCenter({ token }: { token: string }) {
   );
 }
 
+function AICopilotPanel({ token }: { token: string }) {
+  const [message, setMessage] = useState('Give me a readiness snapshot and next action.');
+  const [response, setResponse] = useState<CopilotChatResponse | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [actionState, setActionState] = useState<Record<string, { error?: string; isLoading: boolean; message?: string }>>({});
+
+  const buildActionKey = (action: CopilotSuggestedAction, index: number) => `${action.action_id}:${index}`;
+
+  const handleAskCopilot = async (event: FormEvent) => {
+    event.preventDefault();
+    const trimmed = message.trim();
+    if (!trimmed) {
+      setError('Enter a request for AI Copilot.');
+      return;
+    }
+    setError('');
+    setIsLoading(true);
+    try {
+      const body: { message: string; session_id?: string } = { message: trimmed };
+      if (sessionId) {
+        body.session_id = sessionId;
+      }
+      const apiResponse = await fetch(`${AGENT_SERVICE_URL}/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const payload = (await apiResponse.json()) as CopilotChatResponse | { detail?: string };
+      if (!apiResponse.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to fetch AI Copilot response');
+      }
+      const chatPayload = payload as CopilotChatResponse;
+      setResponse(chatPayload);
+      setSessionId(chatPayload.session_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected Copilot error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleConfirmAction = async (action: CopilotSuggestedAction, index: number) => {
+    if (!response) {
+      return;
+    }
+    const actionPayload = action.action_payload && typeof action.action_payload === 'object' ? action.action_payload : {};
+    const actionKey = buildActionKey(action, index);
+    setActionState((current) => ({
+      ...current,
+      [actionKey]: { isLoading: true },
+    }));
+    try {
+      const confirmationRequest = await fetch(`${AGENT_SERVICE_URL}/actions/request-confirmation`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          session_id: response.session_id,
+          action_id: action.action_id,
+          action_payload: actionPayload,
+        }),
+      });
+      const confirmationPayload = (await confirmationRequest.json()) as {
+        confirmation_token?: string;
+        detail?: string;
+      };
+      if (!confirmationRequest.ok || !confirmationPayload.confirmation_token) {
+        throw new Error(confirmationPayload.detail || 'Failed to request confirmation token');
+      }
+
+      const executeRequest = await fetch(`${AGENT_SERVICE_URL}/actions/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          session_id: response.session_id,
+          action_id: action.action_id,
+          confirmation_token: confirmationPayload.confirmation_token,
+          action_payload: actionPayload,
+        }),
+      });
+      const executePayload = (await executeRequest.json()) as CopilotExecutionResponse;
+      if (!executeRequest.ok) {
+        throw new Error(executePayload.message || 'Execution failed');
+      }
+      if (!executePayload.executed) {
+        throw new Error(executePayload.confirmation_reason || executePayload.message || 'Action was not executed');
+      }
+      const successMessage = executePayload.downstream_status_code
+        ? `Done (${executePayload.downstream_status_code}): ${executePayload.message}`
+        : executePayload.message;
+      setActionState((current) => ({
+        ...current,
+        [actionKey]: { isLoading: false, message: successMessage },
+      }));
+    } catch (err) {
+      setActionState((current) => ({
+        ...current,
+        [actionKey]: { isLoading: false, error: err instanceof Error ? err.message : 'Action failed' },
+      }));
+    }
+  };
+
+  return (
+    <section className={`${styles.subContainer} ${styles.copilotPanel}`}>
+      <h2>AI Copilot</h2>
+      <p>Ask for OCR, reconciliation, and tax readiness guidance with evidence-backed suggestions.</p>
+      <form className={styles.copilotComposer} onSubmit={handleAskCopilot}>
+        <textarea
+          className={`${styles.input} ${styles.copilotTextarea}`}
+          onChange={(event) => setMessage(event.target.value)}
+          value={message}
+          placeholder="Example: Help me close OCR queue and submit tax safely."
+        />
+        <button className={styles.button} disabled={isLoading} type="submit">
+          {isLoading ? 'Thinking...' : 'Ask Copilot'}
+        </button>
+      </form>
+      {error && <p className={styles.error}>{error}</p>}
+
+      {response && (
+        <div className={styles.copilotResults}>
+          <div className={styles.copilotMeta}>
+            <span>Intent: {response.intent}</span>
+            <span>Confidence: {response.confidence.toFixed(2)}</span>
+            <span>Session: {response.session_id}</span>
+          </div>
+          <div className={styles.copilotAnswer}>{response.answer}</div>
+
+          <h3 className={styles.sectionTitle}>Evidence</h3>
+          <ul className={styles.copilotEvidenceList}>
+            {response.evidence.map((item, index) => (
+              <li key={`${item.source_service}-${item.source_endpoint}-${index}`}>
+                <strong>{item.source_service}</strong> <code>{item.source_endpoint}</code>
+                <p>{item.summary}</p>
+              </li>
+            ))}
+          </ul>
+
+          <h3 className={styles.sectionTitle}>Suggested actions</h3>
+          <div className={styles.copilotActionGrid}>
+            {response.suggested_actions.map((action, index) => {
+              const actionKey = buildActionKey(action, index);
+              const currentState = actionState[actionKey];
+              const hasPayload = Boolean(action.action_payload);
+              return (
+                <article className={styles.copilotActionCard} key={actionKey}>
+                  <div className={styles.copilotActionHeader}>
+                    <strong>{action.label}</strong>
+                    <span className={styles.reviewBadge}>
+                      {action.requires_confirmation ? 'Confirmation required' : 'Manual'}
+                    </span>
+                  </div>
+                  <p>{action.description}</p>
+                  {hasPayload && (
+                    <pre className={styles.copilotPayloadPreview}>{JSON.stringify(action.action_payload, null, 2)}</pre>
+                  )}
+                  {action.requires_confirmation && (
+                    <button
+                      className={styles.tableActionButton}
+                      disabled={currentState?.isLoading}
+                      onClick={() => handleConfirmAction(action, index)}
+                      type="button"
+                    >
+                      {currentState?.isLoading ? 'Confirming...' : 'Confirm'}
+                    </button>
+                  )}
+                  {currentState?.message && <p className={styles.message}>{currentState.message}</p>}
+                  {currentState?.error && <p className={styles.error}>{currentState.error}</p>}
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function DashboardPage({ token }: DashboardPageProps) {
   const { t } = useTranslation();
 
@@ -253,6 +474,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
     <div className={styles.dashboard}>
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
+      <AICopilotPanel token={token} />
       <ActionCenter token={token} />
       <CashFlowPreview token={token} />
       <TaxCalculator token={token} />

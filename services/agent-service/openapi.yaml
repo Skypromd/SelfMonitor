@@ -374,6 +374,10 @@ components:
           type: string
         requires_confirmation:
           type: boolean
+        action_payload:
+          type: object
+          additionalProperties: true
+          nullable: true
       required:
         - action_id
         - label

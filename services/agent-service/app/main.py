@@ -113,6 +113,7 @@ class AgentSuggestedAction(BaseModel):
     label: str
     description: str
     requires_confirmation: bool = False
+    action_payload: dict[str, Any] | None = None
 
 
 class AgentChatResponse(BaseModel):
@@ -761,6 +762,26 @@ def _build_ocr_review_assist_response(payload: dict[str, Any] | None, error: str
             description="Confirm or correct vendor, date, amount, and category for flagged receipts.",
         )
     ]
+    if items:
+        first_item = items[0]
+        if isinstance(first_item, dict):
+            first_document_id = str(first_item.get("id") or "").strip()
+            if first_document_id:
+                actions.append(
+                    AgentSuggestedAction(
+                        action_id="documents.review_document",
+                        label="Confirm first OCR item directly",
+                        description="Submit a confirmed review for the first queued document.",
+                        requires_confirmation=True,
+                        action_payload={
+                            "document_id": first_document_id,
+                            "review_payload": {
+                                "review_status": "confirmed",
+                                "review_notes": "Confirmed via AI Copilot action.",
+                            },
+                        },
+                    )
+                )
     return answer, evidence, actions
 
 
@@ -819,6 +840,41 @@ def _build_reconciliation_assist_response(
             description="Match drafts to bank transactions or ignore low-quality candidates.",
         )
     ]
+    if items:
+        first_item = items[0]
+        if isinstance(first_item, dict):
+            draft = first_item.get("draft_transaction")
+            draft_id = str(draft.get("id") or "").strip() if isinstance(draft, dict) else ""
+            candidates = first_item.get("candidates")
+            first_candidate = candidates[0] if isinstance(candidates, list) and candidates else None
+            candidate_transaction_id = (
+                str(first_candidate.get("transaction_id") or "").strip()
+                if isinstance(first_candidate, dict)
+                else ""
+            )
+            if draft_id and candidate_transaction_id:
+                actions.append(
+                    AgentSuggestedAction(
+                        action_id="transactions.reconcile_receipt_draft",
+                        label="Confirm top reconciliation candidate",
+                        description="Reconcile the first draft with its highest-ranked candidate.",
+                        requires_confirmation=True,
+                        action_payload={
+                            "draft_transaction_id": draft_id,
+                            "target_transaction_id": candidate_transaction_id,
+                        },
+                    )
+                )
+            if draft_id:
+                actions.append(
+                    AgentSuggestedAction(
+                        action_id="transactions.ignore_receipt_draft",
+                        label="Ignore first unmatched draft",
+                        description="Mark the first unmatched draft as ignored when evidence is weak.",
+                        requires_confirmation=True,
+                        action_payload={"draft_transaction_id": draft_id},
+                    )
+                )
     return answer, evidence, actions
 
 
@@ -834,12 +890,6 @@ def _build_tax_pre_submit_response(
             action_id="run_tax_calculation_review",
             label="Review tax calculation inputs",
             description="Validate income and deductible categories before submission.",
-        ),
-        AgentSuggestedAction(
-            action_id="prepare_calculate_and_submit",
-            label="Prepare calculate-and-submit",
-            description="Proceed to final HMRC submission after review and confirmation.",
-            requires_confirmation=True,
         ),
     ]
 
@@ -893,6 +943,19 @@ def _build_tax_pre_submit_response(
     answer = (
         f"Tax pre-submit snapshot ready: estimated due is £{estimated_tax_due:.2f}. "
         "Review category accuracy, then proceed to submission."
+    )
+    actions.append(
+        AgentSuggestedAction(
+            action_id="tax.calculate_and_submit",
+            label="Confirm calculate-and-submit",
+            description="Submit calculate-and-submit for this same tax period.",
+            requires_confirmation=True,
+            action_payload={
+                "start_date": start_date,
+                "end_date": end_date,
+                "jurisdiction": "UK",
+            },
+        )
     )
     return answer, evidence, actions
 
