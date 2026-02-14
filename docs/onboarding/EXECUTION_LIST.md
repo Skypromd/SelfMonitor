@@ -64,3 +64,4 @@ _Last updated: 2026-02-13_
 32. [x] Add ICU/pluralization support and locale-aware formatting standards in localization + web i18n
 33. [x] Add agent-service MVP with intent router and read-only evidence-backed guidance API
 34. [x] Add agent session memory with Redis-backed TTL and session continuity
+35. [x] Add confirmation token flow for agent write actions (safe mode foundation)

@@ -32,7 +32,7 @@ PHASE 1 - Agent Service MVP (Read-Only + Guided Actions) (P0/P1)
 [x] P1.5 Add agent session memory (Redis, TTL 24h, per user/session id).
 
 PHASE 2 - Safe Action Mode (P0)
-[ ] P2.1 Add confirmation token flow for write actions.
+[x] P2.1 Add confirmation token flow for write actions.
 [ ] P2.2 Implement confirmed actions:
       - PATCH /documents/{id}/review
       - POST /transactions/receipt-drafts/{id}/reconcile
@@ -72,7 +72,7 @@ IMPLEMENTATION ORDER FOR NEXT ITERATIONS
 4) Polish PHASE 3 UX and PHASE 4 operations.
 
 CURRENT EXECUTION STATUS
-- In progress: P2.1.
+- In progress: P2.2.
 
 MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [x] M1.1 Define mortgage type catalog for England (core + specialist mortgage journeys).

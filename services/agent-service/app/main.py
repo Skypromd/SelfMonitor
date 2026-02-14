@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import hashlib
 import json
 import os
 import sys
@@ -8,7 +9,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
 for parent in Path(__file__).resolve().parents:
@@ -40,6 +41,7 @@ TAX_ENGINE_CALCULATE_URL = os.getenv(
 DEFAULT_TAX_LOOKBACK_DAYS = int(os.getenv("AGENT_DEFAULT_TAX_LOOKBACK_DAYS", "365"))
 AGENT_REDIS_URL = os.getenv("AGENT_REDIS_URL", "redis://redis:6379/0")
 AGENT_SESSION_TTL_SECONDS = int(os.getenv("AGENT_SESSION_TTL_SECONDS", "86400"))
+AGENT_CONFIRMATION_TOKEN_TTL_SECONDS = int(os.getenv("AGENT_CONFIRMATION_TOKEN_TTL_SECONDS", "900"))
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -65,6 +67,14 @@ INTENT_VALUES: tuple[AgentIntent, ...] = (
 
 _redis_client: Any | None = None
 _in_memory_session_store: dict[str, dict[str, Any]] = {}
+_in_memory_confirmation_store: dict[str, dict[str, Any]] = {}
+
+WRITE_ACTION_ALLOWLIST: set[str] = {
+    "documents.review_document",
+    "transactions.reconcile_receipt_draft",
+    "transactions.ignore_receipt_draft",
+    "tax.calculate_and_submit",
+}
 
 
 class AgentChatRequest(BaseModel):
@@ -95,6 +105,36 @@ class AgentChatResponse(BaseModel):
     answer: str
     evidence: list[AgentEvidence]
     suggested_actions: list[AgentSuggestedAction]
+
+
+class AgentConfirmationTokenRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128)
+    action_id: str = Field(min_length=1, max_length=128)
+    action_payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class AgentConfirmationTokenResponse(BaseModel):
+    session_id: str
+    action_id: str
+    confirmation_token: str
+    expires_at: datetime.datetime
+
+
+class AgentConfirmationValidationRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=128)
+    action_id: str = Field(min_length=1, max_length=128)
+    confirmation_token: str = Field(min_length=1, max_length=256)
+    action_payload: dict[str, Any] = Field(default_factory=dict)
+    consume: bool = True
+
+
+class AgentConfirmationValidationResponse(BaseModel):
+    valid: bool
+    reason: str | None = None
+    action_id: str
+    session_id: str
+    expires_at: datetime.datetime | None = None
+    consumed: bool = False
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -143,6 +183,29 @@ def _build_session_key(user_id: str, session_id: str) -> str:
     return f"agent-session:{user_id}:{session_id}"
 
 
+def _build_confirmation_key(user_id: str, confirmation_token: str) -> str:
+    return f"agent-confirmation:{user_id}:{confirmation_token}"
+
+
+def _hash_action_payload(payload: dict[str, Any]) -> str:
+    canonical_payload = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical_payload.encode("utf-8")).hexdigest()
+
+
+def _parse_datetime_iso(value: Any) -> datetime.datetime | None:
+    if isinstance(value, datetime.datetime):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip()
+        if normalized.endswith("Z"):
+            normalized = normalized.replace("Z", "+00:00")
+        try:
+            return datetime.datetime.fromisoformat(normalized)
+        except ValueError:
+            return None
+    return None
+
+
 async def _load_session_memory(user_id: str, session_id: str) -> dict[str, Any]:
     key = _build_session_key(user_id, session_id)
     client = _get_redis_client()
@@ -173,6 +236,50 @@ async def _save_session_memory(user_id: str, session_id: str, memory: dict[str, 
         pass
 
 
+async def _save_confirmation_record(user_id: str, confirmation_token: str, payload: dict[str, Any]) -> None:
+    key = _build_confirmation_key(user_id, confirmation_token)
+    _in_memory_confirmation_store[key] = payload
+    client = _get_redis_client()
+    if client is None:
+        return
+    try:
+        await client.set(
+            key,
+            json.dumps(payload, ensure_ascii=False),
+            ex=AGENT_CONFIRMATION_TOKEN_TTL_SECONDS,
+        )
+    except Exception:
+        pass
+
+
+async def _load_confirmation_record(user_id: str, confirmation_token: str) -> dict[str, Any] | None:
+    key = _build_confirmation_key(user_id, confirmation_token)
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            payload_raw = await client.get(key)
+            if payload_raw:
+                payload = json.loads(payload_raw)
+                if isinstance(payload, dict):
+                    _in_memory_confirmation_store[key] = payload
+                    return payload
+        except Exception:
+            pass
+
+    payload = _in_memory_confirmation_store.get(key)
+    if payload is None:
+        return None
+
+    expires_at = _parse_datetime_iso(payload.get("expires_at"))
+    if expires_at is None:
+        return None
+    now = datetime.datetime.now(datetime.UTC)
+    if expires_at < now:
+        _in_memory_confirmation_store.pop(key, None)
+        return None
+    return payload
+
+
 def _detect_intent(message: str, last_intent: AgentIntent | None = None) -> tuple[AgentIntent, float]:
     normalized = message.lower()
     if normalized in {"continue", "continue.", "дальше", "продолжай", "go on"} and last_intent is not None:
@@ -186,6 +293,14 @@ def _detect_intent(message: str, last_intent: AgentIntent | None = None) -> tupl
     if any(keyword in normalized for keyword in ("readiness", "готов", "mortgage", "ипотек", "pack")):
         return "readiness_check", 0.82
     return "readiness_check", 0.60
+
+
+def _ensure_supported_write_action(action_id: str) -> None:
+    if action_id not in WRITE_ACTION_ALLOWLIST:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported action_id '{action_id}'",
+        )
 
 
 async def _fetch_documents_review_queue(bearer_token: str, limit: int = 25) -> dict[str, Any]:
@@ -573,6 +688,118 @@ def _build_readiness_check_response(
         f"transactions {transaction_count}, estimated tax due £{estimated_tax_due:.2f}."
     )
     return answer, evidence, actions
+
+
+@app.post("/agent/actions/request-confirmation", response_model=AgentConfirmationTokenResponse)
+async def request_action_confirmation_token(
+    request: AgentConfirmationTokenRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    _ensure_supported_write_action(request.action_id)
+    now = datetime.datetime.now(datetime.UTC)
+    expires_at = now + datetime.timedelta(seconds=AGENT_CONFIRMATION_TOKEN_TTL_SECONDS)
+    confirmation_token = uuid.uuid4().hex
+    payload_hash = _hash_action_payload(request.action_payload)
+    record = {
+        "session_id": request.session_id,
+        "action_id": request.action_id,
+        "action_payload_hash": payload_hash,
+        "created_at": now.isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "consumed": False,
+    }
+    await _save_confirmation_record(user_id, confirmation_token, record)
+    return AgentConfirmationTokenResponse(
+        session_id=request.session_id,
+        action_id=request.action_id,
+        confirmation_token=confirmation_token,
+        expires_at=expires_at,
+    )
+
+
+@app.post("/agent/actions/validate-confirmation", response_model=AgentConfirmationValidationResponse)
+async def validate_action_confirmation_token(
+    request: AgentConfirmationValidationRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    _ensure_supported_write_action(request.action_id)
+    record = await _load_confirmation_record(user_id, request.confirmation_token)
+    if record is None:
+        return AgentConfirmationValidationResponse(
+            valid=False,
+            reason="token_not_found_or_expired",
+            action_id=request.action_id,
+            session_id=request.session_id,
+        )
+
+    expires_at = _parse_datetime_iso(record.get("expires_at"))
+    if expires_at is None:
+        return AgentConfirmationValidationResponse(
+            valid=False,
+            reason="token_not_found_or_expired",
+            action_id=request.action_id,
+            session_id=request.session_id,
+        )
+
+    if str(record.get("session_id") or "") != request.session_id:
+        return AgentConfirmationValidationResponse(
+            valid=False,
+            reason="session_mismatch",
+            action_id=request.action_id,
+            session_id=request.session_id,
+            expires_at=expires_at,
+        )
+    if str(record.get("action_id") or "") != request.action_id:
+        return AgentConfirmationValidationResponse(
+            valid=False,
+            reason="action_mismatch",
+            action_id=request.action_id,
+            session_id=request.session_id,
+            expires_at=expires_at,
+        )
+    if bool(record.get("consumed")):
+        return AgentConfirmationValidationResponse(
+            valid=False,
+            reason="token_already_used",
+            action_id=request.action_id,
+            session_id=request.session_id,
+            expires_at=expires_at,
+        )
+
+    expected_payload_hash = str(record.get("action_payload_hash") or "")
+    provided_payload_hash = _hash_action_payload(request.action_payload)
+    if expected_payload_hash != provided_payload_hash:
+        return AgentConfirmationValidationResponse(
+            valid=False,
+            reason="payload_mismatch",
+            action_id=request.action_id,
+            session_id=request.session_id,
+            expires_at=expires_at,
+        )
+
+    now = datetime.datetime.now(datetime.UTC)
+    if expires_at < now:
+        return AgentConfirmationValidationResponse(
+            valid=False,
+            reason="token_not_found_or_expired",
+            action_id=request.action_id,
+            session_id=request.session_id,
+            expires_at=expires_at,
+        )
+
+    if request.consume:
+        updated_record = dict(record)
+        updated_record["consumed"] = True
+        updated_record["consumed_at"] = now.isoformat()
+        await _save_confirmation_record(user_id, request.confirmation_token, updated_record)
+
+    return AgentConfirmationValidationResponse(
+        valid=True,
+        action_id=request.action_id,
+        session_id=request.session_id,
+        expires_at=expires_at,
+        consumed=request.consume,
+    )
 
 
 @app.post("/agent/chat", response_model=AgentChatResponse)

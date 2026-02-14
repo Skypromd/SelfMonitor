@@ -4,6 +4,54 @@ info:
   description: Self-Assessment Copilot with read-only guided actions.
   version: 1.0.0
 paths:
+  /agent/actions/request-confirmation:
+    post:
+      summary: Request confirmation token for write action
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentConfirmationTokenRequest'
+      responses:
+        '200':
+          description: One-time confirmation token issued for action execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfirmationTokenResponse'
+        '400':
+          description: Unsupported action id.
+        '401':
+          description: Missing or invalid token.
+  /agent/actions/validate-confirmation:
+    post:
+      summary: Validate or consume confirmation token for write action
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentConfirmationValidationRequest'
+      responses:
+        '200':
+          description: Token validation result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfirmationValidationResponse'
+        '400':
+          description: Unsupported action id.
+        '401':
+          description: Missing or invalid token.
   /agent/chat:
     post:
       summary: Chat with self-assessment copilot
@@ -40,6 +88,89 @@ components:
           example: session-01
       required:
         - message
+    AgentConfirmationTokenRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          example: session-01
+        action_id:
+          type: string
+          enum:
+            - documents.review_document
+            - transactions.reconcile_receipt_draft
+            - transactions.ignore_receipt_draft
+            - tax.calculate_and_submit
+        action_payload:
+          type: object
+          additionalProperties: true
+      required:
+        - session_id
+        - action_id
+    AgentConfirmationTokenResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+        confirmation_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - session_id
+        - action_id
+        - confirmation_token
+        - expires_at
+    AgentConfirmationValidationRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+          enum:
+            - documents.review_document
+            - transactions.reconcile_receipt_draft
+            - transactions.ignore_receipt_draft
+            - tax.calculate_and_submit
+        confirmation_token:
+          type: string
+        action_payload:
+          type: object
+          additionalProperties: true
+        consume:
+          type: boolean
+          default: true
+      required:
+        - session_id
+        - action_id
+        - confirmation_token
+    AgentConfirmationValidationResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        action_id:
+          type: string
+        session_id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        consumed:
+          type: boolean
+      required:
+        - valid
+        - action_id
+        - session_id
+        - consumed
     AgentEvidence:
       type: object
       properties:

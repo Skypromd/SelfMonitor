@@ -63,6 +63,7 @@ def client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(agent_main, "_fetch_tax_snapshot", fake_tax_snapshot)
     monkeypatch.setattr(agent_main, "_get_redis_client", lambda: None)
     monkeypatch.setattr(agent_main, "_in_memory_session_store", {})
+    monkeypatch.setattr(agent_main, "_in_memory_confirmation_store", {})
 
     with TestClient(agent_main.app) as test_client:
         yield test_client
@@ -148,3 +149,97 @@ def test_agent_chat_persists_memory_for_same_session(client: TestClient):
     assert second_payload["intent"] == "ocr_review_assist"
     assert second_payload["last_intent_from_memory"] == "ocr_review_assist"
     assert second_payload["session_turn_count"] == 2
+
+
+def test_confirmation_token_flow_validates_and_consumes(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    request_payload = {
+        "session_id": "session-456",
+        "action_id": "tax.calculate_and_submit",
+        "action_payload": {"jurisdiction": "UK", "start_date": "2025-01-01"},
+    }
+    token_response = client.post(
+        "/agent/actions/request-confirmation",
+        headers=headers,
+        json=request_payload,
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+    confirmation_token = token_payload["confirmation_token"]
+
+    validate_response = client.post(
+        "/agent/actions/validate-confirmation",
+        headers=headers,
+        json={
+            "session_id": "session-456",
+            "action_id": "tax.calculate_and_submit",
+            "confirmation_token": confirmation_token,
+            "action_payload": {"jurisdiction": "UK", "start_date": "2025-01-01"},
+            "consume": True,
+        },
+    )
+    assert validate_response.status_code == 200
+    validate_payload = validate_response.json()
+    assert validate_payload["valid"] is True
+    assert validate_payload["consumed"] is True
+
+    replay_response = client.post(
+        "/agent/actions/validate-confirmation",
+        headers=headers,
+        json={
+            "session_id": "session-456",
+            "action_id": "tax.calculate_and_submit",
+            "confirmation_token": confirmation_token,
+            "action_payload": {"jurisdiction": "UK", "start_date": "2025-01-01"},
+            "consume": True,
+        },
+    )
+    assert replay_response.status_code == 200
+    replay_payload = replay_response.json()
+    assert replay_payload["valid"] is False
+    assert replay_payload["reason"] == "token_already_used"
+
+
+def test_confirmation_token_validation_rejects_payload_mismatch(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    token_response = client.post(
+        "/agent/actions/request-confirmation",
+        headers=headers,
+        json={
+            "session_id": "session-789",
+            "action_id": "documents.review_document",
+            "action_payload": {"document_id": "doc-1", "review_status": "confirmed"},
+        },
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+
+    mismatch_response = client.post(
+        "/agent/actions/validate-confirmation",
+        headers=headers,
+        json={
+            "session_id": "session-789",
+            "action_id": "documents.review_document",
+            "confirmation_token": token_payload["confirmation_token"],
+            "action_payload": {"document_id": "doc-1", "review_status": "ignored"},
+            "consume": False,
+        },
+    )
+    assert mismatch_response.status_code == 200
+    mismatch_payload = mismatch_response.json()
+    assert mismatch_payload["valid"] is False
+    assert mismatch_payload["reason"] == "payload_mismatch"
+
+
+def test_confirmation_token_request_rejects_unsupported_action(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    response = client.post(
+        "/agent/actions/request-confirmation",
+        headers=headers,
+        json={
+            "session_id": "session-unsupported",
+            "action_id": "unknown.action",
+            "action_payload": {},
+        },
+    )
+    assert response.status_code == 400
