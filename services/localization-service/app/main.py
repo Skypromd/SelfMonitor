@@ -1,4 +1,5 @@
 from copy import deepcopy
+import datetime
 from typing import Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Path, status
@@ -188,6 +189,35 @@ class SupportedLocale(BaseModel):
     status: str
 
 
+class TranslationLocaleHealth(BaseModel):
+    code: str
+    status: str
+    total_reference_keys: int
+    localized_keys: int
+    fallback_keys: int
+    estimated_fallback_hit_rate_percent: float
+    fully_untranslated_namespaces_count: int
+    partially_translated_namespaces_count: int
+    missing_key_count: int
+    missing_key_samples: list[str]
+
+
+class TranslationHealthSummary(BaseModel):
+    total_locales: int
+    locales_with_fallback: int
+    average_fallback_hit_rate_percent: float
+    highest_fallback_locale: Optional[str] = None
+    highest_fallback_hit_rate_percent: float
+
+
+class TranslationHealthResponse(BaseModel):
+    generated_at: datetime.datetime
+    default_locale: str
+    reference_total_keys: int
+    locales: list[TranslationLocaleHealth]
+    summary: TranslationHealthSummary
+
+
 def _merge_locale_data(base: Dict[str, Dict[str, str]], override: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
     merged = deepcopy(base)
     for namespace, namespace_values in override.items():
@@ -209,6 +239,62 @@ def _resolve_locale_data(locale: str) -> Dict[str, Dict[str, str]] | None:
         resolved = _merge_locale_data(resolved, locale_specific)
     return resolved
 
+
+def _collect_namespace_key_map(data: Dict[str, Dict[str, str]]) -> dict[str, set[str]]:
+    namespace_map: dict[str, set[str]] = {}
+    for namespace, namespace_values in data.items():
+        if not isinstance(namespace_values, dict):
+            continue
+        namespace_map[namespace] = set(namespace_values.keys())
+    return namespace_map
+
+
+def _flatten_keys(namespace_map: dict[str, set[str]]) -> set[str]:
+    flattened: set[str] = set()
+    for namespace, keys in namespace_map.items():
+        for key in keys:
+            flattened.add(f"{namespace}.{key}")
+    return flattened
+
+
+def _build_locale_health(
+    *,
+    locale: str,
+    base_namespace_map: dict[str, set[str]],
+    reference_keys: set[str],
+) -> TranslationLocaleHealth:
+    locale_metadata = SUPPORTED_LOCALE_METADATA.get(locale, {})
+    locale_specific_data = fake_translations_db.get(locale, {})
+    locale_namespace_map = _collect_namespace_key_map(locale_specific_data)
+    locale_specific_keys = _flatten_keys(locale_namespace_map)
+    localized_reference_keys = reference_keys.intersection(locale_specific_keys)
+    missing_reference_keys = sorted(reference_keys - localized_reference_keys)
+    total_reference_keys = len(reference_keys)
+    fallback_keys = len(missing_reference_keys)
+    fallback_hit_rate = round((fallback_keys / total_reference_keys) * 100, 1) if total_reference_keys else 0.0
+
+    fully_untranslated_namespaces_count = sum(
+        1 for namespace in base_namespace_map if namespace not in locale_namespace_map
+    )
+    partially_translated_namespaces_count = 0
+    for namespace, base_keys in base_namespace_map.items():
+        locale_keys = locale_namespace_map.get(namespace, set())
+        if locale_keys and not base_keys.issubset(locale_keys):
+            partially_translated_namespaces_count += 1
+
+    return TranslationLocaleHealth(
+        code=locale,
+        status=str(locale_metadata.get("status") or "fallback_en_gb"),
+        total_reference_keys=total_reference_keys,
+        localized_keys=len(localized_reference_keys),
+        fallback_keys=fallback_keys,
+        estimated_fallback_hit_rate_percent=fallback_hit_rate,
+        fully_untranslated_namespaces_count=fully_untranslated_namespaces_count,
+        partially_translated_namespaces_count=partially_translated_namespaces_count,
+        missing_key_count=fallback_keys,
+        missing_key_samples=missing_reference_keys[:25],
+    )
+
 # --- Endpoints ---
 
 @app.get(
@@ -226,6 +312,57 @@ async def list_supported_locales():
         )
         for code, metadata in SUPPORTED_LOCALE_METADATA.items()
     ]
+
+
+@app.get(
+    "/translations/health",
+    response_model=TranslationHealthResponse,
+    summary="Get translation health telemetry across locales"
+)
+async def get_translation_health():
+    base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
+    base_namespace_map = _collect_namespace_key_map(base_locale_data)
+    reference_keys = _flatten_keys(base_namespace_map)
+    locale_health_rows = [
+        _build_locale_health(
+            locale=locale_code,
+            base_namespace_map=base_namespace_map,
+            reference_keys=reference_keys,
+        )
+        for locale_code in SUPPORTED_LOCALE_METADATA
+    ]
+    locale_health_rows.sort(key=lambda item: item.code)
+
+    total_locales = len(locale_health_rows)
+    locales_with_fallback = sum(1 for row in locale_health_rows if row.fallback_keys > 0)
+    average_fallback = (
+        round(
+            sum(row.estimated_fallback_hit_rate_percent for row in locale_health_rows) / total_locales,
+            1,
+        )
+        if total_locales
+        else 0.0
+    )
+    highest = max(
+        locale_health_rows,
+        key=lambda row: row.estimated_fallback_hit_rate_percent,
+        default=None,
+    )
+
+    return TranslationHealthResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        default_locale=DEFAULT_LOCALE,
+        reference_total_keys=len(reference_keys),
+        locales=locale_health_rows,
+        summary=TranslationHealthSummary(
+            total_locales=total_locales,
+            locales_with_fallback=locales_with_fallback,
+            average_fallback_hit_rate_percent=average_fallback,
+            highest_fallback_locale=highest.code if highest else None,
+            highest_fallback_hit_rate_percent=highest.estimated_fallback_hit_rate_percent if highest else 0.0,
+        ),
+    )
+
 
 @app.get(
     "/translations/{locale}/all",

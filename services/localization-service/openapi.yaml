@@ -18,6 +18,18 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SupportedLocale'
+  /translations/health:
+    get:
+      summary: Get translation health telemetry across locales
+      tags:
+        - Translations
+      responses:
+        '200':
+          description: Translation health metrics including fallback hit-rate and missing key samples.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslationHealthResponse'
   /translations/{locale}/all:
     get:
       summary: Get all translations for a locale
@@ -102,3 +114,87 @@ components:
         - code
         - native_name
         - status
+    TranslationLocaleHealth:
+      type: object
+      properties:
+        code:
+          type: string
+          example: ru-RU
+        status:
+          type: string
+          example: fallback_en_gb
+        total_reference_keys:
+          type: integer
+        localized_keys:
+          type: integer
+        fallback_keys:
+          type: integer
+        estimated_fallback_hit_rate_percent:
+          type: number
+          format: float
+          example: 100.0
+        fully_untranslated_namespaces_count:
+          type: integer
+        partially_translated_namespaces_count:
+          type: integer
+        missing_key_count:
+          type: integer
+        missing_key_samples:
+          type: array
+          items:
+            type: string
+      required:
+        - code
+        - status
+        - total_reference_keys
+        - localized_keys
+        - fallback_keys
+        - estimated_fallback_hit_rate_percent
+        - fully_untranslated_namespaces_count
+        - partially_translated_namespaces_count
+        - missing_key_count
+        - missing_key_samples
+    TranslationHealthSummary:
+      type: object
+      properties:
+        total_locales:
+          type: integer
+        locales_with_fallback:
+          type: integer
+        average_fallback_hit_rate_percent:
+          type: number
+          format: float
+        highest_fallback_locale:
+          type: string
+          nullable: true
+        highest_fallback_hit_rate_percent:
+          type: number
+          format: float
+      required:
+        - total_locales
+        - locales_with_fallback
+        - average_fallback_hit_rate_percent
+        - highest_fallback_hit_rate_percent
+    TranslationHealthResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        default_locale:
+          type: string
+          example: en-GB
+        reference_total_keys:
+          type: integer
+        locales:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranslationLocaleHealth'
+        summary:
+          $ref: '#/components/schemas/TranslationHealthSummary'
+      required:
+        - generated_at
+        - default_locale
+        - reference_total_keys
+        - locales
+        - summary

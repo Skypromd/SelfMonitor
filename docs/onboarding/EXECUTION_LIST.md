@@ -59,3 +59,4 @@ _Last updated: 2026-02-13_
 27. [x] Add mortgage evidence quality checks (staleness, name mismatch, period mismatch, unreadable OCR)
 28. [x] Add compliance disclaimer and advisor-review submission gate for broker handoff
 29. [x] Add monthly refresh reminders for expiring statements and ID documents
+30. [x] Add localization translation-health telemetry (missing keys + fallback hit-rate)

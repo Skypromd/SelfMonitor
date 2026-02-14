@@ -40,3 +40,5 @@ Current implementation status
 - Locale registry implemented in localization-service.
 - Fallback-by-default implemented for non-translated locales.
 - Web locale config includes required language list.
+- Translation health telemetry endpoint implemented: `GET /translations/health`
+  with per-locale missing keys, estimated fallback hit-rate, and untranslated namespace metrics.

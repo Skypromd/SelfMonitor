@@ -37,3 +37,29 @@ def test_translated_locale_keeps_native_overrides():
 def test_unknown_locale_returns_not_found():
     response = client.get("/translations/es-ES/all")
     assert response.status_code == 404
+
+
+def test_translation_health_reports_fallback_metrics():
+    response = client.get("/translations/health")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["default_locale"] == "en-GB"
+    assert payload["reference_total_keys"] > 0
+    assert payload["summary"]["total_locales"] >= 7
+    locale_rows = {item["code"]: item for item in payload["locales"]}
+    assert "ru-RU" in locale_rows
+    assert locale_rows["ru-RU"]["fallback_keys"] > 0
+    assert locale_rows["ru-RU"]["estimated_fallback_hit_rate_percent"] > 0
+    assert "en-GB" in locale_rows
+    assert locale_rows["en-GB"]["fallback_keys"] == 0
+    assert locale_rows["en-GB"]["estimated_fallback_hit_rate_percent"] == 0.0
+
+
+def test_translation_health_includes_missing_key_samples():
+    response = client.get("/translations/health")
+    assert response.status_code == 200
+    payload = response.json()
+    locale_rows = {item["code"]: item for item in payload["locales"]}
+    ru_row = locale_rows["ru-RU"]
+    assert ru_row["missing_key_count"] >= len(ru_row["missing_key_samples"])
+    assert all("." in key_name for key_name in ru_row["missing_key_samples"])
