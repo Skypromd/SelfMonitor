@@ -79,6 +79,18 @@ components:
     AgentChatResponse:
       type: object
       properties:
+        session_id:
+          type: string
+        session_turn_count:
+          type: integer
+        last_intent_from_memory:
+          type: string
+          nullable: true
+          enum:
+            - readiness_check
+            - ocr_review_assist
+            - reconciliation_assist
+            - tax_pre_submit
         intent:
           type: string
           enum:
@@ -100,6 +112,8 @@ components:
           items:
             $ref: '#/components/schemas/AgentSuggestedAction'
       required:
+        - session_id
+        - session_turn_count
         - intent
         - confidence
         - answer

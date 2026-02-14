@@ -61,6 +61,8 @@ def client(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(agent_main, "_fetch_unmatched_receipt_drafts", fake_unmatched)
     monkeypatch.setattr(agent_main, "_fetch_transactions_me", fake_transactions)
     monkeypatch.setattr(agent_main, "_fetch_tax_snapshot", fake_tax_snapshot)
+    monkeypatch.setattr(agent_main, "_get_redis_client", lambda: None)
+    monkeypatch.setattr(agent_main, "_in_memory_session_store", {})
 
     with TestClient(agent_main.app) as test_client:
         yield test_client
@@ -122,3 +124,27 @@ def test_agent_chat_defaults_to_readiness_snapshot(client: TestClient):
     assert payload["intent"] == "readiness_check"
     assert len(payload["evidence"]) >= 3
     assert payload["answer"].startswith("Readiness snapshot:")
+
+
+def test_agent_chat_persists_memory_for_same_session(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    first_response = client.post(
+        "/agent/chat",
+        headers=headers,
+        json={"message": "Please help with OCR review queue", "session_id": "session-123"},
+    )
+    assert first_response.status_code == 200
+    first_payload = first_response.json()
+    assert first_payload["intent"] == "ocr_review_assist"
+    assert first_payload["session_turn_count"] == 1
+
+    second_response = client.post(
+        "/agent/chat",
+        headers=headers,
+        json={"message": "continue", "session_id": "session-123"},
+    )
+    assert second_response.status_code == 200
+    second_payload = second_response.json()
+    assert second_payload["intent"] == "ocr_review_assist"
+    assert second_payload["last_intent_from_memory"] == "ocr_review_assist"
+    assert second_payload["session_turn_count"] == 2

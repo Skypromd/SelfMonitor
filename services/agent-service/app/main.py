@@ -1,7 +1,9 @@
 import asyncio
 import datetime
+import json
 import os
 import sys
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 
@@ -36,6 +38,8 @@ TAX_ENGINE_CALCULATE_URL = os.getenv(
     "http://tax-engine/calculate",
 )
 DEFAULT_TAX_LOOKBACK_DAYS = int(os.getenv("AGENT_DEFAULT_TAX_LOOKBACK_DAYS", "365"))
+AGENT_REDIS_URL = os.getenv("AGENT_REDIS_URL", "redis://redis:6379/0")
+AGENT_SESSION_TTL_SECONDS = int(os.getenv("AGENT_SESSION_TTL_SECONDS", "86400"))
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -52,6 +56,15 @@ AgentIntent = Literal[
     "reconciliation_assist",
     "tax_pre_submit",
 ]
+INTENT_VALUES: tuple[AgentIntent, ...] = (
+    "readiness_check",
+    "ocr_review_assist",
+    "reconciliation_assist",
+    "tax_pre_submit",
+)
+
+_redis_client: Any | None = None
+_in_memory_session_store: dict[str, dict[str, Any]] = {}
 
 
 class AgentChatRequest(BaseModel):
@@ -74,6 +87,9 @@ class AgentSuggestedAction(BaseModel):
 
 
 class AgentChatResponse(BaseModel):
+    session_id: str
+    session_turn_count: int
+    last_intent_from_memory: AgentIntent | None = None
     intent: AgentIntent
     confidence: float = Field(ge=0.0, le=1.0)
     answer: str
@@ -111,8 +127,56 @@ def _extract_record_ids(items: list[dict[str, Any]], key: str, limit: int = 5) -
     return ids
 
 
-def _detect_intent(message: str) -> tuple[AgentIntent, float]:
+def _get_redis_client() -> Any | None:
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    try:
+        import redis.asyncio as redis
+    except ModuleNotFoundError:
+        return None
+    _redis_client = redis.from_url(AGENT_REDIS_URL, decode_responses=True)
+    return _redis_client
+
+
+def _build_session_key(user_id: str, session_id: str) -> str:
+    return f"agent-session:{user_id}:{session_id}"
+
+
+async def _load_session_memory(user_id: str, session_id: str) -> dict[str, Any]:
+    key = _build_session_key(user_id, session_id)
+    client = _get_redis_client()
+    if client is not None:
+        try:
+            payload_raw = await client.get(key)
+            if payload_raw:
+                payload = json.loads(payload_raw)
+                if isinstance(payload, dict):
+                    _in_memory_session_store[key] = payload
+                    return payload
+        except Exception:
+            pass
+    if key in _in_memory_session_store:
+        return _in_memory_session_store[key]
+    return {"turns": [], "last_intent": None}
+
+
+async def _save_session_memory(user_id: str, session_id: str, memory: dict[str, Any]) -> None:
+    key = _build_session_key(user_id, session_id)
+    _in_memory_session_store[key] = memory
+    client = _get_redis_client()
+    if client is None:
+        return
+    try:
+        await client.set(key, json.dumps(memory, ensure_ascii=False), ex=AGENT_SESSION_TTL_SECONDS)
+    except Exception:
+        pass
+
+
+def _detect_intent(message: str, last_intent: AgentIntent | None = None) -> tuple[AgentIntent, float]:
     normalized = message.lower()
+    if normalized in {"continue", "continue.", "дальше", "продолжай", "go on"} and last_intent is not None:
+        return last_intent, 0.71
     if any(keyword in normalized for keyword in ("hmrc", "tax", "налог", "декларац", "submission")):
         return "tax_pre_submit", 0.89
     if any(keyword in normalized for keyword in ("reconcile", "match", "duplicate", "сопостав", "дубликат")):
@@ -514,10 +578,16 @@ def _build_readiness_check_response(
 @app.post("/agent/chat", response_model=AgentChatResponse)
 async def agent_chat(
     request: AgentChatRequest,
-    _user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
 ):
-    intent, confidence = _detect_intent(request.message)
+    session_id = request.session_id or str(uuid.uuid4())
+    memory = await _load_session_memory(user_id, session_id)
+    last_intent_raw = memory.get("last_intent")
+    last_intent: AgentIntent | None = None
+    if isinstance(last_intent_raw, str) and last_intent_raw in INTENT_VALUES:
+        last_intent = last_intent_raw
+    intent, confidence = _detect_intent(request.message, last_intent)
 
     if intent == "ocr_review_assist":
         docs_payload, docs_error = await _safe_call(_fetch_documents_review_queue(bearer_token))
@@ -562,7 +632,27 @@ async def agent_chat(
             tax_error,
         )
 
+    turns_raw = memory.get("turns")
+    turns = turns_raw if isinstance(turns_raw, list) else []
+    turns.append(
+        {
+            "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
+            "message": request.message,
+            "intent": intent,
+            "answer": answer,
+        }
+    )
+    turns = turns[-20:]
+    updated_memory = {
+        "turns": turns,
+        "last_intent": intent,
+    }
+    await _save_session_memory(user_id, session_id, updated_memory)
+
     return AgentChatResponse(
+        session_id=session_id,
+        session_turn_count=len(turns),
+        last_intent_from_memory=last_intent,
         intent=intent,
         confidence=confidence,
         answer=answer,

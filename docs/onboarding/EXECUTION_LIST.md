@@ -63,3 +63,4 @@ _Last updated: 2026-02-13_
 31. [x] Externalize localization dictionaries into JSON catalogs for scalable i18n pipeline
 32. [x] Add ICU/pluralization support and locale-aware formatting standards in localization + web i18n
 33. [x] Add agent-service MVP with intent router and read-only evidence-backed guidance API
+34. [x] Add agent session memory with Redis-backed TTL and session continuity
