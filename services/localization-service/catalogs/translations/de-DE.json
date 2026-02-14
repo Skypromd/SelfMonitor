@@ -78,6 +78,8 @@
     "search_description": "Stellen Sie eine Frage zu Ihren Dokumenten in natürlicher Sprache.",
     "search_placeholder": "z.B. 'wo habe ich letzten monat kaffee gekauft?'",
     "search_button": "Suchen",
-    "all_documents_title": "Alle hochgeladenen Dokumente"
+    "all_documents_title": "Alle hochgeladenen Dokumente",
+    "uploaded_documents_count": "{count, plural, =0 {Noch keine hochgeladenen Dokumente.} one {# hochgeladenes Dokument} other {# hochgeladene Dokumente}}",
+    "review_queue_count": "{count, plural, =0 {Aktuell sind keine Dokumente zur manuellen OCR-Prüfung offen.} one {# Dokument benötigt eine manuelle OCR-Prüfung.} other {# Dokumente benötigen eine manuelle OCR-Prüfung.}}"
   }
 }

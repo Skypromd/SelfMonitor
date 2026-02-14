@@ -64,6 +64,8 @@
     "search_description": "Ask a question about your documents in natural language.",
     "search_placeholder": "e.g., 'where did I buy coffee last month?'",
     "search_button": "Search",
-    "all_documents_title": "All Uploaded Documents"
+    "all_documents_title": "All Uploaded Documents",
+    "uploaded_documents_count": "{count, plural, =0 {No uploaded documents yet.} one {# uploaded document} other {# uploaded documents}}",
+    "review_queue_count": "{count, plural, =0 {No documents currently require manual OCR review.} one {# document requires manual OCR review.} other {# documents require manual OCR review.}}"
   }
 }

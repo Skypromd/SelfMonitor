@@ -77,3 +77,17 @@ def test_external_catalog_files_are_present_and_used():
     assert response.status_code == 200
     payload = response.json()
     assert payload["common"]["submit"] == de_catalog["common"]["submit"]
+
+
+def test_locale_format_standards_for_supported_locale():
+    response = client.get("/translations/en-GB/format-standards")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["locale"] == "en-GB"
+    assert payload["default_currency"] == "GBP"
+    assert payload["time_zone"] == "Europe/London"
+
+
+def test_locale_format_standards_unknown_locale_returns_not_found():
+    response = client.get("/translations/es-ES/format-standards")
+    assert response.status_code == 404

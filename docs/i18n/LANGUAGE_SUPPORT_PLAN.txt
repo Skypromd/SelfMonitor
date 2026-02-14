@@ -44,3 +44,6 @@ Current implementation status
   with per-locale missing keys, estimated fallback hit-rate, and untranslated namespace metrics.
 - Translation catalogs externalized to JSON files (`services/localization-service/catalogs/*`)
   and loaded at runtime via `LOCALIZATION_CATALOG_DIR` (with safe in-code fallback).
+- ICU/pluralization enabled in web i18n hook via `intl-messageformat`, with locale-aware
+  formatting helpers for date/time/number/currency sourced from
+  `GET /translations/{locale}/format-standards`.

@@ -2,7 +2,7 @@ import type { AppProps } from 'next/app';
 import { useContext, useEffect, useState, type ComponentType } from 'react';
 import { useRouter } from 'next/router';
 import Layout from '../components/Layout';
-import { I18nContext, I18nProvider } from '../context/i18n';
+import { buildDefaultFormatStandards, I18nContext, type LocaleFormatStandards, I18nProvider } from '../context/i18n';
 import '../styles/globals.css';
 
 const LOCALIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || 'http://localhost:8012';
@@ -16,24 +16,35 @@ function AppContent({ Component, pageProps }: AppProps) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>('light');
   const router = useRouter();
-  const { setTranslations } = useContext(I18nContext);
+  const { setFormatStandards, setLocale, setTranslations } = useContext(I18nContext);
   const { defaultLocale, locale } = router;
 
   useEffect(() => {
     const fetchTranslations = async () => {
       const lang = locale || defaultLocale || 'en-GB';
+      setLocale(lang);
       try {
-        const response = await fetch(`${LOCALIZATION_SERVICE_URL}/translations/${lang}/all`);
-        if (!response.ok) {
+        const [translationsResponse, formatStandardsResponse] = await Promise.all([
+          fetch(`${LOCALIZATION_SERVICE_URL}/translations/${lang}/all`),
+          fetch(`${LOCALIZATION_SERVICE_URL}/translations/${lang}/format-standards`),
+        ]);
+        if (!translationsResponse.ok) {
           throw new Error('Failed to fetch translations');
         }
-        setTranslations(await response.json());
+        setTranslations(await translationsResponse.json());
+
+        if (formatStandardsResponse.ok) {
+          setFormatStandards((await formatStandardsResponse.json()) as LocaleFormatStandards);
+        } else {
+          setFormatStandards(buildDefaultFormatStandards(lang));
+        }
       } catch (error) {
         console.error('Could not load translations:', error);
+        setFormatStandards(buildDefaultFormatStandards(lang));
       }
     };
     fetchTranslations();
-  }, [defaultLocale, locale, setTranslations]);
+  }, [defaultLocale, locale, setFormatStandards, setLocale, setTranslations]);
 
   useEffect(() => {
     const storedToken = localStorage.getItem(AUTH_TOKEN_KEY);

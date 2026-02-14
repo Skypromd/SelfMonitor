@@ -30,6 +30,28 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TranslationHealthResponse'
+  /translations/{locale}/format-standards:
+    get:
+      summary: Get ICU/pluralization formatting standards for locale
+      tags:
+        - Translations
+      parameters:
+        - name: locale
+          in: path
+          required: true
+          schema:
+            type: string
+            example: 'en-GB'
+          description: Locale code used for message formatting and Intl output.
+      responses:
+        '200':
+          description: Locale-aware formatting standards for ICU/pluralized messages.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocaleFormatStandards'
+        '404':
+          description: Formatting standards not found for locale.
   /translations/{locale}/all:
     get:
       summary: Get all translations for a locale
@@ -198,3 +220,35 @@ components:
         - reference_total_keys
         - locales
         - summary
+    LocaleFormatStandards:
+      type: object
+      properties:
+        locale:
+          type: string
+          example: en-GB
+        default_currency:
+          type: string
+          example: GBP
+        date_style:
+          type: string
+          example: medium
+        time_style:
+          type: string
+          example: short
+        time_zone:
+          type: string
+          example: Europe/London
+        number_min_fraction_digits:
+          type: integer
+          example: 0
+        number_max_fraction_digits:
+          type: integer
+          example: 2
+      required:
+        - locale
+        - default_currency
+        - date_style
+        - time_style
+        - time_zone
+        - number_min_fraction_digits
+        - number_max_fraction_digits

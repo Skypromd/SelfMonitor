@@ -174,7 +174,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [checklistError, setChecklistError] = useState('');
   const [readinessError, setReadinessError] = useState('');
   const [matrixError, setMatrixError] = useState('');
-  const { t } = useTranslation();
+  const { formatNumber, t } = useTranslation();
 
   useEffect(() => {
     const loadSelectors = async () => {
@@ -616,11 +616,11 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                 </div>
                 <div className={styles.resultItem}>
                   <span>Required completion</span>
-                  <span>{readiness.required_completion_percent.toFixed(1)}%</span>
+                  <span>{formatNumber(readiness.required_completion_percent, { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%</span>
                 </div>
                 <div className={styles.resultItem}>
                   <span>Overall completion</span>
-                  <span>{readiness.overall_completion_percent.toFixed(1)}%</span>
+                  <span>{formatNumber(readiness.overall_completion_percent, { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%</span>
                 </div>
                 <div className={styles.resultItem}>
                   <span>Uploaded documents detected</span>
@@ -724,7 +724,13 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                 </div>
                 <div className={styles.resultItem}>
                   <span>Average required completion</span>
-                  <span>{readinessMatrix.average_required_completion_percent.toFixed(1)}%</span>
+                  <span>
+                    {formatNumber(readinessMatrix.average_required_completion_percent, {
+                      maximumFractionDigits: 1,
+                      minimumFractionDigits: 1,
+                    })}
+                    %
+                  </span>
                 </div>
                 <div className={styles.resultItem}>
                   <span>Ready / Almost / Not ready</span>
@@ -748,8 +754,8 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                       {readinessMatrix.items.map((item) => (
                         <tr key={item.mortgage_type}>
                           <td>{item.mortgage_label}</td>
-                          <td>{item.required_completion_percent.toFixed(1)}%</td>
-                          <td>{item.overall_completion_percent.toFixed(1)}%</td>
+                          <td>{formatNumber(item.required_completion_percent, { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%</td>
+                          <td>{formatNumber(item.overall_completion_percent, { maximumFractionDigits: 1, minimumFractionDigits: 1 })}%</td>
                           <td>{item.readiness_status.replace(/_/g, ' ')}</td>
                           <td>{item.missing_required_count}</td>
                         </tr>

@@ -218,7 +218,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [reviewActionDocumentId, setReviewActionDocumentId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const { t } = useTranslation();
+  const { formatCurrency, formatDateTime, tp, t } = useTranslation();
 
   const fetchDocuments = useCallback(async () => {
     setIsLoadingDocuments(true);
@@ -436,6 +436,9 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         <div className={styles.subContainer}>
           <h2>Manual OCR review queue</h2>
           <p>Low-confidence or incomplete receipt extractions are routed here for manual confirmation.</p>
+          {!isLoadingReviewQueue && (
+            <p className={styles.tableCaption}>{tp('documents.review_queue_count', reviewQueue.length)}</p>
+          )}
           {isLoadingReviewQueue ? (
             <p>Loading review queue...</p>
           ) : reviewQueue.length === 0 ? (
@@ -467,7 +470,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                         <td>{document.extracted_data?.vendor_name || '—'}</td>
                         <td>
                           {typeof document.extracted_data?.total_amount === 'number'
-                            ? `£${document.extracted_data.total_amount.toFixed(2)}`
+                            ? formatCurrency(document.extracted_data.total_amount)
                             : '—'}
                         </td>
                         <td>{document.extracted_data?.transaction_date || '—'}</td>
@@ -596,6 +599,9 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
           )}
         </div>
 
+        {!isLoadingDocuments && (
+          <p className={styles.tableCaption}>{tp('documents.uploaded_documents_count', documents.length)}</p>
+        )}
         {isLoadingDocuments ? (
           <div className={styles.skeletonTable}>
             {Array.from({ length: 4 }).map((_, index) => (
@@ -638,7 +644,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                       <td>{document.extracted_data?.vendor_name || '—'}</td>
                       <td>
                         {typeof document.extracted_data?.total_amount === 'number'
-                          ? `£${document.extracted_data.total_amount.toFixed(2)}`
+                          ? formatCurrency(document.extracted_data.total_amount)
                           : '—'}
                       </td>
                       <td>{document.extracted_data?.suggested_category || '—'}</td>
@@ -653,7 +659,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                       <td>{document.extracted_data?.receipt_draft_transaction_id || '—'}</td>
                       <td>{renderConfidence(document)}</td>
                       <td>{renderReviewBadge(document)}</td>
-                      <td>{new Date(document.uploaded_at).toLocaleString()}</td>
+                      <td>{formatDateTime(document.uploaded_at)}</td>
                     </tr>
                     {reviewChangeEntries.length > 0 ? (
                       <tr className={styles.reviewDiffRow}>

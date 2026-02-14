@@ -84,7 +84,9 @@ fake_translations_db = {
             "search_description": "Ask a question about your documents in natural language.",
             "search_placeholder": "e.g., 'where did I buy coffee last month?'",
             "search_button": "Search",
-            "all_documents_title": "All Uploaded Documents"
+            "all_documents_title": "All Uploaded Documents",
+            "uploaded_documents_count": "{count, plural, =0 {No uploaded documents yet.} one {# uploaded document} other {# uploaded documents}}",
+            "review_queue_count": "{count, plural, =0 {No documents currently require manual OCR review.} one {# document requires manual OCR review.} other {# documents require manual OCR review.}}"
         }
     },
     "de-DE": {
@@ -167,7 +169,9 @@ fake_translations_db = {
             "search_description": "Stellen Sie eine Frage zu Ihren Dokumenten in natürlicher Sprache.",
             "search_placeholder": "z.B. 'wo habe ich letzten monat kaffee gekauft?'",
             "search_button": "Suchen",
-            "all_documents_title": "Alle hochgeladenen Dokumente"
+            "all_documents_title": "Alle hochgeladenen Dokumente",
+            "uploaded_documents_count": "{count, plural, =0 {Noch keine hochgeladenen Dokumente.} one {# hochgeladenes Dokument} other {# hochgeladene Dokumente}}",
+            "review_queue_count": "{count, plural, =0 {Aktuell sind keine Dokumente zur manuellen OCR-Prüfung offen.} one {# Dokument benötigt eine manuelle OCR-Prüfung.} other {# Dokumente benötigen eine manuelle OCR-Prüfung.}}"
         }
     }
 }
@@ -182,6 +186,73 @@ SUPPORTED_LOCALE_METADATA: dict[str, dict[str, Optional[str]]] = {
     "ro-MD": {"native_name": "Română (Moldova)", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
     "tr-TR": {"native_name": "Türkçe", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
     "hu-HU": {"native_name": "Magyar", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+}
+
+LOCALE_FORMAT_STANDARDS: dict[str, dict[str, object]] = {
+    "en-GB": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/London",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "de-DE": {
+        "default_currency": "EUR",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Berlin",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "ru-RU": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/London",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "uk-UA": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/London",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "pl-PL": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Warsaw",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "ro-MD": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Chisinau",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "tr-TR": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Istanbul",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "hu-HU": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Budapest",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
 }
 
 DEFAULT_CATALOG_ROOT = FsPath(__file__).resolve().parents[1] / "catalogs"
@@ -264,6 +335,16 @@ class SupportedLocale(BaseModel):
     native_name: str
     fallback_locale: Optional[str] = None
     status: str
+
+
+class LocaleFormatStandards(BaseModel):
+    locale: str
+    default_currency: str
+    date_style: str
+    time_style: str
+    time_zone: str
+    number_min_fraction_digits: int
+    number_max_fraction_digits: int
 
 
 class TranslationLocaleHealth(BaseModel):
@@ -372,6 +453,23 @@ def _build_locale_health(
         missing_key_samples=missing_reference_keys[:25],
     )
 
+
+def _resolve_locale_format_standards(locale: str) -> LocaleFormatStandards | None:
+    if locale not in SUPPORTED_LOCALE_METADATA:
+        return None
+    standards = LOCALE_FORMAT_STANDARDS.get(locale) or LOCALE_FORMAT_STANDARDS.get(DEFAULT_LOCALE)
+    if standards is None:
+        return None
+    return LocaleFormatStandards(
+        locale=locale,
+        default_currency=str(standards.get("default_currency") or "GBP"),
+        date_style=str(standards.get("date_style") or "medium"),
+        time_style=str(standards.get("time_style") or "short"),
+        time_zone=str(standards.get("time_zone") or "Europe/London"),
+        number_min_fraction_digits=int(standards.get("number_min_fraction_digits") or 0),
+        number_max_fraction_digits=int(standards.get("number_max_fraction_digits") or 2),
+    )
+
 # --- Endpoints ---
 
 @app.get(
@@ -438,6 +536,20 @@ async def get_translation_health():
             highest_fallback_locale=highest.code if highest else None,
             highest_fallback_hit_rate_percent=highest.estimated_fallback_hit_rate_percent if highest else 0.0,
         ),
+    )
+
+
+@app.get(
+    "/translations/{locale}/format-standards",
+    response_model=LocaleFormatStandards,
+    summary="Get ICU/pluralization formatting standards for locale"
+)
+async def get_locale_format_standards(locale: str = Path(..., example="en-GB")):
+    if standards := _resolve_locale_format_standards(locale):
+        return standards
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Formatting standards for locale '{locale}' not found."
     )
 
 
