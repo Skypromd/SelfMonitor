@@ -297,6 +297,8 @@ services:
   localization-service:
     build: ./services/localization-service
     container_name: localization-service
+    environment:
+      LOCALIZATION_CATALOG_DIR: "${LOCALIZATION_CATALOG_DIR:-/code/catalogs}"
     networks:
       - default_network
 

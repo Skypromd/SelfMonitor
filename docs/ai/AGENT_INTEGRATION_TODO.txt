@@ -92,5 +92,5 @@ LANGUAGE SUPPORT TRACK (SCALABLE)
 [x] L1.2 Add locale fallback model (launch-ready even with partial translations).
 [x] L1.3 Add supported locales endpoint for dynamic UI and agent prompts.
 [x] L2.1 Add translation health telemetry (missing keys, fallback hit-rate).
-[ ] L2.2 Externalize translations into scalable catalog/TMS pipeline.
+[x] L2.2 Externalize translations into scalable catalog/TMS pipeline.
 [ ] L2.3 Add ICU/pluralization and locale-aware formatting standards.

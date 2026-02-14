@@ -42,3 +42,5 @@ Current implementation status
 - Web locale config includes required language list.
 - Translation health telemetry endpoint implemented: `GET /translations/health`
   with per-locale missing keys, estimated fallback hit-rate, and untranslated namespace metrics.
+- Translation catalogs externalized to JSON files (`services/localization-service/catalogs/*`)
+  and loaded at runtime via `LOCALIZATION_CATALOG_DIR` (with safe in-code fallback).

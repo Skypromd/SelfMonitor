@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Localization Service
-  description: Provides translation strings (i18n) for different locales.
+  description: Provides translation strings (i18n) for different locales from external JSON catalogs.
   version: 1.0.0
 paths:
   /translations/locales:

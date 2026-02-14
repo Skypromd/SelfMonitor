@@ -60,3 +60,4 @@ _Last updated: 2026-02-13_
 28. [x] Add compliance disclaimer and advisor-review submission gate for broker handoff
 29. [x] Add monthly refresh reminders for expiring statements and ID documents
 30. [x] Add localization translation-health telemetry (missing keys + fallback hit-rate)
+31. [x] Externalize localization dictionaries into JSON catalogs for scalable i18n pipeline

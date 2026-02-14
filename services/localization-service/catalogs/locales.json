@@ -1,0 +1,45 @@
+{
+  "default_locale": "en-GB",
+  "locales": {
+    "en-GB": {
+      "native_name": "English (UK)",
+      "fallback_locale": null,
+      "status": "translated"
+    },
+    "de-DE": {
+      "native_name": "Deutsch (Deutschland)",
+      "fallback_locale": "en-GB",
+      "status": "translated"
+    },
+    "ru-RU": {
+      "native_name": "Русский",
+      "fallback_locale": "en-GB",
+      "status": "fallback_en_gb"
+    },
+    "uk-UA": {
+      "native_name": "Українська",
+      "fallback_locale": "en-GB",
+      "status": "fallback_en_gb"
+    },
+    "pl-PL": {
+      "native_name": "Polski",
+      "fallback_locale": "en-GB",
+      "status": "fallback_en_gb"
+    },
+    "ro-MD": {
+      "native_name": "Română (Moldova)",
+      "fallback_locale": "en-GB",
+      "status": "fallback_en_gb"
+    },
+    "tr-TR": {
+      "native_name": "Türkçe",
+      "fallback_locale": "en-GB",
+      "status": "fallback_en_gb"
+    },
+    "hu-HU": {
+      "native_name": "Magyar",
+      "fallback_locale": "en-GB",
+      "status": "fallback_en_gb"
+    }
+  }
+}

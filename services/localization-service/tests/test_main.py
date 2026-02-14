@@ -1,11 +1,12 @@
 import os
 import sys
+import json
 
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.main import app
+from app.main import CATALOG_ROOT, app
 
 client = TestClient(app)
 
@@ -63,3 +64,16 @@ def test_translation_health_includes_missing_key_samples():
     ru_row = locale_rows["ru-RU"]
     assert ru_row["missing_key_count"] >= len(ru_row["missing_key_samples"])
     assert all("." in key_name for key_name in ru_row["missing_key_samples"])
+
+
+def test_external_catalog_files_are_present_and_used():
+    locales_file = CATALOG_ROOT / "locales.json"
+    de_catalog_file = CATALOG_ROOT / "translations" / "de-DE.json"
+    assert locales_file.exists()
+    assert de_catalog_file.exists()
+
+    de_catalog = json.loads(de_catalog_file.read_text(encoding="utf-8"))
+    response = client.get("/translations/de-DE/all")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["common"]["submit"] == de_catalog["common"]["submit"]

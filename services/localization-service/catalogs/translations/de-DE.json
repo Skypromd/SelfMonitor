@@ -1,0 +1,83 @@
+{
+  "common": {
+    "submit": "Einreichen",
+    "cancel": "Abbrechen",
+    "logout": "Ausloggen",
+    "save": "Speichern"
+  },
+  "login": {
+    "title": "FinTech App",
+    "description": "Registrieren Sie sich oder melden Sie sich an, um fortzufahren",
+    "register_button": "Registrieren",
+    "login_button": "Anmelden"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "activity": "Aktivitätsprotokoll",
+    "transactions": "Transaktionen",
+    "documents": "Dokumente",
+    "reports": "Berichte",
+    "marketplace": "Marktplatz",
+    "submission": "HMRC-Übermittlung",
+    "profile": "Profil",
+    "admin": "Admin"
+  },
+  "dashboard": {
+    "title": "Haupt-Dashboard",
+    "description": "Willkommen zu Ihrem Finanz-Dashboard."
+  },
+  "profile": {
+    "title": "Ihr Profil"
+  },
+  "partners": {
+    "description": "Hier finden Sie eine Liste von vertrauenswürdigen, von der FCA regulierten Partnern, an die Sie zur Beratung weitergeleitet werden können.",
+    "handoff_button": "Handoff einleiten"
+  },
+  "submission": {
+    "description": "Berechnen und übermitteln Sie hier Ihre Steuererklärung an HMRC.",
+    "form_title": "Neue Steuererklärung für Großbritannien",
+    "submit_button": "Berechnen & an HMRC senden",
+    "success_title": "Übermittlung erfolgreich eingeleitet"
+  },
+  "admin": {
+    "description": "Benutzer und Systemeinstellungen verwalten.",
+    "form_title": "Einen Benutzer deaktivieren",
+    "deactivate_button": "Benutzer deaktivieren"
+  },
+  "reports": {
+    "description": "Erstellen Sie benutzerdefinierte Berichte basierend auf Ihren Finanzdaten.",
+    "mortgage_title": "Bericht zur Hypothekenbereitschaft",
+    "mortgage_description": "Erstellen Sie eine PDF-Zusammenfassung Ihres Einkommens der letzten 12 Monate. Dies kann bei der Beantragung einer Hypothek nützlich sein.",
+    "generate_button": "Bericht erstellen",
+    "generating_button": "Wird erstellt..."
+  },
+  "marketplace": {
+    "description": "Entdecken Sie unseren Marktplatz mit vertrauenswürdigen Partnern, die Ihnen bei Buchhaltung, Hypotheken und Versicherungen helfen können."
+  },
+  "activity": {
+    "description": "Hier ist eine Aufzeichnung der letzten wichtigen Ereignisse in Ihrem Konto.",
+    "col_date": "Datum",
+    "col_action": "Aktion",
+    "col_details": "Details"
+  },
+  "documents": {
+    "description": "Laden Sie Ihre Belege und Rechnungen hoch und verwalten Sie sie.",
+    "upload_title": "Dokument hochladen",
+    "upload_button": "Hochladen",
+    "uploading_button": "Lädt hoch...",
+    "col_filename": "Dateiname",
+    "col_status": "Status",
+    "col_vendor": "Anbieter",
+    "col_amount": "Betrag",
+    "col_category": "Kategorie",
+    "col_expense_article": "Kostenart",
+    "col_deductible": "Absetzbar",
+    "col_receipt_draft": "Entwurfstransaktion",
+    "col_uploaded_at": "Hochgeladen am",
+    "search_title": "Semantische Dokumentsuche",
+    "search_description": "Stellen Sie eine Frage zu Ihren Dokumenten in natürlicher Sprache.",
+    "search_placeholder": "z.B. 'wo habe ich letzten monat kaffee gekauft?'",
+    "search_button": "Suchen",
+    "all_documents_title": "Alle hochgeladenen Dokumente"
+  }
+}

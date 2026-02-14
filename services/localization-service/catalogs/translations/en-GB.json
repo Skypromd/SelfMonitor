@@ -1,0 +1,69 @@
+{
+  "common": {
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "logout": "Logout",
+    "save": "Save"
+  },
+  "login": {
+    "title": "FinTech App",
+    "description": "Register or log in to continue",
+    "register_button": "Register",
+    "login_button": "Login"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "transactions": "Transactions",
+    "documents": "Documents",
+    "profile": "Profile"
+  },
+  "dashboard": {
+    "title": "Main Dashboard",
+    "description": "Welcome to your financial dashboard."
+  },
+  "profile": {
+    "title": "Your Profile"
+  },
+  "partners": {
+    "description": "Here is a list of trusted, FCA-regulated partners you can be handed off to for advice.",
+    "handoff_button": "Initiate Handoff"
+  },
+  "submission": {
+    "description": "Calculate and submit your tax return to HMRC.",
+    "form_title": "New UK Tax Submission",
+    "submit_button": "Calculate & Submit to HMRC",
+    "success_title": "Submission Successfully Initiated"
+  },
+  "admin": {
+    "description": "Manage users and system settings.",
+    "form_title": "Deactivate a User",
+    "deactivate_button": "Deactivate User"
+  },
+  "reports": {
+    "description": "Generate custom reports based on your financial data.",
+    "mortgage_title": "Mortgage Readiness Report",
+    "mortgage_description": "Generate a PDF summary of your income over the last 12 months. This can be useful when applying for a mortgage.",
+    "generate_button": "Generate Report",
+    "generating_button": "Generating..."
+  },
+  "documents": {
+    "description": "Upload and manage your receipts and invoices.",
+    "upload_title": "Upload a Document",
+    "upload_button": "Upload",
+    "uploading_button": "Uploading...",
+    "col_filename": "Filename",
+    "col_status": "Status",
+    "col_vendor": "Vendor",
+    "col_amount": "Amount",
+    "col_category": "Category",
+    "col_expense_article": "Expense Article",
+    "col_deductible": "Deductible",
+    "col_receipt_draft": "Draft Transaction",
+    "col_uploaded_at": "Uploaded At",
+    "search_title": "Semantic Document Search",
+    "search_description": "Ask a question about your documents in natural language.",
+    "search_placeholder": "e.g., 'where did I buy coffee last month?'",
+    "search_button": "Search",
+    "all_documents_title": "All Uploaded Documents"
+  }
+}

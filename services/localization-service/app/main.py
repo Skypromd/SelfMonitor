@@ -1,5 +1,8 @@
 from copy import deepcopy
 import datetime
+import json
+import os
+from pathlib import Path as FsPath
 from typing import Dict, Optional
 
 from fastapi import FastAPI, HTTPException, Path, status
@@ -180,6 +183,80 @@ SUPPORTED_LOCALE_METADATA: dict[str, dict[str, Optional[str]]] = {
     "tr-TR": {"native_name": "Türkçe", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
     "hu-HU": {"native_name": "Magyar", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
 }
+
+DEFAULT_CATALOG_ROOT = FsPath(__file__).resolve().parents[1] / "catalogs"
+CATALOG_ROOT = FsPath(os.getenv("LOCALIZATION_CATALOG_DIR", str(DEFAULT_CATALOG_ROOT)))
+
+
+def _normalize_translation_namespaces(payload: dict[str, object]) -> dict[str, dict[str, str]]:
+    normalized: dict[str, dict[str, str]] = {}
+    for namespace, namespace_values in payload.items():
+        if not isinstance(namespace, str) or not isinstance(namespace_values, dict):
+            continue
+        key_values: dict[str, str] = {}
+        for key, value in namespace_values.items():
+            if isinstance(key, str) and isinstance(value, str):
+                key_values[key] = value
+        if key_values:
+            normalized[namespace] = key_values
+    return normalized
+
+
+def _load_catalog_json(path: FsPath) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _load_catalog_configuration(
+    catalog_root: FsPath,
+) -> tuple[str, dict[str, dict[str, Optional[str]]], dict[str, dict[str, dict[str, str]]]] | None:
+    locales_payload = _load_catalog_json(catalog_root / "locales.json")
+    if locales_payload is None:
+        return None
+
+    default_locale_raw = locales_payload.get("default_locale")
+    locales_metadata_raw = locales_payload.get("locales")
+    if not isinstance(default_locale_raw, str) or not isinstance(locales_metadata_raw, dict):
+        return None
+
+    locales_metadata: dict[str, dict[str, Optional[str]]] = {}
+    for locale_code, metadata in locales_metadata_raw.items():
+        if not isinstance(locale_code, str) or not isinstance(metadata, dict):
+            continue
+        fallback_locale_raw = metadata.get("fallback_locale")
+        fallback_locale = fallback_locale_raw if isinstance(fallback_locale_raw, str) else None
+        locales_metadata[locale_code] = {
+            "native_name": str(metadata.get("native_name") or locale_code),
+            "fallback_locale": fallback_locale,
+            "status": str(metadata.get("status") or "fallback_en_gb"),
+        }
+
+    if default_locale_raw not in locales_metadata:
+        return None
+
+    translations: dict[str, dict[str, dict[str, str]]] = {}
+    translations_dir = catalog_root / "translations"
+    for locale_code in locales_metadata:
+        locale_payload = _load_catalog_json(translations_dir / f"{locale_code}.json")
+        if locale_payload is None:
+            continue
+        translations[locale_code] = _normalize_translation_namespaces(locale_payload)
+
+    if default_locale_raw not in translations:
+        return None
+
+    return default_locale_raw, locales_metadata, translations
+
+
+if catalog_config := _load_catalog_configuration(CATALOG_ROOT):
+    DEFAULT_LOCALE, SUPPORTED_LOCALE_METADATA, fake_translations_db = catalog_config
 
 
 class SupportedLocale(BaseModel):
