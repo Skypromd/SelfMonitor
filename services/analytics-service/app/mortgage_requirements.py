@@ -63,6 +63,25 @@ MORTGAGE_TYPE_METADATA: dict[str, dict[str, str]] = {
     },
 }
 
+LENDER_PROFILE_METADATA: dict[str, dict[str, str]] = {
+    "high_street_mainstream": {
+        "label": "High-street mainstream lender",
+        "description": "Typical policy set used by major UK high-street banks.",
+    },
+    "specialist_self_employed": {
+        "label": "Specialist self-employed lender",
+        "description": "Flexible underwriting for complex self-employed income patterns.",
+    },
+    "buy_to_let_specialist": {
+        "label": "Specialist buy-to-let lender",
+        "description": "Portfolio and rental-stress focused underwriting for landlords.",
+    },
+    "adverse_credit_specialist": {
+        "label": "Specialist adverse-credit lender",
+        "description": "Enhanced evidence pack for applicants with historic credit impairments.",
+    },
+}
+
 EMPLOYMENT_PROFILE_METADATA: dict[str, str] = {
     "sole_trader": "Self-employed sole trader",
     "limited_company_director": "Limited company director",
@@ -286,6 +305,76 @@ CONDITIONAL_DOCUMENTS: tuple[DocumentTemplate, ...] = (
     ),
 )
 
+LENDER_PROFILE_REQUIRED_DOCUMENTS: dict[str, tuple[DocumentTemplate, ...]] = {
+    "high_street_mainstream": (),
+    "specialist_self_employed": (
+        DocumentTemplate(
+            "business_bank_statements_12m",
+            "Business bank statements (last 12 months)",
+            "Specialist self-employed lenders often require deeper cash-flow verification.",
+        ),
+        DocumentTemplate(
+            "management_accounts_ytd",
+            "Year-to-date management accounts",
+            "Used to evidence current trading trajectory between filed accounts.",
+        ),
+    ),
+    "buy_to_let_specialist": (
+        DocumentTemplate(
+            "rental_stress_assessment_pack",
+            "Rental stress assessment pack",
+            "Specialist BTL lenders assess DSCR/ICR with detailed rental assumptions.",
+        ),
+    ),
+    "adverse_credit_specialist": (
+        DocumentTemplate(
+            "credit_issue_timeline",
+            "Credit issue timeline and remediation narrative",
+            "Underwriter requires chronology and evidence of issue resolution.",
+        ),
+    ),
+}
+
+LENDER_PROFILE_CONDITIONAL_DOCUMENTS: dict[str, tuple[DocumentTemplate, ...]] = {
+    "high_street_mainstream": (),
+    "specialist_self_employed": (
+        DocumentTemplate(
+            "accountant_reference",
+            "Accountant reference letter (detailed)",
+            "Frequently requested for nuanced profit extraction or recent trading changes.",
+        ),
+    ),
+    "buy_to_let_specialist": (
+        DocumentTemplate(
+            "landlord_experience_statement",
+            "Landlord experience statement",
+            "Specialist BTL underwriting may request landlord track-record context.",
+        ),
+    ),
+    "adverse_credit_specialist": (
+        DocumentTemplate(
+            "credit_report_copy",
+            "Tri-bureau credit report pack",
+            "Specialist adverse lenders often request full bureau detail upfront.",
+        ),
+    ),
+}
+
+LENDER_PROFILE_NOTES: dict[str, tuple[str, ...]] = {
+    "high_street_mainstream": (
+        "High-street lenders are usually stricter on document freshness and standard affordability ratios.",
+    ),
+    "specialist_self_employed": (
+        "Specialist lenders may accept wider income evidence, but expect fuller financial narratives.",
+    ),
+    "buy_to_let_specialist": (
+        "BTL specialist lenders place strong emphasis on rental coverage and portfolio-level risk.",
+    ),
+    "adverse_credit_specialist": (
+        "Adverse-credit specialists focus on recency, severity, and remediation of prior credit events.",
+    ),
+}
+
 
 def _extend_unique(target: list[dict[str, str]], templates: Iterable[DocumentTemplate]) -> None:
     existing_codes = {item["code"] for item in target}
@@ -307,18 +396,23 @@ def build_mortgage_document_checklist(
     mortgage_type: str,
     employment_profile: str,
     include_adverse_credit_pack: bool,
+    lender_profile: str = "high_street_mainstream",
 ) -> dict[str, object]:
     if mortgage_type not in MORTGAGE_TYPE_METADATA:
         raise ValueError("unsupported_mortgage_type")
     if employment_profile not in EMPLOYMENT_PROFILE_METADATA:
         raise ValueError("unsupported_employment_profile")
+    if lender_profile not in LENDER_PROFILE_METADATA:
+        raise ValueError("unsupported_lender_profile")
 
     required_documents: list[dict[str, str]] = []
     conditional_documents: list[dict[str, str]] = []
     _extend_unique(required_documents, BASE_REQUIRED_DOCUMENTS)
     _extend_unique(required_documents, EMPLOYMENT_REQUIRED_DOCUMENTS.get(employment_profile, ()))
     _extend_unique(required_documents, MORTGAGE_TYPE_REQUIRED_DOCUMENTS.get(mortgage_type, ()))
+    _extend_unique(required_documents, LENDER_PROFILE_REQUIRED_DOCUMENTS.get(lender_profile, ()))
     _extend_unique(conditional_documents, CONDITIONAL_DOCUMENTS)
+    _extend_unique(conditional_documents, LENDER_PROFILE_CONDITIONAL_DOCUMENTS.get(lender_profile, ()))
 
     if include_adverse_credit_pack and mortgage_type != "adverse_credit":
         _extend_unique(
@@ -337,6 +431,7 @@ def build_mortgage_document_checklist(
         "Document freshness matters: many lenders require statements issued within the last 30-90 days.",
         "Mortgage advisers may add lender-specific extras after initial DIP/AIP checks.",
     ]
+    lender_notes.extend(LENDER_PROFILE_NOTES.get(lender_profile, ()))
     next_steps = [
         "Prepare all required documents in PDF format and ensure names/dates match your application.",
         "Run a decision-in-principle (DIP) check before full application to reduce decline risk.",
@@ -349,6 +444,8 @@ def build_mortgage_document_checklist(
         "mortgage_type": mortgage_type,
         "mortgage_label": metadata["label"],
         "mortgage_description": metadata["description"],
+        "lender_profile": lender_profile,
+        "lender_profile_label": LENDER_PROFILE_METADATA[lender_profile]["label"],
         "employment_profile": employment_profile,
         "required_documents": required_documents,
         "conditional_documents": conditional_documents,
@@ -391,6 +488,11 @@ DOCUMENT_CODE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "credit_report_copy": ("credit_report", "experian", "equifax", "transunion"),
     "accountant_reference": ("accountant_reference", "accountant_letter"),
     "proof_of_residency_status": ("visa", "residency", "brp", "settled_status"),
+    "business_bank_statements_12m": ("business_statement", "business_bank_statement"),
+    "management_accounts_ytd": ("management_accounts", "ytd_accounts"),
+    "rental_stress_assessment_pack": ("rental_stress", "icr", "dscr"),
+    "credit_issue_timeline": ("credit_timeline", "arrears_explanation"),
+    "landlord_experience_statement": ("landlord_experience",),
 }
 
 

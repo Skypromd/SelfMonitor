@@ -23,6 +23,7 @@ from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 from libs.shared_http.retry import get_json_with_retry
 from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
+    LENDER_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
     build_mortgage_document_checklist,
     build_mortgage_readiness_assessment,
@@ -126,10 +127,17 @@ class MortgageTypeSummary(BaseModel):
     description: str
 
 
+class LenderProfileSummary(BaseModel):
+    code: str
+    label: str
+    description: str
+
+
 class MortgageChecklistRequest(BaseModel):
     mortgage_type: str
     employment_profile: str = "sole_trader"
     include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
 
 
 class MortgageDocumentItem(BaseModel):
@@ -143,6 +151,8 @@ class MortgageChecklistResponse(BaseModel):
     mortgage_type: str
     mortgage_label: str
     mortgage_description: str
+    lender_profile: str
+    lender_profile_label: str
     employment_profile: str
     required_documents: list[MortgageDocumentItem]
     conditional_documents: list[MortgageDocumentItem]
@@ -154,6 +164,7 @@ class MortgageReadinessRequest(BaseModel):
     mortgage_type: str
     employment_profile: str = "sole_trader"
     include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
     max_documents_scan: int = Field(default=300, ge=10, le=2000)
 
 
@@ -162,6 +173,8 @@ class MortgageReadinessResponse(BaseModel):
     mortgage_type: str
     mortgage_label: str
     mortgage_description: str
+    lender_profile: str
+    lender_profile_label: str
     employment_profile: str
     required_documents: list[MortgageDocumentItem]
     conditional_documents: list[MortgageDocumentItem]
@@ -241,6 +254,18 @@ async def list_supported_mortgage_types(_user_id: str = Depends(get_current_user
     ]
 
 
+@app.get("/mortgage/lender-profiles", response_model=list[LenderProfileSummary])
+async def list_supported_lender_profiles(_user_id: str = Depends(get_current_user_id)):
+    return [
+        LenderProfileSummary(
+            code=code,
+            label=metadata["label"],
+            description=metadata["description"],
+        )
+        for code, metadata in LENDER_PROFILE_METADATA.items()
+    ]
+
+
 @app.post("/mortgage/checklist", response_model=MortgageChecklistResponse)
 async def generate_mortgage_document_checklist(
     request: MortgageChecklistRequest,
@@ -256,10 +281,16 @@ async def generate_mortgage_document_checklist(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported employment_profile '{request.employment_profile}'",
         )
+    if request.lender_profile not in LENDER_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported lender_profile '{request.lender_profile}'",
+        )
     checklist = build_mortgage_document_checklist(
         mortgage_type=request.mortgage_type,
         employment_profile=request.employment_profile,
         include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
     )
     return MortgageChecklistResponse(**checklist)
 
@@ -313,10 +344,16 @@ async def evaluate_mortgage_readiness(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported employment_profile '{request.employment_profile}'",
         )
+    if request.lender_profile not in LENDER_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported lender_profile '{request.lender_profile}'",
+        )
     checklist = build_mortgage_document_checklist(
         mortgage_type=request.mortgage_type,
         employment_profile=request.employment_profile,
         include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
     )
     filenames = await _load_user_uploaded_document_filenames(
         bearer_token=bearer_token,

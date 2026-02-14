@@ -83,6 +83,22 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/MortgageTypeSummary'
+  /mortgage/lender-profiles:
+    get:
+      summary: List supported lender profile presets
+      tags:
+        - Mortgage
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Supported lender profile presets.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LenderProfileSummary'
   /mortgage/checklist:
     post:
       summary: Generate mortgage document checklist for selected mortgage type
@@ -104,7 +120,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MortgageChecklistResponse'
         '400':
-          description: Unsupported mortgage type or employment profile.
+          description: Unsupported mortgage type, lender profile, or employment profile.
   /mortgage/readiness:
     post:
       summary: Evaluate mortgage pack readiness from uploaded user documents
@@ -126,7 +142,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/MortgageReadinessResponse'
         '400':
-          description: Unsupported mortgage type or employment profile.
+          description: Unsupported mortgage type, lender profile, or employment profile.
         '502':
           description: Documents service unavailable.
   /reports/mortgage-readiness:
@@ -185,12 +201,32 @@ components:
         - code
         - label
         - description
+    LenderProfileSummary:
+      type: object
+      properties:
+        code:
+          type: string
+          example: high_street_mainstream
+        label:
+          type: string
+          example: High-street mainstream lender
+        description:
+          type: string
+          example: Typical policy set used by major UK high-street banks.
+      required:
+        - code
+        - label
+        - description
     MortgageChecklistRequest:
       type: object
       properties:
         mortgage_type:
           type: string
           example: first_time_buyer
+        lender_profile:
+          type: string
+          example: high_street_mainstream
+          default: high_street_mainstream
         employment_profile:
           type: string
           example: sole_trader
@@ -226,6 +262,10 @@ components:
           type: string
         mortgage_description:
           type: string
+        lender_profile:
+          type: string
+        lender_profile_label:
+          type: string
         employment_profile:
           type: string
         required_documents:
@@ -249,6 +289,8 @@ components:
         - mortgage_type
         - mortgage_label
         - mortgage_description
+        - lender_profile
+        - lender_profile_label
         - employment_profile
         - required_documents
         - conditional_documents
@@ -260,6 +302,10 @@ components:
         mortgage_type:
           type: string
           example: first_time_buyer
+        lender_profile:
+          type: string
+          example: high_street_mainstream
+          default: high_street_mainstream
         employment_profile:
           type: string
           example: sole_trader
@@ -285,6 +331,10 @@ components:
         mortgage_label:
           type: string
         mortgage_description:
+          type: string
+        lender_profile:
+          type: string
+        lender_profile_label:
           type: string
         employment_profile:
           type: string
@@ -345,6 +395,8 @@ components:
         - mortgage_type
         - mortgage_label
         - mortgage_description
+        - lender_profile
+        - lender_profile_label
         - employment_profile
         - required_documents
         - conditional_documents

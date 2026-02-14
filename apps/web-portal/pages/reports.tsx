@@ -14,6 +14,12 @@ type MortgageTypeSummary = {
   label: string;
 };
 
+type LenderProfileSummary = {
+  code: string;
+  description: string;
+  label: string;
+};
+
 type MortgageDocumentItem = {
   code: string;
   reason: string;
@@ -24,6 +30,8 @@ type MortgageChecklistResponse = {
   conditional_documents: MortgageDocumentItem[];
   employment_profile: string;
   jurisdiction: string;
+  lender_profile: string;
+  lender_profile_label: string;
   lender_notes: string[];
   mortgage_description: string;
   mortgage_label: string;
@@ -58,8 +66,11 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [isLoadingChecklist, setIsLoadingChecklist] = useState(false);
   const [isAssessingReadiness, setIsAssessingReadiness] = useState(false);
   const [isLoadingMortgageTypes, setIsLoadingMortgageTypes] = useState(true);
+  const [isLoadingLenderProfiles, setIsLoadingLenderProfiles] = useState(true);
   const [mortgageTypes, setMortgageTypes] = useState<MortgageTypeSummary[]>([]);
+  const [lenderProfiles, setLenderProfiles] = useState<LenderProfileSummary[]>([]);
   const [selectedMortgageType, setSelectedMortgageType] = useState('');
+  const [selectedLenderProfile, setSelectedLenderProfile] = useState('');
   const [employmentProfile, setEmploymentProfile] = useState<(typeof EMPLOYMENT_PROFILE_OPTIONS)[number]['value']>(
     'sole_trader'
   );
@@ -72,27 +83,39 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const { t } = useTranslation();
 
   useEffect(() => {
-    const loadMortgageTypes = async () => {
+    const loadSelectors = async () => {
       setIsLoadingMortgageTypes(true);
+      setIsLoadingLenderProfiles(true);
       try {
-        const response = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/types`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!response.ok) {
+        const headers = { Authorization: `Bearer ${token}` };
+        const [mortgageTypesResponse, lenderProfilesResponse] = await Promise.all([
+          fetch(`${ANALYTICS_SERVICE_URL}/mortgage/types`, { headers }),
+          fetch(`${ANALYTICS_SERVICE_URL}/mortgage/lender-profiles`, { headers }),
+        ]);
+        if (!mortgageTypesResponse.ok) {
           throw new Error('Failed to load mortgage types');
         }
-        const payload = (await response.json()) as MortgageTypeSummary[];
-        setMortgageTypes(payload);
-        if (payload.length > 0) {
-          setSelectedMortgageType(payload[0].code);
+        if (!lenderProfilesResponse.ok) {
+          throw new Error('Failed to load lender profiles');
+        }
+        const mortgageTypesPayload = (await mortgageTypesResponse.json()) as MortgageTypeSummary[];
+        const lenderProfilesPayload = (await lenderProfilesResponse.json()) as LenderProfileSummary[];
+        setMortgageTypes(mortgageTypesPayload);
+        setLenderProfiles(lenderProfilesPayload);
+        if (mortgageTypesPayload.length > 0) {
+          setSelectedMortgageType(mortgageTypesPayload[0].code);
+        }
+        if (lenderProfilesPayload.length > 0) {
+          setSelectedLenderProfile(lenderProfilesPayload[0].code);
         }
       } catch (err) {
         setChecklistError(err instanceof Error ? err.message : 'Unexpected error');
       } finally {
         setIsLoadingMortgageTypes(false);
+        setIsLoadingLenderProfiles(false);
       }
     };
-    loadMortgageTypes();
+    loadSelectors();
   }, [token]);
 
   const handleGenerateReport = async () => {
@@ -127,6 +150,10 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     () => mortgageTypes.find((item) => item.code === selectedMortgageType)?.description ?? '',
     [mortgageTypes, selectedMortgageType]
   );
+  const selectedLenderProfileDescription = useMemo(
+    () => lenderProfiles.find((item) => item.code === selectedLenderProfile)?.description ?? '',
+    [lenderProfiles, selectedLenderProfile]
+  );
 
   const handleGenerateChecklist = async () => {
     setChecklistError('');
@@ -148,6 +175,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
         },
         body: JSON.stringify({
           mortgage_type: selectedMortgageType,
+          lender_profile: selectedLenderProfile,
           employment_profile: employmentProfile,
           include_adverse_credit_pack: includeAdverseCreditPack,
         }),
@@ -181,6 +209,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
         },
         body: JSON.stringify({
           mortgage_type: selectedMortgageType,
+          lender_profile: selectedLenderProfile,
           employment_profile: employmentProfile,
           include_adverse_credit_pack: includeAdverseCreditPack,
         }),
@@ -215,7 +244,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
         <p>
           Select mortgage type and income profile to prepare the full document pack expected by lenders in England.
         </p>
-        {isLoadingMortgageTypes ? (
+        {isLoadingMortgageTypes || isLoadingLenderProfiles ? (
           <p>Loading mortgage types...</p>
         ) : (
           <>
@@ -251,6 +280,20 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                 </select>
               </label>
               <label className={styles.filterField}>
+                <span>Lender profile</span>
+                <select
+                  className={styles.categorySelect}
+                  onChange={(event) => setSelectedLenderProfile(event.target.value)}
+                  value={selectedLenderProfile}
+                >
+                  {lenderProfiles.map((profile) => (
+                    <option key={profile.code} value={profile.code}>
+                      {profile.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.filterField}>
                 <span>Risk add-ons</span>
                 <label className={styles.checkboxPill}>
                   <input
@@ -263,6 +306,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
               </label>
             </div>
             {selectedMortgageTypeDescription && <p className={styles.tableCaption}>{selectedMortgageTypeDescription}</p>}
+            {selectedLenderProfileDescription && <p className={styles.tableCaption}>{selectedLenderProfileDescription}</p>}
             <div className={styles.adminActionsRow}>
               <button className={styles.button} disabled={isLoadingChecklist} onClick={handleGenerateChecklist} type="button">
                 {isLoadingChecklist ? 'Building checklist...' : 'Generate checklist'}
@@ -284,6 +328,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                   {checklist.mortgage_label} ({checklist.jurisdiction})
                 </h3>
                 <p>{checklist.mortgage_description}</p>
+                <p className={styles.tableCaption}>Lender profile: {checklist.lender_profile_label}</p>
                 <h4>Required documents</h4>
                 <ul>
                   {checklist.required_documents.map((item) => (
@@ -317,6 +362,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
             {readiness && (
               <div className={styles.resultsContainer}>
                 <h3>Mortgage pack readiness</h3>
+                <p className={styles.tableCaption}>Lender profile: {readiness.lender_profile_label}</p>
                 <div className={styles.resultItemMain}>
                   <span>Status</span>
                   <strong>{readiness.readiness_status.replace(/_/g, ' ')}</strong>

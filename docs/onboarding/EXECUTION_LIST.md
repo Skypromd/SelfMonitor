@@ -52,3 +52,4 @@ _Last updated: 2026-02-13_
 20. [x] Add feedback loop to reuse manual OCR categorization fixes for future receipts
 21. [x] Add England mortgage document checklist engine for all major mortgage types
 22. [x] Add mortgage readiness scoring from uploaded docs with missing-pack guidance
+23. [x] Add lender-profile presets for mortgage checklist/readiness (high-street/specialist/BTL/adverse)

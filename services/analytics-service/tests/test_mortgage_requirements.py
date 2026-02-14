@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app.mortgage_requirements import (
+    LENDER_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
     build_mortgage_readiness_assessment,
     build_mortgage_document_checklist,
@@ -28,6 +29,18 @@ def test_all_supported_mortgage_types_have_required_documents():
             assert item["code"]
             assert item["title"]
             assert item["reason"]
+
+
+def test_all_supported_lender_profiles_generate_valid_checklist():
+    for lender_profile in LENDER_PROFILE_METADATA:
+        checklist = build_mortgage_document_checklist(
+            mortgage_type="first_time_buyer",
+            employment_profile="sole_trader",
+            include_adverse_credit_pack=False,
+            lender_profile=lender_profile,
+        )
+        assert checklist["lender_profile"] == lender_profile
+        assert checklist["lender_profile_label"]
 
 
 def test_buy_to_let_contains_rental_specific_documents():
@@ -82,6 +95,17 @@ def test_unsupported_values_raise_error():
         assert False, "Expected ValueError for unsupported employment profile"
     except ValueError as exc:
         assert str(exc) == "unsupported_employment_profile"
+
+    try:
+        build_mortgage_document_checklist(
+            mortgage_type="first_time_buyer",
+            employment_profile="sole_trader",
+            include_adverse_credit_pack=False,
+            lender_profile="unknown",
+        )
+        assert False, "Expected ValueError for unsupported lender profile"
+    except ValueError as exc:
+        assert str(exc) == "unsupported_lender_profile"
 
 
 def test_detect_document_codes_from_filenames_matches_expected_keywords():
@@ -142,3 +166,15 @@ def test_build_mortgage_readiness_assessment_marks_ready_when_required_docs_pres
     )
     assert readiness["required_completion_percent"] == 100.0
     assert readiness["readiness_status"] in {"almost_ready", "ready_for_broker_review"}
+
+
+def test_specialist_self_employed_profile_adds_profile_specific_documents():
+    checklist = build_mortgage_document_checklist(
+        mortgage_type="remortgage",
+        employment_profile="sole_trader",
+        include_adverse_credit_pack=False,
+        lender_profile="specialist_self_employed",
+    )
+    required_codes = _codes(checklist["required_documents"])
+    assert "business_bank_statements_12m" in required_codes
+    assert "management_accounts_ytd" in required_codes
