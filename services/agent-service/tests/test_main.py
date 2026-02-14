@@ -57,10 +57,20 @@ def client(monkeypatch: pytest.MonkeyPatch):
             },
         }
 
+    async def fake_execute_write_action(
+        *,
+        action_id: str,
+        bearer_token: str,
+        action_payload: dict,
+    ) -> tuple[str, int, dict]:
+        _ = bearer_token
+        return f"/fake/{action_id}", 200, {"ok": True, "action_payload": action_payload}
+
     monkeypatch.setattr(agent_main, "_fetch_documents_review_queue", fake_docs)
     monkeypatch.setattr(agent_main, "_fetch_unmatched_receipt_drafts", fake_unmatched)
     monkeypatch.setattr(agent_main, "_fetch_transactions_me", fake_transactions)
     monkeypatch.setattr(agent_main, "_fetch_tax_snapshot", fake_tax_snapshot)
+    monkeypatch.setattr(agent_main, "_execute_write_action", fake_execute_write_action)
     monkeypatch.setattr(agent_main, "_get_redis_client", lambda: None)
     monkeypatch.setattr(agent_main, "_in_memory_session_store", {})
     monkeypatch.setattr(agent_main, "_in_memory_confirmation_store", {})
@@ -243,3 +253,110 @@ def test_confirmation_token_request_rejects_unsupported_action(client: TestClien
         },
     )
     assert response.status_code == 400
+
+
+def test_execute_confirmed_action_success(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    request_payload = {
+        "session_id": "session-exec",
+        "action_id": "transactions.ignore_receipt_draft",
+        "action_payload": {"draft_transaction_id": "draft-1"},
+    }
+    token_response = client.post(
+        "/agent/actions/request-confirmation",
+        headers=headers,
+        json=request_payload,
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+
+    execute_response = client.post(
+        "/agent/actions/execute",
+        headers=headers,
+        json={
+            "session_id": "session-exec",
+            "action_id": "transactions.ignore_receipt_draft",
+            "confirmation_token": token_payload["confirmation_token"],
+            "action_payload": {"draft_transaction_id": "draft-1"},
+        },
+    )
+    assert execute_response.status_code == 200
+    execute_payload = execute_response.json()
+    assert execute_payload["executed"] is True
+    assert execute_payload["valid_confirmation"] is True
+    assert execute_payload["downstream_status_code"] == 200
+
+
+def test_execute_confirmed_action_rejects_invalid_confirmation(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    execute_response = client.post(
+        "/agent/actions/execute",
+        headers=headers,
+        json={
+            "session_id": "session-invalid",
+            "action_id": "transactions.ignore_receipt_draft",
+            "confirmation_token": "invalid-token",
+            "action_payload": {"draft_transaction_id": "draft-1"},
+        },
+    )
+    assert execute_response.status_code == 200
+    execute_payload = execute_response.json()
+    assert execute_payload["executed"] is False
+    assert execute_payload["valid_confirmation"] is False
+    assert execute_payload["confirmation_reason"] == "token_not_found_or_expired"
+
+
+def test_execute_confirmed_action_rejects_replay(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    token_response = client.post(
+        "/agent/actions/request-confirmation",
+        headers=headers,
+        json={
+            "session_id": "session-replay",
+            "action_id": "tax.calculate_and_submit",
+            "action_payload": {
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+                "jurisdiction": "UK",
+            },
+        },
+    )
+    assert token_response.status_code == 200
+    token_payload = token_response.json()
+    token = token_payload["confirmation_token"]
+
+    first_execute = client.post(
+        "/agent/actions/execute",
+        headers=headers,
+        json={
+            "session_id": "session-replay",
+            "action_id": "tax.calculate_and_submit",
+            "confirmation_token": token,
+            "action_payload": {
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+                "jurisdiction": "UK",
+            },
+        },
+    )
+    assert first_execute.status_code == 200
+    assert first_execute.json()["executed"] is True
+
+    second_execute = client.post(
+        "/agent/actions/execute",
+        headers=headers,
+        json={
+            "session_id": "session-replay",
+            "action_id": "tax.calculate_and_submit",
+            "confirmation_token": token,
+            "action_payload": {
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+                "jurisdiction": "UK",
+            },
+        },
+    )
+    assert second_execute.status_code == 200
+    second_payload = second_execute.json()
+    assert second_payload["executed"] is False
+    assert second_payload["confirmation_reason"] == "token_already_used"

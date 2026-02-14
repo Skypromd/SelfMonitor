@@ -65,3 +65,4 @@ _Last updated: 2026-02-13_
 33. [x] Add agent-service MVP with intent router and read-only evidence-backed guidance API
 34. [x] Add agent session memory with Redis-backed TTL and session continuity
 35. [x] Add confirmation token flow for agent write actions (safe mode foundation)
+36. [x] Add confirmed safe-action execution with allowlisted policy gate in agent-service

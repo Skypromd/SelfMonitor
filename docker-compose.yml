@@ -305,9 +305,13 @@ services:
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       DOCUMENTS_REVIEW_QUEUE_URL: "${AGENT_DOCUMENTS_REVIEW_QUEUE_URL:-http://documents-service/documents/review-queue}"
+      DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE: "${AGENT_DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE:-http://documents-service/documents/{document_id}/review}"
       TRANSACTIONS_RECEIPT_DRAFTS_URL: "${AGENT_TRANSACTIONS_RECEIPT_DRAFTS_URL:-http://transactions-service/transactions/receipt-drafts/unmatched}"
+      TRANSACTIONS_RECONCILE_URL_TEMPLATE: "${AGENT_TRANSACTIONS_RECONCILE_URL_TEMPLATE:-http://transactions-service/transactions/receipt-drafts/{draft_transaction_id}/reconcile}"
+      TRANSACTIONS_IGNORE_URL_TEMPLATE: "${AGENT_TRANSACTIONS_IGNORE_URL_TEMPLATE:-http://transactions-service/transactions/receipt-drafts/{draft_transaction_id}/ignore}"
       TRANSACTIONS_ME_URL: "${AGENT_TRANSACTIONS_ME_URL:-http://transactions-service/transactions/me}"
       TAX_ENGINE_CALCULATE_URL: "${AGENT_TAX_ENGINE_CALCULATE_URL:-http://tax-engine/calculate}"
+      TAX_CALCULATE_AND_SUBMIT_URL: "${AGENT_TAX_ENGINE_CALCULATE_AND_SUBMIT_URL:-http://tax-engine/calculate-and-submit}"
       AGENT_DEFAULT_TAX_LOOKBACK_DAYS: "${AGENT_DEFAULT_TAX_LOOKBACK_DAYS:-365}"
       AGENT_REDIS_URL: "${AGENT_REDIS_URL:-redis://redis:6379/0}"
       AGENT_SESSION_TTL_SECONDS: "${AGENT_SESSION_TTL_SECONDS:-86400}"

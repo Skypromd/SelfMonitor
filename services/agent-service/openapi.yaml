@@ -52,6 +52,30 @@ paths:
           description: Unsupported action id.
         '401':
           description: Missing or invalid token.
+  /agent/actions/execute:
+    post:
+      summary: Execute confirmed write action
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentExecuteActionRequest'
+      responses:
+        '200':
+          description: Execution result for confirmed action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentExecuteActionResponse'
+        '400':
+          description: Unsupported action id or invalid payload for action.
+        '401':
+          description: Missing or invalid token.
   /agent/chat:
     post:
       summary: Chat with self-assessment copilot
@@ -171,6 +195,62 @@ components:
         - action_id
         - session_id
         - consumed
+    AgentExecuteActionRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+          enum:
+            - documents.review_document
+            - transactions.reconcile_receipt_draft
+            - transactions.ignore_receipt_draft
+            - tax.calculate_and_submit
+        confirmation_token:
+          type: string
+        action_payload:
+          type: object
+          additionalProperties: true
+      required:
+        - session_id
+        - action_id
+        - confirmation_token
+    AgentExecuteActionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+        executed:
+          type: boolean
+        valid_confirmation:
+          type: boolean
+        confirmation_reason:
+          type: string
+          nullable: true
+        downstream_endpoint:
+          type: string
+          nullable: true
+        downstream_status_code:
+          type: integer
+          nullable: true
+        result:
+          nullable: true
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: {}
+        message:
+          type: string
+      required:
+        - session_id
+        - action_id
+        - executed
+        - valid_confirmation
+        - message
     AgentEvidence:
       type: object
       properties:
