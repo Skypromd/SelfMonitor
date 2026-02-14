@@ -68,6 +68,17 @@ def _normalize_vendor_key(value: str | None) -> str | None:
     return normalized or None
 
 
+def _vendor_keys_match(first: str, second: str) -> bool:
+    if first == second:
+        return True
+    first_tokens = set(first.split())
+    second_tokens = set(second.split())
+    if not first_tokens or not second_tokens:
+        return False
+    shared = first_tokens & second_tokens
+    return len(shared) >= max(1, min(len(first_tokens), len(second_tokens)) - 1)
+
+
 def _normalize_review_value(field: str, value: object) -> float | str | bool | None:
     if value is None:
         return None
@@ -138,7 +149,9 @@ async def get_latest_category_feedback_for_vendor(
         if extracted.get("review_status") != "corrected":
             continue
         feedback_vendor_key = _normalize_vendor_key(str(extracted.get("vendor_name") or ""))
-        if feedback_vendor_key != vendor_key:
+        if feedback_vendor_key is None:
+            continue
+        if not _vendor_keys_match(feedback_vendor_key, vendor_key):
             continue
 
         review_changes = extracted.get("review_changes")
