@@ -97,7 +97,7 @@ WRITE_ACTION_ALLOWLIST: set[str] = {
 }
 UNTRUSTED_TEXT_MAX_LENGTH = int(os.getenv("AGENT_UNTRUSTED_TEXT_MAX_LENGTH", "300"))
 PROMPT_INJECTION_PATTERN = re.compile(
-    r"(?i)(ignore\s+(all|any|previous|prior)\s+instructions|"
+    r"(?i)(ignore\s+(?:all\s+|any\s+)?(?:previous\s+|prior\s+)?instructions|"
     r"system\s+prompt|developer\s+message|"
     r"you\s+are\s+chatgpt|act\s+as\s+an?\s+assistant|"
     r"tool\s+call|function\s+call|"
