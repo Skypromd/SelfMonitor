@@ -472,6 +472,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
+        refresh_reminder_summary:
+          $ref: '#/components/schemas/MortgageRefreshReminderSummary'
+        refresh_reminders:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageRefreshReminder'
         submission_gate:
           $ref: '#/components/schemas/MortgageSubmissionGate'
       required:
@@ -498,6 +504,8 @@ components:
         - readiness_summary
         - evidence_quality_summary
         - evidence_quality_issues
+        - refresh_reminder_summary
+        - refresh_reminders
         - submission_gate
     MortgageReadinessMatrixRequest:
       type: object
@@ -717,6 +725,60 @@ components:
         - advisor_review_confirmed
         - broker_submission_allowed
         - broker_submission_blockers
+    MortgageRefreshReminderSummary:
+      type: object
+      properties:
+        total_reminders:
+          type: integer
+        due_now_count:
+          type: integer
+        upcoming_count:
+          type: integer
+        has_due_now:
+          type: boolean
+        next_due_date:
+          type: string
+          format: date
+          nullable: true
+      required:
+        - total_reminders
+        - due_now_count
+        - upcoming_count
+        - has_due_now
+    MortgageRefreshReminder:
+      type: object
+      properties:
+        reminder_type:
+          type: string
+          enum: [statement_refresh, id_validity_check]
+        document_code:
+          type: string
+        title:
+          type: string
+        cadence_days:
+          type: integer
+        due_date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [due_now, upcoming]
+        document_filename:
+          type: string
+        message:
+          type: string
+        suggested_action:
+          type: string
+      required:
+        - reminder_type
+        - document_code
+        - title
+        - cadence_days
+        - due_date
+        - status
+        - document_filename
+        - message
+        - suggested_action
     MortgagePackIndexResponse:
       type: object
       properties:
@@ -797,6 +859,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
+        refresh_reminder_summary:
+          $ref: '#/components/schemas/MortgageRefreshReminderSummary'
+        refresh_reminders:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageRefreshReminder'
         submission_gate:
           $ref: '#/components/schemas/MortgageSubmissionGate'
         generated_at:
@@ -828,6 +896,8 @@ components:
         - conditional_document_evidence
         - evidence_quality_summary
         - evidence_quality_issues
+        - refresh_reminder_summary
+        - refresh_reminders
         - submission_gate
         - generated_at
     JobRequest:

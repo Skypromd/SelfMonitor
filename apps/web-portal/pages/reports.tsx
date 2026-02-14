@@ -65,6 +65,26 @@ type MortgageSubmissionGate = {
   compliance_disclaimer: string;
 };
 
+type MortgageRefreshReminderSummary = {
+  due_now_count: number;
+  has_due_now: boolean;
+  next_due_date?: string | null;
+  total_reminders: number;
+  upcoming_count: number;
+};
+
+type MortgageRefreshReminder = {
+  cadence_days: number;
+  document_code: string;
+  document_filename: string;
+  due_date: string;
+  message: string;
+  reminder_type: 'statement_refresh' | 'id_validity_check';
+  status: 'due_now' | 'upcoming';
+  suggested_action: string;
+  title: string;
+};
+
 type MortgageReadinessResponse = MortgageChecklistResponse & {
   detected_document_codes: string[];
   evidence_quality_issues: MortgageEvidenceQualityIssue[];
@@ -76,6 +96,8 @@ type MortgageReadinessResponse = MortgageChecklistResponse & {
   overall_completion_percent: number;
   readiness_status: 'not_ready' | 'almost_ready' | 'ready_for_broker_review';
   readiness_summary: string;
+  refresh_reminder_summary: MortgageRefreshReminderSummary;
+  refresh_reminders: MortgageRefreshReminder[];
   required_completion_percent: number;
   submission_gate: MortgageSubmissionGate;
   uploaded_document_count: number;
@@ -646,6 +668,29 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                       <li key={`${issue.document_filename}-${issue.check_type}-${index}`}>
                         <strong>{issue.severity.toUpperCase()}</strong> — {issue.document_filename}: {issue.message}{' '}
                         <em>({issue.suggested_action})</em>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <h4>Monthly refresh reminders (statements and ID)</h4>
+                <div className={styles.resultItem}>
+                  <span>Due now / Upcoming</span>
+                  <span>
+                    {readiness.refresh_reminder_summary.due_now_count} / {readiness.refresh_reminder_summary.upcoming_count}
+                  </span>
+                </div>
+                {readiness.refresh_reminder_summary.next_due_date && (
+                  <p className={styles.tableCaption}>Next reminder due: {readiness.refresh_reminder_summary.next_due_date}</p>
+                )}
+                {readiness.refresh_reminders.length === 0 ? (
+                  <p className={styles.emptyState}>No monthly refresh reminders yet.</p>
+                ) : (
+                  <ul>
+                    {readiness.refresh_reminders.slice(0, 8).map((reminder, index) => (
+                      <li key={`${reminder.document_code}-${reminder.document_filename}-${index}`}>
+                        <strong>{reminder.status === 'due_now' ? 'DUE NOW' : 'UPCOMING'}</strong> — {reminder.title}
+                        {' '}({reminder.document_filename}, due {reminder.due_date}): {reminder.message}{' '}
+                        <em>({reminder.suggested_action})</em>
                       </li>
                     ))}
                   </ul>

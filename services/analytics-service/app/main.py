@@ -28,6 +28,7 @@ from .mortgage_requirements import (
     build_mortgage_evidence_quality_checks,
     build_mortgage_document_checklist,
     build_mortgage_pack_index,
+    build_mortgage_refresh_reminders,
     build_mortgage_readiness_assessment,
     build_mortgage_readiness_matrix,
     build_mortgage_submission_gate,
@@ -176,6 +177,26 @@ class MortgageSubmissionGate(BaseModel):
     broker_submission_blockers: list[str]
 
 
+class MortgageRefreshReminderSummary(BaseModel):
+    total_reminders: int
+    due_now_count: int
+    upcoming_count: int
+    has_due_now: bool
+    next_due_date: Optional[datetime.date] = None
+
+
+class MortgageRefreshReminder(BaseModel):
+    reminder_type: Literal["statement_refresh", "id_validity_check"]
+    document_code: str
+    title: str
+    cadence_days: int
+    due_date: datetime.date
+    status: Literal["due_now", "upcoming"]
+    document_filename: str
+    message: str
+    suggested_action: str
+
+
 class MortgageChecklistResponse(BaseModel):
     jurisdiction: str
     mortgage_type: str
@@ -223,6 +244,8 @@ class MortgageReadinessResponse(BaseModel):
     readiness_summary: str
     evidence_quality_summary: MortgageEvidenceQualitySummary
     evidence_quality_issues: list[MortgageEvidenceQualityIssue]
+    refresh_reminder_summary: MortgageRefreshReminderSummary
+    refresh_reminders: list[MortgageRefreshReminder]
     submission_gate: MortgageSubmissionGate
 
 
@@ -304,6 +327,8 @@ class MortgagePackIndexResponse(BaseModel):
     conditional_document_evidence: list[MortgageDocumentEvidenceItem]
     evidence_quality_summary: MortgageEvidenceQualitySummary
     evidence_quality_issues: list[MortgageEvidenceQualityIssue]
+    refresh_reminder_summary: MortgageRefreshReminderSummary
+    refresh_reminders: list[MortgageRefreshReminder]
     submission_gate: MortgageSubmissionGate
     generated_at: datetime.datetime
 
@@ -574,6 +599,35 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
                 pdf.multi_cell(0, 6, f"- {blocker}")
         pdf.ln(2)
 
+    refresh_summary = pack_index.get("refresh_reminder_summary", {})
+    if isinstance(refresh_summary, dict):
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Monthly refresh reminders", 0, 1)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, f"Total reminders: {refresh_summary.get('total_reminders', 0)}", 0, 1)
+        pdf.cell(
+            0,
+            7,
+            (
+                "Due now / Upcoming: "
+                f"{refresh_summary.get('due_now_count', 0)} / {refresh_summary.get('upcoming_count', 0)}"
+            ),
+            0,
+            1,
+        )
+        refresh_reminders = pack_index.get("refresh_reminders", [])
+        if isinstance(refresh_reminders, list):
+            for reminder in refresh_reminders[:6]:
+                if not isinstance(reminder, dict):
+                    continue
+                title = str(reminder.get("title", ""))
+                due_date = str(reminder.get("due_date", ""))
+                status = str(reminder.get("status", "upcoming"))
+                message = str(reminder.get("message", ""))
+                pdf.multi_cell(0, 6, f"[{status}] {title} (due: {due_date})")
+                pdf.multi_cell(0, 6, message)
+        pdf.ln(2)
+
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Required document evidence", 0, 1)
     pdf.set_font("Helvetica", "", 10)
@@ -639,6 +693,8 @@ async def evaluate_mortgage_readiness(
         applicant_last_name=last_name,
     )
     readiness.update(quality_checks)
+    refresh_reminders = build_mortgage_refresh_reminders(uploaded_documents=uploaded_documents)
+    readiness.update(refresh_reminders)
     submission_gate = build_mortgage_submission_gate(
         readiness_status=str(readiness.get("readiness_status", "")),
         evidence_quality_summary=quality_checks.get("evidence_quality_summary")
@@ -658,6 +714,15 @@ async def evaluate_mortgage_readiness(
         advisor_action = "Get a qualified mortgage adviser review before broker submission."
         if advisor_action not in next_actions:
             readiness["next_actions"] = [advisor_action, *next_actions]
+    refresh_summary = refresh_reminders.get("refresh_reminder_summary")
+    if isinstance(refresh_summary, dict) and int(refresh_summary.get("due_now_count", 0)) > 0:
+        next_actions = list(readiness.get("next_actions", []))
+        due_now_count = int(refresh_summary.get("due_now_count", 0))
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions:
+            readiness["next_actions"] = [refresh_action, *next_actions]
     return MortgageReadinessResponse(**readiness)
 
 
@@ -719,6 +784,8 @@ async def generate_mortgage_pack_index(
         applicant_last_name=last_name,
     )
     pack_index.update(quality_checks)
+    refresh_reminders = build_mortgage_refresh_reminders(uploaded_documents=uploaded_documents)
+    pack_index.update(refresh_reminders)
     submission_gate = build_mortgage_submission_gate(
         readiness_status=str(pack_index.get("readiness_status", "")),
         evidence_quality_summary=quality_checks.get("evidence_quality_summary")
@@ -738,6 +805,15 @@ async def generate_mortgage_pack_index(
         advisor_action = "Get a qualified mortgage adviser review before broker submission."
         if advisor_action not in next_actions:
             pack_index["next_actions"] = [advisor_action, *next_actions]
+    refresh_summary = refresh_reminders.get("refresh_reminder_summary")
+    if isinstance(refresh_summary, dict) and int(refresh_summary.get("due_now_count", 0)) > 0:
+        next_actions = list(pack_index.get("next_actions", []))
+        due_now_count = int(refresh_summary.get("due_now_count", 0))
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions:
+            pack_index["next_actions"] = [refresh_action, *next_actions]
     pack_index["generated_at"] = datetime.datetime.now(datetime.UTC)
     return MortgagePackIndexResponse(**pack_index)
 
@@ -775,6 +851,8 @@ async def generate_mortgage_pack_index_pdf(
         applicant_last_name=last_name,
     )
     pack_index.update(quality_checks)
+    refresh_reminders = build_mortgage_refresh_reminders(uploaded_documents=uploaded_documents)
+    pack_index.update(refresh_reminders)
     submission_gate = build_mortgage_submission_gate(
         readiness_status=str(pack_index.get("readiness_status", "")),
         evidence_quality_summary=quality_checks.get("evidence_quality_summary")
@@ -794,6 +872,15 @@ async def generate_mortgage_pack_index_pdf(
         advisor_action = "Get a qualified mortgage adviser review before broker submission."
         if advisor_action not in next_actions:
             pack_index["next_actions"] = [advisor_action, *next_actions]
+    refresh_summary = refresh_reminders.get("refresh_reminder_summary")
+    if isinstance(refresh_summary, dict) and int(refresh_summary.get("due_now_count", 0)) > 0:
+        next_actions = list(pack_index.get("next_actions", []))
+        due_now_count = int(refresh_summary.get("due_now_count", 0))
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions:
+            pack_index["next_actions"] = [refresh_action, *next_actions]
     generated_at = datetime.datetime.now(datetime.UTC)
     pack_index["generated_at"] = generated_at.isoformat()
     pdf_bytes = _build_mortgage_pack_index_pdf_bytes(pack_index)

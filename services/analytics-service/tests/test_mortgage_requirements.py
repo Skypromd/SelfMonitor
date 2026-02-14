@@ -9,6 +9,7 @@ from app.mortgage_requirements import (
     MORTGAGE_TYPE_METADATA,
     build_mortgage_evidence_quality_checks,
     build_mortgage_pack_index,
+    build_mortgage_refresh_reminders,
     build_mortgage_readiness_assessment,
     build_mortgage_readiness_matrix,
     build_mortgage_submission_gate,
@@ -324,3 +325,54 @@ def test_build_mortgage_submission_gate_allows_when_all_conditions_pass():
     )
     assert gate["broker_submission_allowed"] is True
     assert gate["broker_submission_blockers"] == []
+
+
+def test_build_mortgage_refresh_reminders_marks_due_and_upcoming_items():
+    reminders = build_mortgage_refresh_reminders(
+        uploaded_documents=[
+            {
+                "filename": "bank_statement_2025_12.pdf",
+                "uploaded_at": "2026-01-10T10:00:00Z",
+                "status": "completed",
+                "extracted_data": {},
+            },
+            {
+                "filename": "passport_photo_id.pdf",
+                "uploaded_at": "2026-02-15T10:00:00Z",
+                "status": "completed",
+                "extracted_data": {},
+            },
+        ],
+        today=datetime.date(2026, 2, 20),
+    )
+    summary = reminders["refresh_reminder_summary"]
+    items = reminders["refresh_reminders"]
+    assert summary["total_reminders"] == 2
+    assert summary["due_now_count"] == 1
+    assert summary["upcoming_count"] == 1
+    assert any(item["status"] == "due_now" and item["document_code"] == "bank_statements_6m" for item in items)
+    assert any(item["status"] == "upcoming" and item["document_code"] == "photo_id" for item in items)
+
+
+def test_build_mortgage_refresh_reminders_uses_latest_document_per_code():
+    reminders = build_mortgage_refresh_reminders(
+        uploaded_documents=[
+            {
+                "filename": "bank_statement_2025_11.pdf",
+                "uploaded_at": "2025-12-15T10:00:00Z",
+                "status": "completed",
+                "extracted_data": {},
+            },
+            {
+                "filename": "bank_statement_2026_01.pdf",
+                "uploaded_at": "2026-02-01T10:00:00Z",
+                "status": "completed",
+                "extracted_data": {},
+            },
+        ],
+        today=datetime.date(2026, 2, 10),
+    )
+    items = reminders["refresh_reminders"]
+    assert len(items) == 1
+    assert items[0]["document_code"] == "bank_statements_6m"
+    assert items[0]["document_filename"] == "bank_statement_2026_01.pdf"

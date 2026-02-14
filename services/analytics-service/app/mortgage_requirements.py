@@ -616,6 +616,51 @@ MORTGAGE_COMPLIANCE_DISCLAIMER = (
     "before any broker/lender submission."
 )
 
+MONTHLY_REFRESH_TRACKED_CODES: dict[str, dict[str, object]] = {
+    "photo_id": {
+        "reminder_type": "id_validity_check",
+        "title": "Monthly ID validity check",
+        "cadence_days": 30,
+        "suggested_action": "Confirm passport/driving licence is valid and not expiring within the next 6 months.",
+    },
+    "proof_of_address": {
+        "reminder_type": "statement_refresh",
+        "title": "Proof of address refresh",
+        "cadence_days": 30,
+        "suggested_action": "Upload a more recent proof-of-address document issued in the current month.",
+    },
+    "bank_statements_6m": {
+        "reminder_type": "statement_refresh",
+        "title": "Bank statement refresh",
+        "cadence_days": 30,
+        "suggested_action": "Upload the latest monthly bank statement to keep affordability evidence current.",
+    },
+    "business_bank_statements_12m": {
+        "reminder_type": "statement_refresh",
+        "title": "Business bank statement refresh",
+        "cadence_days": 30,
+        "suggested_action": "Upload the latest monthly business bank statement.",
+    },
+    "payslips_3m": {
+        "reminder_type": "statement_refresh",
+        "title": "Payslip refresh",
+        "cadence_days": 30,
+        "suggested_action": "Upload the latest payslip(s) so the income pack remains current.",
+    },
+    "existing_mortgage_statement": {
+        "reminder_type": "statement_refresh",
+        "title": "Mortgage statement refresh",
+        "cadence_days": 30,
+        "suggested_action": "Upload the latest mortgage statement from your current lender.",
+    },
+    "offset_account_statements": {
+        "reminder_type": "statement_refresh",
+        "title": "Offset account statement refresh",
+        "cadence_days": 30,
+        "suggested_action": "Upload the latest offset-linked account statement.",
+    },
+}
+
 
 def _normalize_filename(value: str) -> str:
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
@@ -880,6 +925,112 @@ def build_mortgage_evidence_quality_checks(
             "has_blockers": critical_count > 0,
         },
         "evidence_quality_issues": issues,
+    }
+
+
+def build_mortgage_refresh_reminders(
+    *,
+    uploaded_documents: Iterable[dict[str, object]],
+    today: datetime.date | None = None,
+) -> dict[str, object]:
+    reference_date = today or datetime.date.today()
+    reminders_by_code: dict[str, dict[str, object]] = {}
+
+    for raw_document in uploaded_documents:
+        if not isinstance(raw_document, dict):
+            continue
+        raw_filename = raw_document.get("filename")
+        if not isinstance(raw_filename, str) or not raw_filename.strip():
+            continue
+        filename = raw_filename.strip()
+        normalized_filename = _normalize_filename(filename)
+        detected_codes = detect_document_codes_from_filenames([filename])
+        if not detected_codes:
+            continue
+
+        extracted_data = raw_document.get("extracted_data")
+        if not isinstance(extracted_data, dict):
+            extracted_data = {}
+        upload_datetime = _coerce_datetime(raw_document.get("uploaded_at"))
+        period_date = _coerce_date(extracted_data.get("transaction_date")) or _extract_period_date_from_filename(
+            normalized_filename
+        )
+        anchor_date_candidates: list[datetime.date] = []
+        if upload_datetime is not None:
+            anchor_date_candidates.append(upload_datetime.date())
+        if period_date is not None:
+            anchor_date_candidates.append(period_date)
+        anchor_date = max(anchor_date_candidates) if anchor_date_candidates else reference_date
+
+        for code in detected_codes:
+            metadata = MONTHLY_REFRESH_TRACKED_CODES.get(code)
+            if metadata is None:
+                continue
+            cadence_days = int(metadata["cadence_days"])
+            due_date = anchor_date + datetime.timedelta(days=cadence_days)
+            existing = reminders_by_code.get(code)
+            if existing is not None and isinstance(existing.get("due_date"), datetime.date):
+                existing_due_date = existing["due_date"]
+                if isinstance(existing_due_date, datetime.date) and due_date < existing_due_date:
+                    continue
+
+            reminders_by_code[code] = {
+                "reminder_type": str(metadata["reminder_type"]),
+                "document_code": code,
+                "title": str(metadata["title"]),
+                "cadence_days": cadence_days,
+                "due_date": due_date,
+                "document_filename": filename,
+                "suggested_action": str(metadata["suggested_action"]),
+            }
+
+    reminders: list[dict[str, object]] = []
+    for code in sorted(reminders_by_code):
+        item = reminders_by_code[code]
+        due_date = item["due_date"]
+        if not isinstance(due_date, datetime.date):
+            continue
+        days_until_due = (due_date - reference_date).days
+        status = "due_now" if days_until_due <= 0 else "upcoming"
+        if status == "due_now":
+            message = "Monthly refresh is due now for this evidence item."
+        else:
+            message = f"Next monthly refresh due in {days_until_due} day(s)."
+        reminders.append(
+            {
+                "reminder_type": item["reminder_type"],
+                "document_code": item["document_code"],
+                "title": item["title"],
+                "cadence_days": item["cadence_days"],
+                "due_date": due_date,
+                "status": status,
+                "document_filename": item["document_filename"],
+                "message": message,
+                "suggested_action": item["suggested_action"],
+            }
+        )
+
+    reminders.sort(
+        key=lambda reminder: (
+            0 if reminder["status"] == "due_now" else 1,
+            reminder["due_date"],
+            str(reminder["title"]),
+        )
+    )
+
+    due_now_count = sum(1 for reminder in reminders if reminder["status"] == "due_now")
+    upcoming_count = len(reminders) - due_now_count
+    next_due_date = reminders[0]["due_date"] if reminders else None
+
+    return {
+        "refresh_reminder_summary": {
+            "total_reminders": len(reminders),
+            "due_now_count": due_now_count,
+            "upcoming_count": upcoming_count,
+            "has_due_now": due_now_count > 0,
+            "next_due_date": next_due_date,
+        },
+        "refresh_reminders": reminders,
     }
 
 
