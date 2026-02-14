@@ -502,8 +502,11 @@ def _normalize_filename(value: str) -> str:
     return normalized
 
 
-def detect_document_codes_from_filenames(filenames: Iterable[str]) -> set[str]:
+def detect_document_evidence_from_filenames(
+    filenames: Iterable[str],
+) -> tuple[set[str], dict[str, list[str]]]:
     detected_codes: set[str] = set()
+    evidence_map: dict[str, list[str]] = {}
     for raw_name in filenames:
         name = _normalize_filename(raw_name)
         if not name:
@@ -511,6 +514,15 @@ def detect_document_codes_from_filenames(filenames: Iterable[str]) -> set[str]:
         for code, keywords in DOCUMENT_CODE_KEYWORDS.items():
             if any(keyword in name for keyword in keywords):
                 detected_codes.add(code)
+                if code not in evidence_map:
+                    evidence_map[code] = []
+                if raw_name not in evidence_map[code]:
+                    evidence_map[code].append(raw_name)
+    return detected_codes, evidence_map
+
+
+def detect_document_codes_from_filenames(filenames: Iterable[str]) -> set[str]:
+    detected_codes, _ = detect_document_evidence_from_filenames(filenames)
     return detected_codes
 
 
@@ -587,6 +599,68 @@ def build_mortgage_readiness_assessment(
             "readiness_status": readiness_status,
             "readiness_summary": readiness_summary,
             "next_actions": next_actions,
+        }
+    )
+    return result
+
+
+def _build_document_evidence_items(
+    *,
+    documents: list[dict[str, str]],
+    evidence_map: dict[str, list[str]],
+) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    for document in documents:
+        matched_filenames = list(evidence_map.get(document["code"], []))
+        items.append(
+            {
+                "code": document["code"],
+                "title": document["title"],
+                "reason": document["reason"],
+                "match_status": "matched" if matched_filenames else "missing",
+                "matched_filenames": matched_filenames,
+            }
+        )
+    return items
+
+
+def build_mortgage_pack_index(
+    *,
+    checklist: dict[str, object],
+    uploaded_filenames: Iterable[str],
+) -> dict[str, object]:
+    filenames = [filename for filename in uploaded_filenames if filename]
+    readiness = build_mortgage_readiness_assessment(
+        checklist=checklist,
+        uploaded_filenames=filenames,
+    )
+    detected_codes, evidence_map = detect_document_evidence_from_filenames(filenames)
+    required_documents = list(checklist["required_documents"])
+    conditional_documents = list(checklist["conditional_documents"])
+    required_evidence = _build_document_evidence_items(
+        documents=required_documents,
+        evidence_map=evidence_map,
+    )
+    conditional_evidence = _build_document_evidence_items(
+        documents=conditional_documents,
+        evidence_map=evidence_map,
+    )
+
+    result = dict(checklist)
+    result.update(
+        {
+            "uploaded_document_count": len(filenames),
+            "detected_document_codes": sorted(detected_codes),
+            "readiness_status": readiness["readiness_status"],
+            "required_completion_percent": readiness["required_completion_percent"],
+            "overall_completion_percent": readiness["overall_completion_percent"],
+            "readiness_summary": readiness["readiness_summary"],
+            "next_actions": readiness["next_actions"],
+            "matched_required_documents": readiness["matched_required_documents"],
+            "missing_required_documents": readiness["missing_required_documents"],
+            "missing_conditional_documents": readiness["missing_conditional_documents"],
+            "required_document_evidence": required_evidence,
+            "conditional_document_evidence": conditional_evidence,
         }
     )
     return result

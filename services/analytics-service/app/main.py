@@ -26,6 +26,7 @@ from .mortgage_requirements import (
     LENDER_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
     build_mortgage_document_checklist,
+    build_mortgage_pack_index,
     build_mortgage_readiness_assessment,
     build_mortgage_readiness_matrix,
 )
@@ -227,6 +228,49 @@ class MortgageReadinessMatrixResponse(BaseModel):
     overall_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
     items: list[MortgageReadinessMatrixItem]
 
+
+class MortgagePackIndexRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+
+
+class MortgageDocumentEvidenceItem(BaseModel):
+    code: str
+    title: str
+    reason: str
+    match_status: Literal["matched", "missing"]
+    matched_filenames: list[str]
+
+
+class MortgagePackIndexResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    mortgage_description: str
+    lender_profile: str
+    lender_profile_label: str
+    employment_profile: str
+    required_documents: list[MortgageDocumentItem]
+    conditional_documents: list[MortgageDocumentItem]
+    lender_notes: list[str]
+    next_steps: list[str]
+    uploaded_document_count: int
+    detected_document_codes: list[str]
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_summary: str
+    next_actions: list[str]
+    matched_required_documents: list[MortgageDocumentItem]
+    missing_required_documents: list[MortgageDocumentItem]
+    missing_conditional_documents: list[MortgageDocumentItem]
+    required_document_evidence: list[MortgageDocumentEvidenceItem]
+    conditional_document_evidence: list[MortgageDocumentEvidenceItem]
+    generated_at: datetime.datetime
+
 # --- Forecasting Endpoint ---
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow_forecast(
@@ -307,21 +351,11 @@ async def generate_mortgage_document_checklist(
     request: MortgageChecklistRequest,
     _user_id: str = Depends(get_current_user_id),
 ):
-    if request.mortgage_type not in MORTGAGE_TYPE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported mortgage_type '{request.mortgage_type}'",
-        )
-    if request.employment_profile not in EMPLOYMENT_PROFILE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported employment_profile '{request.employment_profile}'",
-        )
-    if request.lender_profile not in LENDER_PROFILE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported lender_profile '{request.lender_profile}'",
-        )
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
     checklist = build_mortgage_document_checklist(
         mortgage_type=request.mortgage_type,
         employment_profile=request.employment_profile,
@@ -364,27 +398,94 @@ async def _load_user_uploaded_document_filenames(
     return filenames
 
 
+def _validate_mortgage_selector_inputs(
+    *,
+    mortgage_type: str | None,
+    employment_profile: str,
+    lender_profile: str,
+) -> None:
+    if mortgage_type is not None and mortgage_type not in MORTGAGE_TYPE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported mortgage_type '{mortgage_type}'",
+        )
+    if employment_profile not in EMPLOYMENT_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported employment_profile '{employment_profile}'",
+        )
+    if lender_profile not in LENDER_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported lender_profile '{lender_profile}'",
+        )
+
+
+def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Mortgage Pack Index", 0, 1, "C")
+    pdf.set_font("Helvetica", "", 11)
+    generated_at = str(pack_index.get("generated_at", ""))
+    pdf.cell(0, 7, f"Generated at: {generated_at}", 0, 1)
+    pdf.cell(0, 7, f"Mortgage type: {pack_index.get('mortgage_label', '')}", 0, 1)
+    pdf.cell(0, 7, f"Lender profile: {pack_index.get('lender_profile_label', '')}", 0, 1)
+    pdf.cell(0, 7, f"Employment profile: {pack_index.get('employment_profile', '')}", 0, 1)
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Readiness summary", 0, 1)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7, str(pack_index.get("readiness_summary", "")))
+    pdf.cell(0, 7, f"Required completion: {pack_index.get('required_completion_percent', 0)}%", 0, 1)
+    pdf.cell(0, 7, f"Overall completion: {pack_index.get('overall_completion_percent', 0)}%", 0, 1)
+    pdf.cell(0, 7, f"Status: {pack_index.get('readiness_status', '')}", 0, 1)
+    pdf.ln(3)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Required document evidence", 0, 1)
+    pdf.set_font("Helvetica", "", 10)
+    required_evidence = pack_index.get("required_document_evidence", [])
+    if isinstance(required_evidence, list):
+        for item in required_evidence:
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("code", ""))
+            title = str(item.get("title", ""))
+            status_value = str(item.get("match_status", "missing"))
+            matched_files = item.get("matched_filenames", [])
+            matched_files_text = ", ".join(str(name) for name in matched_files[:4]) if isinstance(matched_files, list) else ""
+            if not matched_files_text:
+                matched_files_text = "not detected"
+            pdf.multi_cell(0, 6, f"[{status_value}] {title} ({code})")
+            pdf.multi_cell(0, 6, f"Evidence: {matched_files_text}")
+            pdf.ln(1)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Immediate actions", 0, 1)
+    pdf.set_font("Helvetica", "", 10)
+    next_actions = pack_index.get("next_actions", [])
+    if isinstance(next_actions, list) and next_actions:
+        for action in next_actions:
+            pdf.multi_cell(0, 6, f"- {action}")
+    else:
+        pdf.multi_cell(0, 6, "- No immediate actions")
+
+    return pdf.output(dest="S").encode("latin1")
+
+
 @app.post("/mortgage/readiness", response_model=MortgageReadinessResponse)
 async def evaluate_mortgage_readiness(
     request: MortgageReadinessRequest,
     _user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
 ):
-    if request.mortgage_type not in MORTGAGE_TYPE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported mortgage_type '{request.mortgage_type}'",
-        )
-    if request.employment_profile not in EMPLOYMENT_PROFILE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported employment_profile '{request.employment_profile}'",
-        )
-    if request.lender_profile not in LENDER_PROFILE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported lender_profile '{request.lender_profile}'",
-        )
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
     checklist = build_mortgage_document_checklist(
         mortgage_type=request.mortgage_type,
         employment_profile=request.employment_profile,
@@ -408,16 +509,11 @@ async def evaluate_mortgage_readiness_matrix(
     _user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
 ):
-    if request.employment_profile not in EMPLOYMENT_PROFILE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported employment_profile '{request.employment_profile}'",
-        )
-    if request.lender_profile not in LENDER_PROFILE_METADATA:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported lender_profile '{request.lender_profile}'",
-        )
+    _validate_mortgage_selector_inputs(
+        mortgage_type=None,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
     filenames = await _load_user_uploaded_document_filenames(
         bearer_token=bearer_token,
         max_documents_scan=request.max_documents_scan,
@@ -429,6 +525,76 @@ async def evaluate_mortgage_readiness_matrix(
         uploaded_filenames=filenames,
     )
     return MortgageReadinessMatrixResponse(**matrix)
+
+
+@app.post("/mortgage/pack-index", response_model=MortgagePackIndexResponse)
+async def generate_mortgage_pack_index(
+    request: MortgagePackIndexRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+    )
+    filenames = await _load_user_uploaded_document_filenames(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    pack_index = build_mortgage_pack_index(
+        checklist=checklist,
+        uploaded_filenames=filenames,
+    )
+    pack_index["generated_at"] = datetime.datetime.now(datetime.UTC)
+    return MortgagePackIndexResponse(**pack_index)
+
+
+@app.post("/mortgage/pack-index.pdf")
+async def generate_mortgage_pack_index_pdf(
+    request: MortgagePackIndexRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+    )
+    filenames = await _load_user_uploaded_document_filenames(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    pack_index = build_mortgage_pack_index(
+        checklist=checklist,
+        uploaded_filenames=filenames,
+    )
+    generated_at = datetime.datetime.now(datetime.UTC)
+    pack_index["generated_at"] = generated_at.isoformat()
+    pdf_bytes = _build_mortgage_pack_index_pdf_bytes(pack_index)
+    filename_safe_type = request.mortgage_type.replace(" ", "_")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                "attachment; "
+                f"filename=mortgage_pack_index_{filename_safe_type}_{generated_at.date().isoformat()}.pdf"
+            )
+        },
+    )
 
 # --- PDF Report Generation ---
 @app.get("/reports/mortgage-readiness", response_class=StreamingResponse)

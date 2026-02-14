@@ -82,7 +82,7 @@ MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
 [x] M2.1 Build agent workflow: "prepare my mortgage pack" -> gather missing docs -> produce completion score.
 [x] M2.2 Add lender profile presets (high street banks, specialist lenders, BTL-focused lenders).
 [x] M2.3 Add all-mortgage-type readiness matrix in UI (coverage dashboard across mortgage types).
-[ ] M2.4 Export final mortgage pack index (PDF + JSON manifest + evidence map).
+[x] M2.4 Export final mortgage pack index (PDF + JSON manifest + evidence map).
 [ ] M3.1 Add evidence quality checks (staleness, name mismatch, period mismatch, unreadable OCR).
 [ ] M3.2 Add compliance disclaimer and "advisor review required" gates before submission to brokers.
 [ ] M3.3 Add monthly refresh reminders for expiring statements and IDs.

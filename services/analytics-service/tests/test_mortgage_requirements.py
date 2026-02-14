@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app.mortgage_requirements import (
     LENDER_PROFILE_METADATA,
     MORTGAGE_TYPE_METADATA,
+    build_mortgage_pack_index,
     build_mortgage_readiness_assessment,
     build_mortgage_readiness_matrix,
     build_mortgage_document_checklist,
@@ -230,3 +231,27 @@ def test_build_mortgage_readiness_matrix_rejects_unsupported_profiles():
         assert False, "Expected ValueError for unsupported mortgage type in matrix list"
     except ValueError as exc:
         assert str(exc) == "unsupported_mortgage_type"
+
+
+def test_build_mortgage_pack_index_contains_evidence_map():
+    checklist = build_mortgage_document_checklist(
+        mortgage_type="remortgage",
+        employment_profile="sole_trader",
+        include_adverse_credit_pack=False,
+        lender_profile="high_street_mainstream",
+    )
+    pack_index = build_mortgage_pack_index(
+        checklist=checklist,
+        uploaded_filenames=[
+            "passport_photo_id.pdf",
+            "bank_statement_may.pdf",
+            "mortgage_statement_latest.pdf",
+            "sa302_2025.pdf",
+            "tax_year_overview_2025.pdf",
+        ],
+    )
+    assert pack_index["uploaded_document_count"] == 5
+    assert "photo_id" in pack_index["detected_document_codes"]
+    required_evidence = pack_index["required_document_evidence"]
+    assert any(item["code"] == "existing_mortgage_statement" and item["match_status"] == "matched" for item in required_evidence)
+    assert any(item["match_status"] in {"matched", "missing"} for item in required_evidence)

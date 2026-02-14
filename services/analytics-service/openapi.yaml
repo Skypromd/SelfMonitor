@@ -169,6 +169,55 @@ paths:
           description: Unsupported lender profile or employment profile.
         '502':
           description: Documents service unavailable.
+  /mortgage/pack-index:
+    post:
+      summary: Build mortgage pack index manifest with document evidence mapping
+      tags:
+        - Mortgage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MortgagePackIndexRequest'
+      responses:
+        '200':
+          description: Mortgage pack manifest as JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MortgagePackIndexResponse'
+        '400':
+          description: Unsupported mortgage type, lender profile, or employment profile.
+        '502':
+          description: Documents service unavailable.
+  /mortgage/pack-index.pdf:
+    post:
+      summary: Export mortgage pack index PDF with evidence map
+      tags:
+        - Mortgage
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MortgagePackIndexRequest'
+      responses:
+        '200':
+          description: PDF export of mortgage pack index.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Unsupported mortgage type, lender profile, or employment profile.
+        '502':
+          description: Documents service unavailable.
   /reports/mortgage-readiness:
     get:
       summary: Generate a Mortgage Readiness PDF Report
@@ -541,6 +590,154 @@ components:
         - average_overall_completion_percent
         - overall_status
         - items
+    MortgagePackIndexRequest:
+      type: object
+      properties:
+        mortgage_type:
+          type: string
+          example: remortgage
+        lender_profile:
+          type: string
+          example: high_street_mainstream
+          default: high_street_mainstream
+        employment_profile:
+          type: string
+          example: sole_trader
+          default: sole_trader
+        include_adverse_credit_pack:
+          type: boolean
+          default: false
+        max_documents_scan:
+          type: integer
+          default: 300
+          minimum: 10
+          maximum: 2000
+      required:
+        - mortgage_type
+    MortgageDocumentEvidenceItem:
+      type: object
+      properties:
+        code:
+          type: string
+        title:
+          type: string
+        reason:
+          type: string
+        match_status:
+          type: string
+          enum: [matched, missing]
+        matched_filenames:
+          type: array
+          items:
+            type: string
+      required:
+        - code
+        - title
+        - reason
+        - match_status
+        - matched_filenames
+    MortgagePackIndexResponse:
+      type: object
+      properties:
+        jurisdiction:
+          type: string
+        mortgage_type:
+          type: string
+        mortgage_label:
+          type: string
+        mortgage_description:
+          type: string
+        lender_profile:
+          type: string
+        lender_profile_label:
+          type: string
+        employment_profile:
+          type: string
+        required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        conditional_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        lender_notes:
+          type: array
+          items:
+            type: string
+        next_steps:
+          type: array
+          items:
+            type: string
+        uploaded_document_count:
+          type: integer
+        detected_document_codes:
+          type: array
+          items:
+            type: string
+        readiness_status:
+          type: string
+          enum: [not_ready, almost_ready, ready_for_broker_review]
+        required_completion_percent:
+          type: number
+          format: float
+        overall_completion_percent:
+          type: number
+          format: float
+        readiness_summary:
+          type: string
+        next_actions:
+          type: array
+          items:
+            type: string
+        matched_required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        missing_required_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        missing_conditional_documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+        required_document_evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentEvidenceItem'
+        conditional_document_evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/MortgageDocumentEvidenceItem'
+        generated_at:
+          type: string
+          format: date-time
+      required:
+        - jurisdiction
+        - mortgage_type
+        - mortgage_label
+        - mortgage_description
+        - lender_profile
+        - lender_profile_label
+        - employment_profile
+        - required_documents
+        - conditional_documents
+        - lender_notes
+        - next_steps
+        - uploaded_document_count
+        - detected_document_codes
+        - readiness_status
+        - required_completion_percent
+        - overall_completion_percent
+        - readiness_summary
+        - next_actions
+        - matched_required_documents
+        - missing_required_documents
+        - missing_conditional_documents
+        - required_document_evidence
+        - conditional_document_evidence
+        - generated_at
     JobRequest:
       type: object
       properties:

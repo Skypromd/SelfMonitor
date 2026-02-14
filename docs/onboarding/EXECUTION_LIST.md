@@ -55,3 +55,4 @@ _Last updated: 2026-02-13_
 23. [x] Add lender-profile presets for mortgage checklist/readiness (high-street/specialist/BTL/adverse)
 24. [x] Add all-types mortgage readiness matrix dashboard for coverage tracking
 25. [x] Add scalable locale registry and fallback support for RU/UA/EN/PL/RO-MD/TR/HU
+26. [x] Add mortgage pack index export (JSON manifest + PDF evidence map)

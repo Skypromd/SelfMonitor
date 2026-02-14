@@ -77,6 +77,20 @@ type MortgageReadinessMatrixResponse = {
   uploaded_document_count: number;
 };
 
+type MortgageDocumentEvidenceItem = {
+  code: string;
+  match_status: 'matched' | 'missing';
+  matched_filenames: string[];
+  reason: string;
+  title: string;
+};
+
+type MortgagePackIndexResponse = MortgageReadinessResponse & {
+  conditional_document_evidence: MortgageDocumentEvidenceItem[];
+  generated_at: string;
+  required_document_evidence: MortgageDocumentEvidenceItem[];
+};
+
 const EMPLOYMENT_PROFILE_OPTIONS = [
   { label: 'Self-employed sole trader', value: 'sole_trader' },
   { label: 'Limited company director', value: 'limited_company_director' },
@@ -90,6 +104,8 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [isLoadingChecklist, setIsLoadingChecklist] = useState(false);
   const [isAssessingReadiness, setIsAssessingReadiness] = useState(false);
   const [isBuildingMatrix, setIsBuildingMatrix] = useState(false);
+  const [isExportingPackJson, setIsExportingPackJson] = useState(false);
+  const [isExportingPackPdf, setIsExportingPackPdf] = useState(false);
   const [isLoadingMortgageTypes, setIsLoadingMortgageTypes] = useState(true);
   const [isLoadingLenderProfiles, setIsLoadingLenderProfiles] = useState(true);
   const [mortgageTypes, setMortgageTypes] = useState<MortgageTypeSummary[]>([]);
@@ -294,6 +310,85 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     }
   };
 
+  const buildMortgagePayload = () => ({
+    mortgage_type: selectedMortgageType,
+    lender_profile: selectedLenderProfile,
+    employment_profile: employmentProfile,
+    include_adverse_credit_pack: includeAdverseCreditPack,
+  });
+
+  const handleExportPackIndexJson = async () => {
+    setMatrixError('');
+    if (!selectedMortgageType || !selectedLenderProfile) {
+      setMatrixError('Select mortgage and lender profile first.');
+      return;
+    }
+    setIsExportingPackJson(true);
+    try {
+      const response = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/pack-index`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(buildMortgagePayload()),
+      });
+      const payload = (await response.json()) as MortgagePackIndexResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error('detail' in payload && payload.detail ? payload.detail : 'Failed to export pack manifest');
+      }
+      const jsonBlob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(jsonBlob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `mortgage-pack-index-${selectedMortgageType}-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setMatrixError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsExportingPackJson(false);
+    }
+  };
+
+  const handleExportPackIndexPdf = async () => {
+    setMatrixError('');
+    if (!selectedMortgageType || !selectedLenderProfile) {
+      setMatrixError('Select mortgage and lender profile first.');
+      return;
+    }
+    setIsExportingPackPdf(true);
+    try {
+      const response = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/pack-index.pdf`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(buildMortgagePayload()),
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { detail?: string };
+        throw new Error(payload.detail || 'Failed to export pack PDF');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `mortgage-pack-index-${selectedMortgageType}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setMatrixError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsExportingPackPdf(false);
+    }
+  };
+
   return (
     <div className={styles.dashboard}>
       <h1>{t('nav.reports')}</h1>
@@ -389,6 +484,22 @@ export default function ReportsPage({ token }: ReportsPageProps) {
               </button>
               <button className={styles.button} disabled={isBuildingMatrix} onClick={handleBuildMatrix} type="button">
                 {isBuildingMatrix ? 'Building matrix...' : 'Build all-types matrix'}
+              </button>
+              <button
+                className={styles.button}
+                disabled={isExportingPackJson}
+                onClick={handleExportPackIndexJson}
+                type="button"
+              >
+                {isExportingPackJson ? 'Exporting JSON...' : 'Export pack index JSON'}
+              </button>
+              <button
+                className={styles.button}
+                disabled={isExportingPackPdf}
+                onClick={handleExportPackIndexPdf}
+                type="button"
+              >
+                {isExportingPackPdf ? 'Exporting PDF...' : 'Export pack index PDF'}
               </button>
             </div>
             {checklistError && <p className={styles.error}>{checklistError}</p>}
