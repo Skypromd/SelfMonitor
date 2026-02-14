@@ -102,15 +102,16 @@ async def _load_manual_feedback(
 def index_document_content(user_id: str, doc_id: str, filename: str, content: str):
     """Synchronous function to call the Q&A service for indexing."""
     try:
+        token = _build_user_token(user_id)
         with httpx.Client() as client:
             response = client.post(
                 QNA_SERVICE_URL,
                 json={
-                    "user_id": user_id,
                     "document_id": doc_id,
                     "filename": filename,
                     "text_content": content,
                 },
+                headers={"Authorization": f"Bearer {token}"},
                 timeout=10.0,
             )
             response.raise_for_status()

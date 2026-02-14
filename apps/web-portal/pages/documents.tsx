@@ -142,7 +142,7 @@ function SemanticSearch({ token }: { token: string }) {
     setIsSearching(true);
     try {
       const response = await fetch(`${QNA_SERVICE_URL}/search`, {
-        body: JSON.stringify({ query, user_id: 'fake-user-123' }),
+        body: JSON.stringify({ query }),
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,

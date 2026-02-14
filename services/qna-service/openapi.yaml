@@ -1,0 +1,109 @@
+openapi: 3.0.3
+info:
+  title: Q&A and Semantic Search Service
+  description: Handles authenticated document indexing and semantic search.
+  version: 1.0.0
+paths:
+  /index:
+    post:
+      summary: Index document content for semantic search
+      tags:
+        - QnA
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexRequest'
+      responses:
+        '200':
+          description: Document was indexed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Document indexed successfully.
+        '401':
+          description: Missing or invalid token.
+        '503':
+          description: Vector store or embedding model unavailable.
+  /search:
+    post:
+      summary: Search document chunks semantically for authenticated user
+      tags:
+        - QnA
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        '200':
+          description: Top semantic matches for this user.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchResult'
+        '401':
+          description: Missing or invalid token.
+        '503':
+          description: Vector store or embedding model unavailable.
+
+components:
+  schemas:
+    IndexRequest:
+      type: object
+      properties:
+        document_id:
+          type: string
+          example: 34ee8bc8-7c29-4f95-8f65-85795652efc1
+        filename:
+          type: string
+          example: receipt-feb.pdf
+        text_content:
+          type: string
+          example: Tesco Stores UK TOTAL 18.45 Date 2026-02-12
+      required:
+        - document_id
+        - filename
+        - text_content
+    SearchRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          example: where did I buy coffee last month?
+      required:
+        - query
+    SearchResult:
+      type: object
+      properties:
+        document_id:
+          type: string
+        filename:
+          type: string
+        content:
+          type: string
+        score:
+          type: number
+          format: float
+      required:
+        - document_id
+        - filename
+        - content
+        - score
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

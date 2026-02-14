@@ -1,0 +1,75 @@
+AI Agent Integration TODO (Self-Assessment Copilot)
+Last updated: 2026-02-12
+Owner: Product + Platform
+
+GOAL
+- Integrate a secure AI agent that helps UK self-employed users finish yearly submission workflows:
+  OCR review -> transaction reconciliation -> tax calculation -> HMRC submission.
+
+PHASE 0 - Foundation and Security (P0)
+[ ] P0.1 Lock down qna-service with JWT auth and server-side user scoping.
+[ ] P0.2 Remove client-provided user_id from semantic search requests in web portal.
+[ ] P0.3 Sign qna index requests from documents-service (service-to-service auth via existing JWT).
+[ ] P0.4 Add qna-service tests for auth and user isolation behavior.
+[ ] P0.5 Add minimal qna-service OpenAPI contract file.
+
+PHASE 1 - Agent Service MVP (Read-Only + Guided Actions) (P0/P1)
+[ ] P1.1 Create services/agent-service (FastAPI) with POST /agent/chat.
+[ ] P1.2 Implement intent router for:
+      - readiness_check
+      - ocr_review_assist
+      - reconciliation_assist
+      - tax_pre_submit
+[ ] P1.3 Add read-only tools:
+      - documents: GET /documents/review-queue
+      - transactions: GET /transactions/receipt-drafts/unmatched
+      - transactions: GET /transactions/me
+      - tax-engine: POST /calculate
+[ ] P1.4 Add response format with:
+      - answer
+      - evidence (source endpoint + ids)
+      - suggested_actions (no execution yet)
+[ ] P1.5 Add agent session memory (Redis, TTL 24h, per user/session id).
+
+PHASE 2 - Safe Action Mode (P0)
+[ ] P2.1 Add confirmation token flow for write actions.
+[ ] P2.2 Implement confirmed actions:
+      - PATCH /documents/{id}/review
+      - POST /transactions/receipt-drafts/{id}/reconcile
+      - POST /transactions/receipt-drafts/{id}/ignore
+      - POST /calculate-and-submit
+[ ] P2.3 Add policy gate:
+      - default deny for write tools
+      - explicit allowlist per action
+[ ] P2.4 Add full audit logging of:
+      - prompt hash
+      - tool calls
+      - payload summary
+      - action result
+
+PHASE 3 - UX Integration (P1)
+[ ] P3.1 Add web portal "AI Copilot" panel.
+[ ] P3.2 Render suggested action cards with explicit Confirm buttons.
+[ ] P3.3 Add "why this suggestion" view (evidence + confidence).
+[ ] P3.4 Add fallback UX when tool/service unavailable.
+
+PHASE 4 - Quality, Compliance, and Operations (P0/P1)
+[ ] P4.1 Add prompt-injection protection for OCR/document text context.
+[ ] P4.2 Add guardrail tests for unauthorized cross-user data access.
+[ ] P4.3 Add dashboards:
+      - agent action success rate
+      - human override rate
+      - OCR review completion time
+      - tax submission conversion rate
+[ ] P4.4 Add runbook section:
+      - agent safe mode
+      - rollback and feature flag procedure
+
+IMPLEMENTATION ORDER FOR NEXT ITERATIONS
+1) Execute PHASE 0 fully.
+2) Build PHASE 1 with read-only tools.
+3) Enable PHASE 2 for confirmed writes.
+4) Polish PHASE 3 UX and PHASE 4 operations.
+
+CURRENT EXECUTION STATUS
+- In progress: P0.1, P0.2, P0.3, P0.4.

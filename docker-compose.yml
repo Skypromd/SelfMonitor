@@ -320,6 +320,7 @@ services:
     depends_on:
       - weaviate
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       WEAVIATE_URL: "${QNA_WEAVIATE_URL:-http://weaviate:8080}"
     networks:
       - default_network
