@@ -34,6 +34,6 @@ Status legend:
 - [ ] Produce GTM evidence pack (channel performance, conversion by segment).
 
 ## Current sprint execution
-- [ ] S0.2 Implement investor KPI source endpoint (`/investor/seed-readiness`) in partner-registry.
-- [ ] S0.3 Add automated tests and OpenAPI coverage for the endpoint.
-- [ ] S0.4 Wire endpoint into execution list and mark first run complete.
+- [x] S0.2 Implement investor KPI source endpoint (`/investor/seed-readiness`) in partner-registry.
+- [x] S0.3 Add automated tests and OpenAPI coverage for the endpoint.
+- [x] S0.4 Wire endpoint into execution list and mark first run complete.
