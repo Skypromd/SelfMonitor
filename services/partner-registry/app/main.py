@@ -84,6 +84,7 @@ def _parse_non_negative_float_env(name: str, default: float) -> float:
 
 
 BILLING_INVOICE_DUE_DAYS = _parse_positive_int_env("BILLING_INVOICE_DUE_DAYS", 14)
+SELF_EMPLOYED_INVOICE_DUE_DAYS = _parse_positive_int_env("SELF_EMPLOYED_INVOICE_DUE_DAYS", 14)
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
     schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
@@ -101,6 +102,23 @@ INVOICE_STATUS_TRANSITIONS = {
     },
     schemas.BillingInvoiceStatus.paid.value: set(),
     schemas.BillingInvoiceStatus.void.value: set(),
+}
+SELF_EMPLOYED_INVOICE_STATUS_TRANSITIONS = {
+    schemas.SelfEmployedInvoiceStatus.draft.value: {
+        schemas.SelfEmployedInvoiceStatus.issued.value,
+        schemas.SelfEmployedInvoiceStatus.void.value,
+    },
+    schemas.SelfEmployedInvoiceStatus.issued.value: {
+        schemas.SelfEmployedInvoiceStatus.paid.value,
+        schemas.SelfEmployedInvoiceStatus.overdue.value,
+        schemas.SelfEmployedInvoiceStatus.void.value,
+    },
+    schemas.SelfEmployedInvoiceStatus.overdue.value: {
+        schemas.SelfEmployedInvoiceStatus.paid.value,
+        schemas.SelfEmployedInvoiceStatus.void.value,
+    },
+    schemas.SelfEmployedInvoiceStatus.paid.value: set(),
+    schemas.SelfEmployedInvoiceStatus.void.value: set(),
 }
 
 SEED_READINESS_MIN_PERIOD_MONTHS = 3
@@ -1162,6 +1180,24 @@ def _validate_invoice_status_transition(
         )
 
 
+def _validate_self_employed_invoice_status_transition(
+    current_status: str,
+    target_status: schemas.SelfEmployedInvoiceStatus,
+) -> None:
+    if target_status.value == current_status:
+        return
+
+    allowed = SELF_EMPLOYED_INVOICE_STATUS_TRANSITIONS.get(current_status, set())
+    if target_status.value not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Cannot transition self-employed invoice status "
+                f"from {current_status} to {target_status.value}"
+            ),
+        )
+
+
 def _to_invoice_summary(invoice: Any) -> schemas.BillingInvoiceSummary:
     return schemas.BillingInvoiceSummary(
         id=uuid.UUID(str(invoice.id)),
@@ -1171,6 +1207,20 @@ def _to_invoice_summary(invoice: Any) -> schemas.BillingInvoiceSummary:
         due_date=invoice.due_date,
         currency=invoice.currency,
         status=schemas.BillingInvoiceStatus(invoice.status),
+        total_amount_gbp=invoice.total_amount_gbp,
+        created_at=invoice.created_at,
+    )
+
+
+def _to_self_employed_invoice_summary(invoice: Any) -> schemas.SelfEmployedInvoiceSummary:
+    return schemas.SelfEmployedInvoiceSummary(
+        id=uuid.UUID(str(invoice.id)),
+        invoice_number=str(invoice.invoice_number),
+        customer_name=str(invoice.customer_name),
+        issue_date=invoice.issue_date,
+        due_date=invoice.due_date,
+        currency=invoice.currency,
+        status=schemas.SelfEmployedInvoiceStatus(invoice.status),
         total_amount_gbp=invoice.total_amount_gbp,
         created_at=invoice.created_at,
     )
@@ -1211,6 +1261,50 @@ async def _load_invoice_detail(
                 amount_gbp=line.amount_gbp,
             )
             for line in lines
+        ],
+    )
+
+
+async def _load_self_employed_invoice_detail(
+    db: AsyncSession,
+    *,
+    invoice_id: uuid.UUID,
+    user_id: str,
+) -> schemas.SelfEmployedInvoiceDetail:
+    invoice = await crud.get_self_employed_invoice_by_id_for_user(
+        db,
+        invoice_id=str(invoice_id),
+        user_id=user_id,
+    )
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Self-employed invoice not found")
+    lines = await crud.get_self_employed_invoice_lines(db, invoice_id=str(invoice.id))
+    return schemas.SelfEmployedInvoiceDetail(
+        id=uuid.UUID(str(invoice.id)),
+        invoice_number=str(invoice.invoice_number),
+        customer_name=str(invoice.customer_name),
+        customer_email=invoice.customer_email,
+        customer_address=invoice.customer_address,
+        issue_date=invoice.issue_date,
+        due_date=invoice.due_date,
+        currency=invoice.currency,
+        status=schemas.SelfEmployedInvoiceStatus(invoice.status),
+        subtotal_gbp=invoice.subtotal_gbp,
+        tax_rate_percent=invoice.tax_rate_percent,
+        tax_amount_gbp=invoice.tax_amount_gbp,
+        total_amount_gbp=invoice.total_amount_gbp,
+        notes=invoice.notes,
+        created_at=invoice.created_at,
+        updated_at=invoice.updated_at,
+        lines=[
+            schemas.SelfEmployedInvoiceLine(
+                id=uuid.UUID(str(item.id)),
+                description=str(item.description),
+                quantity=float(item.quantity),
+                unit_price_gbp=float(item.unit_price_gbp),
+                line_total_gbp=float(item.line_total_gbp),
+            )
+            for item in lines
         ],
     )
 
@@ -1696,6 +1790,206 @@ def _accounting_csv_response(
     )
 
 
+def _build_self_employed_invoice_pdf(invoice: schemas.SelfEmployedInvoiceDetail) -> bytes:
+    lines = [
+        "Self-Employed Client Invoice",
+        f"Invoice number: {invoice.invoice_number}",
+        f"Issue date: {invoice.issue_date.isoformat()}",
+        f"Due date: {invoice.due_date.isoformat()}",
+        f"Status: {invoice.status.value}",
+        f"Customer: {invoice.customer_name}",
+        f"Customer email: {invoice.customer_email or 'N/A'}",
+        f"Currency: {invoice.currency}",
+        "",
+        "Line items",
+    ]
+    for item in invoice.lines:
+        lines.append(
+            (
+                f"- {item.description}: {item.quantity:.2f} x "
+                f"{item.unit_price_gbp:.2f} = {item.line_total_gbp:.2f} {invoice.currency}"
+            )
+        )
+    lines.extend(
+        [
+            "",
+            f"Subtotal: {invoice.subtotal_gbp:.2f} {invoice.currency}",
+            f"Tax ({invoice.tax_rate_percent:.2f}%): {invoice.tax_amount_gbp:.2f} {invoice.currency}",
+            f"Total: {invoice.total_amount_gbp:.2f} {invoice.currency}",
+        ]
+    )
+    if invoice.notes:
+        lines.extend(["", f"Notes: {invoice.notes}"])
+    return _render_simple_pdf(lines)
+
+
+def _self_employed_invoice_pdf_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
+    filename = f"{invoice.invoice_number}.pdf"
+    return Response(
+        content=_build_self_employed_invoice_pdf(invoice),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "invoice_number",
+            "issue_date",
+            "due_date",
+            "status",
+            "customer_name",
+            "description",
+            "quantity",
+            "unit_price_gbp",
+            "line_total_gbp",
+            "currency",
+        ]
+    )
+    for item in invoice.lines:
+        writer.writerow(
+            [
+                invoice.invoice_number,
+                invoice.issue_date.isoformat(),
+                invoice.due_date.isoformat(),
+                invoice.status.value,
+                invoice.customer_name,
+                item.description,
+                f"{item.quantity:.2f}",
+                f"{item.unit_price_gbp:.2f}",
+                f"{item.line_total_gbp:.2f}",
+                invoice.currency,
+            ]
+        )
+    writer.writerow(
+        [
+            invoice.invoice_number,
+            invoice.issue_date.isoformat(),
+            invoice.due_date.isoformat(),
+            invoice.status.value,
+            invoice.customer_name,
+            "TOTAL",
+            "",
+            "",
+            f"{invoice.total_amount_gbp:.2f}",
+            invoice.currency,
+        ]
+    )
+    return output.getvalue()
+
+
+def _self_employed_invoice_csv_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
+    filename = f"{invoice.invoice_number}.csv"
+    return Response(
+        content=_build_self_employed_invoice_csv(invoice),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_self_employed_invoice_pdf(invoice: schemas.SelfEmployedInvoiceDetail) -> bytes:
+    lines = [
+        "Self-Employed Client Invoice",
+        f"Invoice number: {invoice.invoice_number}",
+        f"Issue date: {invoice.issue_date.isoformat()}",
+        f"Due date: {invoice.due_date.isoformat()}",
+        f"Status: {invoice.status.value}",
+        f"Customer: {invoice.customer_name}",
+        f"Customer email: {invoice.customer_email or 'N/A'}",
+        f"Currency: {invoice.currency}",
+        "",
+        "Line items",
+    ]
+    for item in invoice.lines:
+        lines.append(
+            (
+                f"- {item.description}: {item.quantity:.2f} x "
+                f"{item.unit_price_gbp:.2f} = {item.line_total_gbp:.2f} {invoice.currency}"
+            )
+        )
+    lines.extend(
+        [
+            "",
+            f"Subtotal: {invoice.subtotal_gbp:.2f} {invoice.currency}",
+            f"Tax ({invoice.tax_rate_percent:.2f}%): {invoice.tax_amount_gbp:.2f} {invoice.currency}",
+            f"Total: {invoice.total_amount_gbp:.2f} {invoice.currency}",
+        ]
+    )
+    if invoice.notes:
+        lines.extend(["", f"Notes: {invoice.notes}"])
+    return _render_simple_pdf(lines)
+
+
+def _self_employed_invoice_pdf_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
+    filename = f"{invoice.invoice_number}.pdf"
+    return Response(
+        content=_build_self_employed_invoice_pdf(invoice),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(
+        [
+            "invoice_number",
+            "issue_date",
+            "due_date",
+            "status",
+            "customer_name",
+            "description",
+            "quantity",
+            "unit_price_gbp",
+            "line_total_gbp",
+            "currency",
+        ]
+    )
+    for item in invoice.lines:
+        writer.writerow(
+            [
+                invoice.invoice_number,
+                invoice.issue_date.isoformat(),
+                invoice.due_date.isoformat(),
+                invoice.status.value,
+                invoice.customer_name,
+                item.description,
+                f"{item.quantity:.2f}",
+                f"{item.unit_price_gbp:.2f}",
+                f"{item.line_total_gbp:.2f}",
+                invoice.currency,
+            ]
+        )
+    writer.writerow(
+        [
+            invoice.invoice_number,
+            invoice.issue_date.isoformat(),
+            invoice.due_date.isoformat(),
+            invoice.status.value,
+            invoice.customer_name,
+            "TOTAL",
+            "",
+            "",
+            f"{invoice.total_amount_gbp:.2f}",
+            invoice.currency,
+        ]
+    )
+    return output.getvalue()
+
+
+def _self_employed_invoice_csv_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
+    filename = f"{invoice.invoice_number}.csv"
+    return Response(
+        content=_build_self_employed_invoice_csv(invoice),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.get("/partners", response_model=List[schemas.Partner])
 async def list_partners(
     service_type: Optional[str] = Query(None),
@@ -1868,6 +2162,180 @@ async def list_leads(
             ) in rows
         ],
     )
+
+
+@app.post(
+    "/self-employed/invoices",
+    response_model=schemas.SelfEmployedInvoiceDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_self_employed_invoice(
+    payload: schemas.SelfEmployedInvoiceCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    issue_date = payload.issue_date or datetime.datetime.now(datetime.UTC).date()
+    due_date = payload.due_date or (issue_date + datetime.timedelta(days=max(SELF_EMPLOYED_INVOICE_DUE_DAYS, 1)))
+    if due_date < issue_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="due_date cannot be earlier than issue_date")
+
+    customer_name = payload.customer_name.strip()
+    if not customer_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="customer_name cannot be empty")
+
+    line_items: list[dict[str, object]] = []
+    for line in payload.lines:
+        description = line.description.strip()
+        if not description:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="line item description cannot be empty")
+        line_items.append(
+            {
+                "description": description,
+                "quantity": line.quantity,
+                "unit_price_gbp": line.unit_price_gbp,
+            }
+        )
+
+    invoice = await crud.create_self_employed_invoice(
+        db,
+        user_id=user_id,
+        customer_name=customer_name,
+        customer_email=payload.customer_email.strip() if payload.customer_email else None,
+        customer_address=payload.customer_address.strip() if payload.customer_address else None,
+        issue_date=issue_date,
+        due_date=due_date,
+        currency=payload.currency.strip().upper(),
+        tax_rate_percent=payload.tax_rate_percent,
+        notes=payload.notes.strip() if payload.notes else None,
+        lines=line_items,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.created",
+        details={
+            "invoice_id": str(invoice.id),
+            "invoice_number": invoice.invoice_number,
+            "total_amount_gbp": invoice.total_amount_gbp,
+            "status": invoice.status,
+        },
+    )
+    return await _load_self_employed_invoice_detail(
+        db,
+        invoice_id=uuid.UUID(str(invoice.id)),
+        user_id=user_id,
+    )
+
+
+@app.get("/self-employed/invoices", response_model=schemas.SelfEmployedInvoiceListResponse)
+async def list_self_employed_invoices(
+    status_filter: Optional[schemas.SelfEmployedInvoiceStatus] = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, rows = await crud.list_self_employed_invoices_for_user(
+        db,
+        user_id=user_id,
+        status=status_filter.value if status_filter else None,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.SelfEmployedInvoiceListResponse(
+        total=total,
+        items=[_to_self_employed_invoice_summary(item) for item in rows],
+    )
+
+
+@app.get("/self-employed/invoices/{invoice_id}", response_model=schemas.SelfEmployedInvoiceDetail)
+async def get_self_employed_invoice(
+    invoice_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _load_self_employed_invoice_detail(
+        db,
+        invoice_id=invoice_id,
+        user_id=user_id,
+    )
+
+
+@app.patch("/self-employed/invoices/{invoice_id}/status", response_model=schemas.SelfEmployedInvoiceDetail)
+async def update_self_employed_invoice_status(
+    invoice_id: uuid.UUID,
+    payload: schemas.SelfEmployedInvoiceStatusUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice = await crud.get_self_employed_invoice_by_id_for_user(
+        db,
+        invoice_id=str(invoice_id),
+        user_id=user_id,
+    )
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Self-employed invoice not found")
+
+    _validate_self_employed_invoice_status_transition(invoice.status, payload.status)
+    previous_status = invoice.status
+    if payload.status.value != invoice.status:
+        invoice = await crud.update_self_employed_invoice_status(
+            db,
+            invoice,
+            status=payload.status.value,
+        )
+        await log_audit_event(
+            user_id=user_id,
+            action="self_employed.invoice.status.updated",
+            details={
+                "invoice_id": str(invoice.id),
+                "invoice_number": invoice.invoice_number,
+                "from_status": previous_status,
+                "to_status": payload.status.value,
+            },
+        )
+    return await _load_self_employed_invoice_detail(
+        db,
+        invoice_id=invoice_id,
+        user_id=user_id,
+    )
+
+
+@app.get("/self-employed/invoices/{invoice_id}/pdf")
+async def download_self_employed_invoice_pdf(
+    invoice_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice = await _load_self_employed_invoice_detail(
+        db,
+        invoice_id=invoice_id,
+        user_id=user_id,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.pdf_downloaded",
+        details={"invoice_id": str(invoice_id), "invoice_number": invoice.invoice_number},
+    )
+    return _self_employed_invoice_pdf_response(invoice)
+
+
+@app.get("/self-employed/invoices/{invoice_id}/csv")
+async def download_self_employed_invoice_csv(
+    invoice_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice = await _load_self_employed_invoice_detail(
+        db,
+        invoice_id=invoice_id,
+        user_id=user_id,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.csv_downloaded",
+        details={"invoice_id": str(invoice_id), "invoice_number": invoice.invoice_number},
+    )
+    return _self_employed_invoice_csv_response(invoice)
 
 
 @app.post(

@@ -104,6 +104,68 @@ class BillingInvoiceLine(Base):
     amount_gbp = Column(Float, nullable=False, default=0.0)
 
 
+class SelfEmployedInvoice(Base):
+    __tablename__ = "self_employed_invoices"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft', 'issued', 'paid', 'overdue', 'void')",
+            name="ck_self_employed_invoices_status_allowed",
+        ),
+        CheckConstraint("tax_rate_percent >= 0 AND tax_rate_percent <= 100", name="ck_self_employed_invoices_tax_rate"),
+        CheckConstraint("subtotal_gbp >= 0", name="ck_self_employed_invoices_subtotal_non_negative"),
+        CheckConstraint("tax_amount_gbp >= 0", name="ck_self_employed_invoices_tax_amount_non_negative"),
+        CheckConstraint("total_amount_gbp >= 0", name="ck_self_employed_invoices_total_non_negative"),
+        Index("ix_self_employed_invoices_user_id_created_at", "user_id", "created_at"),
+        Index("ix_self_employed_invoices_status", "status"),
+        Index("ix_self_employed_invoices_due_date", "due_date"),
+        Index("ix_self_employed_invoices_invoice_number", "invoice_number", unique=True),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    invoice_number = Column(String(length=32), nullable=False)
+    customer_name = Column(String(length=180), nullable=False)
+    customer_email = Column(String(length=255), nullable=True)
+    customer_address = Column(String(length=500), nullable=True)
+    issue_date = Column(Date, nullable=False)
+    due_date = Column(Date, nullable=False)
+    currency = Column(String(length=3), nullable=False, default="GBP")
+    subtotal_gbp = Column(Float, nullable=False, default=0.0)
+    tax_rate_percent = Column(Float, nullable=False, default=0.0)
+    tax_amount_gbp = Column(Float, nullable=False, default=0.0)
+    total_amount_gbp = Column(Float, nullable=False, default=0.0)
+    status = Column(String(length=16), nullable=False, default="draft")
+    notes = Column(String(length=1000), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+
+
+class SelfEmployedInvoiceLine(Base):
+    __tablename__ = "self_employed_invoice_lines"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_self_employed_invoice_lines_quantity_positive"),
+        CheckConstraint("unit_price_gbp >= 0", name="ck_self_employed_invoice_lines_unit_price_non_negative"),
+        CheckConstraint("line_total_gbp >= 0", name="ck_self_employed_invoice_lines_line_total_non_negative"),
+        Index("ix_self_employed_invoice_lines_invoice_id", "invoice_id"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    invoice_id = Column(String, ForeignKey("self_employed_invoices.id", ondelete="CASCADE"), nullable=False)
+    description = Column(String(length=500), nullable=False)
+    quantity = Column(Float, nullable=False, default=1.0)
+    unit_price_gbp = Column(Float, nullable=False, default=0.0)
+    line_total_gbp = Column(Float, nullable=False, default=0.0)
+
+
 class NPSResponse(Base):
     __tablename__ = "nps_responses"
     __table_args__ = (

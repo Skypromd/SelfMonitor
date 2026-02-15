@@ -205,6 +205,229 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /self-employed/invoices:
+    post:
+      summary: Create client invoice for self-employed user
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelfEmployedInvoiceCreateRequest"
+      responses:
+        "201":
+          description: Self-employed invoice created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfEmployedInvoiceDetail"
+        "400":
+          description: Invalid payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      summary: List self-employed invoices for current user
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SelfEmployedInvoiceStatus"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated self-employed invoice list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfEmployedInvoiceListResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /self-employed/invoices/{invoice_id}:
+    get:
+      summary: Get self-employed invoice details
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Full self-employed invoice details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfEmployedInvoiceDetail"
+        "404":
+          description: Self-employed invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /self-employed/invoices/{invoice_id}/status:
+    patch:
+      summary: Update self-employed invoice status
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelfEmployedInvoiceStatusUpdateRequest"
+      responses:
+        "200":
+          description: Updated invoice details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SelfEmployedInvoiceDetail"
+        "404":
+          description: Self-employed invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invalid status transition.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /self-employed/invoices/{invoice_id}/pdf:
+    get:
+      summary: Download self-employed invoice as PDF
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Invoice PDF.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Self-employed invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /self-employed/invoices/{invoice_id}/csv:
+    get:
+      summary: Download self-employed invoice as CSV
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoice_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Invoice CSV.
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Self-employed invoice not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /billing/invoices/generate:
     post:
       summary: Generate immutable billing invoice snapshot
@@ -2091,11 +2314,206 @@ components:
         - paid
         - void
 
+    SelfEmployedInvoiceStatus:
+      type: string
+      enum:
+        - draft
+        - issued
+        - paid
+        - overdue
+        - void
+
     AccountingExportTarget:
       type: string
       enum:
         - xero
         - quickbooks
+
+    SelfEmployedInvoiceLineInput:
+      type: object
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        quantity:
+          type: number
+          format: float
+          exclusiveMinimum: 0
+        unit_price_gbp:
+          type: number
+          format: float
+          minimum: 0
+      required:
+        - description
+        - quantity
+        - unit_price_gbp
+
+    SelfEmployedInvoiceCreateRequest:
+      type: object
+      properties:
+        customer_name:
+          type: string
+          minLength: 2
+          maxLength: 180
+        customer_email:
+          type: string
+          maxLength: 255
+          nullable: true
+        customer_address:
+          type: string
+          maxLength: 500
+          nullable: true
+        issue_date:
+          type: string
+          format: date
+          nullable: true
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+          default: GBP
+        tax_rate_percent:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          default: 0
+        notes:
+          type: string
+          maxLength: 1000
+          nullable: true
+        lines:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/SelfEmployedInvoiceLineInput"
+      required:
+        - customer_name
+        - lines
+
+    SelfEmployedInvoiceLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        quantity:
+          type: number
+          format: float
+        unit_price_gbp:
+          type: number
+          format: float
+        line_total_gbp:
+          type: number
+          format: float
+      required:
+        - id
+        - description
+        - quantity
+        - unit_price_gbp
+        - line_total_gbp
+
+    SelfEmployedInvoiceSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_number:
+          type: string
+        customer_name:
+          type: string
+        issue_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        currency:
+          type: string
+        status:
+          $ref: "#/components/schemas/SelfEmployedInvoiceStatus"
+        total_amount_gbp:
+          type: number
+          format: float
+        created_at:
+          type: string
+          format: date-time
+      required:
+        - id
+        - invoice_number
+        - customer_name
+        - issue_date
+        - due_date
+        - currency
+        - status
+        - total_amount_gbp
+        - created_at
+
+    SelfEmployedInvoiceDetail:
+      allOf:
+        - $ref: "#/components/schemas/SelfEmployedInvoiceSummary"
+        - type: object
+          properties:
+            customer_email:
+              type: string
+              nullable: true
+            customer_address:
+              type: string
+              nullable: true
+            subtotal_gbp:
+              type: number
+              format: float
+            tax_rate_percent:
+              type: number
+              format: float
+            tax_amount_gbp:
+              type: number
+              format: float
+            notes:
+              type: string
+              nullable: true
+            updated_at:
+              type: string
+              format: date-time
+            lines:
+              type: array
+              items:
+                $ref: "#/components/schemas/SelfEmployedInvoiceLine"
+          required:
+            - subtotal_gbp
+            - tax_rate_percent
+            - tax_amount_gbp
+            - updated_at
+            - lines
+
+    SelfEmployedInvoiceListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/SelfEmployedInvoiceSummary"
+      required:
+        - total
+        - items
+
+    SelfEmployedInvoiceStatusUpdateRequest:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/SelfEmployedInvoiceStatus"
+      required:
+        - status
 
     BillingInvoiceGenerateRequest:
       type: object

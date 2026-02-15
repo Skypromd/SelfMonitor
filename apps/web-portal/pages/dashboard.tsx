@@ -147,6 +147,33 @@ type UnitEconomicsResponse = {
   seed_gate_passed: boolean;
 };
 
+type SelfEmployedInvoiceStatus = 'draft' | 'issued' | 'paid' | 'overdue' | 'void';
+
+type SelfEmployedInvoiceLine = {
+  description: string;
+  id: string;
+  line_total_gbp: number;
+  quantity: number;
+  unit_price_gbp: number;
+};
+
+type SelfEmployedInvoiceSummary = {
+  created_at: string;
+  currency: string;
+  customer_name: string;
+  due_date: string;
+  id: string;
+  invoice_number: string;
+  issue_date: string;
+  status: SelfEmployedInvoiceStatus;
+  total_amount_gbp: number;
+};
+
+type SelfEmployedInvoiceListResponse = {
+  items: SelfEmployedInvoiceSummary[];
+  total: number;
+};
+
 type NPSMonthlyTrendPoint = {
   detractors_count: number;
   month: string;
@@ -450,6 +477,259 @@ function ActionCenter({ token }: { token: string }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function SelfEmployedInvoicingPanel({ token }: { token: string }) {
+  const [invoices, setInvoices] = useState<SelfEmployedInvoiceSummary[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [customerName, setCustomerName] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [lineDescription, setLineDescription] = useState('Professional services');
+  const [quantity, setQuantity] = useState(1);
+  const [unitPrice, setUnitPrice] = useState(100);
+  const [taxRate, setTaxRate] = useState(0);
+  const [createState, setCreateState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
+    isLoading: false,
+  });
+  const [updatingInvoiceId, setUpdatingInvoiceId] = useState<string | null>(null);
+
+  const loadInvoices = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices?limit=20&offset=0`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json()) as SelfEmployedInvoiceListResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to load invoices');
+      }
+      setInvoices((payload as SelfEmployedInvoiceListResponse).items || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load invoices');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void loadInvoices();
+  }, [loadInvoices]);
+
+  const createInvoice = async (event: FormEvent) => {
+    event.preventDefault();
+    setCreateState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          customer_name: customerName.trim(),
+          customer_email: customerEmail.trim() || undefined,
+          tax_rate_percent: taxRate,
+          lines: [
+            {
+              description: lineDescription.trim(),
+              quantity,
+              unit_price_gbp: unitPrice,
+            },
+          ],
+        }),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to create invoice');
+      }
+      setCreateState({ isLoading: false, message: 'Invoice created successfully.' });
+      setCustomerName('');
+      setCustomerEmail('');
+      setLineDescription('Professional services');
+      setQuantity(1);
+      setUnitPrice(100);
+      setTaxRate(0);
+      void loadInvoices();
+    } catch (err) {
+      setCreateState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Invoice creation failed',
+      });
+    }
+  };
+
+  const updateStatus = async (invoiceId: string, status: SelfEmployedInvoiceStatus) => {
+    setUpdatingInvoiceId(invoiceId);
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/${invoiceId}/status`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to update invoice status');
+      }
+      void loadInvoices();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Status update failed');
+    } finally {
+      setUpdatingInvoiceId(null);
+    }
+  };
+
+  const downloadInvoice = async (invoiceId: string, format: 'pdf' | 'csv') => {
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/${invoiceId}/${format}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to download invoice');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `self_employed_invoice.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Download failed');
+    }
+  };
+
+  return (
+    <section className={styles.subContainer}>
+      <h2>Client Invoicing (Self-Employed)</h2>
+      <p>Create invoices for your clients, track status, and export PDF/CSV.</p>
+      <form onSubmit={createInvoice}>
+        <div className={styles.dateInputs}>
+          <input
+            className={styles.input}
+            onChange={(event) => setCustomerName(event.target.value)}
+            placeholder="Customer name"
+            required
+            type="text"
+            value={customerName}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setCustomerEmail(event.target.value)}
+            placeholder="Customer email (optional)"
+            type="email"
+            value={customerEmail}
+          />
+        </div>
+        <div className={styles.dateInputs}>
+          <input
+            className={styles.input}
+            onChange={(event) => setLineDescription(event.target.value)}
+            placeholder="Line description"
+            required
+            type="text"
+            value={lineDescription}
+          />
+          <input
+            className={styles.input}
+            min={0.01}
+            onChange={(event) => setQuantity(Number(event.target.value))}
+            step={0.01}
+            type="number"
+            value={quantity}
+          />
+          <input
+            className={styles.input}
+            min={0}
+            onChange={(event) => setUnitPrice(Number(event.target.value))}
+            step={0.01}
+            type="number"
+            value={unitPrice}
+          />
+          <input
+            className={styles.input}
+            max={100}
+            min={0}
+            onChange={(event) => setTaxRate(Number(event.target.value))}
+            step={0.1}
+            type="number"
+            value={taxRate}
+          />
+        </div>
+        <button className={styles.button} disabled={createState.isLoading} type="submit">
+          {createState.isLoading ? 'Creating invoice...' : 'Create client invoice'}
+        </button>
+      </form>
+      {createState.message && <p className={styles.message}>{createState.message}</p>}
+      {createState.error && <p className={styles.error}>{createState.error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
+      {isLoading ? (
+        <p>Loading invoices...</p>
+      ) : invoices.length === 0 ? (
+        <p className={styles.emptyState}>No client invoices yet.</p>
+      ) : (
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Total</th>
+              <th>Due date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoices.map((invoice) => (
+              <tr key={invoice.id}>
+                <td>{invoice.invoice_number}</td>
+                <td>{invoice.customer_name}</td>
+                <td>{invoice.status}</td>
+                <td>£{invoice.total_amount_gbp.toFixed(2)}</td>
+                <td>{invoice.due_date}</td>
+                <td>
+                  <div className={styles.npsScoreRow}>
+                    {invoice.status === 'draft' && (
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={updatingInvoiceId === invoice.id}
+                        onClick={() => updateStatus(invoice.id, 'issued')}
+                        type="button"
+                      >
+                        Issue
+                      </button>
+                    )}
+                    {(invoice.status === 'issued' || invoice.status === 'overdue') && (
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={updatingInvoiceId === invoice.id}
+                        onClick={() => updateStatus(invoice.id, 'paid')}
+                        type="button"
+                      >
+                        Mark paid
+                      </button>
+                    )}
+                    <button className={styles.tableActionButton} onClick={() => downloadInvoice(invoice.id, 'pdf')} type="button">
+                      PDF
+                    </button>
+                    <button className={styles.tableActionButton} onClick={() => downloadInvoice(invoice.id, 'csv')} type="button">
+                      CSV
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 
@@ -1189,6 +1469,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <p>{t('dashboard.description')}</p>
       <AICopilotPanel token={token} />
       <PMFSignalsPanel token={token} />
+      <SelfEmployedInvoicingPanel token={token} />
       <ActionCenter token={token} />
       <CashFlowPreview token={token} />
       <TaxCalculator token={token} />

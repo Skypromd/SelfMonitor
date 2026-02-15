@@ -988,3 +988,97 @@ def test_invoice_pdf_and_accounting_exports(mocker):
     assert "Customer,InvoiceNo,InvoiceDate,DueDate" in qb_response.text
     assert invoice_payload["invoice_number"] in qb_response.text
 
+
+def test_self_employed_invoice_lifecycle_and_exports(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    owner_headers = get_auth_headers("freelancer-owner@example.com")
+    other_headers = get_auth_headers("other-user@example.com")
+
+    create_response = client.post(
+        "/self-employed/invoices",
+        headers=owner_headers,
+        json={
+            "customer_name": "Acme Client Ltd",
+            "customer_email": "accounts@acme-client.example",
+            "customer_address": "10 High Street, London",
+            "tax_rate_percent": 20,
+            "notes": "Thank you for your business.",
+            "lines": [
+                {"description": "Consulting services", "quantity": 2, "unit_price_gbp": 150},
+                {"description": "Report package", "quantity": 1, "unit_price_gbp": 50},
+            ],
+        },
+    )
+    assert create_response.status_code == 201
+    invoice_payload = create_response.json()
+    invoice_id = invoice_payload["id"]
+    assert invoice_payload["invoice_number"].startswith("SEI-")
+    assert invoice_payload["status"] == "draft"
+    assert invoice_payload["subtotal_gbp"] == 350.0
+    assert invoice_payload["tax_amount_gbp"] == 70.0
+    assert invoice_payload["total_amount_gbp"] == 420.0
+    assert len(invoice_payload["lines"]) == 2
+
+    list_response = client.get("/self-employed/invoices", headers=owner_headers)
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert listed["total"] == 1
+    assert listed["items"][0]["id"] == invoice_id
+
+    get_response = client.get(f"/self-employed/invoices/{invoice_id}", headers=owner_headers)
+    assert get_response.status_code == 200
+    assert get_response.json()["invoice_number"] == invoice_payload["invoice_number"]
+
+    hidden_response = client.get(f"/self-employed/invoices/{invoice_id}", headers=other_headers)
+    assert hidden_response.status_code == 404
+
+    issued_response = client.patch(
+        f"/self-employed/invoices/{invoice_id}/status",
+        headers=owner_headers,
+        json={"status": "issued"},
+    )
+    assert issued_response.status_code == 200
+    assert issued_response.json()["status"] == "issued"
+
+    paid_response = client.patch(
+        f"/self-employed/invoices/{invoice_id}/status",
+        headers=owner_headers,
+        json={"status": "paid"},
+    )
+    assert paid_response.status_code == 200
+    assert paid_response.json()["status"] == "paid"
+
+    invalid_transition = client.patch(
+        f"/self-employed/invoices/{invoice_id}/status",
+        headers=owner_headers,
+        json={"status": "issued"},
+    )
+    assert invalid_transition.status_code == 409
+    assert "Cannot transition self-employed invoice status" in invalid_transition.json()["detail"]
+
+    pdf_response = client.get(f"/self-employed/invoices/{invoice_id}/pdf", headers=owner_headers)
+    assert pdf_response.status_code == 200
+    assert pdf_response.headers["content-type"].startswith("application/pdf")
+    assert pdf_response.content.startswith(b"%PDF-")
+
+    csv_response = client.get(f"/self-employed/invoices/{invoice_id}/csv", headers=owner_headers)
+    assert csv_response.status_code == 200
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert invoice_payload["invoice_number"] in csv_response.text
+
+
+def test_self_employed_invoice_rejects_invalid_due_date(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    response = client.post(
+        "/self-employed/invoices",
+        headers=get_auth_headers("freelancer-invalid@example.com"),
+        json={
+            "customer_name": "Invalid Due Date Client",
+            "issue_date": "2026-02-20",
+            "due_date": "2026-02-19",
+            "lines": [{"description": "Service", "quantity": 1, "unit_price_gbp": 100}],
+        },
+    )
+    assert response.status_code == 400
+    assert "due_date cannot be earlier than issue_date" in response.json()["detail"]
+

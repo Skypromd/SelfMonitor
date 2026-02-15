@@ -9,6 +9,7 @@ from sqlalchemy.future import select
 from . import models
 
 INVOICE_SEQUENCE_LOCK_KEY = 6_217_650_042_184_901_117
+SELF_EMPLOYED_INVOICE_SEQUENCE_LOCK_KEY = 2_961_144_028_593_640_553
 
 SEED_PARTNERS = [
     {
@@ -132,8 +133,23 @@ async def _acquire_invoice_sequence_lock_if_postgres(db: AsyncSession) -> None:
     )
 
 
+async def _acquire_self_employed_invoice_sequence_lock_if_postgres(db: AsyncSession) -> None:
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": SELF_EMPLOYED_INVOICE_SEQUENCE_LOCK_KEY},
+    )
+
+
 def _invoice_prefix_for_date(invoice_date: datetime.date) -> str:
     return f"INV-{invoice_date.strftime('%Y%m')}"
+
+
+def _self_employed_invoice_prefix_for_date(invoice_date: datetime.date) -> str:
+    return f"SEI-{invoice_date.strftime('%Y%m')}"
 
 
 async def _next_invoice_number(db: AsyncSession, *, invoice_date: datetime.date) -> str:
@@ -141,6 +157,23 @@ async def _next_invoice_number(db: AsyncSession, *, invoice_date: datetime.date)
     like_prefix = f"{prefix}-%"
     result = await db.execute(
         select(models.BillingInvoice.invoice_number).filter(models.BillingInvoice.invoice_number.like(like_prefix))
+    )
+    existing_numbers = [str(item) for item in result.scalars().all() if item]
+
+    max_sequence = 0
+    for invoice_number in existing_numbers:
+        suffix = invoice_number.removeprefix(f"{prefix}-")
+        if suffix.isdigit():
+            max_sequence = max(max_sequence, int(suffix))
+
+    return f"{prefix}-{max_sequence + 1:06d}"
+
+
+async def _next_self_employed_invoice_number(db: AsyncSession, *, invoice_date: datetime.date) -> str:
+    prefix = _self_employed_invoice_prefix_for_date(invoice_date)
+    like_prefix = f"{prefix}-%"
+    result = await db.execute(
+        select(models.SelfEmployedInvoice.invoice_number).filter(models.SelfEmployedInvoice.invoice_number.like(like_prefix))
     )
     existing_numbers = [str(item) for item in result.scalars().all() if item]
 
@@ -513,6 +546,135 @@ async def update_billing_invoice_status(
     *,
     status: str,
 ) -> models.BillingInvoice:
+    invoice.status = status
+    invoice.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def create_self_employed_invoice(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    customer_name: str,
+    customer_email: str | None,
+    customer_address: str | None,
+    issue_date: datetime.date,
+    due_date: datetime.date,
+    currency: str,
+    tax_rate_percent: float,
+    notes: str | None,
+    lines: list[dict[str, object]],
+) -> models.SelfEmployedInvoice:
+    subtotal_gbp = round(
+        sum(float(item["quantity"]) * float(item["unit_price_gbp"]) for item in lines),
+        2,
+    )
+    tax_amount_gbp = round(subtotal_gbp * (max(tax_rate_percent, 0.0) / 100.0), 2)
+    total_amount_gbp = round(subtotal_gbp + tax_amount_gbp, 2)
+
+    await _acquire_self_employed_invoice_sequence_lock_if_postgres(db)
+    invoice_number = await _next_self_employed_invoice_number(db, invoice_date=issue_date)
+
+    invoice = models.SelfEmployedInvoice(
+        user_id=user_id,
+        invoice_number=invoice_number,
+        customer_name=customer_name,
+        customer_email=customer_email,
+        customer_address=customer_address,
+        issue_date=issue_date,
+        due_date=due_date,
+        currency=currency,
+        subtotal_gbp=subtotal_gbp,
+        tax_rate_percent=tax_rate_percent,
+        tax_amount_gbp=tax_amount_gbp,
+        total_amount_gbp=total_amount_gbp,
+        status="draft",
+        notes=notes,
+    )
+    db.add(invoice)
+    await db.flush()
+
+    for item in lines:
+        quantity = float(item["quantity"])
+        unit_price_gbp = float(item["unit_price_gbp"])
+        line_total_gbp = round(quantity * unit_price_gbp, 2)
+        db.add(
+            models.SelfEmployedInvoiceLine(
+                invoice_id=str(invoice.id),
+                description=str(item["description"]),
+                quantity=quantity,
+                unit_price_gbp=unit_price_gbp,
+                line_total_gbp=line_total_gbp,
+            )
+        )
+
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def list_self_employed_invoices_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedInvoice]]:
+    count_query = select(func.count(models.SelfEmployedInvoice.id)).filter(models.SelfEmployedInvoice.user_id == user_id)
+    if status:
+        count_query = count_query.filter(models.SelfEmployedInvoice.status == status)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+
+    query = (
+        select(models.SelfEmployedInvoice)
+        .filter(models.SelfEmployedInvoice.user_id == user_id)
+        .order_by(models.SelfEmployedInvoice.created_at.desc(), models.SelfEmployedInvoice.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if status:
+        query = query.filter(models.SelfEmployedInvoice.status == status)
+    rows = (await db.execute(query)).scalars().all()
+    return total, list(rows)
+
+
+async def get_self_employed_invoice_by_id_for_user(
+    db: AsyncSession,
+    *,
+    invoice_id: str,
+    user_id: str,
+) -> models.SelfEmployedInvoice | None:
+    result = await db.execute(
+        select(models.SelfEmployedInvoice).filter(
+            models.SelfEmployedInvoice.id == invoice_id,
+            models.SelfEmployedInvoice.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def get_self_employed_invoice_lines(
+    db: AsyncSession,
+    *,
+    invoice_id: str,
+) -> list[models.SelfEmployedInvoiceLine]:
+    result = await db.execute(
+        select(models.SelfEmployedInvoiceLine)
+        .filter(models.SelfEmployedInvoiceLine.invoice_id == invoice_id)
+        .order_by(models.SelfEmployedInvoiceLine.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def update_self_employed_invoice_status(
+    db: AsyncSession,
+    invoice: models.SelfEmployedInvoice,
+    *,
+    status: str,
+) -> models.SelfEmployedInvoice:
     invoice.status = status
     invoice.updated_at = datetime.datetime.now(datetime.UTC)
     await db.commit()

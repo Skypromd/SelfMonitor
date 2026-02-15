@@ -20,6 +20,14 @@ class BillingInvoiceStatus(str, Enum):
     void = "void"
 
 
+class SelfEmployedInvoiceStatus(str, Enum):
+    draft = "draft"
+    issued = "issued"
+    paid = "paid"
+    overdue = "overdue"
+    void = "void"
+
+
 class Partner(BaseModel):
     id: uuid.UUID
     name: str
@@ -350,4 +358,66 @@ class BillingInvoiceListResponse(BaseModel):
 
 class BillingInvoiceStatusUpdateRequest(BaseModel):
     status: BillingInvoiceStatus
+
+
+class SelfEmployedInvoiceLineInput(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    quantity: float = Field(gt=0)
+    unit_price_gbp: float = Field(ge=0)
+
+
+class SelfEmployedInvoiceCreateRequest(BaseModel):
+    customer_name: str = Field(min_length=2, max_length=180)
+    customer_email: Optional[str] = Field(default=None, max_length=255)
+    customer_address: Optional[str] = Field(default=None, max_length=500)
+    issue_date: Optional[datetime.date] = None
+    due_date: Optional[datetime.date] = None
+    currency: str = Field(default="GBP", min_length=3, max_length=3)
+    tax_rate_percent: float = Field(default=0, ge=0, le=100)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    lines: List[SelfEmployedInvoiceLineInput] = Field(min_length=1)
+
+
+class SelfEmployedInvoiceLine(BaseModel):
+    id: uuid.UUID
+    description: str
+    quantity: float
+    unit_price_gbp: float
+    line_total_gbp: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SelfEmployedInvoiceSummary(BaseModel):
+    id: uuid.UUID
+    invoice_number: str
+    customer_name: str
+    issue_date: datetime.date
+    due_date: datetime.date
+    currency: str
+    status: SelfEmployedInvoiceStatus
+    total_amount_gbp: float
+    created_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SelfEmployedInvoiceDetail(SelfEmployedInvoiceSummary):
+    customer_email: Optional[str] = None
+    customer_address: Optional[str] = None
+    subtotal_gbp: float
+    tax_rate_percent: float
+    tax_amount_gbp: float
+    notes: Optional[str] = None
+    updated_at: datetime.datetime
+    lines: List[SelfEmployedInvoiceLine]
+
+
+class SelfEmployedInvoiceListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedInvoiceSummary]
+
+
+class SelfEmployedInvoiceStatusUpdateRequest(BaseModel):
+    status: SelfEmployedInvoiceStatus
 
