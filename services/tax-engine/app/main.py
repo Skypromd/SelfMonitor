@@ -458,6 +458,39 @@ async def calculate_and_submit_tax(
         # This is a non-critical step, so we don't fail the whole request if it fails.
         print("Warning: Could not create calendar event.")
 
+    # 7. Create quarterly MTD reminder events when quarterly updates are required.
+    mtd_obligation = (
+        calculation_result.mtd_obligation
+        if isinstance(calculation_result.mtd_obligation, dict)
+        else {}
+    )
+    if bool(mtd_obligation.get("reporting_required")):
+        quarterly_updates = mtd_obligation.get("quarterly_updates")
+        if isinstance(quarterly_updates, list):
+            for quarter in quarterly_updates:
+                if not isinstance(quarter, dict):
+                    continue
+                quarter_label = str(quarter.get("quarter") or "").strip()
+                due_date = str(quarter.get("due_date") or "").strip()
+                if not quarter_label or not due_date:
+                    continue
+                try:
+                    await post_json_with_retry(
+                        CALENDAR_SERVICE_URL,
+                        json_body={
+                            "user_id": user_id,
+                            "event_title": f"MTD ITSA quarterly update due ({quarter_label})",
+                            "event_date": due_date,
+                            "notes": (
+                                f"Prepare and submit {quarter_label} quarterly update. "
+                                f"Policy: {mtd_obligation.get('policy_code')}"
+                            ),
+                        },
+                        expect_json=False,
+                    )
+                except httpx.HTTPError:
+                    print(f"Warning: Could not create MTD calendar event for {quarter_label}.")
+
 
     TAX_SUBMISSIONS_TOTAL.labels(result="success").inc()
     return {

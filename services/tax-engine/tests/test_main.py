@@ -152,3 +152,42 @@ async def test_calculate_tax_service_unavailable(mocker):
 
     assert response.status_code == 502 # Bad Gateway
     assert "Could not connect to transactions-service" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_calculate_and_submit_returns_mtd_obligation_and_creates_quarterly_reminders(mocker):
+    mock_transactions = [
+        {"date": "2026-05-10", "amount": 60000.0, "category": "income"},
+        {"date": "2026-06-15", "amount": -3000.0, "category": "transport"},
+    ]
+    mock_get_response = httpx.Response(
+        200,
+        json=mock_transactions,
+        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+    )
+    mocker.patch("httpx.AsyncClient.get", return_value=mock_get_response)
+
+    mock_post = mocker.patch(
+        "app.main.post_json_with_retry",
+        side_effect=[
+            {"submission_id": "mock-submission-id"},
+            None,
+            None,
+            None,
+            None,
+            None,
+        ],
+    )
+
+    response = client.post(
+        "/calculate-and-submit",
+        headers=get_auth_headers(),
+        json={"start_date": "2026-04-06", "end_date": "2027-04-05", "jurisdiction": "UK"},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["submission_id"] == "mock-submission-id"
+    assert payload["mtd_obligation"]["reporting_required"] is True
+    assert len(payload["mtd_obligation"]["quarterly_updates"]) == 4
+    assert mock_post.call_count == 6
