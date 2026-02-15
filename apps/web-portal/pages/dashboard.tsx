@@ -106,6 +106,24 @@ type PMFEvidenceResponse = {
   total_new_users: number;
 };
 
+type PMFGateStatusResponse = {
+  activation_passed: boolean;
+  activation_rate_percent: number;
+  gate_name: 'seed_pmf_gate_v1';
+  gate_passed: boolean;
+  generated_at: string;
+  nps_passed: boolean;
+  next_actions: string[];
+  overall_nps_score: number;
+  required_activation_rate_percent: number;
+  required_overall_nps_score: number;
+  required_retention_rate_90d_percent: number;
+  retention_passed: boolean;
+  retention_rate_90d_percent: number;
+  sample_size_passed: boolean;
+  summary: string;
+};
+
 type NPSMonthlyTrendPoint = {
   detractors_count: number;
   month: string;
@@ -415,6 +433,7 @@ function ActionCenter({ token }: { token: string }) {
 function PMFSignalsPanel({ token }: { token: string }) {
   const [seedSnapshot, setSeedSnapshot] = useState<SeedReadinessResponse | null>(null);
   const [pmfEvidence, setPmfEvidence] = useState<PMFEvidenceResponse | null>(null);
+  const [pmfGate, setPmfGate] = useState<PMFGateStatusResponse | null>(null);
   const [npsTrend, setNpsTrend] = useState<NPSTrendResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -430,11 +449,14 @@ function PMFSignalsPanel({ token }: { token: string }) {
     setLoadError('');
     setRestrictionMessage('');
     try {
-      const [seedResponse, pmfResponse, npsResponse] = await Promise.all([
+      const [seedResponse, pmfResponse, pmfGateResponse, npsResponse] = await Promise.all([
         fetch(`${PARTNER_REGISTRY_URL}/investor/seed-readiness?period_months=6`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${PARTNER_REGISTRY_URL}/investor/pmf-evidence?cohort_months=6&activation_window_days=30`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PARTNER_REGISTRY_URL}/investor/pmf-gate?cohort_months=6&activation_window_days=30&nps_period_months=6`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${PARTNER_REGISTRY_URL}/investor/nps/trend?period_months=6`, {
@@ -451,13 +473,14 @@ function PMFSignalsPanel({ token }: { token: string }) {
         }
       };
 
-      const [seedPayload, pmfPayload, npsPayload] = await Promise.all([
+      const [seedPayload, pmfPayload, pmfGatePayload, npsPayload] = await Promise.all([
         parseJsonSafely(seedResponse),
         parseJsonSafely(pmfResponse),
+        parseJsonSafely(pmfGateResponse),
         parseJsonSafely(npsResponse),
       ]);
 
-      const anyRestricted = [seedResponse, pmfResponse, npsResponse].some((response) => response.status === 403);
+      const anyRestricted = [seedResponse, pmfResponse, pmfGateResponse, npsResponse].some((response) => response.status === 403);
       if (anyRestricted) {
         setRestrictionMessage('Investor metrics require billing/admin permissions. NPS submission remains available.');
       }
@@ -472,13 +495,18 @@ function PMFSignalsPanel({ token }: { token: string }) {
       } else {
         setPmfEvidence(null);
       }
+      if (pmfGateResponse.ok) {
+        setPmfGate(pmfGatePayload as unknown as PMFGateStatusResponse);
+      } else {
+        setPmfGate(null);
+      }
       if (npsResponse.ok) {
         setNpsTrend(npsPayload as unknown as NPSTrendResponse);
       } else {
         setNpsTrend(null);
       }
 
-      const criticalFailures = [seedResponse, pmfResponse, npsResponse].filter(
+      const criticalFailures = [seedResponse, pmfResponse, pmfGateResponse, npsResponse].filter(
         (response) => !response.ok && response.status !== 403
       );
       if (criticalFailures.length > 0) {
@@ -537,7 +565,7 @@ function PMFSignalsPanel({ token }: { token: string }) {
       {restrictionMessage && <p className={styles.message}>{restrictionMessage}</p>}
       {isLoading && <p>Loading PMF and growth metrics...</p>}
 
-      {!isLoading && (seedSnapshot || pmfEvidence || npsTrend) && (
+      {!isLoading && (seedSnapshot || pmfEvidence || pmfGate || npsTrend) && (
         <div className={styles.metricsGrid}>
           {seedSnapshot && (
             <>
@@ -575,11 +603,40 @@ function PMFSignalsPanel({ token }: { token: string }) {
               </article>
             </>
           )}
+          {pmfGate && (
+            <article className={styles.metricCard}>
+              <h4>PMF gate</h4>
+              <p>{pmfGate.gate_passed ? 'PASSED' : 'NOT YET'}</p>
+            </article>
+          )}
           {npsTrend && (
             <article className={styles.metricCard}>
               <h4>Overall NPS</h4>
               <p>{npsTrend.overall_nps_score.toFixed(1)}</p>
             </article>
+          )}
+        </div>
+      )}
+
+      {pmfGate && (
+        <div className={styles.copilotWhyBlock} style={{ marginTop: '10px' }}>
+          <p>
+            <strong>Gate status:</strong> {pmfGate.summary}
+          </p>
+          <p>
+            <strong>Criteria:</strong> Activation {pmfGate.activation_rate_percent.toFixed(1)}% / required{' '}
+            {pmfGate.required_activation_rate_percent.toFixed(1)}%; Retention 90d{' '}
+            {pmfGate.retention_rate_90d_percent.toFixed(1)}% / required {pmfGate.required_retention_rate_90d_percent.toFixed(1)}%;
+            NPS {pmfGate.overall_nps_score.toFixed(1)} / required {pmfGate.required_overall_nps_score.toFixed(1)}.
+          </p>
+          {!pmfGate.gate_passed && pmfGate.next_actions.length > 0 && (
+            <ul className={styles.copilotEvidenceList}>
+              {pmfGate.next_actions.map((item) => (
+                <li key={item}>
+                  <p>{item}</p>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}

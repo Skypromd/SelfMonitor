@@ -163,6 +163,28 @@ class PMFEvidenceResponse(BaseModel):
     monthly_cohorts: List[PMFMonthlyCohortPoint]
 
 
+class PMFGateStatusResponse(BaseModel):
+    generated_at: datetime.datetime
+    gate_name: Literal["seed_pmf_gate_v1"]
+    activation_rate_percent: float
+    retention_rate_90d_percent: float
+    overall_nps_score: float
+    eligible_users_90d: int
+    total_nps_responses: int
+    required_activation_rate_percent: float
+    required_retention_rate_90d_percent: float
+    required_overall_nps_score: float
+    required_min_eligible_users_90d: int
+    required_min_nps_responses: int
+    activation_passed: bool
+    retention_passed: bool
+    nps_passed: bool
+    sample_size_passed: bool
+    gate_passed: bool
+    summary: str
+    next_actions: List[str]
+
+
 class NPSSubmissionRequest(BaseModel):
     score: int = Field(ge=0, le=10)
     feedback: Optional[str] = Field(default=None, max_length=1000)

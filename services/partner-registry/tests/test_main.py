@@ -568,6 +568,99 @@ def test_nps_submission_and_monthly_trend_reporting(mocker):
     assert len(payload["monthly_trend"]) == 6
 
 
+def test_pmf_gate_status_reports_failing_criteria_by_default(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+
+    lead_id = create_handoff_lead(partner_id, "gate-user@example.com")
+    set_lead_status(lead_id, "qualified")
+    patch_lead_timestamps(lead_id, created_days_ago=40, updated_days_ago=35, status_value="qualified")
+
+    nps_submit = client.post(
+        "/investor/nps/responses",
+        headers=get_auth_headers("gate-user@example.com"),
+        json={"score": 10},
+    )
+    assert nps_submit.status_code == 201
+    patch_nps_timestamp(nps_submit.json()["response_id"], created_days_ago=5)
+
+    response = client.get("/investor/pmf-gate", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["gate_name"] == "seed_pmf_gate_v1"
+    assert payload["gate_passed"] is False
+    assert payload["sample_size_passed"] is False
+    assert isinstance(payload["next_actions"], list) and len(payload["next_actions"]) >= 1
+
+
+def test_pmf_gate_status_can_pass_when_thresholds_are_met(mocker, monkeypatch):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partners = client.get("/partners").json()
+    partner_a = partners[0]["id"]
+    partner_b = partners[1]["id"]
+    partner_c = partners[2]["id"]
+
+    # Build 4-user cohort: 3 activated (75%), 3 retained at 90d (75%).
+    lead_a = create_handoff_lead(partner_a, "gate-a@example.com")
+    lead_a2 = create_handoff_lead(partner_b, "gate-a@example.com")
+    lead_a3 = create_handoff_lead(partner_c, "gate-a@example.com")
+    set_lead_status(lead_a, "qualified")
+    patch_lead_timestamps(lead_a, created_days_ago=120, updated_days_ago=110, status_value="qualified")
+    patch_lead_timestamps(lead_a2, created_days_ago=92, updated_days_ago=5, status_value="initiated")
+    patch_lead_timestamps(lead_a3, created_days_ago=35, updated_days_ago=35, status_value="initiated")
+
+    lead_b = create_handoff_lead(partner_a, "gate-b@example.com")
+    lead_b2 = create_handoff_lead(partner_b, "gate-b@example.com")
+    set_lead_status(lead_b, "qualified")
+    patch_lead_timestamps(lead_b, created_days_ago=120, updated_days_ago=110, status_value="qualified")
+    patch_lead_timestamps(lead_b2, created_days_ago=95, updated_days_ago=7, status_value="initiated")
+
+    lead_c = create_handoff_lead(partner_a, "gate-c@example.com")
+    lead_c2 = create_handoff_lead(partner_b, "gate-c@example.com")
+    set_lead_status(lead_c, "qualified")
+    patch_lead_timestamps(lead_c, created_days_ago=120, updated_days_ago=110, status_value="qualified")
+    patch_lead_timestamps(lead_c2, created_days_ago=96, updated_days_ago=8, status_value="initiated")
+
+    lead_d = create_handoff_lead(partner_a, "gate-d@example.com")
+    patch_lead_timestamps(lead_d, created_days_ago=120, updated_days_ago=120, status_value="initiated")
+
+    # NPS responses: 3 promoters, 1 detractor => overall NPS = 50.
+    scores_by_user = {
+        "gate-a@example.com": 10,
+        "gate-b@example.com": 9,
+        "gate-c@example.com": 9,
+        "gate-d@example.com": 4,
+    }
+    for user_id, score in scores_by_user.items():
+        submit = client.post(
+            "/investor/nps/responses",
+            headers=get_auth_headers(user_id),
+            json={"score": score},
+        )
+        assert submit.status_code == 201
+        patch_nps_timestamp(submit.json()["response_id"], created_days_ago=10)
+
+    monkeypatch.setattr("app.main.PMF_GATE_REQUIRED_ACTIVATION_RATE_PERCENT", 60.0)
+    monkeypatch.setattr("app.main.PMF_GATE_REQUIRED_RETENTION_90D_PERCENT", 75.0)
+    monkeypatch.setattr("app.main.PMF_GATE_REQUIRED_NPS_SCORE", 45.0)
+    monkeypatch.setattr("app.main.PMF_GATE_MIN_ELIGIBLE_USERS_90D", 4)
+    monkeypatch.setattr("app.main.PMF_GATE_MIN_NPS_RESPONSES", 4)
+
+    response = client.get("/investor/pmf-gate", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["activation_rate_percent"] == 75.0
+    assert payload["retention_rate_90d_percent"] == 75.0
+    assert payload["overall_nps_score"] == 50.0
+    assert payload["eligible_users_90d"] == 4
+    assert payload["total_nps_responses"] == 4
+    assert payload["activation_passed"] is True
+    assert payload["retention_passed"] is True
+    assert payload["nps_passed"] is True
+    assert payload["sample_size_passed"] is True
+    assert payload["gate_passed"] is True
+
+
 def test_billing_csv_export_contains_totals(mocker):
     mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
     partner_id = client.get("/partners").json()[0]["id"]

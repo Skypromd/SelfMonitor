@@ -15,7 +15,7 @@ Status legend:
 - [x] Track activation funnel: signup -> first data import -> first tax-ready period.
 - [x] Track 30/60/90-day retention cohorts for active and paying users.
 - [x] Add in-product NPS collection and monthly trend reporting.
-- [ ] Define PMF gate: activation > 60%, 90-day paying retention > 75%, NPS > 45.
+- [x] Define PMF gate: activation > 60%, 90-day paying retention > 75%, NPS > 45.
 
 ## Phase S2 — Revenue and unit economics
 - [ ] Add MRR stability dashboard (current MRR, 3-month average, MoM growth).
@@ -41,3 +41,4 @@ Status legend:
 - [x] S1.2 Add tests and OpenAPI contract for PMF evidence snapshot.
 - [x] S1.3 Implement NPS submission endpoint (`/investor/nps/responses`) and monthly trend endpoint (`/investor/nps/trend`).
 - [x] S1.4 Add dashboard PMF/NPS signals panel with in-product NPS submission form.
+- [x] S1.5 Add automated PMF gate endpoint (`/investor/pmf-gate`) with threshold checks and dashboard status indicator.

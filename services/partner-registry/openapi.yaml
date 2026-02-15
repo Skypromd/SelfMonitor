@@ -943,6 +943,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /investor/pmf-gate:
+    get:
+      summary: Evaluate PMF gate status against configured thresholds
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cohort_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+        - name: activation_window_days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 7
+            maximum: 60
+            default: 30
+        - name: nps_period_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+        - name: as_of_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: PMF gate evaluation with criterion-level pass/fail status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PMFGateStatusResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /leads/{lead_id}/status:
     patch:
       summary: Update handoff lead lifecycle status
@@ -1408,6 +1466,79 @@ components:
         - pmf_band
         - notes
         - monthly_cohorts
+
+    PMFGateStatusResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        gate_name:
+          type: string
+          enum:
+            - seed_pmf_gate_v1
+        activation_rate_percent:
+          type: number
+          format: float
+        retention_rate_90d_percent:
+          type: number
+          format: float
+        overall_nps_score:
+          type: number
+          format: float
+        eligible_users_90d:
+          type: integer
+        total_nps_responses:
+          type: integer
+        required_activation_rate_percent:
+          type: number
+          format: float
+        required_retention_rate_90d_percent:
+          type: number
+          format: float
+        required_overall_nps_score:
+          type: number
+          format: float
+        required_min_eligible_users_90d:
+          type: integer
+        required_min_nps_responses:
+          type: integer
+        activation_passed:
+          type: boolean
+        retention_passed:
+          type: boolean
+        nps_passed:
+          type: boolean
+        sample_size_passed:
+          type: boolean
+        gate_passed:
+          type: boolean
+        summary:
+          type: string
+        next_actions:
+          type: array
+          items:
+            type: string
+      required:
+        - generated_at
+        - gate_name
+        - activation_rate_percent
+        - retention_rate_90d_percent
+        - overall_nps_score
+        - eligible_users_90d
+        - total_nps_responses
+        - required_activation_rate_percent
+        - required_retention_rate_90d_percent
+        - required_overall_nps_score
+        - required_min_eligible_users_90d
+        - required_min_nps_responses
+        - activation_passed
+        - retention_passed
+        - nps_passed
+        - sample_size_passed
+        - gate_passed
+        - summary
+        - next_actions
 
     NPSSubmissionRequest:
       type: object

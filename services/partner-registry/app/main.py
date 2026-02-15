@@ -71,6 +71,17 @@ def _parse_positive_int_env(name: str, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
+def _parse_non_negative_float_env(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        parsed = float(value)
+    except ValueError:
+        return default
+    return parsed if parsed >= 0 else default
+
+
 BILLING_INVOICE_DUE_DAYS = _parse_positive_int_env("BILLING_INVOICE_DUE_DAYS", 14)
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
@@ -99,6 +110,20 @@ PMF_MIN_ACTIVATION_WINDOW_DAYS = 7
 PMF_MAX_ACTIVATION_WINDOW_DAYS = 60
 NPS_MIN_PERIOD_MONTHS = 3
 NPS_MAX_PERIOD_MONTHS = 24
+PMF_GATE_REQUIRED_ACTIVATION_RATE_PERCENT = _parse_non_negative_float_env(
+    "PMF_GATE_REQUIRED_ACTIVATION_RATE_PERCENT",
+    60.0,
+)
+PMF_GATE_REQUIRED_RETENTION_90D_PERCENT = _parse_non_negative_float_env(
+    "PMF_GATE_REQUIRED_RETENTION_90D_PERCENT",
+    75.0,
+)
+PMF_GATE_REQUIRED_NPS_SCORE = _parse_non_negative_float_env(
+    "PMF_GATE_REQUIRED_NPS_SCORE",
+    45.0,
+)
+PMF_GATE_MIN_ELIGIBLE_USERS_90D = _parse_positive_int_env("PMF_GATE_MIN_ELIGIBLE_USERS_90D", 20)
+PMF_GATE_MIN_NPS_RESPONSES = _parse_positive_int_env("PMF_GATE_MIN_NPS_RESPONSES", 20)
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -537,6 +562,138 @@ def _assess_pmf_band(
     return band, notes
 
 
+async def _build_pmf_evidence_snapshot(
+    db: AsyncSession,
+    *,
+    cohort_months: int,
+    activation_window_days: int,
+    as_of_date: datetime.date,
+) -> schemas.PMFEvidenceResponse:
+    cohort_start = _shift_month(_month_start(as_of_date), -(cohort_months - 1))
+    activity_by_user = await _load_pmf_user_activity(
+        db,
+        cohort_start=cohort_start,
+        as_of_date=as_of_date,
+    )
+    pmf_rows = _build_user_pmf_flags(
+        activity_by_user=activity_by_user,
+        as_of_date=as_of_date,
+        activation_window_days=activation_window_days,
+    )
+    overall = _aggregate_pmf_flags(pmf_rows)
+    pmf_band, notes = _assess_pmf_band(
+        total_new_users=int(overall["total_new_users"]),
+        activation_rate_percent=float(overall["activation_rate_percent"]),
+        retention_rate_30d_percent=float(overall["retention_rate_30d_percent"]),
+        retention_rate_90d_percent=float(overall["retention_rate_90d_percent"]),
+    )
+
+    cohort_bucket: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in pmf_rows:
+        first_seen = row.get("first_seen")
+        if isinstance(first_seen, datetime.date):
+            cohort_bucket[_month_key(_month_start(first_seen))].append(row)
+
+    month_starts = [_shift_month(cohort_start, offset) for offset in range(cohort_months)]
+    monthly_cohorts: list[schemas.PMFMonthlyCohortPoint] = []
+    for month_start in month_starts:
+        month_key = _month_key(month_start)
+        cohort_rows = cohort_bucket.get(month_key, [])
+        month_agg = _aggregate_pmf_flags(cohort_rows)
+        monthly_cohorts.append(
+            schemas.PMFMonthlyCohortPoint(
+                cohort_month=month_key,
+                new_users=int(month_agg["total_new_users"]),
+                activated_users=int(month_agg["activated_users"]),
+                activation_rate_percent=float(month_agg["activation_rate_percent"]),
+                eligible_users_30d=int(month_agg["eligible_users_30d"]),
+                retained_users_30d=int(month_agg["retained_users_30d"]),
+                retention_rate_30d_percent=float(month_agg["retention_rate_30d_percent"]),
+                eligible_users_60d=int(month_agg["eligible_users_60d"]),
+                retained_users_60d=int(month_agg["retained_users_60d"]),
+                retention_rate_60d_percent=float(month_agg["retention_rate_60d_percent"]),
+                eligible_users_90d=int(month_agg["eligible_users_90d"]),
+                retained_users_90d=int(month_agg["retained_users_90d"]),
+                retention_rate_90d_percent=float(month_agg["retention_rate_90d_percent"]),
+            )
+        )
+
+    return schemas.PMFEvidenceResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        as_of_date=as_of_date,
+        cohort_months=cohort_months,
+        activation_window_days=activation_window_days,
+        total_new_users=int(overall["total_new_users"]),
+        activated_users=int(overall["activated_users"]),
+        activation_rate_percent=float(overall["activation_rate_percent"]),
+        eligible_users_30d=int(overall["eligible_users_30d"]),
+        retained_users_30d=int(overall["retained_users_30d"]),
+        retention_rate_30d_percent=float(overall["retention_rate_30d_percent"]),
+        eligible_users_60d=int(overall["eligible_users_60d"]),
+        retained_users_60d=int(overall["retained_users_60d"]),
+        retention_rate_60d_percent=float(overall["retention_rate_60d_percent"]),
+        eligible_users_90d=int(overall["eligible_users_90d"]),
+        retained_users_90d=int(overall["retained_users_90d"]),
+        retention_rate_90d_percent=float(overall["retention_rate_90d_percent"]),
+        pmf_band=pmf_band,
+        notes=notes,
+        monthly_cohorts=monthly_cohorts,
+    )
+
+
+def _build_pmf_gate_status(
+    *,
+    pmf_evidence: schemas.PMFEvidenceResponse,
+    nps_trend: schemas.NPSTrendResponse,
+) -> schemas.PMFGateStatusResponse:
+    activation_passed = pmf_evidence.activation_rate_percent >= PMF_GATE_REQUIRED_ACTIVATION_RATE_PERCENT
+    retention_passed = pmf_evidence.retention_rate_90d_percent >= PMF_GATE_REQUIRED_RETENTION_90D_PERCENT
+    nps_passed = nps_trend.overall_nps_score >= PMF_GATE_REQUIRED_NPS_SCORE
+    sample_size_passed = (
+        pmf_evidence.eligible_users_90d >= PMF_GATE_MIN_ELIGIBLE_USERS_90D
+        and nps_trend.total_responses >= PMF_GATE_MIN_NPS_RESPONSES
+    )
+    gate_passed = activation_passed and retention_passed and nps_passed and sample_size_passed
+    if gate_passed:
+        summary = "PMF gate passed: activation, long-term retention, and NPS all meet target thresholds."
+    else:
+        summary = "PMF gate not yet passed: one or more threshold checks remain below target."
+
+    next_actions: list[str] = []
+    if not activation_passed:
+        next_actions.append("Increase activation quality to reach or exceed the configured threshold.")
+    if not retention_passed:
+        next_actions.append("Improve 90-day retention through recurring value loops and reminder nudges.")
+    if not nps_passed:
+        next_actions.append("Raise NPS by addressing top detractor themes and shortening support response loops.")
+    if not sample_size_passed:
+        next_actions.append("Increase cohort/NPS sample size to improve confidence in PMF decisioning.")
+    if not next_actions:
+        next_actions.append("Maintain PMF performance and keep monitoring thresholds weekly.")
+
+    return schemas.PMFGateStatusResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        gate_name="seed_pmf_gate_v1",
+        activation_rate_percent=pmf_evidence.activation_rate_percent,
+        retention_rate_90d_percent=pmf_evidence.retention_rate_90d_percent,
+        overall_nps_score=nps_trend.overall_nps_score,
+        eligible_users_90d=pmf_evidence.eligible_users_90d,
+        total_nps_responses=nps_trend.total_responses,
+        required_activation_rate_percent=PMF_GATE_REQUIRED_ACTIVATION_RATE_PERCENT,
+        required_retention_rate_90d_percent=PMF_GATE_REQUIRED_RETENTION_90D_PERCENT,
+        required_overall_nps_score=PMF_GATE_REQUIRED_NPS_SCORE,
+        required_min_eligible_users_90d=PMF_GATE_MIN_ELIGIBLE_USERS_90D,
+        required_min_nps_responses=PMF_GATE_MIN_NPS_RESPONSES,
+        activation_passed=activation_passed,
+        retention_passed=retention_passed,
+        nps_passed=nps_passed,
+        sample_size_passed=sample_size_passed,
+        gate_passed=gate_passed,
+        summary=summary,
+        next_actions=next_actions,
+    )
+
+
 def _nps_score_band(score: int) -> Literal["promoter", "passive", "detractor"]:
     if score >= 9:
         return "promoter"
@@ -650,6 +807,27 @@ async def _load_nps_trend(
         ),
         "monthly_trend": monthly_trend,
     }
+
+
+def _build_nps_trend_response(
+    *,
+    period_months: int,
+    trend: dict[str, Any],
+) -> schemas.NPSTrendResponse:
+    return schemas.NPSTrendResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        period_months=period_months,
+        total_responses=int(trend["total_responses"]),
+        promoters_count=int(trend["promoters_count"]),
+        passives_count=int(trend["passives_count"]),
+        detractors_count=int(trend["detractors_count"]),
+        overall_nps_score=float(trend["overall_nps_score"]),
+        monthly_trend=list(trend["monthly_trend"]),
+        note=(
+            "NPS score is calculated as %promoters (9-10) minus %detractors (0-6). "
+            "Passives (7-8) are included in response count but not in score numerator."
+        ),
+    )
 
 
 def _resolve_report_statuses(
@@ -1675,20 +1853,7 @@ async def get_nps_trend(
         as_of_date=effective_as_of_date,
         period_months=period_months,
     )
-    return schemas.NPSTrendResponse(
-        generated_at=datetime.datetime.now(datetime.UTC),
-        period_months=period_months,
-        total_responses=int(trend["total_responses"]),
-        promoters_count=int(trend["promoters_count"]),
-        passives_count=int(trend["passives_count"]),
-        detractors_count=int(trend["detractors_count"]),
-        overall_nps_score=float(trend["overall_nps_score"]),
-        monthly_trend=list(trend["monthly_trend"]),
-        note=(
-            "NPS score is calculated as %promoters (9-10) minus %detractors (0-6). "
-            "Passives (7-8) are included in response count but not in score numerator."
-        ),
-    )
+    return _build_nps_trend_response(period_months=period_months, trend=trend)
 
 
 @app.get("/investor/seed-readiness", response_model=schemas.SeedReadinessResponse)
@@ -1760,76 +1925,41 @@ async def get_pmf_evidence_snapshot(
     db: AsyncSession = Depends(get_db),
 ):
     effective_as_of_date = as_of_date or datetime.datetime.now(datetime.UTC).date()
-    cohort_start = _shift_month(_month_start(effective_as_of_date), -(cohort_months - 1))
-    activity_by_user = await _load_pmf_user_activity(
+    return await _build_pmf_evidence_snapshot(
         db,
-        cohort_start=cohort_start,
-        as_of_date=effective_as_of_date,
-    )
-    pmf_rows = _build_user_pmf_flags(
-        activity_by_user=activity_by_user,
-        as_of_date=effective_as_of_date,
-        activation_window_days=activation_window_days,
-    )
-    overall = _aggregate_pmf_flags(pmf_rows)
-    pmf_band, notes = _assess_pmf_band(
-        total_new_users=int(overall["total_new_users"]),
-        activation_rate_percent=float(overall["activation_rate_percent"]),
-        retention_rate_30d_percent=float(overall["retention_rate_30d_percent"]),
-        retention_rate_90d_percent=float(overall["retention_rate_90d_percent"]),
-    )
-
-    cohort_bucket: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in pmf_rows:
-        first_seen = row.get("first_seen")
-        if isinstance(first_seen, datetime.date):
-            cohort_bucket[_month_key(_month_start(first_seen))].append(row)
-
-    month_starts = [_shift_month(cohort_start, offset) for offset in range(cohort_months)]
-    monthly_cohorts: list[schemas.PMFMonthlyCohortPoint] = []
-    for month_start in month_starts:
-        month_key = _month_key(month_start)
-        cohort_rows = cohort_bucket.get(month_key, [])
-        month_agg = _aggregate_pmf_flags(cohort_rows)
-        monthly_cohorts.append(
-            schemas.PMFMonthlyCohortPoint(
-                cohort_month=month_key,
-                new_users=int(month_agg["total_new_users"]),
-                activated_users=int(month_agg["activated_users"]),
-                activation_rate_percent=float(month_agg["activation_rate_percent"]),
-                eligible_users_30d=int(month_agg["eligible_users_30d"]),
-                retained_users_30d=int(month_agg["retained_users_30d"]),
-                retention_rate_30d_percent=float(month_agg["retention_rate_30d_percent"]),
-                eligible_users_60d=int(month_agg["eligible_users_60d"]),
-                retained_users_60d=int(month_agg["retained_users_60d"]),
-                retention_rate_60d_percent=float(month_agg["retention_rate_60d_percent"]),
-                eligible_users_90d=int(month_agg["eligible_users_90d"]),
-                retained_users_90d=int(month_agg["retained_users_90d"]),
-                retention_rate_90d_percent=float(month_agg["retention_rate_90d_percent"]),
-            )
-        )
-
-    return schemas.PMFEvidenceResponse(
-        generated_at=datetime.datetime.now(datetime.UTC),
-        as_of_date=effective_as_of_date,
         cohort_months=cohort_months,
         activation_window_days=activation_window_days,
-        total_new_users=int(overall["total_new_users"]),
-        activated_users=int(overall["activated_users"]),
-        activation_rate_percent=float(overall["activation_rate_percent"]),
-        eligible_users_30d=int(overall["eligible_users_30d"]),
-        retained_users_30d=int(overall["retained_users_30d"]),
-        retention_rate_30d_percent=float(overall["retention_rate_30d_percent"]),
-        eligible_users_60d=int(overall["eligible_users_60d"]),
-        retained_users_60d=int(overall["retained_users_60d"]),
-        retention_rate_60d_percent=float(overall["retention_rate_60d_percent"]),
-        eligible_users_90d=int(overall["eligible_users_90d"]),
-        retained_users_90d=int(overall["retained_users_90d"]),
-        retention_rate_90d_percent=float(overall["retention_rate_90d_percent"]),
-        pmf_band=pmf_band,
-        notes=notes,
-        monthly_cohorts=monthly_cohorts,
+        as_of_date=effective_as_of_date,
     )
+
+
+@app.get("/investor/pmf-gate", response_model=schemas.PMFGateStatusResponse)
+async def get_pmf_gate_status(
+    cohort_months: int = Query(default=6, ge=PMF_MIN_COHORT_MONTHS, le=PMF_MAX_COHORT_MONTHS),
+    activation_window_days: int = Query(
+        default=30,
+        ge=PMF_MIN_ACTIVATION_WINDOW_DAYS,
+        le=PMF_MAX_ACTIVATION_WINDOW_DAYS,
+    ),
+    nps_period_months: int = Query(default=6, ge=NPS_MIN_PERIOD_MONTHS, le=NPS_MAX_PERIOD_MONTHS),
+    as_of_date: Optional[datetime.date] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    effective_as_of_date = as_of_date or datetime.datetime.now(datetime.UTC).date()
+    pmf_evidence = await _build_pmf_evidence_snapshot(
+        db,
+        cohort_months=cohort_months,
+        activation_window_days=activation_window_days,
+        as_of_date=effective_as_of_date,
+    )
+    nps_trend_data = await _load_nps_trend(
+        db,
+        as_of_date=effective_as_of_date,
+        period_months=nps_period_months,
+    )
+    nps_trend = _build_nps_trend_response(period_months=nps_period_months, trend=nps_trend_data)
+    return _build_pmf_gate_status(pmf_evidence=pmf_evidence, nps_trend=nps_trend)
 
 
 @app.get("/leads/billing.csv")
