@@ -3,7 +3,7 @@ import datetime
 import json
 import os
 from pathlib import Path as FsPath
-from typing import Dict, Optional
+from typing import Dict, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Path, status
 from pydantic import BaseModel
@@ -376,6 +376,24 @@ class TranslationHealthResponse(BaseModel):
     summary: TranslationHealthSummary
 
 
+class LocaleRoadmapItem(BaseModel):
+    code: str
+    native_name: str
+    status: str
+    fallback_locale: Optional[str] = None
+    translation_coverage_percent: float
+    rollout_stage: Literal["production_ready", "beta", "planning"]
+    default_currency: str
+    time_zone: str
+    recommended_next_step: str
+
+
+class LocaleRoadmapResponse(BaseModel):
+    generated_at: datetime.datetime
+    default_locale: str
+    items: list[LocaleRoadmapItem]
+
+
 def _merge_locale_data(base: Dict[str, Dict[str, str]], override: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
     merged = deepcopy(base)
     for namespace, namespace_values in override.items():
@@ -470,6 +488,45 @@ def _resolve_locale_format_standards(locale: str) -> LocaleFormatStandards | Non
         number_max_fraction_digits=int(standards.get("number_max_fraction_digits") or 2),
     )
 
+
+def _build_locale_roadmap_item(
+    *,
+    locale: str,
+    locale_health: TranslationLocaleHealth,
+) -> LocaleRoadmapItem:
+    metadata = SUPPORTED_LOCALE_METADATA.get(locale, {})
+    native_name = str(metadata.get("native_name") or locale)
+    fallback_locale = metadata.get("fallback_locale")
+    standards = _resolve_locale_format_standards(locale) or _resolve_locale_format_standards(DEFAULT_LOCALE)
+    default_currency = standards.default_currency if standards else "GBP"
+    time_zone = standards.time_zone if standards else "Europe/London"
+    coverage_percent = (
+        round((locale_health.localized_keys / locale_health.total_reference_keys) * 100, 1)
+        if locale_health.total_reference_keys
+        else 100.0
+    )
+    if locale_health.fallback_keys == 0 and str(metadata.get("status")) == "translated":
+        rollout_stage = "production_ready"
+        next_step = "Maintain translation freshness and monitor fallback hit-rate drift."
+    elif coverage_percent >= 60.0:
+        rollout_stage = "beta"
+        next_step = "Complete remaining high-traffic namespaces before production rollout."
+    else:
+        rollout_stage = "planning"
+        next_step = "Prioritize core onboarding, dashboard, and submission namespaces first."
+
+    return LocaleRoadmapItem(
+        code=locale,
+        native_name=native_name,
+        status=str(metadata.get("status") or "fallback_en_gb"),
+        fallback_locale=fallback_locale,
+        translation_coverage_percent=coverage_percent,
+        rollout_stage=rollout_stage,
+        default_currency=default_currency,
+        time_zone=time_zone,
+        recommended_next_step=next_step,
+    )
+
 # --- Endpoints ---
 
 @app.get(
@@ -536,6 +593,34 @@ async def get_translation_health():
             highest_fallback_locale=highest.code if highest else None,
             highest_fallback_hit_rate_percent=highest.estimated_fallback_hit_rate_percent if highest else 0.0,
         ),
+    )
+
+
+@app.get(
+    "/translations/locales/roadmap",
+    response_model=LocaleRoadmapResponse,
+    summary="Get locale rollout roadmap for international expansion"
+)
+async def get_locale_rollout_roadmap():
+    base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
+    base_namespace_map = _collect_namespace_key_map(base_locale_data)
+    reference_keys = _flatten_keys(base_namespace_map)
+    locale_rows = [
+        _build_locale_health(
+            locale=locale_code,
+            base_namespace_map=base_namespace_map,
+            reference_keys=reference_keys,
+        )
+        for locale_code in SUPPORTED_LOCALE_METADATA
+    ]
+    roadmap_items = [
+        _build_locale_roadmap_item(locale=row.code, locale_health=row)
+        for row in sorted(locale_rows, key=lambda item: item.code)
+    ]
+    return LocaleRoadmapResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        default_locale=DEFAULT_LOCALE,
+        items=roadmap_items,
     )
 
 

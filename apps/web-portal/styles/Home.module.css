@@ -1136,6 +1136,13 @@
   gap: 10px;
 }
 
+.copilotQuickPrompts {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .copilotTextarea {
   min-height: 92px;
   resize: vertical;
@@ -1162,6 +1169,12 @@
   color: var(--color-text-primary);
   font-weight: 600;
   margin-bottom: 12px;
+}
+
+.copilotIntentReason {
+  margin: 0 0 10px;
+  color: var(--color-text-muted);
+  font-size: 0.86rem;
 }
 
 .copilotEvidenceList {

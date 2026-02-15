@@ -330,6 +330,28 @@ def test_billing_report_aggregates_amounts(mocker):
     assert len(payload["by_partner"]) >= 1
 
 
+def test_lead_funnel_summary_rates(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead_qualified = create_handoff_lead(partner_id, "funnel-qualified@example.com")
+    lead_converted = create_handoff_lead(partner_id, "funnel-converted@example.com")
+    create_handoff_lead(partner_id, "funnel-initiated@example.com")
+
+    set_lead_status(lead_qualified, "qualified")
+    set_lead_status(lead_converted, "qualified")
+    set_lead_status(lead_converted, "converted")
+
+    response = client.get("/leads/funnel-summary", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_leads"] == 3
+    assert payload["qualified_leads"] == 1
+    assert payload["converted_leads"] == 1
+    assert payload["qualification_rate_percent"] == 33.3
+    assert payload["conversion_rate_from_qualified_percent"] == 100.0
+    assert payload["overall_conversion_rate_percent"] == 33.3
+
+
 def test_billing_csv_export_contains_totals(mocker):
     mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
     partner_id = client.get("/partners").json()[0]["id"]

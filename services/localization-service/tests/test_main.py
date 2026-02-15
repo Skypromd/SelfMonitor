@@ -91,3 +91,23 @@ def test_locale_format_standards_for_supported_locale():
 def test_locale_format_standards_unknown_locale_returns_not_found():
     response = client.get("/translations/es-ES/format-standards")
     assert response.status_code == 404
+
+
+def test_locale_rollout_roadmap_contains_required_locales():
+    response = client.get("/translations/locales/roadmap")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["default_locale"] == "en-GB"
+    rows = {item["code"]: item for item in payload["items"]}
+    assert {"ru-RU", "uk-UA", "en-GB", "pl-PL", "ro-MD", "tr-TR", "hu-HU"}.issubset(rows.keys())
+    assert rows["en-GB"]["rollout_stage"] == "production_ready"
+    assert rows["ru-RU"]["rollout_stage"] in {"beta", "planning"}
+
+
+def test_locale_rollout_roadmap_exposes_market_format_hints():
+    response = client.get("/translations/locales/roadmap")
+    assert response.status_code == 200
+    rows = {item["code"]: item for item in response.json()["items"]}
+    assert rows["en-GB"]["default_currency"] == "GBP"
+    assert rows["en-GB"]["time_zone"] == "Europe/London"
+    assert rows["de-DE"]["default_currency"] == "EUR"

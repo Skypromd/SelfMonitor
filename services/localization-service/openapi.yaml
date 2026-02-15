@@ -30,6 +30,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TranslationHealthResponse'
+  /translations/locales/roadmap:
+    get:
+      summary: Get locale rollout roadmap for international expansion
+      tags:
+        - Translations
+      responses:
+        '200':
+          description: Locale rollout stages with coverage and market formatting hints.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LocaleRoadmapResponse'
   /translations/{locale}/format-standards:
     get:
       summary: Get ICU/pluralization formatting standards for locale
@@ -220,6 +232,58 @@ components:
         - reference_total_keys
         - locales
         - summary
+    LocaleRoadmapItem:
+      type: object
+      properties:
+        code:
+          type: string
+        native_name:
+          type: string
+        status:
+          type: string
+        fallback_locale:
+          type: string
+          nullable: true
+        translation_coverage_percent:
+          type: number
+          format: float
+        rollout_stage:
+          type: string
+          enum:
+            - production_ready
+            - beta
+            - planning
+        default_currency:
+          type: string
+        time_zone:
+          type: string
+        recommended_next_step:
+          type: string
+      required:
+        - code
+        - native_name
+        - status
+        - translation_coverage_percent
+        - rollout_stage
+        - default_currency
+        - time_zone
+        - recommended_next_step
+    LocaleRoadmapResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        default_locale:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/LocaleRoadmapItem'
+      required:
+        - generated_at
+        - default_locale
+        - items
     LocaleFormatStandards:
       type: object
       properties:

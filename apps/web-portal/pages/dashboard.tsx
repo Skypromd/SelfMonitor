@@ -5,6 +5,8 @@ import styles from '../styles/Home.module.css';
 
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:8011';
 const AGENT_SERVICE_URL = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || 'http://localhost:8000/api/agent';
+const COPILOT_SESSION_STORAGE_KEY = 'copilotSessionId';
+const COPILOT_MESSAGE_STORAGE_KEY = 'copilotLastMessage';
 
 type DashboardPageProps = {
   token: string;
@@ -46,8 +48,10 @@ type CopilotSuggestedAction = {
 type CopilotChatResponse = {
   answer: string;
   confidence: number;
+  confidence_band: 'low' | 'medium' | 'high';
   evidence: CopilotEvidence[];
   intent: string;
+  intent_reason: string;
   session_id: string;
   suggested_actions: CopilotSuggestedAction[];
 };
@@ -58,6 +62,12 @@ type CopilotExecutionResponse = {
   executed: boolean;
   message: string;
   valid_confirmation: boolean;
+};
+
+type CopilotAuditEvent = {
+  action_id?: string | null;
+  event_type: string;
+  timestamp: string;
 };
 
 function TaxCalculator({ token }: { token: string }) {
@@ -288,6 +298,56 @@ function AICopilotPanel({ token }: { token: string }) {
   const [isLoading, setIsLoading] = useState(false);
   const [whyOpenForActionKey, setWhyOpenForActionKey] = useState<string | null>(null);
   const [actionState, setActionState] = useState<Record<string, { error?: string; isLoading: boolean; message?: string }>>({});
+  const [auditEvents, setAuditEvents] = useState<CopilotAuditEvent[]>([]);
+
+  const quickPrompts = [
+    'Give me a readiness snapshot and next action.',
+    'Show OCR queue risk and what to fix first.',
+    'Help reconcile unmatched receipt drafts.',
+    'Prepare tax submission safely for HMRC.',
+  ];
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const storedSessionId = window.localStorage.getItem(COPILOT_SESSION_STORAGE_KEY);
+    const storedMessage = window.localStorage.getItem(COPILOT_MESSAGE_STORAGE_KEY);
+    if (storedSessionId) {
+      setSessionId(storedSessionId);
+    }
+    if (storedMessage) {
+      setMessage(storedMessage);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    if (sessionId) {
+      window.localStorage.setItem(COPILOT_SESSION_STORAGE_KEY, sessionId);
+    }
+    window.localStorage.setItem(COPILOT_MESSAGE_STORAGE_KEY, message);
+  }, [sessionId, message]);
+
+  const loadAuditEvents = async () => {
+    try {
+      const response = await fetch(`${AGENT_SERVICE_URL}/audit/events?limit=6`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) {
+        return;
+      }
+      const payload = (await response.json()) as { items?: CopilotAuditEvent[] };
+      setAuditEvents(Array.isArray(payload.items) ? payload.items : []);
+    } catch {
+      // Non-blocking telemetry panel load.
+    }
+  };
 
   const buildActionKey = (action: CopilotSuggestedAction, index: number) => `${action.action_id}:${index}`;
   const getEvidenceForAction = (action: CopilotSuggestedAction) => {
@@ -336,6 +396,7 @@ function AICopilotPanel({ token }: { token: string }) {
       setResponse(chatPayload);
       setSessionId(chatPayload.session_id);
       setWhyOpenForActionKey(null);
+      void loadAuditEvents();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected Copilot error');
     } finally {
@@ -401,6 +462,7 @@ function AICopilotPanel({ token }: { token: string }) {
         ...current,
         [actionKey]: { isLoading: false, message: successMessage },
       }));
+      void loadAuditEvents();
     } catch (err) {
       setActionState((current) => ({
         ...current,
@@ -424,6 +486,18 @@ function AICopilotPanel({ token }: { token: string }) {
           {isLoading ? 'Thinking...' : 'Ask Copilot'}
         </button>
       </form>
+      <div className={styles.copilotQuickPrompts}>
+        {quickPrompts.map((prompt) => (
+          <button
+            className={styles.presetButton}
+            key={prompt}
+            onClick={() => setMessage(prompt)}
+            type="button"
+          >
+            {prompt}
+          </button>
+        ))}
+      </div>
       {error && (
         <div className={styles.copilotFallback}>
           <p className={styles.error}>{error}</p>
@@ -447,8 +521,10 @@ function AICopilotPanel({ token }: { token: string }) {
           <div className={styles.copilotMeta}>
             <span>Intent: {response.intent}</span>
             <span>Confidence: {response.confidence.toFixed(2)}</span>
+            <span>Band: {response.confidence_band}</span>
             <span>Session: {response.session_id}</span>
           </div>
+          <p className={styles.copilotIntentReason}>Why this intent: {response.intent_reason}</p>
           <div className={styles.copilotAnswer}>{response.answer}</div>
 
           <h3 className={styles.sectionTitle}>Evidence</h3>
@@ -520,6 +596,20 @@ function AICopilotPanel({ token }: { token: string }) {
               );
             })}
           </div>
+          {auditEvents.length > 0 && (
+            <>
+              <h3 className={styles.sectionTitle}>Recent Copilot activity</h3>
+              <ul className={styles.copilotEvidenceList}>
+                {auditEvents.map((event, index) => (
+                  <li key={`${event.event_type}-${event.timestamp}-${index}`}>
+                    <strong>{event.event_type}</strong>
+                    {event.action_id ? <span> ({event.action_id})</span> : null}
+                    <p>{new Date(event.timestamp).toLocaleString()}</p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </section>

@@ -89,6 +89,17 @@ class BillingReportResponse(BaseModel):
     by_partner: List[BillingReportByPartner]
 
 
+class LeadFunnelSummaryResponse(BaseModel):
+    period_start: Optional[datetime.date] = None
+    period_end: Optional[datetime.date] = None
+    total_leads: int
+    qualified_leads: int
+    converted_leads: int
+    qualification_rate_percent: float
+    conversion_rate_from_qualified_percent: float
+    overall_conversion_rate_percent: float
+
+
 class PartnerPricingUpdateRequest(BaseModel):
     qualified_lead_fee_gbp: float = Field(ge=0)
     converted_lead_fee_gbp: float = Field(ge=0)

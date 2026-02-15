@@ -27,6 +27,7 @@ from .mortgage_requirements import (
     MORTGAGE_TYPE_METADATA,
     build_mortgage_evidence_quality_checks,
     build_mortgage_document_checklist,
+    build_mortgage_lender_fit_snapshot,
     build_mortgage_pack_index,
     build_mortgage_refresh_reminders,
     build_mortgage_readiness_assessment,
@@ -282,6 +283,39 @@ class MortgageReadinessMatrixResponse(BaseModel):
     average_overall_completion_percent: float
     overall_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
     items: list[MortgageReadinessMatrixItem]
+
+
+class MortgageLenderFitRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+
+
+class MortgageLenderFitItem(BaseModel):
+    lender_profile: str
+    lender_profile_label: str
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    missing_required_count: int
+    top_missing_required_titles: list[str]
+    lender_notes: list[str]
+    next_actions: list[str]
+
+
+class MortgageLenderFitResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    employment_profile: str
+    include_adverse_credit_pack: bool
+    uploaded_document_count: int
+    total_lender_profiles: int
+    recommended_lender_profile: str | None = None
+    recommended_lender_profile_label: str | None = None
+    recommendation_reason: str
+    items: list[MortgageLenderFitItem]
 
 
 class MortgagePackIndexRequest(BaseModel):
@@ -749,6 +783,31 @@ async def evaluate_mortgage_readiness_matrix(
         uploaded_filenames=filenames,
     )
     return MortgageReadinessMatrixResponse(**matrix)
+
+
+@app.post("/mortgage/lender-fit", response_model=MortgageLenderFitResponse)
+async def evaluate_mortgage_lender_fit(
+    request: MortgageLenderFitRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile="high_street_mainstream",
+    )
+    uploaded_documents = await _load_user_uploaded_documents(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    filenames = _extract_document_filenames(uploaded_documents)
+    lender_fit = build_mortgage_lender_fit_snapshot(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        uploaded_filenames=filenames,
+    )
+    return MortgageLenderFitResponse(**lender_fit)
 
 
 @app.post("/mortgage/pack-index", response_model=MortgagePackIndexResponse)

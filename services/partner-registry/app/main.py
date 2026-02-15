@@ -1132,6 +1132,39 @@ async def get_lead_billing_report(
     return report
 
 
+@app.get("/leads/funnel-summary", response_model=schemas.LeadFunnelSummaryResponse)
+async def get_lead_funnel_summary(
+    partner_id: Optional[uuid.UUID] = Query(default=None),
+    start_date: Optional[datetime.date] = Query(default=None),
+    end_date: Optional[datetime.date] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    report = await _load_billing_report(
+        db=db,
+        partner_id=partner_id,
+        start_date=start_date,
+        end_date=end_date,
+        statuses=[],
+    )
+    total_leads = report.total_leads
+    qualified_leads = report.qualified_leads
+    converted_leads = report.converted_leads
+    qualification_rate = round((qualified_leads / total_leads) * 100, 1) if total_leads else 0.0
+    conversion_from_qualified = round((converted_leads / qualified_leads) * 100, 1) if qualified_leads else 0.0
+    overall_conversion = round((converted_leads / total_leads) * 100, 1) if total_leads else 0.0
+    return schemas.LeadFunnelSummaryResponse(
+        period_start=report.period_start,
+        period_end=report.period_end,
+        total_leads=total_leads,
+        qualified_leads=qualified_leads,
+        converted_leads=converted_leads,
+        qualification_rate_percent=qualification_rate,
+        conversion_rate_from_qualified_percent=conversion_from_qualified,
+        overall_conversion_rate_percent=overall_conversion,
+    )
+
+
 @app.get("/leads/billing.csv")
 async def export_lead_billing_csv(
     partner_id: Optional[uuid.UUID] = Query(default=None),

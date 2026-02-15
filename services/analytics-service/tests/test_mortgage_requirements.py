@@ -14,6 +14,7 @@ from app.mortgage_requirements import (
     build_mortgage_readiness_matrix,
     build_mortgage_submission_gate,
     build_mortgage_document_checklist,
+    build_mortgage_lender_fit_snapshot,
     detect_document_codes_from_filenames,
 )
 
@@ -235,6 +236,51 @@ def test_build_mortgage_readiness_matrix_rejects_unsupported_profiles():
         assert False, "Expected ValueError for unsupported mortgage type in matrix list"
     except ValueError as exc:
         assert str(exc) == "unsupported_mortgage_type"
+
+
+def test_build_mortgage_lender_fit_snapshot_returns_ranked_profiles():
+    snapshot = build_mortgage_lender_fit_snapshot(
+        mortgage_type="first_time_buyer",
+        employment_profile="sole_trader",
+        include_adverse_credit_pack=False,
+        uploaded_filenames=[
+            "passport_photo_id.pdf",
+            "utility_bill_proof_of_address.pdf",
+            "bank_statement_april.pdf",
+            "sa302_2025.pdf",
+        ],
+    )
+    assert snapshot["total_lender_profiles"] == len(LENDER_PROFILE_METADATA)
+    assert len(snapshot["items"]) == len(LENDER_PROFILE_METADATA)
+    assert snapshot["recommended_lender_profile"] in LENDER_PROFILE_METADATA
+    assert snapshot["recommendation_reason"]
+    top_item = snapshot["items"][0]
+    assert top_item["lender_profile"] == snapshot["recommended_lender_profile"]
+    assert top_item["readiness_status"] in {"not_ready", "almost_ready", "ready_for_broker_review"}
+
+
+def test_build_mortgage_lender_fit_snapshot_rejects_unsupported_selector_values():
+    try:
+        build_mortgage_lender_fit_snapshot(
+            mortgage_type="unknown",
+            employment_profile="sole_trader",
+            include_adverse_credit_pack=False,
+            uploaded_filenames=[],
+        )
+        assert False, "Expected ValueError for unsupported mortgage type"
+    except ValueError as exc:
+        assert str(exc) == "unsupported_mortgage_type"
+
+    try:
+        build_mortgage_lender_fit_snapshot(
+            mortgage_type="first_time_buyer",
+            employment_profile="unknown",
+            include_adverse_credit_pack=False,
+            uploaded_filenames=[],
+        )
+        assert False, "Expected ValueError for unsupported employment profile"
+    except ValueError as exc:
+        assert str(exc) == "unsupported_employment_profile"
 
 
 def test_build_mortgage_pack_index_contains_evidence_map():

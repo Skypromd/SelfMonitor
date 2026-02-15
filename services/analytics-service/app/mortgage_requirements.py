@@ -1303,3 +1303,83 @@ def build_mortgage_readiness_matrix(
         "overall_status": overall_status,
         "items": items,
     }
+
+
+def build_mortgage_lender_fit_snapshot(
+    *,
+    mortgage_type: str,
+    employment_profile: str,
+    include_adverse_credit_pack: bool,
+    uploaded_filenames: Iterable[str],
+) -> dict[str, object]:
+    if mortgage_type not in MORTGAGE_TYPE_METADATA:
+        raise ValueError("unsupported_mortgage_type")
+    if employment_profile not in EMPLOYMENT_PROFILE_METADATA:
+        raise ValueError("unsupported_employment_profile")
+
+    filenames = [filename for filename in uploaded_filenames if filename]
+    rows: list[dict[str, object]] = []
+    for lender_profile, metadata in LENDER_PROFILE_METADATA.items():
+        checklist = build_mortgage_document_checklist(
+            mortgage_type=mortgage_type,
+            employment_profile=employment_profile,
+            include_adverse_credit_pack=include_adverse_credit_pack,
+            lender_profile=lender_profile,
+        )
+        readiness = build_mortgage_readiness_assessment(
+            checklist=checklist,
+            uploaded_filenames=filenames,
+        )
+        missing_required = list(readiness["missing_required_documents"])
+        rows.append(
+            {
+                "lender_profile": lender_profile,
+                "lender_profile_label": metadata["label"],
+                "required_completion_percent": float(readiness["required_completion_percent"]),
+                "overall_completion_percent": float(readiness["overall_completion_percent"]),
+                "readiness_status": str(readiness["readiness_status"]),
+                "missing_required_count": len(missing_required),
+                "top_missing_required_titles": [item["title"] for item in missing_required[:3]],
+                "lender_notes": list(checklist["lender_notes"]),
+                "next_actions": list(readiness["next_actions"]),
+            }
+        )
+
+    readiness_rank = {
+        "ready_for_broker_review": 2,
+        "almost_ready": 1,
+        "not_ready": 0,
+    }
+    rows.sort(
+        key=lambda row: (
+            readiness_rank.get(str(row["readiness_status"]), -1),
+            float(row["required_completion_percent"]),
+            float(row["overall_completion_percent"]),
+            -int(row["missing_required_count"]),
+        ),
+        reverse=True,
+    )
+
+    best = rows[0] if rows else None
+    recommended_profile = str(best["lender_profile"]) if isinstance(best, dict) else None
+    recommended_profile_label = str(best["lender_profile_label"]) if isinstance(best, dict) else None
+    recommendation_reason = (
+        f"Top lender fit is {recommended_profile_label}: "
+        f"{best['required_completion_percent']}% required completion and status {best['readiness_status']}."
+        if isinstance(best, dict)
+        else "No lender profiles available."
+    )
+
+    return {
+        "jurisdiction": "England",
+        "mortgage_type": mortgage_type,
+        "mortgage_label": MORTGAGE_TYPE_METADATA[mortgage_type]["label"],
+        "employment_profile": employment_profile,
+        "include_adverse_credit_pack": include_adverse_credit_pack,
+        "uploaded_document_count": len(filenames),
+        "total_lender_profiles": len(rows),
+        "recommended_lender_profile": recommended_profile,
+        "recommended_lender_profile_label": recommended_profile_label,
+        "recommendation_reason": recommendation_reason,
+        "items": rows,
+    }
