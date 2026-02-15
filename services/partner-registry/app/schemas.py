@@ -1,7 +1,7 @@
 import datetime
 import uuid
 from enum import Enum
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
@@ -98,6 +98,31 @@ class LeadFunnelSummaryResponse(BaseModel):
     qualification_rate_percent: float
     conversion_rate_from_qualified_percent: float
     overall_conversion_rate_percent: float
+
+
+class SeedMRRPoint(BaseModel):
+    month: str
+    mrr_gbp: float
+
+
+class SeedReadinessResponse(BaseModel):
+    generated_at: datetime.datetime
+    period_months: int
+    current_month_mrr_gbp: float
+    previous_month_mrr_gbp: float
+    mrr_growth_percent: float
+    rolling_3_month_avg_mrr_gbp: float
+    paid_invoice_rate_percent: float
+    active_invoice_count: int
+    leads_last_90d: int
+    qualified_last_90d: int
+    converted_last_90d: int
+    qualification_rate_percent: float
+    conversion_rate_percent: float
+    readiness_score_percent: float
+    readiness_band: Literal["early", "progressing", "investable"]
+    next_actions: List[str]
+    monthly_mrr_series: List[SeedMRRPoint]
 
 
 class PartnerPricingUpdateRequest(BaseModel):

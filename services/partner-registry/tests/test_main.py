@@ -352,6 +352,48 @@ def test_lead_funnel_summary_rates(mocker):
     assert payload["overall_conversion_rate_percent"] == 33.3
 
 
+def test_seed_readiness_snapshot_returns_investor_kpis(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+
+    lead_qualified = create_handoff_lead(partner_id, "seed-qualified@example.com")
+    lead_converted = create_handoff_lead(partner_id, "seed-converted@example.com")
+    set_lead_status(lead_qualified, "qualified")
+    set_lead_status(lead_converted, "qualified")
+    set_lead_status(lead_converted, "converted")
+
+    invoice_create = client.post(
+        "/billing/invoices/generate",
+        headers=get_billing_headers(),
+        json={"partner_id": partner_id},
+    )
+    assert invoice_create.status_code == 201
+    invoice_id = invoice_create.json()["id"]
+    assert client.patch(
+        f"/billing/invoices/{invoice_id}/status",
+        headers=get_billing_headers(),
+        json={"status": "issued"},
+    ).status_code == 200
+    assert client.patch(
+        f"/billing/invoices/{invoice_id}/status",
+        headers=get_billing_headers(),
+        json={"status": "paid"},
+    ).status_code == 200
+
+    response = client.get("/investor/seed-readiness?period_months=6", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["period_months"] == 6
+    assert payload["leads_last_90d"] >= 2
+    assert payload["qualified_last_90d"] >= 1
+    assert payload["converted_last_90d"] >= 1
+    assert payload["current_month_mrr_gbp"] >= 0
+    assert payload["active_invoice_count"] >= 1
+    assert len(payload["monthly_mrr_series"]) == 6
+    assert payload["readiness_band"] in {"early", "progressing", "investable"}
+    assert isinstance(payload["next_actions"], list) and len(payload["next_actions"]) >= 1
+
+
 def test_billing_csv_export_contains_totals(mocker):
     mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
     partner_id = client.get("/partners").json()[0]["id"]

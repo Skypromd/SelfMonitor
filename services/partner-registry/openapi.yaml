@@ -782,6 +782,43 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /investor/seed-readiness:
+    get:
+      summary: Get seed-readiness KPI snapshot for investor tracking
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: period_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+          description: Monthly history length used for MRR trend analysis.
+      responses:
+        "200":
+          description: Seed-readiness KPI snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeedReadinessResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /leads/{lead_id}/status:
     patch:
       summary: Update handoff lead lifecycle status
@@ -1034,6 +1071,94 @@ components:
         - unique_users
         - total_amount_gbp
         - by_partner
+
+    SeedMRRPoint:
+      type: object
+      properties:
+        month:
+          type: string
+          example: "2026-02"
+        mrr_gbp:
+          type: number
+          format: float
+          example: 1234.56
+      required:
+        - month
+        - mrr_gbp
+
+    SeedReadinessResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        period_months:
+          type: integer
+          example: 6
+        current_month_mrr_gbp:
+          type: number
+          format: float
+        previous_month_mrr_gbp:
+          type: number
+          format: float
+        mrr_growth_percent:
+          type: number
+          format: float
+        rolling_3_month_avg_mrr_gbp:
+          type: number
+          format: float
+        paid_invoice_rate_percent:
+          type: number
+          format: float
+        active_invoice_count:
+          type: integer
+        leads_last_90d:
+          type: integer
+        qualified_last_90d:
+          type: integer
+        converted_last_90d:
+          type: integer
+        qualification_rate_percent:
+          type: number
+          format: float
+        conversion_rate_percent:
+          type: number
+          format: float
+        readiness_score_percent:
+          type: number
+          format: float
+        readiness_band:
+          type: string
+          enum:
+            - early
+            - progressing
+            - investable
+        next_actions:
+          type: array
+          items:
+            type: string
+        monthly_mrr_series:
+          type: array
+          items:
+            $ref: "#/components/schemas/SeedMRRPoint"
+      required:
+        - generated_at
+        - period_months
+        - current_month_mrr_gbp
+        - previous_month_mrr_gbp
+        - mrr_growth_percent
+        - rolling_3_month_avg_mrr_gbp
+        - paid_invoice_rate_percent
+        - active_invoice_count
+        - leads_last_90d
+        - qualified_last_90d
+        - converted_last_90d
+        - qualification_rate_percent
+        - conversion_rate_percent
+        - readiness_score_percent
+        - readiness_band
+        - next_actions
+        - monthly_mrr_series
 
     PartnerPricingUpdateRequest:
       type: object

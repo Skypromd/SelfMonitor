@@ -12,9 +12,9 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import select, text
 
-from . import crud, schemas
+from . import crud, models, schemas
 from .database import AsyncSessionLocal, Base, engine, get_db
 
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
@@ -89,6 +89,9 @@ INVOICE_STATUS_TRANSITIONS = {
     schemas.BillingInvoiceStatus.paid.value: set(),
     schemas.BillingInvoiceStatus.void.value: set(),
 }
+
+SEED_READINESS_MIN_PERIOD_MONTHS = 3
+SEED_READINESS_MAX_PERIOD_MONTHS = 24
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -194,6 +197,155 @@ def _build_report_window(
         else None
     )
     return start_at, end_before
+
+
+def _month_start(date_value: datetime.date) -> datetime.date:
+    return datetime.date(date_value.year, date_value.month, 1)
+
+
+def _shift_month(date_value: datetime.date, delta_months: int) -> datetime.date:
+    month_index = (date_value.year * 12) + (date_value.month - 1) + delta_months
+    year = month_index // 12
+    month = (month_index % 12) + 1
+    return datetime.date(year, month, 1)
+
+
+def _month_key(date_value: datetime.date) -> str:
+    return date_value.strftime("%Y-%m")
+
+
+async def _load_seed_invoice_metrics(
+    db: AsyncSession,
+    *,
+    as_of_date: datetime.date,
+    period_months: int,
+) -> dict[str, Any]:
+    current_month_start = _month_start(as_of_date)
+    window_start = _shift_month(current_month_start, -(period_months - 1))
+    window_start_at = datetime.datetime.combine(window_start, datetime.time.min, tzinfo=datetime.UTC)
+
+    month_starts = [_shift_month(window_start, offset) for offset in range(period_months)]
+    month_totals: dict[str, float] = {_month_key(item): 0.0 for item in month_starts}
+
+    rows = (
+        await db.execute(
+            select(
+                models.BillingInvoice.created_at,
+                models.BillingInvoice.total_amount_gbp,
+                models.BillingInvoice.status,
+            ).filter(
+                models.BillingInvoice.created_at >= window_start_at,
+                models.BillingInvoice.status != schemas.BillingInvoiceStatus.void.value,
+            )
+        )
+    ).all()
+
+    active_invoice_count = 0
+    paid_invoice_count = 0
+    for created_at, total_amount_gbp, status_value in rows:
+        if not isinstance(created_at, datetime.datetime):
+            continue
+        created_date = (
+            created_at.astimezone(datetime.UTC).date()
+            if created_at.tzinfo is not None
+            else created_at.date()
+        )
+        month_key = _month_key(_month_start(created_date))
+        if month_key not in month_totals:
+            continue
+        month_totals[month_key] += float(total_amount_gbp or 0.0)
+        active_invoice_count += 1
+        if str(status_value) == schemas.BillingInvoiceStatus.paid.value:
+            paid_invoice_count += 1
+
+    current_key = _month_key(current_month_start)
+    previous_key = _month_key(_shift_month(current_month_start, -1))
+    current_month_mrr = round(month_totals.get(current_key, 0.0), 2)
+    previous_month_mrr = round(month_totals.get(previous_key, 0.0), 2)
+    if previous_month_mrr > 0:
+        mrr_growth_percent = round(((current_month_mrr - previous_month_mrr) / previous_month_mrr) * 100, 1)
+    elif current_month_mrr > 0:
+        mrr_growth_percent = 100.0
+    else:
+        mrr_growth_percent = 0.0
+
+    rolling_keys = [_month_key(_shift_month(current_month_start, delta)) for delta in (-2, -1, 0)]
+    rolling_3_month_avg_mrr = round(sum(month_totals.get(key, 0.0) for key in rolling_keys) / 3.0, 2)
+    paid_invoice_rate_percent = (
+        round((paid_invoice_count / active_invoice_count) * 100.0, 1)
+        if active_invoice_count
+        else 0.0
+    )
+    return {
+        "current_month_mrr_gbp": current_month_mrr,
+        "previous_month_mrr_gbp": previous_month_mrr,
+        "mrr_growth_percent": mrr_growth_percent,
+        "rolling_3_month_avg_mrr_gbp": rolling_3_month_avg_mrr,
+        "paid_invoice_rate_percent": paid_invoice_rate_percent,
+        "active_invoice_count": active_invoice_count,
+        "monthly_mrr_series": [
+            schemas.SeedMRRPoint(month=_month_key(item), mrr_gbp=round(month_totals[_month_key(item)], 2))
+            for item in month_starts
+        ],
+    }
+
+
+def _build_seed_readiness_assessment(
+    *,
+    leads_last_90d: int,
+    conversion_rate_percent: float,
+    mrr_growth_percent: float,
+    paid_invoice_rate_percent: float,
+) -> tuple[float, Literal["early", "progressing", "investable"], list[str]]:
+    score = 0.0
+    if leads_last_90d >= 20:
+        score += 25.0
+    elif leads_last_90d >= 10:
+        score += 15.0
+    elif leads_last_90d > 0:
+        score += 8.0
+
+    if conversion_rate_percent >= 20.0:
+        score += 25.0
+    elif conversion_rate_percent >= 10.0:
+        score += 15.0
+    elif conversion_rate_percent >= 5.0:
+        score += 8.0
+
+    if mrr_growth_percent >= 12.0:
+        score += 25.0
+    elif mrr_growth_percent >= 0.0:
+        score += 15.0
+    elif mrr_growth_percent > -10.0:
+        score += 8.0
+
+    if paid_invoice_rate_percent >= 80.0:
+        score += 25.0
+    elif paid_invoice_rate_percent >= 60.0:
+        score += 15.0
+    elif paid_invoice_rate_percent >= 40.0:
+        score += 8.0
+
+    if score >= 80.0:
+        readiness_band: Literal["early", "progressing", "investable"] = "investable"
+    elif score >= 55.0:
+        readiness_band = "progressing"
+    else:
+        readiness_band = "early"
+
+    next_actions: list[str] = []
+    if leads_last_90d < 20:
+        next_actions.append("Increase top-of-funnel lead volume and onboarding completion in the next 30 days.")
+    if conversion_rate_percent < 20.0:
+        next_actions.append("Improve conversion from qualified to converted leads via assisted handoff workflows.")
+    if mrr_growth_percent < 12.0:
+        next_actions.append("Improve MRR momentum with pricing and partner channel experiments.")
+    if paid_invoice_rate_percent < 80.0:
+        next_actions.append("Increase collection efficiency and reduce outstanding invoice aging.")
+    if not next_actions:
+        next_actions.append("Maintain current trajectory and prepare investor data-room evidence exports.")
+
+    return round(score, 1), readiness_band, next_actions
 
 
 def _resolve_report_statuses(
@@ -1162,6 +1314,62 @@ async def get_lead_funnel_summary(
         qualification_rate_percent=qualification_rate,
         conversion_rate_from_qualified_percent=conversion_from_qualified,
         overall_conversion_rate_percent=overall_conversion,
+    )
+
+
+@app.get("/investor/seed-readiness", response_model=schemas.SeedReadinessResponse)
+async def get_seed_readiness_snapshot(
+    period_months: int = Query(default=6, ge=SEED_READINESS_MIN_PERIOD_MONTHS, le=SEED_READINESS_MAX_PERIOD_MONTHS),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    as_of_date = datetime.datetime.now(datetime.UTC).date()
+    invoice_metrics = await _load_seed_invoice_metrics(
+        db,
+        as_of_date=as_of_date,
+        period_months=period_months,
+    )
+    start_date_90d = as_of_date - datetime.timedelta(days=89)
+    funnel_report = await _load_billing_report(
+        db=db,
+        partner_id=None,
+        start_date=start_date_90d,
+        end_date=as_of_date,
+        statuses=[],
+    )
+    leads_last_90d = funnel_report.total_leads
+    qualified_last_90d = funnel_report.qualified_leads
+    converted_last_90d = funnel_report.converted_leads
+    qualification_rate_percent = (
+        round((qualified_last_90d / leads_last_90d) * 100.0, 1) if leads_last_90d else 0.0
+    )
+    conversion_rate_percent = (
+        round((converted_last_90d / leads_last_90d) * 100.0, 1) if leads_last_90d else 0.0
+    )
+    readiness_score_percent, readiness_band, next_actions = _build_seed_readiness_assessment(
+        leads_last_90d=leads_last_90d,
+        conversion_rate_percent=conversion_rate_percent,
+        mrr_growth_percent=float(invoice_metrics["mrr_growth_percent"]),
+        paid_invoice_rate_percent=float(invoice_metrics["paid_invoice_rate_percent"]),
+    )
+    return schemas.SeedReadinessResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        period_months=period_months,
+        current_month_mrr_gbp=float(invoice_metrics["current_month_mrr_gbp"]),
+        previous_month_mrr_gbp=float(invoice_metrics["previous_month_mrr_gbp"]),
+        mrr_growth_percent=float(invoice_metrics["mrr_growth_percent"]),
+        rolling_3_month_avg_mrr_gbp=float(invoice_metrics["rolling_3_month_avg_mrr_gbp"]),
+        paid_invoice_rate_percent=float(invoice_metrics["paid_invoice_rate_percent"]),
+        active_invoice_count=int(invoice_metrics["active_invoice_count"]),
+        leads_last_90d=leads_last_90d,
+        qualified_last_90d=qualified_last_90d,
+        converted_last_90d=converted_last_90d,
+        qualification_rate_percent=qualification_rate_percent,
+        conversion_rate_percent=conversion_rate_percent,
+        readiness_score_percent=readiness_score_percent,
+        readiness_band=readiness_band,
+        next_actions=next_actions,
+        monthly_mrr_series=list(invoice_metrics["monthly_mrr_series"]),
     )
 
 
