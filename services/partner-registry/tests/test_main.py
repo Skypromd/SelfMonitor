@@ -125,6 +125,44 @@ def patch_nps_timestamp(response_id: str, *, created_days_ago: int) -> None:
     asyncio.run(_set_nps_timestamp(response_id, created_days_ago=created_days_ago))
 
 
+async def _set_invoice_snapshot(
+    invoice_id: str,
+    *,
+    created_days_ago: int,
+    total_amount_gbp: float,
+    status_value: str,
+) -> None:
+    now = datetime.datetime.now(datetime.UTC)
+    async with TestingSessionLocal() as session:
+        await session.execute(
+            update(models.BillingInvoice)
+            .where(models.BillingInvoice.id == invoice_id)
+            .values(
+                created_at=now - datetime.timedelta(days=created_days_ago),
+                total_amount_gbp=total_amount_gbp,
+                status=status_value,
+            )
+        )
+        await session.commit()
+
+
+def patch_invoice_snapshot(
+    invoice_id: str,
+    *,
+    created_days_ago: int,
+    total_amount_gbp: float,
+    status_value: str = "paid",
+) -> None:
+    asyncio.run(
+        _set_invoice_snapshot(
+            invoice_id,
+            created_days_ago=created_days_ago,
+            total_amount_gbp=total_amount_gbp,
+            status_value=status_value,
+        )
+    )
+
+
 async def override_get_db():
     async with TestingSessionLocal() as session:
         yield session
@@ -686,6 +724,7 @@ def test_investor_snapshot_export_supports_json_and_csv(mocker, monkeypatch):
     assert payload["pmf_evidence"]["cohort_months"] == 6
     assert "overall_nps_score" in payload["nps_trend"]
     assert payload["pmf_gate"]["gate_name"] == "seed_pmf_gate_v1"
+    assert "unit_economics" in payload
 
     csv_response = client.get("/investor/snapshot/export?format=csv", headers=get_billing_headers())
     assert csv_response.status_code == 200
@@ -693,6 +732,80 @@ def test_investor_snapshot_export_supports_json_and_csv(mocker, monkeypatch):
     assert "investor_snapshot.csv" in csv_response.headers["content-disposition"]
     assert "section,metric,value" in csv_response.text
     assert "pmf_gate,gate_passed" in csv_response.text
+
+
+def test_marketing_spend_ingestion_and_unit_economics_seed_gate(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    today = datetime.datetime.now(datetime.UTC).date()
+    current_month_mid = today.replace(day=15)
+    prev_month_last_day = today.replace(day=1) - datetime.timedelta(days=1)
+    previous_month_mid = prev_month_last_day.replace(day=15)
+
+    lead_a = create_handoff_lead(partner_id, "ue-user-a@example.com")
+    lead_b = create_handoff_lead(partner_id, "ue-user-b@example.com")
+    set_lead_status(lead_a, "qualified")
+    set_lead_status(lead_b, "qualified")
+
+    invoice_prev = client.post(
+        "/billing/invoices/generate",
+        headers=get_billing_headers(),
+        json={"partner_id": partner_id},
+    )
+    invoice_curr = client.post(
+        "/billing/invoices/generate",
+        headers=get_billing_headers(),
+        json={"partner_id": partner_id},
+    )
+    assert invoice_prev.status_code == 201
+    assert invoice_curr.status_code == 201
+    patch_invoice_snapshot(
+        invoice_prev.json()["id"],
+        created_days_ago=20,
+        total_amount_gbp=50000.0,
+        status_value="paid",
+    )
+    patch_invoice_snapshot(
+        invoice_curr.json()["id"],
+        created_days_ago=2,
+        total_amount_gbp=51000.0,
+        status_value="paid",
+    )
+
+    marketing_prev = client.post(
+        "/investor/marketing-spend",
+        headers=get_billing_headers(),
+        json={
+            "month_start": previous_month_mid.isoformat(),
+            "channel": "Paid Search",
+            "spend_gbp": 4500.0,
+            "acquired_customers": 120,
+        },
+    )
+    marketing_curr = client.post(
+        "/investor/marketing-spend",
+        headers=get_billing_headers(),
+        json={
+            "month_start": current_month_mid.isoformat(),
+            "channel": "Partner Referrals",
+            "spend_gbp": 4800.0,
+            "acquired_customers": 130,
+        },
+    )
+    assert marketing_prev.status_code == 201
+    assert marketing_curr.status_code == 201
+    assert marketing_prev.json()["month_start"].endswith("-01")
+
+    response = client.get("/investor/unit-economics?period_months=6", headers=get_billing_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["period_months"] == 6
+    assert payload["current_month_mrr_gbp"] >= 51000.0
+    assert payload["monthly_churn_rate_percent"] < payload["required_max_monthly_churn_percent"]
+    assert payload["average_cac_gbp"] is not None
+    assert payload["ltv_cac_ratio"] is not None
+    assert payload["seed_gate_passed"] is True
+    assert len(payload["monthly_points"]) == 6
 
 
 def test_billing_csv_export_contains_totals(mocker):

@@ -185,6 +185,59 @@ class PMFGateStatusResponse(BaseModel):
     next_actions: List[str]
 
 
+class MarketingSpendIngestRequest(BaseModel):
+    month_start: datetime.date
+    channel: str = Field(min_length=2, max_length=64)
+    spend_gbp: float = Field(ge=0)
+    acquired_customers: int = Field(ge=0)
+
+
+class MarketingSpendIngestResponse(BaseModel):
+    entry_id: uuid.UUID
+    month_start: datetime.date
+    channel: str
+    spend_gbp: float
+    acquired_customers: int
+    created_at: datetime.datetime
+    message: str
+
+
+class UnitEconomicsMonthlyPoint(BaseModel):
+    month: str
+    mrr_gbp: float
+    previous_month_mrr_gbp: float
+    churn_rate_percent: float
+    expansion_rate_percent: float
+    marketing_spend_gbp: float
+    acquired_customers: int
+    cac_gbp: Optional[float] = None
+
+
+class UnitEconomicsResponse(BaseModel):
+    generated_at: datetime.datetime
+    as_of_date: datetime.date
+    period_months: int
+    current_month_mrr_gbp: float
+    rolling_3_month_avg_mrr_gbp: float
+    mrr_growth_percent: float
+    mrr_stability_percent: float
+    mrr_stability_band: Literal["stable", "variable", "volatile"]
+    monthly_churn_rate_percent: float
+    monthly_expansion_rate_percent: float
+    average_cac_gbp: Optional[float] = None
+    estimated_ltv_gbp: Optional[float] = None
+    ltv_cac_ratio: Optional[float] = None
+    required_mrr_gbp: float
+    required_max_monthly_churn_percent: float
+    required_min_ltv_cac_ratio: float
+    mrr_gate_passed: bool
+    churn_gate_passed: bool
+    ltv_cac_gate_passed: bool
+    seed_gate_passed: bool
+    next_actions: List[str]
+    monthly_points: List[UnitEconomicsMonthlyPoint]
+
+
 class InvestorSnapshotExportResponse(BaseModel):
     generated_at: datetime.datetime
     as_of_date: datetime.date
@@ -192,6 +245,7 @@ class InvestorSnapshotExportResponse(BaseModel):
     pmf_evidence: PMFEvidenceResponse
     nps_trend: "NPSTrendResponse"
     pmf_gate: PMFGateStatusResponse
+    unit_economics: UnitEconomicsResponse
 
 
 class NPSSubmissionRequest(BaseModel):

@@ -123,3 +123,26 @@ class NPSResponse(Base):
         default=lambda: datetime.datetime.now(datetime.UTC),
     )
 
+
+class MarketingSpendEntry(Base):
+    __tablename__ = "marketing_spend_entries"
+    __table_args__ = (
+        CheckConstraint("spend_gbp >= 0", name="ck_marketing_spend_entries_spend_non_negative"),
+        CheckConstraint("acquired_customers >= 0", name="ck_marketing_spend_entries_acquired_customers_non_negative"),
+        Index("ix_marketing_spend_entries_month_start", "month_start"),
+        Index("ix_marketing_spend_entries_channel", "channel"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    month_start = Column(Date, nullable=False)
+    channel = Column(String(length=64), nullable=False)
+    spend_gbp = Column(Float, nullable=False, default=0.0)
+    acquired_customers = Column(Integer, nullable=False, default=0)
+    created_by_user_id = Column(String, nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        index=True,
+    )
+

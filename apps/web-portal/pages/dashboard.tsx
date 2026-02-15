@@ -124,6 +124,29 @@ type PMFGateStatusResponse = {
   summary: string;
 };
 
+type UnitEconomicsResponse = {
+  as_of_date: string;
+  average_cac_gbp?: number | null;
+  churn_gate_passed: boolean;
+  current_month_mrr_gbp: number;
+  estimated_ltv_gbp?: number | null;
+  generated_at: string;
+  ltv_cac_gate_passed: boolean;
+  ltv_cac_ratio?: number | null;
+  monthly_churn_rate_percent: number;
+  monthly_expansion_rate_percent: number;
+  mrr_gate_passed: boolean;
+  mrr_stability_band: 'stable' | 'variable' | 'volatile';
+  mrr_stability_percent: number;
+  next_actions: string[];
+  period_months: number;
+  required_max_monthly_churn_percent: number;
+  required_min_ltv_cac_ratio: number;
+  required_mrr_gbp: number;
+  rolling_3_month_avg_mrr_gbp: number;
+  seed_gate_passed: boolean;
+};
+
 type NPSMonthlyTrendPoint = {
   detractors_count: number;
   month: string;
@@ -434,6 +457,7 @@ function PMFSignalsPanel({ token }: { token: string }) {
   const [seedSnapshot, setSeedSnapshot] = useState<SeedReadinessResponse | null>(null);
   const [pmfEvidence, setPmfEvidence] = useState<PMFEvidenceResponse | null>(null);
   const [pmfGate, setPmfGate] = useState<PMFGateStatusResponse | null>(null);
+  const [unitEconomics, setUnitEconomics] = useState<UnitEconomicsResponse | null>(null);
   const [npsTrend, setNpsTrend] = useState<NPSTrendResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -452,7 +476,7 @@ function PMFSignalsPanel({ token }: { token: string }) {
     setLoadError('');
     setRestrictionMessage('');
     try {
-      const [seedResponse, pmfResponse, pmfGateResponse, npsResponse] = await Promise.all([
+      const [seedResponse, pmfResponse, pmfGateResponse, unitEconomicsResponse, npsResponse] = await Promise.all([
         fetch(`${PARTNER_REGISTRY_URL}/investor/seed-readiness?period_months=6`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
@@ -460,6 +484,9 @@ function PMFSignalsPanel({ token }: { token: string }) {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${PARTNER_REGISTRY_URL}/investor/pmf-gate?cohort_months=6&activation_window_days=30&nps_period_months=6`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PARTNER_REGISTRY_URL}/investor/unit-economics?period_months=6`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${PARTNER_REGISTRY_URL}/investor/nps/trend?period_months=6`, {
@@ -476,14 +503,17 @@ function PMFSignalsPanel({ token }: { token: string }) {
         }
       };
 
-      const [seedPayload, pmfPayload, pmfGatePayload, npsPayload] = await Promise.all([
+      const [seedPayload, pmfPayload, pmfGatePayload, unitEconomicsPayload, npsPayload] = await Promise.all([
         parseJsonSafely(seedResponse),
         parseJsonSafely(pmfResponse),
         parseJsonSafely(pmfGateResponse),
+        parseJsonSafely(unitEconomicsResponse),
         parseJsonSafely(npsResponse),
       ]);
 
-      const anyRestricted = [seedResponse, pmfResponse, pmfGateResponse, npsResponse].some((response) => response.status === 403);
+      const anyRestricted = [seedResponse, pmfResponse, pmfGateResponse, unitEconomicsResponse, npsResponse].some(
+        (response) => response.status === 403
+      );
       if (anyRestricted) {
         setRestrictionMessage('Investor metrics require billing/admin permissions. NPS submission remains available.');
       }
@@ -503,13 +533,18 @@ function PMFSignalsPanel({ token }: { token: string }) {
       } else {
         setPmfGate(null);
       }
+      if (unitEconomicsResponse.ok) {
+        setUnitEconomics(unitEconomicsPayload as unknown as UnitEconomicsResponse);
+      } else {
+        setUnitEconomics(null);
+      }
       if (npsResponse.ok) {
         setNpsTrend(npsPayload as unknown as NPSTrendResponse);
       } else {
         setNpsTrend(null);
       }
 
-      const criticalFailures = [seedResponse, pmfResponse, pmfGateResponse, npsResponse].filter(
+      const criticalFailures = [seedResponse, pmfResponse, pmfGateResponse, unitEconomicsResponse, npsResponse].filter(
         (response) => !response.ok && response.status !== 403
       );
       if (criticalFailures.length > 0) {
@@ -609,7 +644,7 @@ function PMFSignalsPanel({ token }: { token: string }) {
       {restrictionMessage && <p className={styles.message}>{restrictionMessage}</p>}
       {isLoading && <p>Loading PMF and growth metrics...</p>}
 
-      {!isLoading && (seedSnapshot || pmfEvidence || pmfGate || npsTrend) && (
+      {!isLoading && (seedSnapshot || pmfEvidence || pmfGate || unitEconomics || npsTrend) && (
         <div className={styles.metricsGrid}>
           {seedSnapshot && (
             <>
@@ -653,6 +688,30 @@ function PMFSignalsPanel({ token }: { token: string }) {
               <p>{pmfGate.gate_passed ? 'PASSED' : 'NOT YET'}</p>
             </article>
           )}
+          {unitEconomics && (
+            <>
+              <article className={styles.metricCard}>
+                <h4>Seed financial gate</h4>
+                <p>{unitEconomics.seed_gate_passed ? 'PASSED' : 'NOT YET'}</p>
+              </article>
+              <article className={styles.metricCard}>
+                <h4>Monthly churn</h4>
+                <p>
+                  {unitEconomics.monthly_churn_rate_percent.toFixed(1)}% (target &lt;{' '}
+                  {unitEconomics.required_max_monthly_churn_percent.toFixed(1)}%)
+                </p>
+              </article>
+              <article className={styles.metricCard}>
+                <h4>LTV/CAC</h4>
+                <p>
+                  {unitEconomics.ltv_cac_ratio !== null && unitEconomics.ltv_cac_ratio !== undefined
+                    ? unitEconomics.ltv_cac_ratio.toFixed(2)
+                    : 'n/a'}{' '}
+                  (target ≥ {unitEconomics.required_min_ltv_cac_ratio.toFixed(1)})
+                </p>
+              </article>
+            </>
+          )}
           {npsTrend && (
             <article className={styles.metricCard}>
               <h4>Overall NPS</h4>
@@ -676,6 +735,25 @@ function PMFSignalsPanel({ token }: { token: string }) {
           {!pmfGate.gate_passed && pmfGate.next_actions.length > 0 && (
             <ul className={styles.copilotEvidenceList}>
               {pmfGate.next_actions.map((item) => (
+                <li key={item}>
+                  <p>{item}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {unitEconomics && (
+        <div className={styles.copilotWhyBlock} style={{ marginTop: '10px' }}>
+          <p>
+            <strong>Unit economics:</strong> current MRR £{unitEconomics.current_month_mrr_gbp.toFixed(2)} vs target £
+            {unitEconomics.required_mrr_gbp.toFixed(2)}; monthly churn {unitEconomics.monthly_churn_rate_percent.toFixed(1)}%; stability{' '}
+            {unitEconomics.mrr_stability_percent.toFixed(1)}% ({unitEconomics.mrr_stability_band}).
+          </p>
+          {!unitEconomics.seed_gate_passed && unitEconomics.next_actions.length > 0 && (
+            <ul className={styles.copilotEvidenceList}>
+              {unitEconomics.next_actions.map((item) => (
                 <li key={item}>
                   <p>{item}</p>
                 </li>

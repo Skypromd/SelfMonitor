@@ -1,6 +1,7 @@
 import datetime
 import csv
 import io
+import math
 import os
 import sys
 import uuid
@@ -124,6 +125,11 @@ PMF_GATE_REQUIRED_NPS_SCORE = _parse_non_negative_float_env(
 )
 PMF_GATE_MIN_ELIGIBLE_USERS_90D = _parse_positive_int_env("PMF_GATE_MIN_ELIGIBLE_USERS_90D", 20)
 PMF_GATE_MIN_NPS_RESPONSES = _parse_positive_int_env("PMF_GATE_MIN_NPS_RESPONSES", 20)
+UNIT_ECONOMICS_MIN_PERIOD_MONTHS = 3
+UNIT_ECONOMICS_MAX_PERIOD_MONTHS = 24
+SEED_GATE_REQUIRED_MRR_GBP = _parse_non_negative_float_env("SEED_GATE_REQUIRED_MRR_GBP", 40_000.0)
+SEED_GATE_MAX_MONTHLY_CHURN_PERCENT = _parse_non_negative_float_env("SEED_GATE_MAX_MONTHLY_CHURN_PERCENT", 3.0)
+SEED_GATE_MIN_LTV_CAC_RATIO = _parse_non_negative_float_env("SEED_GATE_MIN_LTV_CAC_RATIO", 4.0)
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -320,6 +326,184 @@ async def _load_seed_invoice_metrics(
             for item in month_starts
         ],
     }
+
+
+async def _load_marketing_spend_window(
+    db: AsyncSession,
+    *,
+    window_start: datetime.date,
+    window_end: datetime.date,
+) -> dict[str, dict[str, float | int]]:
+    rows = (
+        await db.execute(
+            select(
+                models.MarketingSpendEntry.month_start,
+                models.MarketingSpendEntry.spend_gbp,
+                models.MarketingSpendEntry.acquired_customers,
+            ).filter(
+                models.MarketingSpendEntry.month_start >= window_start,
+                models.MarketingSpendEntry.month_start <= window_end,
+            )
+        )
+    ).all()
+    bucket: dict[str, dict[str, float | int]] = defaultdict(lambda: {"spend_gbp": 0.0, "acquired_customers": 0})
+    for month_start_value, spend_raw, acquired_customers_raw in rows:
+        if not isinstance(month_start_value, datetime.date):
+            continue
+        key = _month_key(_month_start(month_start_value))
+        bucket[key]["spend_gbp"] = float(bucket[key]["spend_gbp"]) + float(spend_raw or 0.0)
+        bucket[key]["acquired_customers"] = int(bucket[key]["acquired_customers"]) + int(acquired_customers_raw or 0)
+    return dict(bucket)
+
+
+def _mrr_stability_band(stability_percent: float) -> Literal["stable", "variable", "volatile"]:
+    if stability_percent >= 85.0:
+        return "stable"
+    if stability_percent >= 60.0:
+        return "variable"
+    return "volatile"
+
+
+async def _build_unit_economics_snapshot(
+    db: AsyncSession,
+    *,
+    period_months: int,
+    as_of_date: datetime.date,
+) -> schemas.UnitEconomicsResponse:
+    invoice_metrics = await _load_seed_invoice_metrics(
+        db,
+        as_of_date=as_of_date,
+        period_months=period_months,
+    )
+    current_month_start = _month_start(as_of_date)
+    window_start = _shift_month(current_month_start, -(period_months - 1))
+    month_starts = [_shift_month(window_start, offset) for offset in range(period_months)]
+
+    month_mrr_map: dict[str, float] = {}
+    for item in list(invoice_metrics["monthly_mrr_series"]):
+        if isinstance(item, schemas.SeedMRRPoint):
+            month_mrr_map[item.month] = float(item.mrr_gbp)
+        elif isinstance(item, dict):
+            month_mrr_map[str(item.get("month"))] = float(item.get("mrr_gbp") or 0.0)
+
+    marketing_spend_by_month = await _load_marketing_spend_window(
+        db,
+        window_start=window_start,
+        window_end=current_month_start,
+    )
+
+    monthly_points: list[schemas.UnitEconomicsMonthlyPoint] = []
+    churn_rates: list[float] = []
+    expansion_rates: list[float] = []
+    mrr_values: list[float] = []
+    for index, month_start in enumerate(month_starts):
+        month_key = _month_key(month_start)
+        mrr_value = round(float(month_mrr_map.get(month_key, 0.0)), 2)
+        mrr_values.append(mrr_value)
+        previous_month_mrr = 0.0
+        churn_rate_percent = 0.0
+        expansion_rate_percent = 0.0
+        if index > 0:
+            previous_key = _month_key(month_starts[index - 1])
+            previous_month_mrr = round(float(month_mrr_map.get(previous_key, 0.0)), 2)
+            if previous_month_mrr > 0:
+                churn_rate_percent = round((max(previous_month_mrr - mrr_value, 0.0) / previous_month_mrr) * 100.0, 1)
+                expansion_rate_percent = round((max(mrr_value - previous_month_mrr, 0.0) / previous_month_mrr) * 100.0, 1)
+                churn_rates.append(churn_rate_percent)
+                expansion_rates.append(expansion_rate_percent)
+        spend_row = marketing_spend_by_month.get(month_key, {})
+        spend_gbp = round(float(spend_row.get("spend_gbp") or 0.0), 2)
+        acquired_customers = int(spend_row.get("acquired_customers") or 0)
+        cac_gbp = round(spend_gbp / acquired_customers, 2) if acquired_customers > 0 else None
+        monthly_points.append(
+            schemas.UnitEconomicsMonthlyPoint(
+                month=month_key,
+                mrr_gbp=mrr_value,
+                previous_month_mrr_gbp=previous_month_mrr,
+                churn_rate_percent=churn_rate_percent,
+                expansion_rate_percent=expansion_rate_percent,
+                marketing_spend_gbp=spend_gbp,
+                acquired_customers=acquired_customers,
+                cac_gbp=cac_gbp,
+            )
+        )
+
+    monthly_churn_rate_percent = round(sum(churn_rates) / len(churn_rates), 1) if churn_rates else 0.0
+    monthly_expansion_rate_percent = round(sum(expansion_rates) / len(expansion_rates), 1) if expansion_rates else 0.0
+
+    mean_mrr = (sum(mrr_values) / len(mrr_values)) if mrr_values else 0.0
+    if len(mrr_values) >= 2 and mean_mrr > 0:
+        variance = sum((item - mean_mrr) ** 2 for item in mrr_values) / len(mrr_values)
+        coefficient_variation = math.sqrt(variance) / mean_mrr
+        mrr_stability_percent = round(max(0.0, min(100.0, 100.0 - (coefficient_variation * 100.0))), 1)
+    elif mean_mrr > 0:
+        mrr_stability_percent = 100.0
+    else:
+        mrr_stability_percent = 0.0
+    mrr_stability_band = _mrr_stability_band(mrr_stability_percent)
+
+    total_marketing_spend = round(sum(float(item.get("spend_gbp") or 0.0) for item in marketing_spend_by_month.values()), 2)
+    total_acquired_customers = sum(int(item.get("acquired_customers") or 0) for item in marketing_spend_by_month.values())
+    average_cac_gbp = (
+        round(total_marketing_spend / total_acquired_customers, 2) if total_acquired_customers > 0 else None
+    )
+
+    estimated_ltv_gbp: float | None = None
+    ltv_cac_ratio: float | None = None
+    if total_acquired_customers > 0 and mean_mrr > 0:
+        avg_new_customers_per_month = total_acquired_customers / max(period_months, 1)
+        proxy_monthly_arpu = mean_mrr / max(avg_new_customers_per_month, 1e-6)
+        churn_fraction = monthly_churn_rate_percent / 100.0
+        if churn_fraction > 0:
+            expected_lifetime_months = min(60.0, max(1.0, 1.0 / churn_fraction))
+        else:
+            expected_lifetime_months = 24.0
+        estimated_ltv_gbp = round(proxy_monthly_arpu * expected_lifetime_months, 2)
+        if average_cac_gbp and average_cac_gbp > 0:
+            ltv_cac_ratio = round(estimated_ltv_gbp / average_cac_gbp, 2)
+
+    current_month_mrr = float(invoice_metrics["current_month_mrr_gbp"])
+    mrr_gate_passed = current_month_mrr >= SEED_GATE_REQUIRED_MRR_GBP
+    churn_gate_passed = monthly_churn_rate_percent < SEED_GATE_MAX_MONTHLY_CHURN_PERCENT
+    ltv_cac_gate_passed = bool(ltv_cac_ratio is not None and ltv_cac_ratio >= SEED_GATE_MIN_LTV_CAC_RATIO)
+    seed_gate_passed = mrr_gate_passed and churn_gate_passed and ltv_cac_gate_passed
+
+    next_actions: list[str] = []
+    if total_acquired_customers == 0:
+        next_actions.append("Ingest monthly marketing spend and acquired-customer counts to unlock CAC/LTV tracking.")
+    if not mrr_gate_passed:
+        next_actions.append("Increase monthly recurring revenue above the seed gate target with conversion and pricing actions.")
+    if not churn_gate_passed:
+        next_actions.append("Reduce monthly churn below threshold with retention and lifecycle intervention workflows.")
+    if not ltv_cac_gate_passed:
+        next_actions.append("Improve LTV/CAC ratio through channel quality optimization and onboarding efficiency gains.")
+    if not next_actions:
+        next_actions.append("Seed gate is currently passing; maintain cadence and monitor variance weekly.")
+
+    return schemas.UnitEconomicsResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        as_of_date=as_of_date,
+        period_months=period_months,
+        current_month_mrr_gbp=current_month_mrr,
+        rolling_3_month_avg_mrr_gbp=float(invoice_metrics["rolling_3_month_avg_mrr_gbp"]),
+        mrr_growth_percent=float(invoice_metrics["mrr_growth_percent"]),
+        mrr_stability_percent=mrr_stability_percent,
+        mrr_stability_band=mrr_stability_band,
+        monthly_churn_rate_percent=monthly_churn_rate_percent,
+        monthly_expansion_rate_percent=monthly_expansion_rate_percent,
+        average_cac_gbp=average_cac_gbp,
+        estimated_ltv_gbp=estimated_ltv_gbp,
+        ltv_cac_ratio=ltv_cac_ratio,
+        required_mrr_gbp=SEED_GATE_REQUIRED_MRR_GBP,
+        required_max_monthly_churn_percent=SEED_GATE_MAX_MONTHLY_CHURN_PERCENT,
+        required_min_ltv_cac_ratio=SEED_GATE_MIN_LTV_CAC_RATIO,
+        mrr_gate_passed=mrr_gate_passed,
+        churn_gate_passed=churn_gate_passed,
+        ltv_cac_gate_passed=ltv_cac_gate_passed,
+        seed_gate_passed=seed_gate_passed,
+        next_actions=next_actions,
+        monthly_points=monthly_points,
+    )
 
 
 def _build_seed_readiness_assessment(
@@ -910,6 +1094,15 @@ def _build_investor_snapshot_csv(snapshot: schemas.InvestorSnapshotExportRespons
     writer.writerow(["pmf_gate", "summary", snapshot.pmf_gate.summary])
     for index, action in enumerate(snapshot.pmf_gate.next_actions, start=1):
         writer.writerow(["pmf_gate_next_action", f"item_{index}", action])
+
+    writer.writerow(["unit_economics", "seed_gate_passed", str(snapshot.unit_economics.seed_gate_passed).lower()])
+    writer.writerow(["unit_economics", "current_month_mrr_gbp", f"{snapshot.unit_economics.current_month_mrr_gbp:.2f}"])
+    writer.writerow(
+        ["unit_economics", "monthly_churn_rate_percent", f"{snapshot.unit_economics.monthly_churn_rate_percent:.1f}"]
+    )
+    writer.writerow(
+        ["unit_economics", "ltv_cac_ratio", "" if snapshot.unit_economics.ltv_cac_ratio is None else snapshot.unit_economics.ltv_cac_ratio]
+    )
 
     return output.getvalue()
 
@@ -1884,6 +2077,51 @@ async def get_lead_funnel_summary(
 
 
 @app.post(
+    "/investor/marketing-spend",
+    response_model=schemas.MarketingSpendIngestResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def ingest_marketing_spend(
+    payload: schemas.MarketingSpendIngestRequest,
+    user_id: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    channel = payload.channel.strip().lower()
+    if not channel:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="channel cannot be empty")
+    record = models.MarketingSpendEntry(
+        month_start=_month_start(payload.month_start),
+        channel=channel,
+        spend_gbp=payload.spend_gbp,
+        acquired_customers=payload.acquired_customers,
+        created_by_user_id=user_id,
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    await log_audit_event(
+        user_id=user_id,
+        action="investor.marketing_spend.ingested",
+        details={
+            "entry_id": str(record.id),
+            "month_start": record.month_start.isoformat(),
+            "channel": record.channel,
+            "spend_gbp": record.spend_gbp,
+            "acquired_customers": record.acquired_customers,
+        },
+    )
+    return schemas.MarketingSpendIngestResponse(
+        entry_id=uuid.UUID(str(record.id)),
+        month_start=record.month_start,
+        channel=record.channel,
+        spend_gbp=record.spend_gbp,
+        acquired_customers=record.acquired_customers,
+        created_at=record.created_at,
+        message="Marketing spend entry recorded successfully.",
+    )
+
+
+@app.post(
     "/investor/nps/responses",
     response_model=schemas.NPSSubmissionResponse,
     status_code=status.HTTP_201_CREATED,
@@ -1954,6 +2192,25 @@ async def get_seed_readiness_snapshot(
     )
 
 
+@app.get("/investor/unit-economics", response_model=schemas.UnitEconomicsResponse)
+async def get_unit_economics_snapshot(
+    period_months: int = Query(
+        default=6,
+        ge=UNIT_ECONOMICS_MIN_PERIOD_MONTHS,
+        le=UNIT_ECONOMICS_MAX_PERIOD_MONTHS,
+    ),
+    as_of_date: Optional[datetime.date] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    effective_as_of_date = as_of_date or datetime.datetime.now(datetime.UTC).date()
+    return await _build_unit_economics_snapshot(
+        db,
+        period_months=period_months,
+        as_of_date=effective_as_of_date,
+    )
+
+
 @app.get("/investor/pmf-evidence", response_model=schemas.PMFEvidenceResponse)
 async def get_pmf_evidence_snapshot(
     cohort_months: int = Query(default=6, ge=PMF_MIN_COHORT_MONTHS, le=PMF_MAX_COHORT_MONTHS),
@@ -2008,6 +2265,11 @@ async def get_pmf_gate_status(
 async def export_investor_snapshot(
     report_format: Literal["json", "csv"] = Query(default="json", alias="format"),
     seed_period_months: int = Query(default=6, ge=SEED_READINESS_MIN_PERIOD_MONTHS, le=SEED_READINESS_MAX_PERIOD_MONTHS),
+    unit_econ_period_months: int = Query(
+        default=6,
+        ge=UNIT_ECONOMICS_MIN_PERIOD_MONTHS,
+        le=UNIT_ECONOMICS_MAX_PERIOD_MONTHS,
+    ),
     cohort_months: int = Query(default=6, ge=PMF_MIN_COHORT_MONTHS, le=PMF_MAX_COHORT_MONTHS),
     activation_window_days: int = Query(
         default=30,
@@ -2038,6 +2300,11 @@ async def export_investor_snapshot(
     )
     nps_trend = _build_nps_trend_response(period_months=nps_period_months, trend=nps_trend_data)
     pmf_gate = _build_pmf_gate_status(pmf_evidence=pmf_evidence, nps_trend=nps_trend)
+    unit_economics = await _build_unit_economics_snapshot(
+        db,
+        period_months=unit_econ_period_months,
+        as_of_date=effective_as_of_date,
+    )
     snapshot = schemas.InvestorSnapshotExportResponse(
         generated_at=datetime.datetime.now(datetime.UTC),
         as_of_date=effective_as_of_date,
@@ -2045,6 +2312,7 @@ async def export_investor_snapshot(
         pmf_evidence=pmf_evidence,
         nps_trend=nps_trend,
         pmf_gate=pmf_gate,
+        unit_economics=unit_economics,
     )
     if report_format == "csv":
         return Response(

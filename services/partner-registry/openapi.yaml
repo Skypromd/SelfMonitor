@@ -819,6 +819,87 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /investor/marketing-spend:
+    post:
+      summary: Ingest monthly marketing spend and acquired-customer data
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketingSpendIngestRequest"
+      responses:
+        "201":
+          description: Marketing spend entry recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketingSpendIngestResponse"
+        "400":
+          description: Invalid payload.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /investor/unit-economics:
+    get:
+      summary: Get unit-economics snapshot with seed financial gate checks
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: period_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+        - name: as_of_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Unit economics and seed financial gate status.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UnitEconomicsResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /investor/nps/responses:
     post:
       summary: Submit in-product NPS feedback response
@@ -1019,6 +1100,14 @@ paths:
               - csv
             default: json
         - name: seed_period_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+        - name: unit_econ_period_months
           in: query
           required: false
           schema:
@@ -1619,6 +1708,187 @@ components:
         - summary
         - next_actions
 
+    MarketingSpendIngestRequest:
+      type: object
+      properties:
+        month_start:
+          type: string
+          format: date
+        channel:
+          type: string
+          minLength: 2
+          maxLength: 64
+        spend_gbp:
+          type: number
+          format: float
+          minimum: 0
+        acquired_customers:
+          type: integer
+          minimum: 0
+      required:
+        - month_start
+        - channel
+        - spend_gbp
+        - acquired_customers
+
+    MarketingSpendIngestResponse:
+      type: object
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+        month_start:
+          type: string
+          format: date
+        channel:
+          type: string
+        spend_gbp:
+          type: number
+          format: float
+        acquired_customers:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+      required:
+        - entry_id
+        - month_start
+        - channel
+        - spend_gbp
+        - acquired_customers
+        - created_at
+        - message
+
+    UnitEconomicsMonthlyPoint:
+      type: object
+      properties:
+        month:
+          type: string
+        mrr_gbp:
+          type: number
+          format: float
+        previous_month_mrr_gbp:
+          type: number
+          format: float
+        churn_rate_percent:
+          type: number
+          format: float
+        expansion_rate_percent:
+          type: number
+          format: float
+        marketing_spend_gbp:
+          type: number
+          format: float
+        acquired_customers:
+          type: integer
+        cac_gbp:
+          type: number
+          format: float
+          nullable: true
+      required:
+        - month
+        - mrr_gbp
+        - previous_month_mrr_gbp
+        - churn_rate_percent
+        - expansion_rate_percent
+        - marketing_spend_gbp
+        - acquired_customers
+
+    UnitEconomicsResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        as_of_date:
+          type: string
+          format: date
+        period_months:
+          type: integer
+        current_month_mrr_gbp:
+          type: number
+          format: float
+        rolling_3_month_avg_mrr_gbp:
+          type: number
+          format: float
+        mrr_growth_percent:
+          type: number
+          format: float
+        mrr_stability_percent:
+          type: number
+          format: float
+        mrr_stability_band:
+          type: string
+          enum:
+            - stable
+            - variable
+            - volatile
+        monthly_churn_rate_percent:
+          type: number
+          format: float
+        monthly_expansion_rate_percent:
+          type: number
+          format: float
+        average_cac_gbp:
+          type: number
+          format: float
+          nullable: true
+        estimated_ltv_gbp:
+          type: number
+          format: float
+          nullable: true
+        ltv_cac_ratio:
+          type: number
+          format: float
+          nullable: true
+        required_mrr_gbp:
+          type: number
+          format: float
+        required_max_monthly_churn_percent:
+          type: number
+          format: float
+        required_min_ltv_cac_ratio:
+          type: number
+          format: float
+        mrr_gate_passed:
+          type: boolean
+        churn_gate_passed:
+          type: boolean
+        ltv_cac_gate_passed:
+          type: boolean
+        seed_gate_passed:
+          type: boolean
+        next_actions:
+          type: array
+          items:
+            type: string
+        monthly_points:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnitEconomicsMonthlyPoint"
+      required:
+        - generated_at
+        - as_of_date
+        - period_months
+        - current_month_mrr_gbp
+        - rolling_3_month_avg_mrr_gbp
+        - mrr_growth_percent
+        - mrr_stability_percent
+        - mrr_stability_band
+        - monthly_churn_rate_percent
+        - monthly_expansion_rate_percent
+        - required_mrr_gbp
+        - required_max_monthly_churn_percent
+        - required_min_ltv_cac_ratio
+        - mrr_gate_passed
+        - churn_gate_passed
+        - ltv_cac_gate_passed
+        - seed_gate_passed
+        - next_actions
+        - monthly_points
+
     InvestorSnapshotExportResponse:
       type: object
       properties:
@@ -1636,6 +1906,8 @@ components:
           $ref: "#/components/schemas/NPSTrendResponse"
         pmf_gate:
           $ref: "#/components/schemas/PMFGateStatusResponse"
+        unit_economics:
+          $ref: "#/components/schemas/UnitEconomicsResponse"
       required:
         - generated_at
         - as_of_date
@@ -1643,6 +1915,7 @@ components:
         - pmf_evidence
         - nps_trend
         - pmf_gate
+        - unit_economics
 
     NPSSubmissionRequest:
       type: object
