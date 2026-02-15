@@ -443,6 +443,9 @@ function PMFSignalsPanel({ token }: { token: string }) {
   const [npsSubmitState, setNpsSubmitState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
     isLoading: false,
   });
+  const [snapshotExportState, setSnapshotExportState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
+    isLoading: false,
+  });
 
   const loadSignals = useCallback(async () => {
     setIsLoading(true);
@@ -557,10 +560,51 @@ function PMFSignalsPanel({ token }: { token: string }) {
     }
   };
 
+  const exportInvestorSnapshot = async () => {
+    setSnapshotExportState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/investor/snapshot/export?format=csv`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { detail?: string };
+        throw new Error(payload.detail || 'Failed to export investor snapshot');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'investor_snapshot.csv';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      setSnapshotExportState({
+        isLoading: false,
+        message: 'Investor snapshot exported successfully.',
+      });
+    } catch (err) {
+      setSnapshotExportState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Snapshot export failed',
+      });
+    }
+  };
+
   return (
     <section className={styles.subContainer}>
       <h2>PMF & Growth Signals</h2>
       <p>Activation, retention cohorts, MRR momentum, and NPS trend in one panel.</p>
+      <button
+        className={styles.tableActionButton}
+        disabled={snapshotExportState.isLoading}
+        onClick={exportInvestorSnapshot}
+        type="button"
+      >
+        {snapshotExportState.isLoading ? 'Exporting snapshot...' : 'Export investor snapshot (CSV)'}
+      </button>
+      {snapshotExportState.message && <p className={styles.message}>{snapshotExportState.message}</p>}
+      {snapshotExportState.error && <p className={styles.error}>{snapshotExportState.error}</p>}
       {loadError && <p className={styles.error}>{loadError}</p>}
       {restrictionMessage && <p className={styles.message}>{restrictionMessage}</p>}
       {isLoading && <p>Loading PMF and growth metrics...</p>}

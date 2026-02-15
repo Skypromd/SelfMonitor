@@ -185,6 +185,15 @@ class PMFGateStatusResponse(BaseModel):
     next_actions: List[str]
 
 
+class InvestorSnapshotExportResponse(BaseModel):
+    generated_at: datetime.datetime
+    as_of_date: datetime.date
+    seed_readiness: SeedReadinessResponse
+    pmf_evidence: PMFEvidenceResponse
+    nps_trend: NPSTrendResponse
+    pmf_gate: PMFGateStatusResponse
+
+
 class NPSSubmissionRequest(BaseModel):
     score: int = Field(ge=0, le=10)
     feedback: Optional[str] = Field(default=None, max_length=1000)

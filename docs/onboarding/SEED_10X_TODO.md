@@ -29,7 +29,7 @@ Status legend:
 - [ ] Add incident classification and postmortem template for compliance-critical paths.
 
 ## Phase S4 — Investor data room readiness
-- [ ] Build one-click investor snapshot export (KPI + growth + risk controls).
+- [x] Build one-click investor snapshot export (KPI + growth + risk controls).
 - [ ] Produce compliance evidence pack (audit trail, access controls, rollback proof).
 - [ ] Produce GTM evidence pack (channel performance, conversion by segment).
 

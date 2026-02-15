@@ -661,6 +661,40 @@ def test_pmf_gate_status_can_pass_when_thresholds_are_met(mocker, monkeypatch):
     assert payload["gate_passed"] is True
 
 
+def test_investor_snapshot_export_supports_json_and_csv(mocker, monkeypatch):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partner_id = client.get("/partners").json()[0]["id"]
+    lead_id = create_handoff_lead(partner_id, "snapshot-user@example.com")
+    set_lead_status(lead_id, "qualified")
+    patch_lead_timestamps(lead_id, created_days_ago=45, updated_days_ago=40, status_value="qualified")
+
+    nps_submit = client.post(
+        "/investor/nps/responses",
+        headers=get_auth_headers("snapshot-user@example.com"),
+        json={"score": 9},
+    )
+    assert nps_submit.status_code == 201
+    patch_nps_timestamp(nps_submit.json()["response_id"], created_days_ago=5)
+
+    monkeypatch.setattr("app.main.PMF_GATE_MIN_ELIGIBLE_USERS_90D", 1)
+    monkeypatch.setattr("app.main.PMF_GATE_MIN_NPS_RESPONSES", 1)
+
+    json_response = client.get("/investor/snapshot/export?format=json", headers=get_billing_headers())
+    assert json_response.status_code == 200
+    payload = json_response.json()
+    assert payload["seed_readiness"]["period_months"] == 6
+    assert payload["pmf_evidence"]["cohort_months"] == 6
+    assert "overall_nps_score" in payload["nps_trend"]
+    assert payload["pmf_gate"]["gate_name"] == "seed_pmf_gate_v1"
+
+    csv_response = client.get("/investor/snapshot/export?format=csv", headers=get_billing_headers())
+    assert csv_response.status_code == 200
+    assert csv_response.headers["content-type"].startswith("text/csv")
+    assert "investor_snapshot.csv" in csv_response.headers["content-disposition"]
+    assert "section,metric,value" in csv_response.text
+    assert "pmf_gate,gate_passed" in csv_response.text
+
+
 def test_billing_csv_export_contains_totals(mocker):
     mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
     partner_id = client.get("/partners").json()[0]["id"]

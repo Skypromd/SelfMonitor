@@ -380,6 +380,61 @@ def _build_seed_readiness_assessment(
     return round(score, 1), readiness_band, next_actions
 
 
+async def _build_seed_readiness_snapshot(
+    db: AsyncSession,
+    *,
+    period_months: int,
+    as_of_date: datetime.date,
+) -> schemas.SeedReadinessResponse:
+    invoice_metrics = await _load_seed_invoice_metrics(
+        db,
+        as_of_date=as_of_date,
+        period_months=period_months,
+    )
+    start_date_90d = as_of_date - datetime.timedelta(days=89)
+    funnel_report = await _load_billing_report(
+        db=db,
+        partner_id=None,
+        start_date=start_date_90d,
+        end_date=as_of_date,
+        statuses=[],
+    )
+    leads_last_90d = funnel_report.total_leads
+    qualified_last_90d = funnel_report.qualified_leads
+    converted_last_90d = funnel_report.converted_leads
+    qualification_rate_percent = (
+        round((qualified_last_90d / leads_last_90d) * 100.0, 1) if leads_last_90d else 0.0
+    )
+    conversion_rate_percent = (
+        round((converted_last_90d / leads_last_90d) * 100.0, 1) if leads_last_90d else 0.0
+    )
+    readiness_score_percent, readiness_band, next_actions = _build_seed_readiness_assessment(
+        leads_last_90d=leads_last_90d,
+        conversion_rate_percent=conversion_rate_percent,
+        mrr_growth_percent=float(invoice_metrics["mrr_growth_percent"]),
+        paid_invoice_rate_percent=float(invoice_metrics["paid_invoice_rate_percent"]),
+    )
+    return schemas.SeedReadinessResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        period_months=period_months,
+        current_month_mrr_gbp=float(invoice_metrics["current_month_mrr_gbp"]),
+        previous_month_mrr_gbp=float(invoice_metrics["previous_month_mrr_gbp"]),
+        mrr_growth_percent=float(invoice_metrics["mrr_growth_percent"]),
+        rolling_3_month_avg_mrr_gbp=float(invoice_metrics["rolling_3_month_avg_mrr_gbp"]),
+        paid_invoice_rate_percent=float(invoice_metrics["paid_invoice_rate_percent"]),
+        active_invoice_count=int(invoice_metrics["active_invoice_count"]),
+        leads_last_90d=leads_last_90d,
+        qualified_last_90d=qualified_last_90d,
+        converted_last_90d=converted_last_90d,
+        qualification_rate_percent=qualification_rate_percent,
+        conversion_rate_percent=conversion_rate_percent,
+        readiness_score_percent=readiness_score_percent,
+        readiness_band=readiness_band,
+        next_actions=next_actions,
+        monthly_mrr_series=list(invoice_metrics["monthly_mrr_series"]),
+    )
+
+
 def _to_utc_date(value: Any) -> datetime.date | None:
     if isinstance(value, datetime.datetime):
         if value.tzinfo is None:
@@ -828,6 +883,35 @@ def _build_nps_trend_response(
             "Passives (7-8) are included in response count but not in score numerator."
         ),
     )
+
+
+def _build_investor_snapshot_csv(snapshot: schemas.InvestorSnapshotExportResponse) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["section", "metric", "value"])
+    writer.writerow(["meta", "generated_at", snapshot.generated_at.isoformat()])
+    writer.writerow(["meta", "as_of_date", snapshot.as_of_date.isoformat()])
+
+    writer.writerow(["seed_readiness", "readiness_score_percent", f"{snapshot.seed_readiness.readiness_score_percent:.1f}"])
+    writer.writerow(["seed_readiness", "readiness_band", snapshot.seed_readiness.readiness_band])
+    writer.writerow(["seed_readiness", "mrr_growth_percent", f"{snapshot.seed_readiness.mrr_growth_percent:.1f}"])
+    writer.writerow(
+        ["seed_readiness", "paid_invoice_rate_percent", f"{snapshot.seed_readiness.paid_invoice_rate_percent:.1f}"]
+    )
+
+    writer.writerow(["pmf", "activation_rate_percent", f"{snapshot.pmf_evidence.activation_rate_percent:.1f}"])
+    writer.writerow(["pmf", "retention_rate_90d_percent", f"{snapshot.pmf_evidence.retention_rate_90d_percent:.1f}"])
+    writer.writerow(["pmf", "pmf_band", snapshot.pmf_evidence.pmf_band])
+
+    writer.writerow(["nps", "overall_nps_score", f"{snapshot.nps_trend.overall_nps_score:.1f}"])
+    writer.writerow(["nps", "total_responses", snapshot.nps_trend.total_responses])
+
+    writer.writerow(["pmf_gate", "gate_passed", str(snapshot.pmf_gate.gate_passed).lower()])
+    writer.writerow(["pmf_gate", "summary", snapshot.pmf_gate.summary])
+    for index, action in enumerate(snapshot.pmf_gate.next_actions, start=1):
+        writer.writerow(["pmf_gate_next_action", f"item_{index}", action])
+
+    return output.getvalue()
 
 
 def _resolve_report_statuses(
@@ -1863,52 +1947,10 @@ async def get_seed_readiness_snapshot(
     db: AsyncSession = Depends(get_db),
 ):
     as_of_date = datetime.datetime.now(datetime.UTC).date()
-    invoice_metrics = await _load_seed_invoice_metrics(
+    return await _build_seed_readiness_snapshot(
         db,
+        period_months=period_months,
         as_of_date=as_of_date,
-        period_months=period_months,
-    )
-    start_date_90d = as_of_date - datetime.timedelta(days=89)
-    funnel_report = await _load_billing_report(
-        db=db,
-        partner_id=None,
-        start_date=start_date_90d,
-        end_date=as_of_date,
-        statuses=[],
-    )
-    leads_last_90d = funnel_report.total_leads
-    qualified_last_90d = funnel_report.qualified_leads
-    converted_last_90d = funnel_report.converted_leads
-    qualification_rate_percent = (
-        round((qualified_last_90d / leads_last_90d) * 100.0, 1) if leads_last_90d else 0.0
-    )
-    conversion_rate_percent = (
-        round((converted_last_90d / leads_last_90d) * 100.0, 1) if leads_last_90d else 0.0
-    )
-    readiness_score_percent, readiness_band, next_actions = _build_seed_readiness_assessment(
-        leads_last_90d=leads_last_90d,
-        conversion_rate_percent=conversion_rate_percent,
-        mrr_growth_percent=float(invoice_metrics["mrr_growth_percent"]),
-        paid_invoice_rate_percent=float(invoice_metrics["paid_invoice_rate_percent"]),
-    )
-    return schemas.SeedReadinessResponse(
-        generated_at=datetime.datetime.now(datetime.UTC),
-        period_months=period_months,
-        current_month_mrr_gbp=float(invoice_metrics["current_month_mrr_gbp"]),
-        previous_month_mrr_gbp=float(invoice_metrics["previous_month_mrr_gbp"]),
-        mrr_growth_percent=float(invoice_metrics["mrr_growth_percent"]),
-        rolling_3_month_avg_mrr_gbp=float(invoice_metrics["rolling_3_month_avg_mrr_gbp"]),
-        paid_invoice_rate_percent=float(invoice_metrics["paid_invoice_rate_percent"]),
-        active_invoice_count=int(invoice_metrics["active_invoice_count"]),
-        leads_last_90d=leads_last_90d,
-        qualified_last_90d=qualified_last_90d,
-        converted_last_90d=converted_last_90d,
-        qualification_rate_percent=qualification_rate_percent,
-        conversion_rate_percent=conversion_rate_percent,
-        readiness_score_percent=readiness_score_percent,
-        readiness_band=readiness_band,
-        next_actions=next_actions,
-        monthly_mrr_series=list(invoice_metrics["monthly_mrr_series"]),
     )
 
 
@@ -1960,6 +2002,57 @@ async def get_pmf_gate_status(
     )
     nps_trend = _build_nps_trend_response(period_months=nps_period_months, trend=nps_trend_data)
     return _build_pmf_gate_status(pmf_evidence=pmf_evidence, nps_trend=nps_trend)
+
+
+@app.get("/investor/snapshot/export", response_model=schemas.InvestorSnapshotExportResponse)
+async def export_investor_snapshot(
+    report_format: Literal["json", "csv"] = Query(default="json", alias="format"),
+    seed_period_months: int = Query(default=6, ge=SEED_READINESS_MIN_PERIOD_MONTHS, le=SEED_READINESS_MAX_PERIOD_MONTHS),
+    cohort_months: int = Query(default=6, ge=PMF_MIN_COHORT_MONTHS, le=PMF_MAX_COHORT_MONTHS),
+    activation_window_days: int = Query(
+        default=30,
+        ge=PMF_MIN_ACTIVATION_WINDOW_DAYS,
+        le=PMF_MAX_ACTIVATION_WINDOW_DAYS,
+    ),
+    nps_period_months: int = Query(default=6, ge=NPS_MIN_PERIOD_MONTHS, le=NPS_MAX_PERIOD_MONTHS),
+    as_of_date: Optional[datetime.date] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    effective_as_of_date = as_of_date or datetime.datetime.now(datetime.UTC).date()
+    seed_snapshot = await _build_seed_readiness_snapshot(
+        db,
+        period_months=seed_period_months,
+        as_of_date=effective_as_of_date,
+    )
+    pmf_evidence = await _build_pmf_evidence_snapshot(
+        db,
+        cohort_months=cohort_months,
+        activation_window_days=activation_window_days,
+        as_of_date=effective_as_of_date,
+    )
+    nps_trend_data = await _load_nps_trend(
+        db,
+        as_of_date=effective_as_of_date,
+        period_months=nps_period_months,
+    )
+    nps_trend = _build_nps_trend_response(period_months=nps_period_months, trend=nps_trend_data)
+    pmf_gate = _build_pmf_gate_status(pmf_evidence=pmf_evidence, nps_trend=nps_trend)
+    snapshot = schemas.InvestorSnapshotExportResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        as_of_date=effective_as_of_date,
+        seed_readiness=seed_snapshot,
+        pmf_evidence=pmf_evidence,
+        nps_trend=nps_trend,
+        pmf_gate=pmf_gate,
+    )
+    if report_format == "csv":
+        return Response(
+            content=_build_investor_snapshot_csv(snapshot),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="investor_snapshot.csv"'},
+        )
+    return snapshot
 
 
 @app.get("/leads/billing.csv")

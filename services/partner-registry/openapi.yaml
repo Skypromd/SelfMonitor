@@ -1001,6 +1001,85 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /investor/snapshot/export:
+    get:
+      summary: Export combined investor snapshot (JSON or CSV)
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - json
+              - csv
+            default: json
+        - name: seed_period_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+        - name: cohort_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+        - name: activation_window_days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 7
+            maximum: 60
+            default: 30
+        - name: nps_period_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+        - name: as_of_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Combined investor snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvestorSnapshotExportResponse"
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /leads/{lead_id}/status:
     patch:
       summary: Update handoff lead lifecycle status
@@ -1539,6 +1618,31 @@ components:
         - gate_passed
         - summary
         - next_actions
+
+    InvestorSnapshotExportResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        as_of_date:
+          type: string
+          format: date
+        seed_readiness:
+          $ref: "#/components/schemas/SeedReadinessResponse"
+        pmf_evidence:
+          $ref: "#/components/schemas/PMFEvidenceResponse"
+        nps_trend:
+          $ref: "#/components/schemas/NPSTrendResponse"
+        pmf_gate:
+          $ref: "#/components/schemas/PMFGateStatusResponse"
+      required:
+        - generated_at
+        - as_of_date
+        - seed_readiness
+        - pmf_evidence
+        - nps_trend
+        - pmf_gate
 
     NPSSubmissionRequest:
       type: object
