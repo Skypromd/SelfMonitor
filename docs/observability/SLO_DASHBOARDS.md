@@ -52,6 +52,26 @@ Routing recommendations:
 - `critical` -> paging channel (on-call)
 - `warning` -> engineering Slack + incident triage board
 
+## 3.1 HMRC MTD reliability SLO overlay
+
+For direct HMRC submission operations, monitor these additional service-level targets:
+
+- Success rate target:
+  - `HMRC_SLO_SUCCESS_RATE_TARGET_PERCENT` (default 99%)
+- Latency target:
+  - `HMRC_SLO_P95_LATENCY_TARGET_MS` (default 2500ms)
+
+Operational endpoints:
+- `GET /integrations/hmrc/mtd/submission-slo`
+- `GET /integrations/hmrc/mtd/operational-readiness`
+
+Recommended HMRC dashboard panels:
+1. Rolling success rate (%)
+2. p95 submission latency (ms)
+3. Direct vs simulated transmission split
+4. Fallback count trend
+5. Credential rotation overdue indicator
+
 ## 4. Operational checklist for alerts
 
 When an SLO alert fires:

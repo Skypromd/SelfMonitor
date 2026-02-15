@@ -93,3 +93,30 @@ When a partial rollback is preferred over full version rollback:
      - human override rate,
      - OCR review completion time,
      - tax submission conversion rate.
+
+## 10. HMRC direct submission hardening checks
+
+Before enabling or continuing direct HMRC mode in production:
+
+1. Validate operational readiness:
+   - `GET /integrations/hmrc/mtd/operational-readiness`
+2. Validate reliability trend:
+   - `GET /integrations/hmrc/mtd/submission-slo`
+3. Confirm OAuth credential rotation metadata is current:
+   - `HMRC_OAUTH_CREDENTIALS_ROTATED_AT`
+   - `HMRC_OAUTH_ROTATION_MAX_AGE_DAYS`
+4. Ensure fallback policy is explicitly set:
+   - `HMRC_DIRECT_FALLBACK_TO_SIMULATION=true|false`
+
+Detailed procedure:
+- `docs/release/HMRC_MTD_DIRECT_RUNBOOK.md`
+
+## 11. Compliance-critical incident handling
+
+If HMRC submission reliability or filing integrity is at risk:
+
+1. Enter incident mode and assign compliance owner.
+2. Evaluate direct-to-simulation fallback.
+3. Capture SLO/readiness snapshots before and after mitigation.
+4. Complete postmortem using:
+   - `docs/release/COMPLIANCE_INCIDENT_POSTMORTEM_TEMPLATE.md`
