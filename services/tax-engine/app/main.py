@@ -17,6 +17,10 @@ CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/
 DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"}
 UK_PERSONAL_ALLOWANCE = 12570.0
 UK_BASIC_TAX_RATE = 0.20
+UK_CLASS4_NIC_LOWER_PROFITS_LIMIT = 12570.0
+UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT = 50270.0
+UK_CLASS4_NIC_MAIN_RATE = 0.06
+UK_CLASS4_NIC_ADDITIONAL_RATE = 0.02
 TAX_CALCULATIONS_TOTAL = Counter(
     "tax_calculations_total",
     "Total tax calculation attempts grouped by result.",
@@ -71,8 +75,27 @@ class TaxCalculationResult(BaseModel):
     end_date: datetime.date
     total_income: float
     total_expenses: float
+    taxable_profit: float
+    personal_allowance_used: float
+    taxable_amount_after_allowance: float
+    estimated_income_tax_due: float
+    estimated_class4_nic_due: float
+    estimated_effective_tax_rate: float
     estimated_tax_due: float
     summary_by_category: List[TaxSummaryItem]
+
+
+def _calculate_class4_nic(taxable_profit: float) -> float:
+    if taxable_profit <= UK_CLASS4_NIC_LOWER_PROFITS_LIMIT:
+        return 0.0
+    main_band_taxable = max(
+        min(taxable_profit, UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT) - UK_CLASS4_NIC_LOWER_PROFITS_LIMIT,
+        0.0,
+    )
+    additional_band_taxable = max(taxable_profit - UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT, 0.0)
+    return (main_band_taxable * UK_CLASS4_NIC_MAIN_RATE) + (
+        additional_band_taxable * UK_CLASS4_NIC_ADDITIONAL_RATE
+    )
 
 # --- Endpoints ---
 @app.get("/metrics")
@@ -126,9 +149,13 @@ async def calculate_tax(
             summary_map[category] += t.amount
 
     # 3. Apply simplified UK tax rules
-    taxable_profit = total_income - total_expenses
+    taxable_profit = max(total_income - total_expenses, 0.0)
+    personal_allowance_used = min(taxable_profit, UK_PERSONAL_ALLOWANCE)
     taxable_amount_after_allowance = max(0, taxable_profit - UK_PERSONAL_ALLOWANCE)
-    estimated_tax = taxable_amount_after_allowance * UK_BASIC_TAX_RATE
+    estimated_income_tax = taxable_amount_after_allowance * UK_BASIC_TAX_RATE
+    estimated_class4_nic = _calculate_class4_nic(taxable_profit)
+    estimated_tax = estimated_income_tax + estimated_class4_nic
+    effective_tax_rate = (estimated_tax / taxable_profit) if taxable_profit > 0 else 0.0
 
     # 4. Prepare summary
     summary_by_category = [
@@ -143,6 +170,12 @@ async def calculate_tax(
         end_date=request.end_date,
         total_income=round(total_income, 2),
         total_expenses=round(total_expenses, 2),
+        taxable_profit=round(taxable_profit, 2),
+        personal_allowance_used=round(personal_allowance_used, 2),
+        taxable_amount_after_allowance=round(taxable_amount_after_allowance, 2),
+        estimated_income_tax_due=round(estimated_income_tax, 2),
+        estimated_class4_nic_due=round(estimated_class4_nic, 2),
+        estimated_effective_tax_rate=round(effective_tax_rate, 4),
         estimated_tax_due=round(estimated_tax, 2),
         summary_by_category=summary_by_category,
     )

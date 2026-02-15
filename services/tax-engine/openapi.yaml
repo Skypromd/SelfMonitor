@@ -103,6 +103,24 @@ components:
         total_expenses:
           type: number
           format: float
+        taxable_profit:
+          type: number
+          format: float
+        personal_allowance_used:
+          type: number
+          format: float
+        taxable_amount_after_allowance:
+          type: number
+          format: float
+        estimated_income_tax_due:
+          type: number
+          format: float
+        estimated_class4_nic_due:
+          type: number
+          format: float
+        estimated_effective_tax_rate:
+          type: number
+          format: float
         estimated_tax_due:
           type: number
           format: float
@@ -116,7 +134,14 @@ components:
         - end_date
         - total_income
         - total_expenses
+        - taxable_profit
+        - personal_allowance_used
+        - taxable_amount_after_allowance
+        - estimated_income_tax_due
+        - estimated_class4_nic_due
+        - estimated_effective_tax_rate
         - estimated_tax_due
+        - summary_by_category
 
   securitySchemes:
     bearerAuth:

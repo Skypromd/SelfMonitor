@@ -106,6 +106,8 @@ def test_agent_chat_routes_ocr_intent(client: TestClient):
     assert response.status_code == 200
     payload = response.json()
     assert payload["intent"] == "ocr_review_assist"
+    assert payload["confidence_band"] in {"low", "medium", "high"}
+    assert payload["intent_reason"]
     assert payload["answer"]
     assert len(payload["evidence"]) > 0
     assert payload["evidence"][0]["source_service"] == "documents-service"
@@ -349,6 +351,25 @@ def test_execute_confirmed_action_rejects_invalid_confirmation(client: TestClien
     assert execute_payload["executed"] is False
     assert execute_payload["valid_confirmation"] is False
     assert execute_payload["confirmation_reason"] == "token_not_found_or_expired"
+
+
+def test_execute_confirmed_action_rejects_unexpected_payload_fields(client: TestClient):
+    headers = _auth_headers("alice@example.com")
+    response = client.post(
+        "/agent/actions/execute",
+        headers=headers,
+        json={
+            "session_id": "session-invalid-shape",
+            "action_id": "transactions.ignore_receipt_draft",
+            "confirmation_token": "invalid-token",
+            "action_payload": {
+                "draft_transaction_id": "draft-1",
+                "unexpected_field": "should-not-pass",
+            },
+        },
+    )
+    assert response.status_code == 400
+    assert "Unexpected payload fields" in response.json()["detail"]
 
 
 def test_execute_confirmed_action_rejects_replay(client: TestClient):

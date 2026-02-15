@@ -66,7 +66,40 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
     # Estimated tax = 0
     assert data["total_income"] == 3000.0
     assert data["total_expenses"] == 200.0
+    assert data["taxable_profit"] == 2800.0
+    assert data["personal_allowance_used"] == 2800.0
+    assert data["estimated_income_tax_due"] == 0.0
+    assert data["estimated_class4_nic_due"] == 0.0
     assert data["estimated_tax_due"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_calculate_tax_includes_class4_nic_for_higher_profit(mocker):
+    mock_transactions = [
+        {"date": "2023-05-10", "amount": 70000.0, "category": "income"},
+        {"date": "2023-06-15", "amount": -2000.0, "category": "transport"},
+    ]
+    mock_response = httpx.Response(
+        200,
+        json=mock_transactions,
+        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+    )
+    mocker.patch("httpx.AsyncClient.get", return_value=mock_response)
+
+    response = client.post(
+        "/calculate",
+        headers=get_auth_headers(),
+        json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["taxable_profit"] == 68000.0
+    assert payload["estimated_income_tax_due"] > 0
+    assert payload["estimated_class4_nic_due"] > 0
+    assert payload["estimated_tax_due"] == round(
+        payload["estimated_income_tax_due"] + payload["estimated_class4_nic_due"],
+        2,
+    )
 
 @pytest.mark.asyncio
 async def test_calculate_tax_service_unavailable(mocker):

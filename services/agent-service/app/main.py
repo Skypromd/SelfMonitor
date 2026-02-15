@@ -148,6 +148,8 @@ class AgentChatResponse(BaseModel):
     last_intent_from_memory: AgentIntent | None = None
     intent: AgentIntent
     confidence: float = Field(ge=0.0, le=1.0)
+    confidence_band: Literal["low", "medium", "high"]
+    intent_reason: str
     answer: str
     evidence: list[AgentEvidence]
     suggested_actions: list[AgentSuggestedAction]
@@ -475,19 +477,27 @@ async def _load_audit_events(user_id: str, limit: int) -> list[AgentAuditEvent]:
     return list(reversed(events))
 
 
-def _detect_intent(message: str, last_intent: AgentIntent | None = None) -> tuple[AgentIntent, float]:
+def _confidence_band(value: float) -> Literal["low", "medium", "high"]:
+    if value >= 0.85:
+        return "high"
+    if value >= 0.7:
+        return "medium"
+    return "low"
+
+
+def _detect_intent(message: str, last_intent: AgentIntent | None = None) -> tuple[AgentIntent, float, str]:
     normalized = message.lower()
     if normalized in {"continue", "continue.", "дальше", "продолжай", "go on"} and last_intent is not None:
-        return last_intent, 0.71
+        return last_intent, 0.71, "Continued prior intent from session memory."
     if any(keyword in normalized for keyword in ("hmrc", "tax", "налог", "декларац", "submission")):
-        return "tax_pre_submit", 0.89
+        return "tax_pre_submit", 0.89, "Detected tax/HMRC submission wording."
     if any(keyword in normalized for keyword in ("reconcile", "match", "duplicate", "сопостав", "дубликат")):
-        return "reconciliation_assist", 0.86
+        return "reconciliation_assist", 0.86, "Detected reconciliation or duplicate-resolution wording."
     if any(keyword in normalized for keyword in ("ocr", "receipt", "чек", "документ", "review")):
-        return "ocr_review_assist", 0.84
+        return "ocr_review_assist", 0.84, "Detected OCR/document review wording."
     if any(keyword in normalized for keyword in ("readiness", "готов", "mortgage", "ипотек", "pack")):
-        return "readiness_check", 0.82
-    return "readiness_check", 0.60
+        return "readiness_check", 0.82, "Detected readiness or mortgage-pack wording."
+    return "readiness_check", 0.60, "No explicit keyword match; used default readiness intent."
 
 
 def _ensure_supported_write_action(action_id: str) -> None:
@@ -496,6 +506,72 @@ def _ensure_supported_write_action(action_id: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported action_id '{action_id}'",
         )
+
+
+def _validate_action_payload_shape(action_id: str, action_payload: dict[str, Any]) -> None:
+    if action_id == "transactions.ignore_receipt_draft":
+        required = {"draft_transaction_id"}
+        allowed = required
+    elif action_id == "transactions.reconcile_receipt_draft":
+        required = {"draft_transaction_id", "target_transaction_id"}
+        allowed = required
+    elif action_id == "tax.calculate_and_submit":
+        required = {"start_date", "end_date", "jurisdiction"}
+        allowed = required
+    elif action_id == "documents.review_document":
+        required = {"document_id"}
+        allowed = {
+            "document_id",
+            "review_payload",
+            "total_amount",
+            "vendor_name",
+            "transaction_date",
+            "suggested_category",
+            "expense_article",
+            "is_potentially_deductible",
+            "review_status",
+            "review_notes",
+        }
+    else:
+        return
+
+    payload_keys = set(action_payload.keys())
+    missing = sorted(required - payload_keys)
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Missing required payload fields: {', '.join(missing)}",
+        )
+    unexpected = sorted(payload_keys - allowed)
+    if unexpected:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unexpected payload fields: {', '.join(unexpected)}",
+        )
+    if action_id == "documents.review_document" and "review_payload" in action_payload:
+        review_payload = action_payload.get("review_payload")
+        if not isinstance(review_payload, dict):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="review_payload must be an object",
+            )
+        allowed_review_keys = {
+            "total_amount",
+            "vendor_name",
+            "transaction_date",
+            "suggested_category",
+            "expense_article",
+            "is_potentially_deductible",
+            "review_status",
+            "review_notes",
+        }
+        review_payload_keys = set(review_payload.keys())
+        unexpected_review = sorted(review_payload_keys - allowed_review_keys)
+        if unexpected_review:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unexpected review_payload fields: {', '.join(unexpected_review)}",
+            )
 
 
 def _is_human_override_action(action_id: str, action_payload: dict[str, Any]) -> bool:
@@ -1247,6 +1323,7 @@ async def request_action_confirmation_token(
     user_id: str = Depends(get_current_user_id),
 ):
     _ensure_supported_write_action(request.action_id)
+    _validate_action_payload_shape(request.action_id, request.action_payload)
     now = datetime.datetime.now(datetime.UTC)
     expires_at = now + datetime.timedelta(seconds=AGENT_CONFIRMATION_TOKEN_TTL_SECONDS)
     confirmation_token = uuid.uuid4().hex
@@ -1292,6 +1369,7 @@ async def validate_action_confirmation_token(
     user_id: str = Depends(get_current_user_id),
 ):
     _ensure_supported_write_action(request.action_id)
+    _validate_action_payload_shape(request.action_id, request.action_payload)
     validation_result = await _validate_confirmation_token_for_action(
         user_id=user_id,
         session_id=request.session_id,
@@ -1329,6 +1407,7 @@ async def execute_confirmed_action(
     bearer_token: str = Depends(get_bearer_token),
 ):
     _ensure_supported_write_action(request.action_id)
+    _validate_action_payload_shape(request.action_id, request.action_payload)
     if not AGENT_WRITE_ACTIONS_ENABLED:
         AGENT_ACTION_EXECUTIONS_TOTAL.labels(
             action_id=request.action_id,
@@ -1532,7 +1611,8 @@ async def agent_chat(
     last_intent: AgentIntent | None = None
     if isinstance(last_intent_raw, str) and last_intent_raw in INTENT_VALUES:
         last_intent = last_intent_raw
-    intent, confidence = _detect_intent(request.message, last_intent)
+    intent, confidence, intent_reason = _detect_intent(request.message, last_intent)
+    confidence_band = _confidence_band(confidence)
     tool_calls: list[AgentToolCallLog] = []
 
     if intent == "ocr_review_assist":
@@ -1663,6 +1743,8 @@ async def agent_chat(
             payload_summary={
                 "message_length": len(request.message),
                 "detected_intent": intent,
+                "intent_reason": intent_reason,
+                "confidence_band": confidence_band,
                 "session_turn_count_before_response": len(turns),
             },
             action_result={
@@ -1678,6 +1760,8 @@ async def agent_chat(
         last_intent_from_memory=last_intent,
         intent=intent,
         confidence=confidence,
+        confidence_band=confidence_band,
+        intent_reason=intent_reason,
         answer=answer,
         evidence=evidence,
         suggested_actions=suggested_actions,

@@ -408,6 +408,14 @@ components:
         confidence:
           type: number
           format: float
+        confidence_band:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        intent_reason:
+          type: string
         answer:
           type: string
         evidence:
@@ -423,6 +431,8 @@ components:
         - session_turn_count
         - intent
         - confidence
+        - confidence_band
+        - intent_reason
         - answer
         - evidence
         - suggested_actions
