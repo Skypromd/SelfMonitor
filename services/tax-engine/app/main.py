@@ -1,8 +1,9 @@
 import datetime
 import os
 import sys
+import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Response, status
@@ -21,6 +22,27 @@ UK_CLASS4_NIC_LOWER_PROFITS_LIMIT = 12570.0
 UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT = 50270.0
 UK_CLASS4_NIC_MAIN_RATE = 0.06
 UK_CLASS4_NIC_ADDITIONAL_RATE = 0.02
+DEFAULT_MTD_ITSA_RULES: list[dict[str, Any]] = [
+    {
+        "policy_code": "UK_MTD_ITSA_2026",
+        "effective_from": "2026-04-06",
+        "threshold": 50000.0,
+        "reporting_cadence": "quarterly_updates_plus_final_declaration",
+    },
+    {
+        "policy_code": "UK_MTD_ITSA_2027",
+        "effective_from": "2027-04-06",
+        "threshold": 30000.0,
+        "reporting_cadence": "quarterly_updates_plus_final_declaration",
+    },
+    {
+        "policy_code": "UK_MTD_ITSA_2028",
+        "effective_from": "2028-04-06",
+        "threshold": 20000.0,
+        "reporting_cadence": "quarterly_updates_plus_final_declaration",
+    },
+]
+MTD_ITSA_RULES_ENV = os.getenv("TAX_MTD_ITSA_RULES_JSON")
 TAX_CALCULATIONS_TOTAL = Counter(
     "tax_calculations_total",
     "Total tax calculation attempts grouped by result.",
@@ -82,7 +104,203 @@ class TaxCalculationResult(BaseModel):
     estimated_class4_nic_due: float
     estimated_effective_tax_rate: float
     estimated_tax_due: float
+    mtd_obligation: dict[str, Any]
     summary_by_category: List[TaxSummaryItem]
+
+
+def _parse_iso_date(value: Any) -> datetime.date | None:
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return datetime.date.fromisoformat(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _load_mtd_itsa_rules() -> list[dict[str, Any]]:
+    if not MTD_ITSA_RULES_ENV:
+        return list(DEFAULT_MTD_ITSA_RULES)
+    try:
+        payload = json.loads(MTD_ITSA_RULES_ENV)
+    except json.JSONDecodeError:
+        return list(DEFAULT_MTD_ITSA_RULES)
+    if not isinstance(payload, list):
+        return list(DEFAULT_MTD_ITSA_RULES)
+
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        policy_code = str(item.get("policy_code") or "").strip()
+        effective_from = _parse_iso_date(item.get("effective_from"))
+        threshold_value = item.get("threshold")
+        cadence = str(item.get("reporting_cadence") or "").strip()
+        if not policy_code or effective_from is None or cadence != "quarterly_updates_plus_final_declaration":
+            continue
+        try:
+            threshold = float(threshold_value)
+        except (TypeError, ValueError):
+            continue
+        if threshold <= 0:
+            continue
+        normalized.append(
+            {
+                "policy_code": policy_code,
+                "effective_from": effective_from.isoformat(),
+                "threshold": threshold,
+                "reporting_cadence": cadence,
+            }
+        )
+    return normalized if normalized else list(DEFAULT_MTD_ITSA_RULES)
+
+
+def _uk_tax_year_bounds(reference_date: datetime.date) -> tuple[datetime.date, datetime.date]:
+    if (reference_date.month, reference_date.day) >= (4, 6):
+        start_year = reference_date.year
+    else:
+        start_year = reference_date.year - 1
+    tax_year_start = datetime.date(start_year, 4, 6)
+    tax_year_end = datetime.date(start_year + 1, 4, 5)
+    return tax_year_start, tax_year_end
+
+
+def _next_month_same_day(date_value: datetime.date) -> datetime.date:
+    if date_value.month == 12:
+        return datetime.date(date_value.year + 1, 1, date_value.day)
+    return datetime.date(date_value.year, date_value.month + 1, date_value.day)
+
+
+def _resolve_active_mtd_rule(tax_year_start: datetime.date) -> dict[str, Any] | None:
+    rules = _load_mtd_itsa_rules()
+    active_rule: dict[str, Any] | None = None
+    for rule in rules:
+        effective_from = _parse_iso_date(rule.get("effective_from"))
+        if effective_from is None:
+            continue
+        if effective_from <= tax_year_start:
+            if active_rule is None:
+                active_rule = rule
+                continue
+            previous_effective = _parse_iso_date(active_rule.get("effective_from"))
+            if previous_effective is None or effective_from > previous_effective:
+                active_rule = rule
+    return active_rule
+
+
+def _build_quarterly_windows(
+    tax_year_start: datetime.date,
+    *,
+    today: datetime.date,
+) -> list[dict[str, str]]:
+    year = tax_year_start.year
+    quarter_rows = [
+        ("Q1", datetime.date(year, 4, 6), datetime.date(year, 7, 5)),
+        ("Q2", datetime.date(year, 7, 6), datetime.date(year, 10, 5)),
+        ("Q3", datetime.date(year, 10, 6), datetime.date(year + 1, 1, 5)),
+        ("Q4", datetime.date(year + 1, 1, 6), datetime.date(year + 1, 4, 5)),
+    ]
+    result: list[dict[str, str]] = []
+    for label, period_start, period_end in quarter_rows:
+        due_date = _next_month_same_day(period_end)
+        if today > due_date:
+            status_value = "overdue"
+        elif today >= period_end:
+            status_value = "due_now"
+        else:
+            status_value = "upcoming"
+        result.append(
+            {
+                "quarter": label,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "due_date": due_date.isoformat(),
+                "status": status_value,
+            }
+        )
+    return result
+
+
+def _build_mtd_obligation(
+    *,
+    period_start: datetime.date,
+    period_end: datetime.date,
+    total_income: float,
+    today: datetime.date,
+) -> dict[str, Any]:
+    tax_year_start, tax_year_end = _uk_tax_year_bounds(period_end)
+    active_rule = _resolve_active_mtd_rule(tax_year_start)
+    period_days = max((period_end - period_start).days + 1, 1)
+    annualized_income_estimate = round((total_income * 365.0) / period_days, 2)
+    notes: list[str] = []
+    if period_days < 330:
+        notes.append(
+            "MTD threshold assessment is annualized because the selected period is shorter than a full tax year."
+        )
+    else:
+        notes.append("MTD threshold assessment uses selected period income totals.")
+
+    if active_rule is None:
+        notes.append("No quarterly MTD ITSA policy is active for the selected tax year.")
+        return {
+            "tax_year_start": tax_year_start.isoformat(),
+            "tax_year_end": tax_year_end.isoformat(),
+            "policy_code": "UK_SELF_ASSESSMENT_ANNUAL_ONLY",
+            "threshold": None,
+            "qualifying_income_estimate": annualized_income_estimate,
+            "reporting_required": False,
+            "reporting_cadence": "annual_only",
+            "quarterly_updates": [],
+            "final_declaration_required": True,
+            "next_deadline": None,
+            "notes": notes,
+        }
+
+    threshold = float(active_rule.get("threshold") or 0.0)
+    reporting_required = annualized_income_estimate > threshold
+    quarterly_updates = (
+        _build_quarterly_windows(tax_year_start, today=today)
+        if reporting_required
+        else []
+    )
+    next_deadline = None
+    for row in quarterly_updates:
+        due_date = _parse_iso_date(row.get("due_date"))
+        if due_date is None:
+            continue
+        if due_date >= today:
+            next_deadline = due_date.isoformat()
+            break
+    if reporting_required:
+        notes.append(
+            f"Estimated qualifying income {annualized_income_estimate:.2f} exceeds active threshold {threshold:.2f}."
+        )
+    else:
+        notes.append(
+            f"Estimated qualifying income {annualized_income_estimate:.2f} does not exceed active threshold {threshold:.2f}."
+        )
+
+    return {
+        "tax_year_start": tax_year_start.isoformat(),
+        "tax_year_end": tax_year_end.isoformat(),
+        "policy_code": str(active_rule.get("policy_code") or "UK_MTD_ITSA"),
+        "threshold": threshold,
+        "qualifying_income_estimate": annualized_income_estimate,
+        "reporting_required": reporting_required,
+        "reporting_cadence": (
+            "quarterly_updates_plus_final_declaration"
+            if reporting_required
+            else "annual_only"
+        ),
+        "quarterly_updates": quarterly_updates,
+        "final_declaration_required": True,
+        "next_deadline": next_deadline,
+        "notes": notes,
+    }
 
 
 def _calculate_class4_nic(taxable_profit: float) -> float:
@@ -163,6 +381,12 @@ async def calculate_tax(
         for cat, amount in summary_map.items()
     ]
 
+    mtd_obligation = _build_mtd_obligation(
+        period_start=request.start_date,
+        period_end=request.end_date,
+        total_income=total_income,
+        today=datetime.date.today(),
+    )
     TAX_CALCULATIONS_TOTAL.labels(result="success").inc()
     return TaxCalculationResult(
         user_id=user_id,
@@ -177,6 +401,7 @@ async def calculate_tax(
         estimated_class4_nic_due=round(estimated_class4_nic, 2),
         estimated_effective_tax_rate=round(effective_tax_rate, 4),
         estimated_tax_due=round(estimated_tax, 2),
+        mtd_obligation=mtd_obligation,
         summary_by_category=summary_by_category,
     )
 
@@ -237,5 +462,6 @@ async def calculate_and_submit_tax(
     TAX_SUBMISSIONS_TOTAL.labels(result="success").inc()
     return {
         "submission_id": submission_data.get("submission_id"),
-        "message": "Tax return submission has been successfully initiated via integrations service."
+        "message": "Tax return submission has been successfully initiated via integrations service.",
+        "mtd_obligation": calculation_result.mtd_obligation,
     }

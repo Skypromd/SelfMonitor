@@ -1120,10 +1120,51 @@ def _build_tax_pre_submit_response(
             ),
         )
     )
+    mtd_obligation_raw = calculation_dict.get("mtd_obligation")
+    mtd_obligation = mtd_obligation_raw if isinstance(mtd_obligation_raw, dict) else {}
+    if mtd_obligation:
+        reporting_required = bool(mtd_obligation.get("reporting_required"))
+        policy_code = str(mtd_obligation.get("policy_code") or "UK_MTD_ITSA")
+        next_deadline = str(mtd_obligation.get("next_deadline") or "")
+        qualifying_income = float(mtd_obligation.get("qualifying_income_estimate", 0.0))
+        threshold_value = mtd_obligation.get("threshold")
+        threshold = float(threshold_value) if isinstance(threshold_value, (int, float)) else None
+        if reporting_required:
+            deadline_text = next_deadline if next_deadline else "review quarter schedule"
+            evidence.append(
+                AgentEvidence(
+                    source_service="tax-engine",
+                    source_endpoint="/calculate",
+                    summary=(
+                        f"{policy_code}: quarterly updates required; next deadline {deadline_text}; "
+                        f"estimated qualifying income £{qualifying_income:.2f}."
+                    ),
+                )
+            )
+            actions.append(
+                AgentSuggestedAction(
+                    action_id="prepare_mtd_quarterly_update",
+                    label="Prepare next MTD quarterly update",
+                    description="Review quarter entries and supporting records before the next MTD deadline.",
+                )
+            )
+        elif threshold is not None:
+            evidence.append(
+                AgentEvidence(
+                    source_service="tax-engine",
+                    source_endpoint="/calculate",
+                    summary=(
+                        f"{policy_code}: quarterly updates not triggered for this estimate "
+                        f"(income £{qualifying_income:.2f} vs threshold £{threshold:.2f})."
+                    ),
+                )
+            )
     answer = (
         f"Tax pre-submit snapshot ready: estimated due is £{estimated_tax_due:.2f}. "
         "Review category accuracy, then proceed to submission."
     )
+    if bool(mtd_obligation.get("reporting_required")):
+        answer += " MTD quarterly updates are required for the assessed tax year."
     actions.append(
         AgentSuggestedAction(
             action_id="tax.calculate_and_submit",
@@ -1272,6 +1313,8 @@ def _build_readiness_check_response(
         calc = tax_snapshot.get("calculation")
         calc_dict = calc if isinstance(calc, dict) else {}
         estimated_tax_due = float(calc_dict.get("estimated_tax_due", 0.0))
+        mtd_obligation_raw = calc_dict.get("mtd_obligation")
+        mtd_obligation = mtd_obligation_raw if isinstance(mtd_obligation_raw, dict) else {}
         evidence.append(
             AgentEvidence(
                 source_service="tax-engine",
@@ -1286,6 +1329,15 @@ def _build_readiness_check_response(
                 description="Validate totals and deductible categories before formal submission.",
             )
         )
+        if bool(mtd_obligation.get("reporting_required")):
+            next_deadline = str(mtd_obligation.get("next_deadline") or "review quarter schedule")
+            actions.append(
+                AgentSuggestedAction(
+                    action_id="prepare_mtd_quarterly_update",
+                    label="Prepare next MTD quarterly update",
+                    description=f"Quarterly reporting is required; next deadline {next_deadline}.",
+                )
+            )
 
     if not actions:
         actions.append(

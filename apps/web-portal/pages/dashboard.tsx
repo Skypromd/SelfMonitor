@@ -24,8 +24,31 @@ type ForecastPoint = {
 
 type TaxEstimateResult = {
   end_date: string;
+  estimated_class4_nic_due: number;
+  estimated_income_tax_due: number;
+  estimated_effective_tax_rate: number;
   estimated_tax_due: number;
+  mtd_obligation?: {
+    final_declaration_required: boolean;
+    next_deadline?: string | null;
+    notes: string[];
+    policy_code: string;
+    qualifying_income_estimate: number;
+    quarterly_updates: Array<{
+      due_date: string;
+      quarter: string;
+      status: 'due_now' | 'overdue' | 'upcoming';
+    }>;
+    reporting_cadence: 'annual_only' | 'quarterly_updates_plus_final_declaration';
+    reporting_required: boolean;
+    tax_year_end: string;
+    tax_year_start: string;
+    threshold?: number | null;
+  };
+  personal_allowance_used: number;
   start_date: string;
+  taxable_amount_after_allowance: number;
+  taxable_profit: number;
   total_expenses: number;
   total_income: number;
 };
@@ -130,6 +153,32 @@ function TaxCalculator({ token }: { token: string }) {
           <div className={styles.resultItemMain}>
             <span>Estimated Tax Due:</span> <span>£{result.estimated_tax_due.toFixed(2)}</span>
           </div>
+          <div className={styles.resultItem}>
+            <span>Income Tax (estimate):</span> <span>£{result.estimated_income_tax_due.toFixed(2)}</span>
+          </div>
+          <div className={styles.resultItem}>
+            <span>Class 4 NIC (estimate):</span> <span>£{result.estimated_class4_nic_due.toFixed(2)}</span>
+          </div>
+          {result.mtd_obligation && (
+            <div className={styles.copilotWhyBlock} style={{ marginTop: '10px' }}>
+              <p>
+                <strong>MTD ITSA policy:</strong> {result.mtd_obligation.policy_code} (
+                {result.mtd_obligation.tax_year_start} to {result.mtd_obligation.tax_year_end})
+              </p>
+              <p>
+                <strong>Quarterly updates required:</strong>{' '}
+                {result.mtd_obligation.reporting_required ? 'Yes' : 'No'}{' '}
+                {typeof result.mtd_obligation.threshold === 'number'
+                  ? `(threshold £${result.mtd_obligation.threshold.toFixed(0)}, estimated income £${result.mtd_obligation.qualifying_income_estimate.toFixed(2)})`
+                  : ''}
+              </p>
+              {result.mtd_obligation.reporting_required && result.mtd_obligation.next_deadline && (
+                <p>
+                  <strong>Next quarterly deadline:</strong> {result.mtd_obligation.next_deadline}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

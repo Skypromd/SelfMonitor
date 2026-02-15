@@ -239,6 +239,7 @@ services:
       TRANSACTIONS_SERVICE_URL: "${TAX_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       INTEGRATIONS_SERVICE_URL: "${TAX_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/submit-tax-return}"
       CALENDAR_SERVICE_URL: "${TAX_CALENDAR_SERVICE_URL:-http://calendar-service/events}"
+      TAX_MTD_ITSA_RULES_JSON: "${TAX_MTD_ITSA_RULES_JSON:-[{\"policy_code\":\"UK_MTD_ITSA_2026\",\"effective_from\":\"2026-04-06\",\"threshold\":50000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"},{\"policy_code\":\"UK_MTD_ITSA_2027\",\"effective_from\":\"2027-04-06\",\"threshold\":30000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"},{\"policy_code\":\"UK_MTD_ITSA_2028\",\"effective_from\":\"2028-04-06\",\"threshold\":20000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"}]}"
       OTEL_SERVICE_NAME: "${TAX_OTEL_SERVICE_NAME:-tax-engine}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${TAX_OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}"
     networks:

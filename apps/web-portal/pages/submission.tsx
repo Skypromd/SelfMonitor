@@ -10,6 +10,12 @@ type SubmissionPageProps = {
 
 type SubmissionResponse = {
   message: string;
+  mtd_obligation?: {
+    next_deadline?: string | null;
+    reporting_required: boolean;
+    tax_year_end: string;
+    tax_year_start: string;
+  };
   submission_id: string;
 };
 
@@ -84,6 +90,12 @@ export default function SubmissionPage({ token }: SubmissionPageProps) {
             <div className={styles.resultItem}>
               <span>HMRC Submission ID:</span> <span>{result.submission_id}</span>
             </div>
+            {result.mtd_obligation && (
+              <div className={styles.resultItem}>
+                <span>MTD quarterly updates required:</span>
+                <span>{result.mtd_obligation.reporting_required ? 'Yes' : 'No'}</span>
+              </div>
+            )}
             <p className={styles.message} style={{ marginTop: '1rem' }}>
               We also attempted to add a calendar reminder for the payment deadline.
             </p>

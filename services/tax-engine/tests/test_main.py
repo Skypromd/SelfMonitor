@@ -71,6 +71,8 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
     assert data["estimated_income_tax_due"] == 0.0
     assert data["estimated_class4_nic_due"] == 0.0
     assert data["estimated_tax_due"] == 0.0
+    assert data["mtd_obligation"]["reporting_required"] is False
+    assert data["mtd_obligation"]["reporting_cadence"] == "annual_only"
 
 
 @pytest.mark.asyncio
@@ -100,6 +102,36 @@ async def test_calculate_tax_includes_class4_nic_for_higher_profit(mocker):
         payload["estimated_income_tax_due"] + payload["estimated_class4_nic_due"],
         2,
     )
+    assert payload["mtd_obligation"]["reporting_required"] is False
+
+
+@pytest.mark.asyncio
+async def test_calculate_tax_flags_quarterly_reporting_when_income_exceeds_50000(mocker):
+    mock_transactions = [
+        {"date": "2026-05-10", "amount": 60000.0, "category": "income"},
+        {"date": "2026-06-20", "amount": -5000.0, "category": "transport"},
+    ]
+    mock_response = httpx.Response(
+        200,
+        json=mock_transactions,
+        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+    )
+    mocker.patch("httpx.AsyncClient.get", return_value=mock_response)
+
+    response = client.post(
+        "/calculate",
+        headers=get_auth_headers(),
+        json={"start_date": "2026-04-06", "end_date": "2027-04-05", "jurisdiction": "UK"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    mtd = payload["mtd_obligation"]
+    assert mtd["policy_code"] == "UK_MTD_ITSA_2026"
+    assert mtd["threshold"] == 50000.0
+    assert mtd["reporting_required"] is True
+    assert mtd["reporting_cadence"] == "quarterly_updates_plus_final_declaration"
+    assert len(mtd["quarterly_updates"]) == 4
+    assert mtd["quarterly_updates"][0]["quarter"] == "Q1"
 
 @pytest.mark.asyncio
 async def test_calculate_tax_service_unavailable(mocker):

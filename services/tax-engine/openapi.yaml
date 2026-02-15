@@ -52,6 +52,8 @@ paths:
                     format: uuid
                   message:
                     type: string
+                  mtd_obligation:
+                    $ref: '#/components/schemas/MTDObligation'
         '502':
           description: Error communicating with a downstream service.
 
@@ -86,6 +88,82 @@ components:
         taxable_amount:
           type: number
           format: float
+    MTDQuarterlyUpdate:
+      type: object
+      properties:
+        quarter:
+          type: string
+          example: Q1
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+            - upcoming
+            - due_now
+            - overdue
+      required:
+        - quarter
+        - period_start
+        - period_end
+        - due_date
+        - status
+    MTDObligation:
+      type: object
+      properties:
+        tax_year_start:
+          type: string
+          format: date
+        tax_year_end:
+          type: string
+          format: date
+        policy_code:
+          type: string
+        threshold:
+          type: number
+          format: float
+          nullable: true
+        qualifying_income_estimate:
+          type: number
+          format: float
+        reporting_required:
+          type: boolean
+        reporting_cadence:
+          type: string
+          enum:
+            - annual_only
+            - quarterly_updates_plus_final_declaration
+        quarterly_updates:
+          type: array
+          items:
+            $ref: '#/components/schemas/MTDQuarterlyUpdate'
+        final_declaration_required:
+          type: boolean
+        next_deadline:
+          type: string
+          format: date
+          nullable: true
+        notes:
+          type: array
+          items:
+            type: string
+      required:
+        - tax_year_start
+        - tax_year_end
+        - policy_code
+        - qualifying_income_estimate
+        - reporting_required
+        - reporting_cadence
+        - quarterly_updates
+        - final_declaration_required
+        - notes
     TaxCalculationResult:
       type: object
       properties:
@@ -124,6 +202,8 @@ components:
         estimated_tax_due:
           type: number
           format: float
+        mtd_obligation:
+          $ref: '#/components/schemas/MTDObligation'
         summary_by_category:
           type: array
           items:
@@ -141,6 +221,7 @@ components:
         - estimated_class4_nic_due
         - estimated_effective_tax_rate
         - estimated_tax_due
+        - mtd_obligation
         - summary_by_category
 
   securitySchemes:
