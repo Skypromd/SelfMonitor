@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import deque
 
 import httpx
 from fastapi.testclient import TestClient
@@ -141,3 +142,80 @@ def test_submit_hmrc_mtd_quarterly_update_direct_mode_requires_credentials(monke
 
     assert response.status_code == 400
     assert "OAuth credentials are missing" in response.json()["detail"]
+
+
+def test_submit_hmrc_mtd_quarterly_update_uses_fallback_when_enabled(monkeypatch):
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_FALLBACK_TO_SIMULATION", True)
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "")
+    monkeypatch.setattr("app.main.HMRC_SUBMISSION_EVENTS", deque(maxlen=200))
+
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=_valid_quarterly_payload(),
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["transmission_mode"] == "simulated"
+    assert "Fallback applied" in payload["message"]
+
+
+def test_hmrc_mtd_submission_slo_endpoint(monkeypatch):
+    monkeypatch.setattr(
+        "app.main.HMRC_SUBMISSION_EVENTS",
+        deque(
+            [
+                {
+                    "timestamp": "2026-01-01T00:00:00Z",
+                    "success": True,
+                    "latency_ms": 900.0,
+                    "transmission_mode": "direct",
+                    "used_fallback": False,
+                },
+                {
+                    "timestamp": "2026-01-02T00:00:00Z",
+                    "success": False,
+                    "latency_ms": 3000.0,
+                    "transmission_mode": "simulated",
+                    "used_fallback": True,
+                },
+            ],
+            maxlen=200,
+        ),
+    )
+    monkeypatch.setattr("app.main.HMRC_SLO_SUCCESS_RATE_TARGET_PERCENT", 99.0)
+    monkeypatch.setattr("app.main.HMRC_SLO_P95_LATENCY_TARGET_MS", 2500.0)
+
+    response = client.get("/integrations/hmrc/mtd/submission-slo", headers=_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_submissions"] == 2
+    assert payload["successful_submissions"] == 1
+    assert payload["failed_submissions"] == 1
+    assert payload["fallback_submissions"] == 1
+    assert payload["direct_mode_submissions"] == 1
+    assert payload["simulated_mode_submissions"] == 1
+    assert payload["success_rate_percent"] == 50.0
+    assert payload["success_rate_alert"] is True
+    assert payload["latency_alert"] is True
+
+
+def test_hmrc_mtd_operational_readiness_endpoint(monkeypatch):
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_FALLBACK_TO_SIMULATION", True)
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "client-id")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_TOKEN_URL", "https://example.test/oauth/token")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CREDENTIALS_ROTATED_AT", "2026-01-10")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_ROTATION_MAX_AGE_DAYS", 120)
+
+    response = client.get("/integrations/hmrc/mtd/operational-readiness", headers=_headers())
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["direct_submission_enabled"] is True
+    assert payload["fallback_to_simulation_enabled"] is True
+    assert payload["oauth_credentials_configured"] is True
+    assert payload["readiness_band"] in {"ready", "degraded", "not_ready"}
