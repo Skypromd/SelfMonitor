@@ -190,7 +190,7 @@ class InvestorSnapshotExportResponse(BaseModel):
     as_of_date: datetime.date
     seed_readiness: SeedReadinessResponse
     pmf_evidence: PMFEvidenceResponse
-    nps_trend: NPSTrendResponse
+    nps_trend: "NPSTrendResponse"
     pmf_gate: PMFGateStatusResponse
 
 
