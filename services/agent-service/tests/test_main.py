@@ -213,7 +213,11 @@ def test_confirmation_token_flow_validates_and_consumes(client: TestClient):
     request_payload = {
         "session_id": "session-456",
         "action_id": "tax.calculate_and_submit",
-        "action_payload": {"jurisdiction": "UK", "start_date": "2025-01-01"},
+        "action_payload": {
+            "jurisdiction": "UK",
+            "start_date": "2025-01-01",
+            "end_date": "2025-12-31",
+        },
     }
     token_response = client.post(
         "/agent/actions/request-confirmation",
@@ -231,7 +235,11 @@ def test_confirmation_token_flow_validates_and_consumes(client: TestClient):
             "session_id": "session-456",
             "action_id": "tax.calculate_and_submit",
             "confirmation_token": confirmation_token,
-            "action_payload": {"jurisdiction": "UK", "start_date": "2025-01-01"},
+            "action_payload": {
+                "jurisdiction": "UK",
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+            },
             "consume": True,
         },
     )
@@ -247,7 +255,11 @@ def test_confirmation_token_flow_validates_and_consumes(client: TestClient):
             "session_id": "session-456",
             "action_id": "tax.calculate_and_submit",
             "confirmation_token": confirmation_token,
-            "action_payload": {"jurisdiction": "UK", "start_date": "2025-01-01"},
+            "action_payload": {
+                "jurisdiction": "UK",
+                "start_date": "2025-01-01",
+                "end_date": "2025-12-31",
+            },
             "consume": True,
         },
     )
