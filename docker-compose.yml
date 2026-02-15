@@ -238,6 +238,7 @@ services:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       TRANSACTIONS_SERVICE_URL: "${TAX_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       INTEGRATIONS_SERVICE_URL: "${TAX_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/submit-tax-return}"
+      MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL: "${TAX_MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/mtd/quarterly-update}"
       CALENDAR_SERVICE_URL: "${TAX_CALENDAR_SERVICE_URL:-http://calendar-service/events}"
       TAX_MTD_ITSA_RULES_JSON: "${TAX_MTD_ITSA_RULES_JSON:-[{\"policy_code\":\"UK_MTD_ITSA_2026\",\"effective_from\":\"2026-04-06\",\"threshold\":50000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"},{\"policy_code\":\"UK_MTD_ITSA_2027\",\"effective_from\":\"2027-04-06\",\"threshold\":30000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"},{\"policy_code\":\"UK_MTD_ITSA_2028\",\"effective_from\":\"2028-04-06\",\"threshold\":20000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"}]}"
       OTEL_SERVICE_NAME: "${TAX_OTEL_SERVICE_NAME:-tax-engine}"
@@ -278,6 +279,7 @@ services:
     container_name: integrations-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      HMRC_DIRECT_API_BASE_URL: "${HMRC_DIRECT_API_BASE_URL:-https://api.service.hmrc.gov.uk}"
     networks:
       - default_network
 

@@ -16,6 +16,7 @@ type SubmissionResponse = {
     tax_year_end: string;
     tax_year_start: string;
   };
+  submission_mode?: 'annual_tax_return' | 'mtd_quarterly_update';
   submission_id: string;
 };
 
@@ -90,6 +91,11 @@ export default function SubmissionPage({ token }: SubmissionPageProps) {
             <div className={styles.resultItem}>
               <span>HMRC Submission ID:</span> <span>{result.submission_id}</span>
             </div>
+            {result.submission_mode && (
+              <div className={styles.resultItem}>
+                <span>Submission mode:</span> <span>{result.submission_mode}</span>
+              </div>
+            )}
             {result.mtd_obligation && (
               <div className={styles.resultItem}>
                 <span>MTD quarterly updates required:</span>

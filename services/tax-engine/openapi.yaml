@@ -52,6 +52,11 @@ paths:
                     format: uuid
                   message:
                     type: string
+                  submission_mode:
+                    type: string
+                    enum:
+                      - annual_tax_return
+                      - mtd_quarterly_update
                   mtd_obligation:
                     $ref: '#/components/schemas/MTDObligation'
         '502':

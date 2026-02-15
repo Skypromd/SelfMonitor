@@ -14,6 +14,10 @@ from .telemetry import setup_telemetry
 # --- Configuration ---
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
 INTEGRATIONS_SERVICE_URL = os.getenv("INTEGRATIONS_SERVICE_URL", "http://localhost:8010/integrations/hmrc/submit-tax-return")
+MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL = os.getenv(
+    "MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL",
+    "http://localhost:8010/integrations/hmrc/mtd/quarterly-update",
+)
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
 DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"}
 UK_PERSONAL_ALLOWANCE = 12570.0
@@ -303,6 +307,81 @@ def _build_mtd_obligation(
     }
 
 
+def _resolve_matching_mtd_quarter(
+    *,
+    period_start: datetime.date,
+    period_end: datetime.date,
+    mtd_obligation: dict[str, Any],
+) -> dict[str, Any] | None:
+    quarterly_updates = mtd_obligation.get("quarterly_updates")
+    if not isinstance(quarterly_updates, list):
+        return None
+    for quarter in quarterly_updates:
+        if not isinstance(quarter, dict):
+            continue
+        quarter_start = _parse_iso_date(quarter.get("period_start"))
+        quarter_end = _parse_iso_date(quarter.get("period_end"))
+        if quarter_start == period_start and quarter_end == period_end:
+            return quarter
+    return None
+
+
+def _is_full_mtd_tax_year_submission(
+    *,
+    period_start: datetime.date,
+    period_end: datetime.date,
+    mtd_obligation: dict[str, Any],
+) -> bool:
+    tax_year_start = _parse_iso_date(mtd_obligation.get("tax_year_start"))
+    tax_year_end = _parse_iso_date(mtd_obligation.get("tax_year_end"))
+    return tax_year_start == period_start and tax_year_end == period_end
+
+
+def _build_mtd_quarterly_submission_payload(
+    *,
+    user_id: str,
+    request: "TaxCalculationRequest",
+    calculation_result: "TaxCalculationResult",
+    mtd_obligation: dict[str, Any],
+    quarter_window: dict[str, Any],
+) -> dict[str, Any]:
+    category_summary = [
+        item.model_dump() for item in calculation_result.summary_by_category
+    ]
+    return {
+        "submission_channel": "api",
+        "correlation_id": f"tax-engine-{user_id}-{request.start_date.isoformat()}-{request.end_date.isoformat()}",
+        "report": {
+            "schema_version": "hmrc-mtd-itsa-quarterly-v1",
+            "jurisdiction": "UK",
+            "policy_code": str(mtd_obligation.get("policy_code") or "UK_MTD_ITSA"),
+            "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "business": {
+                "taxpayer_ref": user_id,
+                "business_name": f"Sole trader account {user_id}",
+                "accounting_method": "cash",
+            },
+            "period": {
+                "tax_year_start": str(mtd_obligation.get("tax_year_start")),
+                "tax_year_end": str(mtd_obligation.get("tax_year_end")),
+                "quarter": str(quarter_window.get("quarter")),
+                "period_start": request.start_date.isoformat(),
+                "period_end": request.end_date.isoformat(),
+                "due_date": str(quarter_window.get("due_date")),
+            },
+            "financials": {
+                "turnover": round(calculation_result.total_income, 2),
+                "allowable_expenses": round(calculation_result.total_expenses, 2),
+                "taxable_profit": round(calculation_result.taxable_profit, 2),
+                "estimated_tax_due": round(calculation_result.estimated_tax_due, 2),
+                "currency": "GBP",
+            },
+            "category_summary": category_summary,
+            "declaration": "true_and_complete",
+        },
+    }
+
+
 def _calculate_class4_nic(taxable_profit: float) -> float:
     if taxable_profit <= UK_CLASS4_NIC_LOWER_PROFITS_LIMIT:
         return 0.0
@@ -415,16 +494,55 @@ async def calculate_and_submit_tax(
     # In a real app, this logic would be in a shared function.
     calculation_result = await calculate_tax(request, user_id, bearer_token)
 
-    # 5. Submit the calculated tax to the integrations service
+    # 5. Submit the calculated tax to the integrations service.
+    # For compliant MTD quarterly windows we use a dedicated direct HMRC endpoint.
     try:
         headers = {"Authorization": f"Bearer {bearer_token}"}
-        submission_payload = {
-            "tax_period_start": request.start_date.isoformat(),
-            "tax_period_end": request.end_date.isoformat(),
-            "tax_due": calculation_result.estimated_tax_due,
-        }
+        mtd_obligation = (
+            calculation_result.mtd_obligation
+            if isinstance(calculation_result.mtd_obligation, dict)
+            else {}
+        )
+        submission_payload: dict[str, Any]
+        submission_url = INTEGRATIONS_SERVICE_URL
+        submission_mode = "annual_tax_return"
+        is_mtd_reporting = bool(mtd_obligation.get("reporting_required"))
+        quarter_window = _resolve_matching_mtd_quarter(
+            period_start=request.start_date,
+            period_end=request.end_date,
+            mtd_obligation=mtd_obligation,
+        )
+        if is_mtd_reporting and quarter_window is not None:
+            submission_payload = _build_mtd_quarterly_submission_payload(
+                user_id=user_id,
+                request=request,
+                calculation_result=calculation_result,
+                mtd_obligation=mtd_obligation,
+                quarter_window=quarter_window,
+            )
+            submission_url = MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL
+            submission_mode = "mtd_quarterly_update"
+        else:
+            if is_mtd_reporting and not _is_full_mtd_tax_year_submission(
+                period_start=request.start_date,
+                period_end=request.end_date,
+                mtd_obligation=mtd_obligation,
+            ):
+                TAX_SUBMISSIONS_TOTAL.labels(result="validation_error").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "For MTD quarterly reporting, submission period must match an HMRC quarter "
+                        "or the full tax year for final declaration."
+                    ),
+                )
+            submission_payload = {
+                "tax_period_start": request.start_date.isoformat(),
+                "tax_period_end": request.end_date.isoformat(),
+                "tax_due": calculation_result.estimated_tax_due,
+            }
         submission_data = await post_json_with_retry(
-            INTEGRATIONS_SERVICE_URL,
+            submission_url,
             headers=headers,
             json_body=submission_payload,
             timeout=15.0,
@@ -459,11 +577,6 @@ async def calculate_and_submit_tax(
         print("Warning: Could not create calendar event.")
 
     # 7. Create quarterly MTD reminder events when quarterly updates are required.
-    mtd_obligation = (
-        calculation_result.mtd_obligation
-        if isinstance(calculation_result.mtd_obligation, dict)
-        else {}
-    )
     if bool(mtd_obligation.get("reporting_required")):
         quarterly_updates = mtd_obligation.get("quarterly_updates")
         if isinstance(quarterly_updates, list):
@@ -496,5 +609,6 @@ async def calculate_and_submit_tax(
     return {
         "submission_id": submission_data.get("submission_id"),
         "message": "Tax return submission has been successfully initiated via integrations service.",
+        "submission_mode": submission_mode,
         "mtd_obligation": calculation_result.mtd_obligation,
     }

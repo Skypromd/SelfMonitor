@@ -5,8 +5,15 @@ import datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
+from .hmrc_mtd import (
+    HMRCMTDQuarterlyReportSpec,
+    HMRCMTDQuarterlySubmissionRequest,
+    HMRCMTDQuarterlySubmissionStatus,
+    build_quarterly_report_spec,
+    submit_quarterly_update_to_hmrc,
+)
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "libs").exists():
@@ -24,6 +31,7 @@ app = FastAPI(
     description="Facades external API integrations.",
     version="1.0.0"
 )
+HMRC_DIRECT_API_BASE_URL = os.getenv("HMRC_DIRECT_API_BASE_URL", "https://api.service.hmrc.gov.uk")
 
 # --- Models ---
 
@@ -65,3 +73,35 @@ async def submit_tax_return(
         status='pending',
         message='Your submission has been received by HMRC and is being processed.'
     )
+
+
+@app.get(
+    "/integrations/hmrc/mtd/quarterly-update/spec",
+    response_model=HMRCMTDQuarterlyReportSpec,
+)
+async def get_hmrc_mtd_quarterly_report_spec(
+    _user_id: str = Depends(get_current_user_id),
+):
+    return build_quarterly_report_spec()
+
+
+@app.post(
+    "/integrations/hmrc/mtd/quarterly-update",
+    response_model=HMRCMTDQuarterlySubmissionStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def submit_hmrc_mtd_quarterly_update(
+    request: HMRCMTDQuarterlySubmissionRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    try:
+        return await submit_quarterly_update_to_hmrc(
+            request=request,
+            user_id=user_id,
+            hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid HMRC MTD quarterly report format: {exc}",
+        ) from exc

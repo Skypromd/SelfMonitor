@@ -188,6 +188,71 @@ async def test_calculate_and_submit_returns_mtd_obligation_and_creates_quarterly
     assert response.status_code == 202
     payload = response.json()
     assert payload["submission_id"] == "mock-submission-id"
+    assert payload["submission_mode"] == "annual_tax_return"
     assert payload["mtd_obligation"]["reporting_required"] is True
     assert len(payload["mtd_obligation"]["quarterly_updates"]) == 4
     assert mock_post.call_count == 6
+
+
+@pytest.mark.asyncio
+async def test_calculate_and_submit_uses_mtd_quarterly_endpoint_for_quarter_window(mocker):
+    mock_transactions = [
+        {"date": "2026-04-10", "amount": 20000.0, "category": "income"},
+        {"date": "2026-05-15", "amount": -1000.0, "category": "transport"},
+    ]
+    mock_get_response = httpx.Response(
+        200,
+        json=mock_transactions,
+        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+    )
+    mocker.patch("httpx.AsyncClient.get", return_value=mock_get_response)
+
+    mock_post = mocker.patch(
+        "app.main.post_json_with_retry",
+        side_effect=[
+            {"submission_id": "quarterly-submission-id"},
+            None,
+            None,
+            None,
+            None,
+            None,
+        ],
+    )
+
+    response = client.post(
+        "/calculate-and-submit",
+        headers=get_auth_headers(),
+        json={"start_date": "2026-04-06", "end_date": "2026-07-05", "jurisdiction": "UK"},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["submission_mode"] == "mtd_quarterly_update"
+    first_call = mock_post.call_args_list[0]
+    assert first_call.args[0].endswith("/integrations/hmrc/mtd/quarterly-update")
+    submitted_payload = first_call.kwargs["json_body"]
+    assert submitted_payload["report"]["period"]["quarter"] == "Q1"
+    assert submitted_payload["report"]["schema_version"] == "hmrc-mtd-itsa-quarterly-v1"
+
+
+@pytest.mark.asyncio
+async def test_calculate_and_submit_rejects_non_quarter_partial_period_when_mtd_required(mocker):
+    mock_transactions = [
+        {"date": "2026-05-10", "amount": 25000.0, "category": "income"},
+        {"date": "2026-06-15", "amount": -1200.0, "category": "transport"},
+    ]
+    mock_get_response = httpx.Response(
+        200,
+        json=mock_transactions,
+        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+    )
+    mocker.patch("httpx.AsyncClient.get", return_value=mock_get_response)
+
+    response = client.post(
+        "/calculate-and-submit",
+        headers=get_auth_headers(),
+        json={"start_date": "2026-04-06", "end_date": "2026-08-01", "jurisdiction": "UK"},
+    )
+
+    assert response.status_code == 400
+    assert "submission period must match an HMRC quarter" in response.json()["detail"]
