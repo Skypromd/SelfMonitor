@@ -60,6 +60,7 @@ type SeedReadinessResponse = {
   current_month_mrr_gbp: number;
   generated_at: string;
   leads_last_90d: number;
+  mrr_growth_percent: number;
   monthly_mrr_series: Array<{ month: string; mrr_gbp: number }>;
   paid_invoice_rate_percent: number;
   period_months: number;
