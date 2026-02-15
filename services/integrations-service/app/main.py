@@ -5,6 +5,7 @@ import datetime
 from pathlib import Path
 from typing import Literal
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 from .hmrc_mtd import (
@@ -32,6 +33,24 @@ app = FastAPI(
     version="1.0.0"
 )
 HMRC_DIRECT_API_BASE_URL = os.getenv("HMRC_DIRECT_API_BASE_URL", "https://api.service.hmrc.gov.uk")
+HMRC_DIRECT_SUBMISSION_ENABLED = os.getenv("HMRC_DIRECT_SUBMISSION_ENABLED", "false").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+HMRC_OAUTH_TOKEN_URL = os.getenv(
+    "HMRC_OAUTH_TOKEN_URL",
+    "https://test-api.service.hmrc.gov.uk/oauth/token",
+)
+HMRC_OAUTH_CLIENT_ID = os.getenv("HMRC_OAUTH_CLIENT_ID", "")
+HMRC_OAUTH_CLIENT_SECRET = os.getenv("HMRC_OAUTH_CLIENT_SECRET", "")
+HMRC_OAUTH_SCOPE = os.getenv("HMRC_OAUTH_SCOPE", "write:self-assessment")
+HMRC_QUARTERLY_ENDPOINT_PATH = os.getenv(
+    "HMRC_QUARTERLY_ENDPOINT_PATH",
+    "/itsa/quarterly-updates",
+)
+HMRC_REQUEST_TIMEOUT_SECONDS = float(os.getenv("HMRC_REQUEST_TIMEOUT_SECONDS", "20"))
 
 # --- Models ---
 
@@ -99,9 +118,26 @@ async def submit_hmrc_mtd_quarterly_update(
             request=request,
             user_id=user_id,
             hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
+            hmrc_direct_submission_enabled=HMRC_DIRECT_SUBMISSION_ENABLED,
+            hmrc_oauth_token_url=HMRC_OAUTH_TOKEN_URL,
+            hmrc_oauth_client_id=HMRC_OAUTH_CLIENT_ID,
+            hmrc_oauth_client_secret=HMRC_OAUTH_CLIENT_SECRET,
+            hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
+            hmrc_quarterly_endpoint_path=HMRC_QUARTERLY_ENDPOINT_PATH,
+            request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
         )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid HMRC MTD quarterly report format: {exc}",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"HMRC API returned error status {exc.response.status_code}.",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to HMRC API: {exc}",
         ) from exc

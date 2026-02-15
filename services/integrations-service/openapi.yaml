@@ -253,6 +253,12 @@ components:
           type: string
         hmrc_endpoint:
           type: string
+        transmission_mode:
+          type: string
+          enum: [simulated, direct]
+        hmrc_status_code:
+          type: integer
+          nullable: true
       required:
         - submission_id
         - status
@@ -260,6 +266,7 @@ components:
         - submission_type
         - hmrc_receipt_reference
         - hmrc_endpoint
+        - transmission_mode
     HMRCMTDQuarterlyReportSpec:
       type: object
       properties:

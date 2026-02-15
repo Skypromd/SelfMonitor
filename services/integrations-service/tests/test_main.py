@@ -1,6 +1,7 @@
 import os
 import sys
 
+import httpx
 from fastapi.testclient import TestClient
 from jose import jwt
 
@@ -68,7 +69,8 @@ def test_hmrc_mtd_spec_endpoint():
     assert "report.period" in payload["required_sections"]
 
 
-def test_submit_hmrc_mtd_quarterly_update_accepts_valid_payload():
+def test_submit_hmrc_mtd_quarterly_update_accepts_valid_payload(monkeypatch):
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
     response = client.post(
         "/integrations/hmrc/mtd/quarterly-update",
         headers=_headers(),
@@ -80,6 +82,7 @@ def test_submit_hmrc_mtd_quarterly_update_accepts_valid_payload():
     assert payload["submission_type"] == "mtd_quarterly_update"
     assert payload["hmrc_receipt_reference"].startswith("HMRC-MTD-")
     assert payload["hmrc_endpoint"].endswith("/itsa/quarterly-updates")
+    assert payload["transmission_mode"] == "simulated"
 
 
 def test_submit_hmrc_mtd_quarterly_update_rejects_invalid_period_alignment():
@@ -93,3 +96,48 @@ def test_submit_hmrc_mtd_quarterly_update_rejects_invalid_period_alignment():
     )
     assert response.status_code == 400
     assert "Invalid HMRC MTD quarterly report format" in response.json()["detail"]
+
+
+def test_submit_hmrc_mtd_quarterly_update_direct_mode(monkeypatch):
+    async def _fake_fetch_token(**_kwargs):
+        return "fake-access-token"
+
+    async def _fake_post_quarterly(**_kwargs):
+        return httpx.Response(
+            202,
+            json={"submissionId": "hmrc-direct-submission-id"},
+            request=httpx.Request("POST", "https://test-api.service.hmrc.gov.uk/itsa/quarterly-updates"),
+        )
+
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", True)
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "client-id")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr("app.hmrc_mtd._fetch_hmrc_oauth_access_token", _fake_fetch_token)
+    monkeypatch.setattr("app.hmrc_mtd._post_hmrc_quarterly_update", _fake_post_quarterly)
+
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=_valid_quarterly_payload(),
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["transmission_mode"] == "direct"
+    assert payload["hmrc_status_code"] == 202
+    assert payload["hmrc_receipt_reference"] == "hmrc-direct-submission-id"
+
+
+def test_submit_hmrc_mtd_quarterly_update_direct_mode_requires_credentials(monkeypatch):
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", True)
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "")
+
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=_valid_quarterly_payload(),
+    )
+
+    assert response.status_code == 400
+    assert "OAuth credentials are missing" in response.json()["detail"]

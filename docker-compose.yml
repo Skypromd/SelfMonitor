@@ -280,6 +280,13 @@ services:
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       HMRC_DIRECT_API_BASE_URL: "${HMRC_DIRECT_API_BASE_URL:-https://api.service.hmrc.gov.uk}"
+      HMRC_DIRECT_SUBMISSION_ENABLED: "${HMRC_DIRECT_SUBMISSION_ENABLED:-false}"
+      HMRC_OAUTH_TOKEN_URL: "${HMRC_OAUTH_TOKEN_URL:-https://test-api.service.hmrc.gov.uk/oauth/token}"
+      HMRC_OAUTH_CLIENT_ID: "${HMRC_OAUTH_CLIENT_ID:-}"
+      HMRC_OAUTH_CLIENT_SECRET: "${HMRC_OAUTH_CLIENT_SECRET:-}"
+      HMRC_OAUTH_SCOPE: "${HMRC_OAUTH_SCOPE:-write:self-assessment}"
+      HMRC_QUARTERLY_ENDPOINT_PATH: "${HMRC_QUARTERLY_ENDPOINT_PATH:-/itsa/quarterly-updates}"
+      HMRC_REQUEST_TIMEOUT_SECONDS: "${HMRC_REQUEST_TIMEOUT_SECONDS:-20}"
     networks:
       - default_network
 
