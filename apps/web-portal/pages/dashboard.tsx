@@ -1,10 +1,11 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/router';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:8011';
 const AGENT_SERVICE_URL = process.env.NEXT_PUBLIC_AGENT_SERVICE_URL || 'http://localhost:8000/api/agent';
+const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || 'http://localhost:8009';
 const COPILOT_SESSION_STORAGE_KEY = 'copilotSessionId';
 const COPILOT_MESSAGE_STORAGE_KEY = 'copilotLastMessage';
 
@@ -51,6 +52,78 @@ type TaxEstimateResult = {
   taxable_profit: number;
   total_expenses: number;
   total_income: number;
+};
+
+type SeedReadinessResponse = {
+  active_invoice_count: number;
+  conversion_rate_percent: number;
+  current_month_mrr_gbp: number;
+  generated_at: string;
+  leads_last_90d: number;
+  monthly_mrr_series: Array<{ month: string; mrr_gbp: number }>;
+  paid_invoice_rate_percent: number;
+  period_months: number;
+  pmf_band?: 'early' | 'emerging' | 'pmf_confirmed';
+  qualification_rate_percent: number;
+  qualified_last_90d: number;
+  readiness_band: 'early' | 'progressing' | 'investable';
+  readiness_score_percent: number;
+  retained_users_30d?: number;
+  retained_users_90d?: number;
+  rolling_3_month_avg_mrr_gbp: number;
+};
+
+type PMFMonthlyCohortPoint = {
+  activation_rate_percent: number;
+  cohort_month: string;
+  new_users: number;
+  retention_rate_30d_percent: number;
+  retention_rate_60d_percent: number;
+  retention_rate_90d_percent: number;
+};
+
+type PMFEvidenceResponse = {
+  activated_users: number;
+  activation_rate_percent: number;
+  activation_window_days: number;
+  as_of_date: string;
+  cohort_months: number;
+  eligible_users_30d: number;
+  eligible_users_60d: number;
+  eligible_users_90d: number;
+  generated_at: string;
+  monthly_cohorts: PMFMonthlyCohortPoint[];
+  note?: string;
+  notes: string[];
+  pmf_band: 'early' | 'emerging' | 'pmf_confirmed';
+  retained_users_30d: number;
+  retained_users_60d: number;
+  retained_users_90d: number;
+  retention_rate_30d_percent: number;
+  retention_rate_60d_percent: number;
+  retention_rate_90d_percent: number;
+  total_new_users: number;
+};
+
+type NPSMonthlyTrendPoint = {
+  detractors_count: number;
+  month: string;
+  nps_score: number;
+  passives_count: number;
+  promoters_count: number;
+  responses_count: number;
+};
+
+type NPSTrendResponse = {
+  detractors_count: number;
+  generated_at: string;
+  monthly_trend: NPSMonthlyTrendPoint[];
+  note: string;
+  overall_nps_score: number;
+  passives_count: number;
+  period_months: number;
+  promoters_count: number;
+  total_responses: number;
 };
 
 type CopilotEvidence = {
@@ -335,6 +408,268 @@ function ActionCenter({ token }: { token: string }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function PMFSignalsPanel({ token }: { token: string }) {
+  const [seedSnapshot, setSeedSnapshot] = useState<SeedReadinessResponse | null>(null);
+  const [pmfEvidence, setPmfEvidence] = useState<PMFEvidenceResponse | null>(null);
+  const [npsTrend, setNpsTrend] = useState<NPSTrendResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [restrictionMessage, setRestrictionMessage] = useState('');
+  const [npsScore, setNpsScore] = useState(10);
+  const [npsFeedback, setNpsFeedback] = useState('');
+  const [npsSubmitState, setNpsSubmitState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
+    isLoading: false,
+  });
+
+  const loadSignals = useCallback(async () => {
+    setIsLoading(true);
+    setLoadError('');
+    setRestrictionMessage('');
+    try {
+      const [seedResponse, pmfResponse, npsResponse] = await Promise.all([
+        fetch(`${PARTNER_REGISTRY_URL}/investor/seed-readiness?period_months=6`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PARTNER_REGISTRY_URL}/investor/pmf-evidence?cohort_months=6&activation_window_days=30`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PARTNER_REGISTRY_URL}/investor/nps/trend?period_months=6`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const parseJsonSafely = async (response: Response): Promise<Record<string, unknown>> => {
+        try {
+          const payload = (await response.json()) as Record<string, unknown>;
+          return payload;
+        } catch {
+          return {};
+        }
+      };
+
+      const [seedPayload, pmfPayload, npsPayload] = await Promise.all([
+        parseJsonSafely(seedResponse),
+        parseJsonSafely(pmfResponse),
+        parseJsonSafely(npsResponse),
+      ]);
+
+      const anyRestricted = [seedResponse, pmfResponse, npsResponse].some((response) => response.status === 403);
+      if (anyRestricted) {
+        setRestrictionMessage('Investor metrics require billing/admin permissions. NPS submission remains available.');
+      }
+
+      if (seedResponse.ok) {
+        setSeedSnapshot(seedPayload as unknown as SeedReadinessResponse);
+      } else {
+        setSeedSnapshot(null);
+      }
+      if (pmfResponse.ok) {
+        setPmfEvidence(pmfPayload as unknown as PMFEvidenceResponse);
+      } else {
+        setPmfEvidence(null);
+      }
+      if (npsResponse.ok) {
+        setNpsTrend(npsPayload as unknown as NPSTrendResponse);
+      } else {
+        setNpsTrend(null);
+      }
+
+      const criticalFailures = [seedResponse, pmfResponse, npsResponse].filter(
+        (response) => !response.ok && response.status !== 403
+      );
+      if (criticalFailures.length > 0) {
+        setLoadError('Some investor metrics could not be loaded right now. Retry in a moment.');
+      }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unexpected PMF metrics error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void loadSignals();
+  }, [loadSignals]);
+
+  const submitNPS = async (event: FormEvent) => {
+    event.preventDefault();
+    setNpsSubmitState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/investor/nps/responses`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          score: npsScore,
+          feedback: npsFeedback.trim() || undefined,
+          context_tag: 'dashboard',
+        }),
+      });
+      const payload = (await response.json()) as { detail?: string; message?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to submit NPS feedback');
+      }
+      setNpsSubmitState({
+        isLoading: false,
+        message: payload.message || 'NPS feedback submitted successfully.',
+      });
+      setNpsFeedback('');
+      void loadSignals();
+    } catch (err) {
+      setNpsSubmitState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'NPS submission failed',
+      });
+    }
+  };
+
+  return (
+    <section className={styles.subContainer}>
+      <h2>PMF & Growth Signals</h2>
+      <p>Activation, retention cohorts, MRR momentum, and NPS trend in one panel.</p>
+      {loadError && <p className={styles.error}>{loadError}</p>}
+      {restrictionMessage && <p className={styles.message}>{restrictionMessage}</p>}
+      {isLoading && <p>Loading PMF and growth metrics...</p>}
+
+      {!isLoading && (seedSnapshot || pmfEvidence || npsTrend) && (
+        <div className={styles.metricsGrid}>
+          {seedSnapshot && (
+            <>
+              <article className={styles.metricCard}>
+                <h4>Seed readiness</h4>
+                <p>
+                  {seedSnapshot.readiness_score_percent.toFixed(1)}% ({seedSnapshot.readiness_band})
+                </p>
+              </article>
+              <article className={styles.metricCard}>
+                <h4>MRR growth (MoM)</h4>
+                <p>{seedSnapshot.mrr_growth_percent.toFixed(1)}%</p>
+              </article>
+              <article className={styles.metricCard}>
+                <h4>Paid invoice rate</h4>
+                <p>{seedSnapshot.paid_invoice_rate_percent.toFixed(1)}%</p>
+              </article>
+            </>
+          )}
+          {pmfEvidence && (
+            <>
+              <article className={styles.metricCard}>
+                <h4>Activation</h4>
+                <p>
+                  {pmfEvidence.activation_rate_percent.toFixed(1)}% ({pmfEvidence.activated_users}/{pmfEvidence.total_new_users})
+                </p>
+              </article>
+              <article className={styles.metricCard}>
+                <h4>Retention 30d</h4>
+                <p>{pmfEvidence.retention_rate_30d_percent.toFixed(1)}%</p>
+              </article>
+              <article className={styles.metricCard}>
+                <h4>Retention 90d</h4>
+                <p>{pmfEvidence.retention_rate_90d_percent.toFixed(1)}%</p>
+              </article>
+            </>
+          )}
+          {npsTrend && (
+            <article className={styles.metricCard}>
+              <h4>Overall NPS</h4>
+              <p>{npsTrend.overall_nps_score.toFixed(1)}</p>
+            </article>
+          )}
+        </div>
+      )}
+
+      {pmfEvidence && (
+        <>
+          <h3 className={styles.sectionTitle}>Monthly activation/retention cohorts</h3>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Cohort</th>
+                <th>New users</th>
+                <th>Activation %</th>
+                <th>Retention 30d %</th>
+                <th>Retention 60d %</th>
+                <th>Retention 90d %</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pmfEvidence.monthly_cohorts.map((row) => (
+                <tr key={row.cohort_month}>
+                  <td>{row.cohort_month}</td>
+                  <td>{row.new_users}</td>
+                  <td>{row.activation_rate_percent.toFixed(1)}</td>
+                  <td>{row.retention_rate_30d_percent.toFixed(1)}</td>
+                  <td>{row.retention_rate_60d_percent.toFixed(1)}</td>
+                  <td>{row.retention_rate_90d_percent.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      {npsTrend && (
+        <>
+          <h3 className={styles.sectionTitle}>Monthly NPS trend</h3>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Responses</th>
+                <th>Promoters</th>
+                <th>Passives</th>
+                <th>Detractors</th>
+                <th>NPS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {npsTrend.monthly_trend.map((row) => (
+                <tr key={row.month}>
+                  <td>{row.month}</td>
+                  <td>{row.responses_count}</td>
+                  <td>{row.promoters_count}</td>
+                  <td>{row.passives_count}</td>
+                  <td>{row.detractors_count}</td>
+                  <td>{row.nps_score.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+
+      <h3 className={styles.sectionTitle}>Share NPS feedback</h3>
+      <form className={styles.copilotComposer} onSubmit={submitNPS}>
+        <div className={styles.npsScoreRow}>
+          <label htmlFor="nps-score">Score (0-10)</label>
+          <input
+            className={styles.input}
+            id="nps-score"
+            max={10}
+            min={0}
+            onChange={(event) => setNpsScore(Math.max(0, Math.min(10, Number(event.target.value) || 0)))}
+            type="number"
+            value={npsScore}
+          />
+        </div>
+        <textarea
+          className={`${styles.input} ${styles.copilotTextarea}`}
+          onChange={(event) => setNpsFeedback(event.target.value)}
+          placeholder="Optional: what should we improve next?"
+          value={npsFeedback}
+        />
+        <button className={styles.button} disabled={npsSubmitState.isLoading} type="submit">
+          {npsSubmitState.isLoading ? 'Submitting...' : 'Submit NPS'}
+        </button>
+      </form>
+      {npsSubmitState.message && <p className={styles.message}>{npsSubmitState.message}</p>}
+      {npsSubmitState.error && <p className={styles.error}>{npsSubmitState.error}</p>}
+    </section>
   );
 }
 
@@ -673,6 +1008,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
       <AICopilotPanel token={token} />
+      <PMFSignalsPanel token={token} />
       <ActionCenter token={token} />
       <CashFlowPreview token={token} />
       <TaxCalculator token={token} />

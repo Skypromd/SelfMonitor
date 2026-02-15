@@ -163,6 +163,41 @@ class PMFEvidenceResponse(BaseModel):
     monthly_cohorts: List[PMFMonthlyCohortPoint]
 
 
+class NPSSubmissionRequest(BaseModel):
+    score: int = Field(ge=0, le=10)
+    feedback: Optional[str] = Field(default=None, max_length=1000)
+    context_tag: Optional[str] = Field(default="dashboard", max_length=64)
+    locale: Optional[str] = Field(default=None, max_length=16)
+
+
+class NPSSubmissionResponse(BaseModel):
+    response_id: uuid.UUID
+    score_band: Literal["promoter", "passive", "detractor"]
+    submitted_at: datetime.datetime
+    message: str
+
+
+class NPSMonthlyTrendPoint(BaseModel):
+    month: str
+    responses_count: int
+    promoters_count: int
+    passives_count: int
+    detractors_count: int
+    nps_score: float
+
+
+class NPSTrendResponse(BaseModel):
+    generated_at: datetime.datetime
+    period_months: int
+    total_responses: int
+    promoters_count: int
+    passives_count: int
+    detractors_count: int
+    overall_nps_score: float
+    monthly_trend: List[NPSMonthlyTrendPoint]
+    note: str
+
+
 class PartnerPricingUpdateRequest(BaseModel):
     qualified_lead_fee_gbp: float = Field(ge=0)
     converted_lead_fee_gbp: float = Field(ge=0)

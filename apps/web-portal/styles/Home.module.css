@@ -5,6 +5,45 @@
   padding: 28px 16px;
 }
 
+.metricsGrid {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+}
+
+.metricCard {
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+  padding: 10px 12px;
+}
+
+.metricCard h4 {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.metricCard p {
+  margin: 8px 0 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.npsScoreRow {
+  display: grid;
+  gap: 6px;
+}
+
+.npsScoreRow label {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
 .main {
   width: min(100%, 500px);
   background: var(--color-surface);

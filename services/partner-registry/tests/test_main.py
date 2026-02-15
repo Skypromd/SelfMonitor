@@ -110,6 +110,21 @@ def patch_lead_timestamps(
     )
 
 
+async def _set_nps_timestamp(response_id: str, *, created_days_ago: int) -> None:
+    now = datetime.datetime.now(datetime.UTC)
+    async with TestingSessionLocal() as session:
+        await session.execute(
+            update(models.NPSResponse)
+            .where(models.NPSResponse.id == response_id)
+            .values(created_at=now - datetime.timedelta(days=created_days_ago))
+        )
+        await session.commit()
+
+
+def patch_nps_timestamp(response_id: str, *, created_days_ago: int) -> None:
+    asyncio.run(_set_nps_timestamp(response_id, created_days_ago=created_days_ago))
+
+
 async def override_get_db():
     async with TestingSessionLocal() as session:
         yield session
@@ -507,6 +522,50 @@ def test_pmf_evidence_snapshot_returns_activation_and_retention_cohorts(mocker):
     assert payload["retention_rate_90d_percent"] == 50.0
     assert payload["pmf_band"] in {"early", "emerging", "pmf_confirmed"}
     assert len(payload["monthly_cohorts"]) == 6
+
+
+def test_nps_submission_and_monthly_trend_reporting(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+
+    submit_a = client.post(
+        "/investor/nps/responses",
+        headers=get_auth_headers("nps-a@example.com"),
+        json={"score": 10, "feedback": "Great product flow."},
+    )
+    submit_b = client.post(
+        "/investor/nps/responses",
+        headers=get_auth_headers("nps-b@example.com"),
+        json={"score": 8, "feedback": "Good, but can improve onboarding."},
+    )
+    submit_c = client.post(
+        "/investor/nps/responses",
+        headers=get_auth_headers("nps-c@example.com"),
+        json={"score": 4, "feedback": "Too many manual steps."},
+    )
+    assert submit_a.status_code == 201
+    assert submit_b.status_code == 201
+    assert submit_c.status_code == 201
+    assert submit_a.json()["score_band"] == "promoter"
+    assert submit_b.json()["score_band"] == "passive"
+    assert submit_c.json()["score_band"] == "detractor"
+
+    patch_nps_timestamp(submit_a.json()["response_id"], created_days_ago=65)
+    patch_nps_timestamp(submit_b.json()["response_id"], created_days_ago=35)
+    patch_nps_timestamp(submit_c.json()["response_id"], created_days_ago=5)
+
+    forbidden_trend = client.get("/investor/nps/trend", headers=get_auth_headers("nps-a@example.com"))
+    assert forbidden_trend.status_code == 403
+
+    trend_response = client.get("/investor/nps/trend?period_months=6", headers=get_billing_headers())
+    assert trend_response.status_code == 200
+    payload = trend_response.json()
+    assert payload["period_months"] == 6
+    assert payload["total_responses"] == 3
+    assert payload["promoters_count"] == 1
+    assert payload["passives_count"] == 1
+    assert payload["detractors_count"] == 1
+    assert payload["overall_nps_score"] == 0.0
+    assert len(payload["monthly_trend"]) == 6
 
 
 def test_billing_csv_export_contains_totals(mocker):

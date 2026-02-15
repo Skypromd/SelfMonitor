@@ -97,6 +97,8 @@ PMF_MIN_COHORT_MONTHS = 3
 PMF_MAX_COHORT_MONTHS = 24
 PMF_MIN_ACTIVATION_WINDOW_DAYS = 7
 PMF_MAX_ACTIVATION_WINDOW_DAYS = 60
+NPS_MIN_PERIOD_MONTHS = 3
+NPS_MAX_PERIOD_MONTHS = 24
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -533,6 +535,121 @@ def _assess_pmf_band(
     else:
         notes.append("Early-stage PMF signal; focus on onboarding quality and consistent return usage.")
     return band, notes
+
+
+def _nps_score_band(score: int) -> Literal["promoter", "passive", "detractor"]:
+    if score >= 9:
+        return "promoter"
+    if score >= 7:
+        return "passive"
+    return "detractor"
+
+
+def _nps_score_from_counts(*, promoters: int, detractors: int, total: int) -> float:
+    if total <= 0:
+        return 0.0
+    return round(((promoters - detractors) / total) * 100.0, 1)
+
+
+async def _load_nps_trend(
+    db: AsyncSession,
+    *,
+    as_of_date: datetime.date,
+    period_months: int,
+) -> dict[str, Any]:
+    period_start = _shift_month(_month_start(as_of_date), -(period_months - 1))
+    period_start_at = datetime.datetime.combine(period_start, datetime.time.min, tzinfo=datetime.UTC)
+    period_end_before = datetime.datetime.combine(
+        as_of_date + datetime.timedelta(days=1),
+        datetime.time.min,
+        tzinfo=datetime.UTC,
+    )
+
+    month_starts = [_shift_month(period_start, offset) for offset in range(period_months)]
+    bucket: dict[str, dict[str, int]] = {
+        _month_key(month_start): {
+            "responses_count": 0,
+            "promoters_count": 0,
+            "passives_count": 0,
+            "detractors_count": 0,
+        }
+        for month_start in month_starts
+    }
+
+    rows = (
+        await db.execute(
+            select(
+                models.NPSResponse.created_at,
+                models.NPSResponse.score,
+            ).filter(
+                models.NPSResponse.created_at >= period_start_at,
+                models.NPSResponse.created_at < period_end_before,
+            )
+        )
+    ).all()
+
+    for created_at, score_raw in rows:
+        created_date = _to_utc_date(created_at)
+        if created_date is None:
+            continue
+        month_key = _month_key(_month_start(created_date))
+        month_row = bucket.get(month_key)
+        if month_row is None:
+            continue
+        score = int(score_raw)
+        month_row["responses_count"] += 1
+        score_band = _nps_score_band(score)
+        if score_band == "promoter":
+            month_row["promoters_count"] += 1
+        elif score_band == "passive":
+            month_row["passives_count"] += 1
+        else:
+            month_row["detractors_count"] += 1
+
+    monthly_trend: list[schemas.NPSMonthlyTrendPoint] = []
+    total_responses = 0
+    promoters_count = 0
+    passives_count = 0
+    detractors_count = 0
+    for month_start in month_starts:
+        key = _month_key(month_start)
+        item = bucket[key]
+        responses_count = int(item["responses_count"])
+        month_promoters = int(item["promoters_count"])
+        month_passives = int(item["passives_count"])
+        month_detractors = int(item["detractors_count"])
+        total_responses += responses_count
+        promoters_count += month_promoters
+        passives_count += month_passives
+        detractors_count += month_detractors
+        monthly_trend.append(
+            schemas.NPSMonthlyTrendPoint(
+                month=key,
+                responses_count=responses_count,
+                promoters_count=month_promoters,
+                passives_count=month_passives,
+                detractors_count=month_detractors,
+                nps_score=_nps_score_from_counts(
+                    promoters=month_promoters,
+                    detractors=month_detractors,
+                    total=responses_count,
+                ),
+            )
+        )
+
+    return {
+        "period_months": period_months,
+        "total_responses": total_responses,
+        "promoters_count": promoters_count,
+        "passives_count": passives_count,
+        "detractors_count": detractors_count,
+        "overall_nps_score": _nps_score_from_counts(
+            promoters=promoters_count,
+            detractors=detractors_count,
+            total=total_responses,
+        ),
+        "monthly_trend": monthly_trend,
+    }
 
 
 def _resolve_report_statuses(
@@ -1501,6 +1618,76 @@ async def get_lead_funnel_summary(
         qualification_rate_percent=qualification_rate,
         conversion_rate_from_qualified_percent=conversion_from_qualified,
         overall_conversion_rate_percent=overall_conversion,
+    )
+
+
+@app.post(
+    "/investor/nps/responses",
+    response_model=schemas.NPSSubmissionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_nps_response(
+    payload: schemas.NPSSubmissionRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    feedback = payload.feedback.strip() if payload.feedback else None
+    context_tag = payload.context_tag.strip() if payload.context_tag else None
+    locale = payload.locale.strip() if payload.locale else None
+    record = models.NPSResponse(
+        user_id=user_id,
+        score=payload.score,
+        feedback=feedback,
+        context_tag=context_tag,
+        locale=locale,
+    )
+    db.add(record)
+    await db.commit()
+    await db.refresh(record)
+    await log_audit_event(
+        user_id=user_id,
+        action="investor.nps.submitted",
+        details={
+            "response_id": str(record.id),
+            "score": payload.score,
+            "score_band": _nps_score_band(payload.score),
+            "context_tag": context_tag,
+        },
+    )
+    return schemas.NPSSubmissionResponse(
+        response_id=uuid.UUID(str(record.id)),
+        score_band=_nps_score_band(payload.score),
+        submitted_at=record.created_at,
+        message="NPS feedback submitted. Thank you for helping improve product quality.",
+    )
+
+
+@app.get("/investor/nps/trend", response_model=schemas.NPSTrendResponse)
+async def get_nps_trend(
+    period_months: int = Query(default=6, ge=NPS_MIN_PERIOD_MONTHS, le=NPS_MAX_PERIOD_MONTHS),
+    as_of_date: Optional[datetime.date] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    effective_as_of_date = as_of_date or datetime.datetime.now(datetime.UTC).date()
+    trend = await _load_nps_trend(
+        db,
+        as_of_date=effective_as_of_date,
+        period_months=period_months,
+    )
+    return schemas.NPSTrendResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        period_months=period_months,
+        total_responses=int(trend["total_responses"]),
+        promoters_count=int(trend["promoters_count"]),
+        passives_count=int(trend["passives_count"]),
+        detractors_count=int(trend["detractors_count"]),
+        overall_nps_score=float(trend["overall_nps_score"]),
+        monthly_trend=list(trend["monthly_trend"]),
+        note=(
+            "NPS score is calculated as %promoters (9-10) minus %detractors (0-6). "
+            "Passives (7-8) are included in response count but not in score numerator."
+        ),
     )
 
 

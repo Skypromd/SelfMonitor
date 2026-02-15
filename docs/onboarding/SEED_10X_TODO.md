@@ -12,9 +12,9 @@ Status legend:
 - [ ] Add weekly KPI review cadence and owner checklist.
 
 ## Phase S1 — PMF evidence (product-market fit)
-- [ ] Track activation funnel: signup -> first data import -> first tax-ready period.
+- [x] Track activation funnel: signup -> first data import -> first tax-ready period.
 - [x] Track 30/60/90-day retention cohorts for active and paying users.
-- [ ] Add in-product NPS collection and monthly trend reporting.
+- [x] Add in-product NPS collection and monthly trend reporting.
 - [ ] Define PMF gate: activation > 60%, 90-day paying retention > 75%, NPS > 45.
 
 ## Phase S2 — Revenue and unit economics
@@ -39,3 +39,5 @@ Status legend:
 - [x] S0.4 Wire endpoint into execution list and mark first run complete.
 - [x] S1.1 Implement PMF evidence endpoint (`/investor/pmf-evidence`) with activation and 30/60/90 retention cohorts.
 - [x] S1.2 Add tests and OpenAPI contract for PMF evidence snapshot.
+- [x] S1.3 Implement NPS submission endpoint (`/investor/nps/responses`) and monthly trend endpoint (`/investor/nps/trend`).
+- [x] S1.4 Add dashboard PMF/NPS signals panel with in-product NPS submission form.

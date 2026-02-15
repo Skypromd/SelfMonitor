@@ -819,6 +819,77 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /investor/nps/responses:
+    post:
+      summary: Submit in-product NPS feedback response
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NPSSubmissionRequest"
+      responses:
+        "201":
+          description: NPS response accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NPSSubmissionResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /investor/nps/trend:
+    get:
+      summary: Get monthly NPS trend for investor reporting
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: period_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+          description: Number of months included in trend.
+        - name: as_of_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Optional snapshot date for backtesting trend calculations.
+      responses:
+        "200":
+          description: Monthly and overall NPS trend snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NPSTrendResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /investor/pmf-evidence:
     get:
       summary: Get PMF activation and 30/60/90 retention cohorts
@@ -1337,6 +1408,113 @@ components:
         - pmf_band
         - notes
         - monthly_cohorts
+
+    NPSSubmissionRequest:
+      type: object
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 10
+        feedback:
+          type: string
+          nullable: true
+          maxLength: 1000
+        context_tag:
+          type: string
+          nullable: true
+          maxLength: 64
+          default: dashboard
+        locale:
+          type: string
+          nullable: true
+          maxLength: 16
+      required:
+        - score
+
+    NPSSubmissionResponse:
+      type: object
+      properties:
+        response_id:
+          type: string
+          format: uuid
+        score_band:
+          type: string
+          enum:
+            - promoter
+            - passive
+            - detractor
+        submitted_at:
+          type: string
+          format: date-time
+        message:
+          type: string
+      required:
+        - response_id
+        - score_band
+        - submitted_at
+        - message
+
+    NPSMonthlyTrendPoint:
+      type: object
+      properties:
+        month:
+          type: string
+          example: "2026-02"
+        responses_count:
+          type: integer
+        promoters_count:
+          type: integer
+        passives_count:
+          type: integer
+        detractors_count:
+          type: integer
+        nps_score:
+          type: number
+          format: float
+      required:
+        - month
+        - responses_count
+        - promoters_count
+        - passives_count
+        - detractors_count
+        - nps_score
+
+    NPSTrendResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        period_months:
+          type: integer
+        total_responses:
+          type: integer
+        promoters_count:
+          type: integer
+        passives_count:
+          type: integer
+        detractors_count:
+          type: integer
+        overall_nps_score:
+          type: number
+          format: float
+        monthly_trend:
+          type: array
+          items:
+            $ref: "#/components/schemas/NPSMonthlyTrendPoint"
+        note:
+          type: string
+      required:
+        - generated_at
+        - period_months
+        - total_responses
+        - promoters_count
+        - passives_count
+        - detractors_count
+        - overall_nps_score
+        - monthly_trend
+        - note
 
     PartnerPricingUpdateRequest:
       type: object
