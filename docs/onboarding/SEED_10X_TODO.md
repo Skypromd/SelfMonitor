@@ -8,12 +8,12 @@ Status legend:
 
 ## Phase S0 — Setup and control plane
 - [x] Create and publish this execution TODO in repository.
-- [ ] Define single source of truth KPI endpoint(s) for investor metrics.
+- [x] Define single source of truth KPI endpoint(s) for investor metrics.
 - [ ] Add weekly KPI review cadence and owner checklist.
 
 ## Phase S1 — PMF evidence (product-market fit)
 - [ ] Track activation funnel: signup -> first data import -> first tax-ready period.
-- [ ] Track 30/60/90-day retention cohorts for active and paying users.
+- [x] Track 30/60/90-day retention cohorts for active and paying users.
 - [ ] Add in-product NPS collection and monthly trend reporting.
 - [ ] Define PMF gate: activation > 60%, 90-day paying retention > 75%, NPS > 45.
 
@@ -37,3 +37,5 @@ Status legend:
 - [x] S0.2 Implement investor KPI source endpoint (`/investor/seed-readiness`) in partner-registry.
 - [x] S0.3 Add automated tests and OpenAPI coverage for the endpoint.
 - [x] S0.4 Wire endpoint into execution list and mark first run complete.
+- [x] S1.1 Implement PMF evidence endpoint (`/investor/pmf-evidence`) with activation and 30/60/90 retention cohorts.
+- [x] S1.2 Add tests and OpenAPI contract for PMF evidence snapshot.

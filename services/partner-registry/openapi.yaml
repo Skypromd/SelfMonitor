@@ -819,6 +819,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /investor/pmf-evidence:
+    get:
+      summary: Get PMF activation and 30/60/90 retention cohorts
+      tags:
+        - Monetization
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cohort_months
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 3
+            maximum: 24
+            default: 6
+          description: Number of monthly cohorts included in PMF evidence snapshot.
+        - name: activation_window_days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 7
+            maximum: 60
+            default: 30
+          description: Activation window measured from first-seen user activity.
+        - name: as_of_date
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Optional snapshot date for backtesting PMF trend calculations.
+      responses:
+        "200":
+          description: PMF evidence snapshot with activation and retention cohorts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PMFEvidenceResponse"
+        "401":
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Insufficient permissions (requires billing scope/role).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /leads/{lead_id}/status:
     patch:
       summary: Update handoff lead lifecycle status
@@ -1159,6 +1212,131 @@ components:
         - readiness_band
         - next_actions
         - monthly_mrr_series
+
+    PMFMonthlyCohortPoint:
+      type: object
+      properties:
+        cohort_month:
+          type: string
+          example: "2026-01"
+        new_users:
+          type: integer
+        activated_users:
+          type: integer
+        activation_rate_percent:
+          type: number
+          format: float
+        eligible_users_30d:
+          type: integer
+        retained_users_30d:
+          type: integer
+        retention_rate_30d_percent:
+          type: number
+          format: float
+        eligible_users_60d:
+          type: integer
+        retained_users_60d:
+          type: integer
+        retention_rate_60d_percent:
+          type: number
+          format: float
+        eligible_users_90d:
+          type: integer
+        retained_users_90d:
+          type: integer
+        retention_rate_90d_percent:
+          type: number
+          format: float
+      required:
+        - cohort_month
+        - new_users
+        - activated_users
+        - activation_rate_percent
+        - eligible_users_30d
+        - retained_users_30d
+        - retention_rate_30d_percent
+        - eligible_users_60d
+        - retained_users_60d
+        - retention_rate_60d_percent
+        - eligible_users_90d
+        - retained_users_90d
+        - retention_rate_90d_percent
+
+    PMFEvidenceResponse:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        as_of_date:
+          type: string
+          format: date
+        cohort_months:
+          type: integer
+        activation_window_days:
+          type: integer
+        total_new_users:
+          type: integer
+        activated_users:
+          type: integer
+        activation_rate_percent:
+          type: number
+          format: float
+        eligible_users_30d:
+          type: integer
+        retained_users_30d:
+          type: integer
+        retention_rate_30d_percent:
+          type: number
+          format: float
+        eligible_users_60d:
+          type: integer
+        retained_users_60d:
+          type: integer
+        retention_rate_60d_percent:
+          type: number
+          format: float
+        eligible_users_90d:
+          type: integer
+        retained_users_90d:
+          type: integer
+        retention_rate_90d_percent:
+          type: number
+          format: float
+        pmf_band:
+          type: string
+          enum:
+            - early
+            - emerging
+            - pmf_confirmed
+        notes:
+          type: array
+          items:
+            type: string
+        monthly_cohorts:
+          type: array
+          items:
+            $ref: "#/components/schemas/PMFMonthlyCohortPoint"
+      required:
+        - generated_at
+        - as_of_date
+        - cohort_months
+        - activation_window_days
+        - total_new_users
+        - activated_users
+        - activation_rate_percent
+        - eligible_users_30d
+        - retained_users_30d
+        - retention_rate_30d_percent
+        - eligible_users_60d
+        - retained_users_60d
+        - retention_rate_60d_percent
+        - eligible_users_90d
+        - retained_users_90d
+        - retention_rate_90d_percent
+        - pmf_band
+        - notes
+        - monthly_cohorts
 
     PartnerPricingUpdateRequest:
       type: object

@@ -4,6 +4,7 @@ import io
 import os
 import sys
 import uuid
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
@@ -92,6 +93,10 @@ INVOICE_STATUS_TRANSITIONS = {
 
 SEED_READINESS_MIN_PERIOD_MONTHS = 3
 SEED_READINESS_MAX_PERIOD_MONTHS = 24
+PMF_MIN_COHORT_MONTHS = 3
+PMF_MAX_COHORT_MONTHS = 24
+PMF_MIN_ACTIVATION_WINDOW_DAYS = 7
+PMF_MAX_ACTIVATION_WINDOW_DAYS = 60
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -346,6 +351,188 @@ def _build_seed_readiness_assessment(
         next_actions.append("Maintain current trajectory and prepare investor data-room evidence exports.")
 
     return round(score, 1), readiness_band, next_actions
+
+
+def _to_utc_date(value: Any) -> datetime.date | None:
+    if isinstance(value, datetime.datetime):
+        if value.tzinfo is None:
+            return value.date()
+        return value.astimezone(datetime.UTC).date()
+    if isinstance(value, datetime.date):
+        return value
+    return None
+
+
+def _retained_in_window(
+    *,
+    first_seen: datetime.date,
+    activity_dates: set[datetime.date],
+    start_day: int,
+) -> bool:
+    window_start = first_seen + datetime.timedelta(days=start_day)
+    window_end = window_start + datetime.timedelta(days=29)
+    return any(window_start <= activity_date <= window_end for activity_date in activity_dates)
+
+
+async def _load_pmf_user_activity(
+    db: AsyncSession,
+    *,
+    cohort_start: datetime.date,
+    as_of_date: datetime.date,
+) -> dict[str, dict[str, Any]]:
+    first_seen_rows = (
+        await db.execute(
+            select(
+                models.HandoffLead.user_id,
+                func.min(models.HandoffLead.created_at).label("first_seen_at"),
+            ).group_by(models.HandoffLead.user_id)
+        )
+    ).all()
+
+    first_seen_by_user: dict[str, datetime.date] = {}
+    for user_id_value, first_seen_at in first_seen_rows:
+        first_seen_date = _to_utc_date(first_seen_at)
+        if not first_seen_date:
+            continue
+        if cohort_start <= first_seen_date <= as_of_date:
+            first_seen_by_user[str(user_id_value)] = first_seen_date
+
+    if not first_seen_by_user:
+        return {}
+
+    activity_rows = (
+        await db.execute(
+            select(
+                models.HandoffLead.user_id,
+                models.HandoffLead.created_at,
+                models.HandoffLead.updated_at,
+                models.HandoffLead.status,
+            ).filter(models.HandoffLead.user_id.in_(list(first_seen_by_user.keys())))
+        )
+    ).all()
+
+    activity_by_user: dict[str, dict[str, Any]] = {
+        user_id: {
+            "first_seen": first_seen_date,
+            "activity_dates": set(),
+            "activation_dates": set(),
+        }
+        for user_id, first_seen_date in first_seen_by_user.items()
+    }
+    activation_statuses = {
+        schemas.LeadStatus.qualified.value,
+        schemas.LeadStatus.converted.value,
+    }
+    for user_id_value, created_at, updated_at, status_value in activity_rows:
+        user_id = str(user_id_value)
+        row = activity_by_user.get(user_id)
+        if row is None:
+            continue
+        created_date = _to_utc_date(created_at)
+        updated_date = _to_utc_date(updated_at)
+        if created_date:
+            row["activity_dates"].add(created_date)
+        if updated_date:
+            row["activity_dates"].add(updated_date)
+        if str(status_value) in activation_statuses:
+            activation_date = updated_date or created_date
+            if activation_date:
+                row["activation_dates"].add(activation_date)
+    return activity_by_user
+
+
+def _build_user_pmf_flags(
+    *,
+    activity_by_user: dict[str, dict[str, Any]],
+    as_of_date: datetime.date,
+    activation_window_days: int,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for user_id, row in activity_by_user.items():
+        first_seen = row["first_seen"]
+        if not isinstance(first_seen, datetime.date):
+            continue
+        activity_dates_raw = row["activity_dates"]
+        activation_dates_raw = row["activation_dates"]
+        activity_dates = activity_dates_raw if isinstance(activity_dates_raw, set) else set()
+        activation_dates = activation_dates_raw if isinstance(activation_dates_raw, set) else set()
+        activation_deadline = first_seen + datetime.timedelta(days=activation_window_days)
+        activated = any(first_seen <= activation_date <= activation_deadline for activation_date in activation_dates)
+        eligible_30 = as_of_date >= first_seen + datetime.timedelta(days=30)
+        eligible_60 = as_of_date >= first_seen + datetime.timedelta(days=60)
+        eligible_90 = as_of_date >= first_seen + datetime.timedelta(days=90)
+        rows.append(
+            {
+                "user_id": user_id,
+                "first_seen": first_seen,
+                "activated": activated,
+                "eligible_30": eligible_30,
+                "eligible_60": eligible_60,
+                "eligible_90": eligible_90,
+                "retained_30": eligible_30 and _retained_in_window(first_seen=first_seen, activity_dates=activity_dates, start_day=30),
+                "retained_60": eligible_60 and _retained_in_window(first_seen=first_seen, activity_dates=activity_dates, start_day=60),
+                "retained_90": eligible_90 and _retained_in_window(first_seen=first_seen, activity_dates=activity_dates, start_day=90),
+            }
+        )
+    return rows
+
+
+def _aggregate_pmf_flags(rows: list[dict[str, Any]]) -> dict[str, float | int]:
+    total_new_users = len(rows)
+    activated_users = sum(1 for row in rows if bool(row.get("activated")))
+    eligible_users_30d = sum(1 for row in rows if bool(row.get("eligible_30")))
+    eligible_users_60d = sum(1 for row in rows if bool(row.get("eligible_60")))
+    eligible_users_90d = sum(1 for row in rows if bool(row.get("eligible_90")))
+    retained_users_30d = sum(1 for row in rows if bool(row.get("retained_30")))
+    retained_users_60d = sum(1 for row in rows if bool(row.get("retained_60")))
+    retained_users_90d = sum(1 for row in rows if bool(row.get("retained_90")))
+    return {
+        "total_new_users": total_new_users,
+        "activated_users": activated_users,
+        "activation_rate_percent": round((activated_users / total_new_users) * 100.0, 1) if total_new_users else 0.0,
+        "eligible_users_30d": eligible_users_30d,
+        "retained_users_30d": retained_users_30d,
+        "retention_rate_30d_percent": (
+            round((retained_users_30d / eligible_users_30d) * 100.0, 1) if eligible_users_30d else 0.0
+        ),
+        "eligible_users_60d": eligible_users_60d,
+        "retained_users_60d": retained_users_60d,
+        "retention_rate_60d_percent": (
+            round((retained_users_60d / eligible_users_60d) * 100.0, 1) if eligible_users_60d else 0.0
+        ),
+        "eligible_users_90d": eligible_users_90d,
+        "retained_users_90d": retained_users_90d,
+        "retention_rate_90d_percent": (
+            round((retained_users_90d / eligible_users_90d) * 100.0, 1) if eligible_users_90d else 0.0
+        ),
+    }
+
+
+def _assess_pmf_band(
+    *,
+    total_new_users: int,
+    activation_rate_percent: float,
+    retention_rate_30d_percent: float,
+    retention_rate_90d_percent: float,
+) -> tuple[Literal["early", "emerging", "pmf_confirmed"], list[str]]:
+    if total_new_users >= 25 and activation_rate_percent >= 60.0 and retention_rate_90d_percent >= 75.0:
+        band: Literal["early", "emerging", "pmf_confirmed"] = "pmf_confirmed"
+    elif total_new_users >= 8 and activation_rate_percent >= 45.0 and retention_rate_30d_percent >= 35.0:
+        band = "emerging"
+    else:
+        band = "early"
+
+    notes: list[str] = [
+        "Retention cohorts are based on user activity in handoff lifecycle events (created/updated).",
+        "Activation is measured as reaching qualified/converted status within the activation window.",
+    ]
+    if band == "pmf_confirmed":
+        notes.append("PMF thresholds met for current cohort sample and retention windows.")
+    elif band == "emerging":
+        notes.append("Signals are improving; continue increasing cohort size and 90-day retention quality.")
+    else:
+        notes.append("Early-stage PMF signal; focus on onboarding quality and consistent return usage.")
+    return band, notes
 
 
 def _resolve_report_statuses(
@@ -1370,6 +1557,91 @@ async def get_seed_readiness_snapshot(
         readiness_band=readiness_band,
         next_actions=next_actions,
         monthly_mrr_series=list(invoice_metrics["monthly_mrr_series"]),
+    )
+
+
+@app.get("/investor/pmf-evidence", response_model=schemas.PMFEvidenceResponse)
+async def get_pmf_evidence_snapshot(
+    cohort_months: int = Query(default=6, ge=PMF_MIN_COHORT_MONTHS, le=PMF_MAX_COHORT_MONTHS),
+    activation_window_days: int = Query(
+        default=30,
+        ge=PMF_MIN_ACTIVATION_WINDOW_DAYS,
+        le=PMF_MAX_ACTIVATION_WINDOW_DAYS,
+    ),
+    as_of_date: Optional[datetime.date] = Query(default=None),
+    _billing_user: str = Depends(require_billing_report_access),
+    db: AsyncSession = Depends(get_db),
+):
+    effective_as_of_date = as_of_date or datetime.datetime.now(datetime.UTC).date()
+    cohort_start = _shift_month(_month_start(effective_as_of_date), -(cohort_months - 1))
+    activity_by_user = await _load_pmf_user_activity(
+        db,
+        cohort_start=cohort_start,
+        as_of_date=effective_as_of_date,
+    )
+    pmf_rows = _build_user_pmf_flags(
+        activity_by_user=activity_by_user,
+        as_of_date=effective_as_of_date,
+        activation_window_days=activation_window_days,
+    )
+    overall = _aggregate_pmf_flags(pmf_rows)
+    pmf_band, notes = _assess_pmf_band(
+        total_new_users=int(overall["total_new_users"]),
+        activation_rate_percent=float(overall["activation_rate_percent"]),
+        retention_rate_30d_percent=float(overall["retention_rate_30d_percent"]),
+        retention_rate_90d_percent=float(overall["retention_rate_90d_percent"]),
+    )
+
+    cohort_bucket: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in pmf_rows:
+        first_seen = row.get("first_seen")
+        if isinstance(first_seen, datetime.date):
+            cohort_bucket[_month_key(_month_start(first_seen))].append(row)
+
+    month_starts = [_shift_month(cohort_start, offset) for offset in range(cohort_months)]
+    monthly_cohorts: list[schemas.PMFMonthlyCohortPoint] = []
+    for month_start in month_starts:
+        month_key = _month_key(month_start)
+        cohort_rows = cohort_bucket.get(month_key, [])
+        month_agg = _aggregate_pmf_flags(cohort_rows)
+        monthly_cohorts.append(
+            schemas.PMFMonthlyCohortPoint(
+                cohort_month=month_key,
+                new_users=int(month_agg["total_new_users"]),
+                activated_users=int(month_agg["activated_users"]),
+                activation_rate_percent=float(month_agg["activation_rate_percent"]),
+                eligible_users_30d=int(month_agg["eligible_users_30d"]),
+                retained_users_30d=int(month_agg["retained_users_30d"]),
+                retention_rate_30d_percent=float(month_agg["retention_rate_30d_percent"]),
+                eligible_users_60d=int(month_agg["eligible_users_60d"]),
+                retained_users_60d=int(month_agg["retained_users_60d"]),
+                retention_rate_60d_percent=float(month_agg["retention_rate_60d_percent"]),
+                eligible_users_90d=int(month_agg["eligible_users_90d"]),
+                retained_users_90d=int(month_agg["retained_users_90d"]),
+                retention_rate_90d_percent=float(month_agg["retention_rate_90d_percent"]),
+            )
+        )
+
+    return schemas.PMFEvidenceResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        as_of_date=effective_as_of_date,
+        cohort_months=cohort_months,
+        activation_window_days=activation_window_days,
+        total_new_users=int(overall["total_new_users"]),
+        activated_users=int(overall["activated_users"]),
+        activation_rate_percent=float(overall["activation_rate_percent"]),
+        eligible_users_30d=int(overall["eligible_users_30d"]),
+        retained_users_30d=int(overall["retained_users_30d"]),
+        retention_rate_30d_percent=float(overall["retention_rate_30d_percent"]),
+        eligible_users_60d=int(overall["eligible_users_60d"]),
+        retained_users_60d=int(overall["retained_users_60d"]),
+        retention_rate_60d_percent=float(overall["retention_rate_60d_percent"]),
+        eligible_users_90d=int(overall["eligible_users_90d"]),
+        retained_users_90d=int(overall["retained_users_90d"]),
+        retention_rate_90d_percent=float(overall["retention_rate_90d_percent"]),
+        pmf_band=pmf_band,
+        notes=notes,
+        monthly_cohorts=monthly_cohorts,
     )
 
 

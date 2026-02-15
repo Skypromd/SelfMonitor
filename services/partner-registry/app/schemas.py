@@ -125,6 +125,44 @@ class SeedReadinessResponse(BaseModel):
     monthly_mrr_series: List[SeedMRRPoint]
 
 
+class PMFMonthlyCohortPoint(BaseModel):
+    cohort_month: str
+    new_users: int
+    activated_users: int
+    activation_rate_percent: float
+    eligible_users_30d: int
+    retained_users_30d: int
+    retention_rate_30d_percent: float
+    eligible_users_60d: int
+    retained_users_60d: int
+    retention_rate_60d_percent: float
+    eligible_users_90d: int
+    retained_users_90d: int
+    retention_rate_90d_percent: float
+
+
+class PMFEvidenceResponse(BaseModel):
+    generated_at: datetime.datetime
+    as_of_date: datetime.date
+    cohort_months: int
+    activation_window_days: int
+    total_new_users: int
+    activated_users: int
+    activation_rate_percent: float
+    eligible_users_30d: int
+    retained_users_30d: int
+    retention_rate_30d_percent: float
+    eligible_users_60d: int
+    retained_users_60d: int
+    retention_rate_60d_percent: float
+    eligible_users_90d: int
+    retained_users_90d: int
+    retention_rate_90d_percent: float
+    pmf_band: Literal["early", "emerging", "pmf_confirmed"]
+    notes: List[str]
+    monthly_cohorts: List[PMFMonthlyCohortPoint]
+
+
 class PartnerPricingUpdateRequest(BaseModel):
     qualified_lead_fee_gbp: float = Field(ge=0)
     converted_lead_fee_gbp: float = Field(ge=0)

@@ -3,18 +3,21 @@ import sys
 import uuid
 import csv
 import io
+import asyncio
+import datetime
 
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from jose import jwt
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 
-from app import crud
+from app import crud, models
 from app.database import Base, get_db
 from app.main import app
 
@@ -67,6 +70,44 @@ def set_lead_status(lead_id: str, status_value: str, billing_user: str = "billin
     )
     assert response.status_code == 200
     assert response.json()["status"] == status_value
+
+
+async def _set_lead_timestamps(
+    lead_id: str,
+    *,
+    created_days_ago: int,
+    updated_days_ago: int,
+    status_value: str | None = None,
+) -> None:
+    now = datetime.datetime.now(datetime.UTC)
+    values = {
+        "created_at": now - datetime.timedelta(days=created_days_ago),
+        "updated_at": now - datetime.timedelta(days=updated_days_ago),
+    }
+    if status_value is not None:
+        values["status"] = status_value
+    async with TestingSessionLocal() as session:
+        await session.execute(
+            update(models.HandoffLead).where(models.HandoffLead.id == lead_id).values(**values)
+        )
+        await session.commit()
+
+
+def patch_lead_timestamps(
+    lead_id: str,
+    *,
+    created_days_ago: int,
+    updated_days_ago: int,
+    status_value: str | None = None,
+) -> None:
+    asyncio.run(
+        _set_lead_timestamps(
+            lead_id,
+            created_days_ago=created_days_ago,
+            updated_days_ago=updated_days_ago,
+            status_value=status_value,
+        )
+    )
 
 
 async def override_get_db():
@@ -392,6 +433,80 @@ def test_seed_readiness_snapshot_returns_investor_kpis(mocker):
     assert len(payload["monthly_mrr_series"]) == 6
     assert payload["readiness_band"] in {"early", "progressing", "investable"}
     assert isinstance(payload["next_actions"], list) and len(payload["next_actions"]) >= 1
+
+
+def test_pmf_evidence_snapshot_returns_activation_and_retention_cohorts(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    partners = client.get("/partners").json()
+    partner_a = partners[0]["id"]
+    partner_b = partners[1]["id"]
+    partner_c = partners[2]["id"]
+
+    # User A: activated and retained across 30/60/90 windows.
+    lead_a1 = create_handoff_lead(partner_a, "pmf-user-a@example.com")
+    lead_a2 = create_handoff_lead(partner_b, "pmf-user-a@example.com")
+    lead_a3 = create_handoff_lead(partner_c, "pmf-user-a@example.com")
+    set_lead_status(lead_a1, "qualified")
+    patch_lead_timestamps(
+        lead_a1,
+        created_days_ago=100,
+        updated_days_ago=95,
+        status_value="qualified",
+    )
+    patch_lead_timestamps(
+        lead_a2,
+        created_days_ago=65,
+        updated_days_ago=5,
+        status_value="initiated",
+    )
+    patch_lead_timestamps(
+        lead_a3,
+        created_days_ago=35,
+        updated_days_ago=35,
+        status_value="initiated",
+    )
+
+    # User B: not activated and not retained.
+    lead_b1 = create_handoff_lead(partner_a, "pmf-user-b@example.com")
+    patch_lead_timestamps(
+        lead_b1,
+        created_days_ago=100,
+        updated_days_ago=100,
+        status_value="initiated",
+    )
+
+    # User C: recently activated but not yet eligible for 30/60/90 retention.
+    lead_c1 = create_handoff_lead(partner_b, "pmf-user-c@example.com")
+    set_lead_status(lead_c1, "qualified")
+    patch_lead_timestamps(
+        lead_c1,
+        created_days_ago=20,
+        updated_days_ago=5,
+        status_value="qualified",
+    )
+
+    response = client.get(
+        "/investor/pmf-evidence?cohort_months=6&activation_window_days=30",
+        headers=get_billing_headers(),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["cohort_months"] == 6
+    assert payload["activation_window_days"] == 30
+    assert payload["total_new_users"] == 3
+    assert payload["activated_users"] == 2
+    assert payload["activation_rate_percent"] == 66.7
+    assert payload["eligible_users_30d"] == 2
+    assert payload["retained_users_30d"] == 1
+    assert payload["retention_rate_30d_percent"] == 50.0
+    assert payload["eligible_users_60d"] == 2
+    assert payload["retained_users_60d"] == 1
+    assert payload["retention_rate_60d_percent"] == 50.0
+    assert payload["eligible_users_90d"] == 2
+    assert payload["retained_users_90d"] == 1
+    assert payload["retention_rate_90d_percent"] == 50.0
+    assert payload["pmf_band"] in {"early", "emerging", "pmf_confirmed"}
+    assert len(payload["monthly_cohorts"]) == 6
 
 
 def test_billing_csv_export_contains_totals(mocker):
