@@ -1204,9 +1204,13 @@ def test_self_employed_reminders_dispatch_email_and_sms_channels(mocker):
     mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
     mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", True)
     mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER", "webhook")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_PROVIDER", "webhook")
     mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL", "http://dispatch.local/email")
     mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL", "http://dispatch.local/sms")
-    mock_dispatch = mocker.patch("app.main.post_json_with_retry", new_callable=mocker.AsyncMock, return_value=None)
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_dispatch = mocker.patch("app.main._post_with_delivery_retry", new_callable=mocker.AsyncMock, return_value=mock_response)
 
     owner_headers = get_auth_headers("freelancer-dispatch@example.com")
     today = datetime.datetime.now(datetime.UTC).date()
@@ -1245,4 +1249,97 @@ def test_self_employed_reminders_dispatch_email_and_sms_channels(mocker):
     called_urls = {call.args[0] for call in mock_dispatch.await_args_list}
     assert "http://dispatch.local/email" in called_urls
     assert "http://dispatch.local/sms" in called_urls
+
+
+def test_self_employed_reminders_dispatch_sendgrid_provider(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_ENABLED", False)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER", "sendgrid")
+    mocker.patch("app.main.SELF_EMPLOYED_SENDGRID_API_KEY", "SG.TEST_KEY")
+    mocker.patch("app.main.SELF_EMPLOYED_SENDGRID_API_URL", "https://api.sendgrid.com/v3/mail/send")
+    mock_response = mocker.Mock()
+    mock_response.status_code = 202
+    mock_dispatch = mocker.patch("app.main._post_with_delivery_retry", new_callable=mocker.AsyncMock, return_value=mock_response)
+
+    owner_headers = get_auth_headers("freelancer-sendgrid@example.com")
+    today = datetime.datetime.now(datetime.UTC).date()
+    create_response = client.post(
+        "/self-employed/invoices",
+        headers=owner_headers,
+        json={
+            "customer_name": "SendGrid Client",
+            "customer_email": "billing@sendgrid-client.example",
+            "issue_date": today.isoformat(),
+            "due_date": (today + datetime.timedelta(days=1)).isoformat(),
+            "lines": [{"description": "Service", "quantity": 1, "unit_price_gbp": 100}],
+        },
+    )
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["id"]
+    assert (
+        client.patch(
+            f"/self-employed/invoices/{invoice_id}/status",
+            headers=owner_headers,
+            json={"status": "issued"},
+        ).status_code
+        == 200
+    )
+
+    run_response = client.post("/self-employed/invoicing/reminders/run?due_in_days=7", headers=owner_headers)
+    assert run_response.status_code == 200
+    channels = {item["channel"] for item in run_response.json()["reminders"]}
+    assert {"in_app", "email"}.issubset(channels)
+    assert mock_dispatch.await_count == 1
+    dispatch_call = mock_dispatch.await_args_list[0]
+    assert dispatch_call.args[0] == "https://api.sendgrid.com/v3/mail/send"
+    assert dispatch_call.kwargs["headers"]["Authorization"].startswith("Bearer ")
+
+
+def test_self_employed_reminders_dispatch_twilio_provider(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", False)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_PROVIDER", "twilio")
+    mocker.patch("app.main.SELF_EMPLOYED_TWILIO_ACCOUNT_SID", "AC_TEST_SID")
+    mocker.patch("app.main.SELF_EMPLOYED_TWILIO_AUTH_TOKEN", "TEST_TOKEN")
+    mocker.patch("app.main.SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID", "")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_FROM", "+447000000000")
+    mocker.patch("app.main.SELF_EMPLOYED_TWILIO_API_BASE_URL", "https://api.twilio.com")
+    mock_response = mocker.Mock()
+    mock_response.status_code = 201
+    mock_dispatch = mocker.patch("app.main._post_with_delivery_retry", new_callable=mocker.AsyncMock, return_value=mock_response)
+
+    owner_headers = get_auth_headers("freelancer-twilio@example.com")
+    today = datetime.datetime.now(datetime.UTC).date()
+    create_response = client.post(
+        "/self-employed/invoices",
+        headers=owner_headers,
+        json={
+            "customer_name": "Twilio Client",
+            "customer_phone": "+447700900333",
+            "issue_date": today.isoformat(),
+            "due_date": (today + datetime.timedelta(days=1)).isoformat(),
+            "lines": [{"description": "Service", "quantity": 1, "unit_price_gbp": 100}],
+        },
+    )
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["id"]
+    assert (
+        client.patch(
+            f"/self-employed/invoices/{invoice_id}/status",
+            headers=owner_headers,
+            json={"status": "issued"},
+        ).status_code
+        == 200
+    )
+
+    run_response = client.post("/self-employed/invoicing/reminders/run?due_in_days=7", headers=owner_headers)
+    assert run_response.status_code == 200
+    channels = {item["channel"] for item in run_response.json()["reminders"]}
+    assert {"in_app", "sms"}.issubset(channels)
+    assert mock_dispatch.await_count == 1
+    dispatch_call = mock_dispatch.await_args_list[0]
+    assert "api.twilio.com/2010-04-01/Accounts/AC_TEST_SID/Messages.json" in dispatch_call.args[0]
+    assert dispatch_call.kwargs["form_body"]["To"] == "+447700900333"
 

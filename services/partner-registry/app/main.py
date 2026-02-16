@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import csv
 import io
@@ -103,10 +104,23 @@ SELF_EMPLOYED_PAYMENT_LINK_PROVIDER = os.getenv(
 SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS = _parse_positive_int_env("SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS", 3)
 SELF_EMPLOYED_REMINDER_EMAIL_ENABLED = _parse_bool_env("SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", False)
 SELF_EMPLOYED_REMINDER_SMS_ENABLED = _parse_bool_env("SELF_EMPLOYED_REMINDER_SMS_ENABLED", False)
+SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER", "webhook").strip().lower()
+SELF_EMPLOYED_REMINDER_SMS_PROVIDER = os.getenv("SELF_EMPLOYED_REMINDER_SMS_PROVIDER", "webhook").strip().lower()
 SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL", "").strip()
 SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL = os.getenv("SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL", "").strip()
 SELF_EMPLOYED_REMINDER_EMAIL_FROM = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_FROM", "noreply@selfmonitor.app").strip()
 SELF_EMPLOYED_REMINDER_SMS_FROM = os.getenv("SELF_EMPLOYED_REMINDER_SMS_FROM", "SelfMonitor").strip()
+SELF_EMPLOYED_SENDGRID_API_URL = os.getenv("SELF_EMPLOYED_SENDGRID_API_URL", "https://api.sendgrid.com/v3/mail/send").strip()
+SELF_EMPLOYED_SENDGRID_API_KEY = os.getenv("SELF_EMPLOYED_SENDGRID_API_KEY", "").strip()
+SELF_EMPLOYED_TWILIO_API_BASE_URL = os.getenv("SELF_EMPLOYED_TWILIO_API_BASE_URL", "https://api.twilio.com").strip().rstrip("/")
+SELF_EMPLOYED_TWILIO_ACCOUNT_SID = os.getenv("SELF_EMPLOYED_TWILIO_ACCOUNT_SID", "").strip()
+SELF_EMPLOYED_TWILIO_AUTH_TOKEN = os.getenv("SELF_EMPLOYED_TWILIO_AUTH_TOKEN", "").strip()
+SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID = os.getenv("SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID", "").strip()
+SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_ATTEMPTS = _parse_positive_int_env("SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_ATTEMPTS", 3)
+SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_BASE_DELAY_SECONDS = max(
+    _parse_non_negative_float_env("SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_BASE_DELAY_SECONDS", 0.5),
+    0.05,
+)
 SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS = max(
     _parse_non_negative_float_env("SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS", 5.0),
     0.1,
@@ -331,6 +345,88 @@ def _truncate_text(value: str, *, max_length: int = 500) -> str:
     return value[: max_length - 3].rstrip() + "..."
 
 
+def _is_retryable_delivery_status(status_code: int) -> bool:
+    return status_code in {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+async def _post_with_delivery_retry(
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    json_body: dict[str, Any] | None = None,
+    form_body: dict[str, str] | None = None,
+    auth: tuple[str, str] | None = None,
+) -> httpx.Response:
+    last_exception: Exception | None = None
+    for attempt in range(1, SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_ATTEMPTS + 1):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    json=json_body,
+                    data=form_body,
+                    auth=auth,
+                    timeout=SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS,
+                )
+        except httpx.RequestError as exc:
+            last_exception = exc
+            if attempt >= SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_ATTEMPTS:
+                raise
+            await asyncio.sleep(SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)))
+            continue
+
+        if response.status_code < 400:
+            return response
+        if _is_retryable_delivery_status(response.status_code) and attempt < SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_ATTEMPTS:
+            await asyncio.sleep(SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_BASE_DELAY_SECONDS * (2 ** (attempt - 1)))
+            continue
+        raise httpx.HTTPStatusError(
+            f"Reminder delivery request failed with status {response.status_code}",
+            request=response.request,
+            response=response,
+        )
+
+    if last_exception is not None:
+        raise last_exception
+    raise httpx.RequestError("Reminder delivery failed without response.")
+
+
+def _build_invoice_reminder_email_subject(
+    *,
+    invoice_number: str,
+    reminder_type: Literal["due_soon", "overdue"],
+) -> str:
+    if reminder_type == "overdue":
+        return f"Invoice overdue notice: {invoice_number}"
+    return f"Invoice due soon: {invoice_number}"
+
+
+def _build_invoice_reminder_email_body(
+    *,
+    invoice_number: str,
+    reminder_type: Literal["due_soon", "overdue"],
+    message: str,
+) -> str:
+    lead = (
+        f"This is an overdue reminder for invoice {invoice_number}."
+        if reminder_type == "overdue"
+        else f"This is a due-soon reminder for invoice {invoice_number}."
+    )
+    return "\n".join([lead, "", message, "", "Sent by SelfMonitor billing automation."])
+
+
+def _build_invoice_reminder_sms_body(
+    *,
+    invoice_number: str,
+    reminder_type: Literal["due_soon", "overdue"],
+    message: str,
+) -> str:
+    prefix = "OVERDUE" if reminder_type == "overdue" else "DUE SOON"
+    raw = f"{prefix}: {invoice_number}. {message}"
+    return _truncate_text(raw, max_length=320)
+
+
 async def _dispatch_invoice_reminder_email(
     *,
     invoice_id: str,
@@ -341,32 +437,65 @@ async def _dispatch_invoice_reminder_email(
 ) -> tuple[Literal["sent", "failed"], str]:
     if not SELF_EMPLOYED_REMINDER_EMAIL_ENABLED:
         return "failed", "Email dispatch disabled by configuration."
-    if not SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL:
-        return "failed", "Email dispatch URL is not configured."
     if not recipient_email:
         return "failed", "Customer email is missing."
-    payload = {
-        "provider": "self_employed_invoice_reminders",
-        "from": SELF_EMPLOYED_REMINDER_EMAIL_FROM,
-        "to": recipient_email,
-        "subject": f"Invoice reminder: {invoice_number} ({reminder_type})",
-        "message": message,
-        "metadata": {
-            "invoice_id": invoice_id,
-            "invoice_number": invoice_number,
-            "reminder_type": reminder_type,
-        },
-    }
+    subject = _build_invoice_reminder_email_subject(invoice_number=invoice_number, reminder_type=reminder_type)
+    body = _build_invoice_reminder_email_body(
+        invoice_number=invoice_number,
+        reminder_type=reminder_type,
+        message=message,
+    )
+
     try:
-        await post_json_with_retry(
-            SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL,
-            json_body=payload,
-            timeout=SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS,
-            expect_json=False,
-        )
+        if SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER == "sendgrid":
+            if not SELF_EMPLOYED_SENDGRID_API_KEY:
+                return "failed", "SendGrid API key is missing."
+            payload = {
+                "personalizations": [{"to": [{"email": recipient_email}]}],
+                "from": {"email": SELF_EMPLOYED_REMINDER_EMAIL_FROM},
+                "subject": subject,
+                "content": [{"type": "text/plain", "value": body}],
+                "custom_args": {
+                    "invoice_id": invoice_id,
+                    "invoice_number": invoice_number,
+                    "reminder_type": reminder_type,
+                },
+            }
+            await _post_with_delivery_retry(
+                SELF_EMPLOYED_SENDGRID_API_URL,
+                headers={
+                    "Authorization": f"Bearer {SELF_EMPLOYED_SENDGRID_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json_body=payload,
+            )
+            return "sent", f"Email reminder sent via SendGrid to {recipient_email}."
+
+        if SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER == "webhook":
+            if not SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL:
+                return "failed", "Email dispatch URL is not configured."
+            payload = {
+                "provider": "self_employed_invoice_reminders",
+                "from": SELF_EMPLOYED_REMINDER_EMAIL_FROM,
+                "to": recipient_email,
+                "subject": subject,
+                "message": body,
+                "metadata": {
+                    "invoice_id": invoice_id,
+                    "invoice_number": invoice_number,
+                    "reminder_type": reminder_type,
+                    "dispatch_provider": "webhook",
+                },
+            }
+            await _post_with_delivery_retry(
+                SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL,
+                json_body=payload,
+            )
+            return "sent", f"Email reminder sent to {recipient_email}."
+
+        return "failed", f"Unsupported email provider: {SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER}"
     except httpx.HTTPError as exc:
         return "failed", _truncate_text(f"Email dispatch failed: {exc}")
-    return "sent", f"Email reminder sent to {recipient_email}."
 
 
 async def _dispatch_invoice_reminder_sms(
@@ -379,31 +508,61 @@ async def _dispatch_invoice_reminder_sms(
 ) -> tuple[Literal["sent", "failed"], str]:
     if not SELF_EMPLOYED_REMINDER_SMS_ENABLED:
         return "failed", "SMS dispatch disabled by configuration."
-    if not SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL:
-        return "failed", "SMS dispatch URL is not configured."
     if not recipient_phone:
         return "failed", "Customer phone is missing."
-    payload = {
-        "provider": "self_employed_invoice_reminders",
-        "from": SELF_EMPLOYED_REMINDER_SMS_FROM,
-        "to": recipient_phone,
-        "message": message,
-        "metadata": {
-            "invoice_id": invoice_id,
-            "invoice_number": invoice_number,
-            "reminder_type": reminder_type,
-        },
-    }
+    sms_body = _build_invoice_reminder_sms_body(
+        invoice_number=invoice_number,
+        reminder_type=reminder_type,
+        message=message,
+    )
+
     try:
-        await post_json_with_retry(
-            SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL,
-            json_body=payload,
-            timeout=SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS,
-            expect_json=False,
-        )
+        if SELF_EMPLOYED_REMINDER_SMS_PROVIDER == "twilio":
+            if not SELF_EMPLOYED_TWILIO_ACCOUNT_SID or not SELF_EMPLOYED_TWILIO_AUTH_TOKEN:
+                return "failed", "Twilio credentials are missing."
+            twilio_url = (
+                f"{SELF_EMPLOYED_TWILIO_API_BASE_URL}/2010-04-01/Accounts/"
+                f"{SELF_EMPLOYED_TWILIO_ACCOUNT_SID}/Messages.json"
+            )
+            form_payload: dict[str, str] = {
+                "To": recipient_phone,
+                "Body": sms_body,
+            }
+            if SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID:
+                form_payload["MessagingServiceSid"] = SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID
+            else:
+                form_payload["From"] = SELF_EMPLOYED_REMINDER_SMS_FROM
+            await _post_with_delivery_retry(
+                twilio_url,
+                form_body=form_payload,
+                auth=(SELF_EMPLOYED_TWILIO_ACCOUNT_SID, SELF_EMPLOYED_TWILIO_AUTH_TOKEN),
+            )
+            return "sent", f"SMS reminder sent via Twilio to {recipient_phone}."
+
+        if SELF_EMPLOYED_REMINDER_SMS_PROVIDER == "webhook":
+            if not SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL:
+                return "failed", "SMS dispatch URL is not configured."
+            payload = {
+                "provider": "self_employed_invoice_reminders",
+                "from": SELF_EMPLOYED_REMINDER_SMS_FROM,
+                "to": recipient_phone,
+                "message": sms_body,
+                "metadata": {
+                    "invoice_id": invoice_id,
+                    "invoice_number": invoice_number,
+                    "reminder_type": reminder_type,
+                    "dispatch_provider": "webhook",
+                },
+            }
+            await _post_with_delivery_retry(
+                SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL,
+                json_body=payload,
+            )
+            return "sent", f"SMS reminder sent to {recipient_phone}."
+
+        return "failed", f"Unsupported SMS provider: {SELF_EMPLOYED_REMINDER_SMS_PROVIDER}"
     except httpx.HTTPError as exc:
         return "failed", _truncate_text(f"SMS dispatch failed: {exc}")
-    return "sent", f"SMS reminder sent to {recipient_phone}."
 
 
 async def _load_seed_invoice_metrics(
