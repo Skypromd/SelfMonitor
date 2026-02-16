@@ -181,7 +181,7 @@ class SelfEmployedInvoiceBrandProfile(Base):
     )
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False)
     business_name = Column(String(length=180), nullable=False)
     logo_url = Column(String(length=500), nullable=True)
     accent_color = Column(String(length=16), nullable=True)
@@ -210,7 +210,7 @@ class SelfEmployedRecurringInvoicePlan(Base):
     )
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
-    user_id = Column(String, nullable=False, index=True)
+    user_id = Column(String, nullable=False)
     customer_name = Column(String(length=180), nullable=False)
     customer_email = Column(String(length=255), nullable=True)
     customer_address = Column(String(length=500), nullable=True)
