@@ -99,6 +99,8 @@ Frontend updates (dashboard)
   - Recurring cadence + "Save recurring plan"
   - "Run recurring now" action
   - "Send reminders" action
+  - "Preset: Config-only check" action
+  - "Preset: Full sandbox send" action
   - Payment link display in invoice list
   - Recurring plans summary block
 

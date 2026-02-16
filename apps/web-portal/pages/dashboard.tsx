@@ -797,7 +797,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
     }
   };
 
-  const checkReminderReadiness = async () => {
+  const checkReminderReadiness = async (): Promise<SelfEmployedReminderDeliveryReadinessResponse | null> => {
     setReadinessState({ isLoading: true });
     try {
       const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/reminders/readiness`, {
@@ -807,17 +807,32 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
       if (!response.ok) {
         throw new Error((payload as { detail?: string }).detail || 'Failed to fetch delivery readiness');
       }
-      setReadiness(payload as SelfEmployedReminderDeliveryReadinessResponse);
+      const snapshot = payload as SelfEmployedReminderDeliveryReadinessResponse;
+      setReadiness(snapshot);
       setReadinessState({ isLoading: false });
+      return snapshot;
     } catch (err) {
       setReadinessState({
         isLoading: false,
         error: err instanceof Error ? err.message : 'Failed to fetch delivery readiness',
       });
+      return null;
     }
   };
 
-  const runReminderSmokeCheck = async () => {
+  const runReminderSmokeCheckRequest = async ({
+    channel,
+    performNetworkCheck,
+    testRecipientEmail,
+    testRecipientPhone,
+    successMessagePrefix,
+  }: {
+    channel: 'email' | 'sms' | 'both';
+    performNetworkCheck: boolean;
+    successMessagePrefix: string;
+    testRecipientEmail?: string;
+    testRecipientPhone?: string;
+  }): Promise<SelfEmployedReminderSmokeCheckResponse | null> => {
     setSmokeState({ isLoading: true });
     try {
       const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/reminders/smoke-check`, {
@@ -827,10 +842,10 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          channel: smokeChannel,
-          perform_network_check: performSmokeNetworkCheck,
-          test_recipient_email: smokeEmail.trim() || undefined,
-          test_recipient_phone: smokePhone.trim() || undefined,
+          channel,
+          perform_network_check: performNetworkCheck,
+          test_recipient_email: testRecipientEmail,
+          test_recipient_phone: testRecipientPhone,
         }),
       });
       const payload = (await response.json()) as SelfEmployedReminderSmokeCheckResponse | { detail?: string };
@@ -840,15 +855,79 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
       const smokePayload = payload as SelfEmployedReminderSmokeCheckResponse;
       setSmokeState({
         isLoading: false,
-        message: smokePayload.passed ? 'Smoke-check passed.' : 'Smoke-check completed with issues.',
+        message: smokePayload.passed ? `${successMessagePrefix} passed.` : `${successMessagePrefix} completed with issues.`,
         result: smokePayload,
       });
+      return smokePayload;
     } catch (err) {
       setSmokeState({
         isLoading: false,
         error: err instanceof Error ? err.message : 'Failed to run reminder smoke-check',
       });
+      return null;
     }
+  };
+
+  const runReminderSmokeCheck = async () => {
+    await runReminderSmokeCheckRequest({
+      channel: smokeChannel,
+      performNetworkCheck: performSmokeNetworkCheck,
+      testRecipientEmail: smokeEmail.trim() || undefined,
+      testRecipientPhone: smokePhone.trim() || undefined,
+      successMessagePrefix: 'Smoke-check',
+    });
+  };
+
+  const runConfigOnlyPreset = async () => {
+    setSmokeChannel('both');
+    setPerformSmokeNetworkCheck(false);
+    await checkReminderReadiness();
+    await runReminderSmokeCheckRequest({
+      channel: 'both',
+      performNetworkCheck: false,
+      testRecipientEmail: smokeEmail.trim() || customerEmail.trim() || undefined,
+      testRecipientPhone: smokePhone.trim() || customerPhone.trim() || undefined,
+      successMessagePrefix: 'Config-only preset',
+    });
+  };
+
+  const runFullSandboxPreset = async () => {
+    const readinessSnapshot = await checkReminderReadiness();
+    const fallbackEmail = smokeEmail.trim() || customerEmail.trim();
+    const fallbackPhone = smokePhone.trim() || customerPhone.trim();
+    const emailRequired = readinessSnapshot?.email.can_dispatch ?? false;
+    const smsRequired = readinessSnapshot?.sms.can_dispatch ?? false;
+
+    if (emailRequired && !fallbackEmail) {
+      setSmokeState({
+        isLoading: false,
+        error: 'Full sandbox preset requires test email because email channel is ready.',
+      });
+      return;
+    }
+    if (smsRequired && !fallbackPhone) {
+      setSmokeState({
+        isLoading: false,
+        error: 'Full sandbox preset requires test phone because SMS channel is ready.',
+      });
+      return;
+    }
+
+    setSmokeChannel('both');
+    setPerformSmokeNetworkCheck(true);
+    if (fallbackEmail) {
+      setSmokeEmail(fallbackEmail);
+    }
+    if (fallbackPhone) {
+      setSmokePhone(fallbackPhone);
+    }
+    await runReminderSmokeCheckRequest({
+      channel: 'both',
+      performNetworkCheck: true,
+      testRecipientEmail: fallbackEmail || undefined,
+      testRecipientPhone: fallbackPhone || undefined,
+      successMessagePrefix: 'Full sandbox preset',
+    });
   };
 
   const updateStatus = async (invoiceId: string, status: SelfEmployedInvoiceStatus) => {
@@ -1061,6 +1140,22 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
           <button className={styles.tableActionButton} disabled={readinessState.isLoading} onClick={checkReminderReadiness} type="button">
             {readinessState.isLoading ? 'Checking readiness...' : 'Check readiness'}
           </button>
+          <button
+            className={styles.tableActionButton}
+            disabled={smokeState.isLoading || readinessState.isLoading}
+            onClick={runConfigOnlyPreset}
+            type="button"
+          >
+            Preset: Config-only check
+          </button>
+          <button
+            className={styles.tableActionButton}
+            disabled={smokeState.isLoading || readinessState.isLoading}
+            onClick={runFullSandboxPreset}
+            type="button"
+          >
+            Preset: Full sandbox send
+          </button>
           <select
             className={styles.input}
             onChange={(event) => setSmokeChannel(event.target.value as 'email' | 'sms' | 'both')}
@@ -1091,14 +1186,14 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
           <input
             className={styles.input}
             onChange={(event) => setSmokeEmail(event.target.value)}
-            placeholder="Test recipient email (required for email network check)"
+            placeholder="Test recipient email (or leave empty to use customer email)"
             type="email"
             value={smokeEmail}
           />
           <input
             className={styles.input}
             onChange={(event) => setSmokePhone(event.target.value)}
-            placeholder="Test recipient phone (required for SMS network check)"
+            placeholder="Test recipient phone (or leave empty to use customer phone)"
             type="tel"
             value={smokePhone}
           />
