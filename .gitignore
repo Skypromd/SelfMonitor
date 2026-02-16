@@ -131,6 +131,7 @@ yarn-error.log
 package-lock.json
 yarn.lock
 !apps/web-portal/package-lock.json
+!apps/mobile/package-lock.json
 *.tsbuildinfo
 
 # IDE settings

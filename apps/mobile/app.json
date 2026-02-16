@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "SelfMonitor",
+    "slug": "selfmonitor-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "selfmonitor",
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.selfmonitor.mobile"
+    },
+    "android": {
+      "package": "com.selfmonitor.mobile"
+    },
+    "extra": {
+      "webPortalUrlEnvVar": "EXPO_PUBLIC_WEB_PORTAL_URL"
+    }
+  }
+}

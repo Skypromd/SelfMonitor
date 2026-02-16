@@ -8,6 +8,7 @@ name: Monorepo CI
     paths:
       - "services/**"
       - "apps/web-portal/**"
+      - "apps/mobile/**"
       - "tests/**"
       - ".github/workflows/ci.yaml"
 
@@ -207,3 +208,27 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  mobile-app:
+    name: Mobile app checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./apps/mobile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck

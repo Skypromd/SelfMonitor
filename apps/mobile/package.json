@@ -1,19 +1,23 @@
 {
   "name": "mobile-app",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "React Native (Expo) mobile application.",
+  "description": "Native mobile shell for SelfMonitor based on Expo + WebView.",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
-    "ios": "expo start --ios"
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-native-community/netinfo": "^12.0.1",
     "expo": "~49.0.15",
     "expo-status-bar": "~1.6.0",
-    "react": "18.2.0",
-    "react-native": "0.72.6"
+    "react": "^18.2.0",
+    "react-native": "^0.72.6",
+    "react-native-webview": "^13.16.0"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
