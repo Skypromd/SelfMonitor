@@ -41,6 +41,10 @@ EXPO_PUBLIC_WEB_PORTAL_URL=http://<YOUR_LAN_IP>:3000
 - `npm run ios` - open iOS simulator/device
 - `npm run web` - run Expo web preview
 - `npm run typecheck` - TypeScript validation
+- `npm run build:android:preview` - cloud build (Android preview)
+- `npm run build:ios:preview` - cloud build (iOS preview)
+- `npm run build:android:prod` - cloud build (Android production)
+- `npm run build:ios:prod` - cloud build (iOS production)
 
 ## Current status
 
@@ -57,3 +61,20 @@ Planned next:
 - secure token storage with native keychain/keystore;
 - push notifications for HMRC deadlines and invoice reminders;
 - camera-first receipt capture shortcut with native permissions flow.
+
+## App Store / Google Play preparation
+
+1. Install and authenticate EAS CLI:
+   ```bash
+   npm install -g eas-cli
+   eas login
+   ```
+2. Configure credentials:
+   ```bash
+   eas credentials
+   ```
+3. Build artifacts:
+   ```bash
+   npm run build:android:preview
+   npm run build:ios:preview
+   ```

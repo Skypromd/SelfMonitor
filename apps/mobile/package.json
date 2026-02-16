@@ -9,7 +9,11 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:android:preview": "npx eas build --platform android --profile preview",
+    "build:ios:preview": "npx eas build --platform ios --profile preview",
+    "build:android:prod": "npx eas build --platform android --profile production",
+    "build:ios:prod": "npx eas build --platform ios --profile production"
   },
   "dependencies": {
     "@react-native-community/netinfo": "^12.0.1",
