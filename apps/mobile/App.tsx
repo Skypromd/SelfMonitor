@@ -341,6 +341,53 @@ export default function App(): React.JSX.Element {
   const dockFloatAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
 
+  const trackAnalyticsEvent = useCallback(
+    async (event: string, metadata: Record<string, unknown> = {}) => {
+      if (!event) {
+        return;
+      }
+      const payload: MobileAnalyticsEvent = {
+        event,
+        metadata: {
+          ...metadata,
+          onboarding_variant: onboardingVariant.id,
+          onboarding_experiment: onboardingVariant.experimentId,
+          installation_id: installationId || "unknown",
+        },
+        occurred_at: new Date().toISOString(),
+        platform: Platform.OS,
+        source: "mobile-app",
+      };
+      if (!MOBILE_ANALYTICS_URL) {
+        return;
+      }
+      try {
+        await fetch(MOBILE_ANALYTICS_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(MOBILE_ANALYTICS_API_KEY ? { "X-Api-Key": MOBILE_ANALYTICS_API_KEY } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch {
+        // Intentionally ignored: analytics must never break user flow.
+      }
+    },
+    [installationId, onboardingVariant.experimentId, onboardingVariant.id]
+  );
+
+  const trackAnalyticsOnce = useCallback(
+    (key: string, event: string, metadata: Record<string, unknown> = {}) => {
+      if (analyticsTrackedRef.current.has(key)) {
+        return;
+      }
+      analyticsTrackedRef.current.add(key);
+      void trackAnalyticsEvent(event, metadata);
+    },
+    [trackAnalyticsEvent]
+  );
+
   useEffect(() => {
     const subscription = NetInfo.addEventListener((state) => {
       setIsConnected(Boolean(state.isConnected));
@@ -594,53 +641,6 @@ export default function App(): React.JSX.Element {
           : Haptics.ImpactFeedbackStyle.Medium;
     await Haptics.impactAsync(style);
   }, []);
-
-  const trackAnalyticsEvent = useCallback(
-    async (event: string, metadata: Record<string, unknown> = {}) => {
-      if (!event) {
-        return;
-      }
-      const payload: MobileAnalyticsEvent = {
-        event,
-        metadata: {
-          ...metadata,
-          onboarding_variant: onboardingVariant.id,
-          onboarding_experiment: onboardingVariant.experimentId,
-          installation_id: installationId || "unknown",
-        },
-        occurred_at: new Date().toISOString(),
-        platform: Platform.OS,
-        source: "mobile-app",
-      };
-      if (!MOBILE_ANALYTICS_URL) {
-        return;
-      }
-      try {
-        await fetch(MOBILE_ANALYTICS_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(MOBILE_ANALYTICS_API_KEY ? { "X-Api-Key": MOBILE_ANALYTICS_API_KEY } : {}),
-          },
-          body: JSON.stringify(payload),
-        });
-      } catch {
-        // Intentionally ignored: analytics must never break user flow.
-      }
-    },
-    [installationId, onboardingVariant.experimentId, onboardingVariant.id]
-  );
-
-  const trackAnalyticsOnce = useCallback(
-    (key: string, event: string, metadata: Record<string, unknown> = {}) => {
-      if (analyticsTrackedRef.current.has(key)) {
-        return;
-      }
-      analyticsTrackedRef.current.add(key);
-      void trackAnalyticsEvent(event, metadata);
-    },
-    [trackAnalyticsEvent]
-  );
 
   const resolveNotificationPath = useCallback((payload: unknown): string | null => {
     if (!payload || typeof payload !== "object") {
