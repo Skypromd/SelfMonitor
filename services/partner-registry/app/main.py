@@ -1432,7 +1432,7 @@ async def _create_invoice_from_recurring_plan(
     *,
     user_id: str,
     plan: Any,
-) -> tuple[schemas.SelfEmployedRecurringInvoicePlanRunResult, models.SelfEmployedInvoice]:
+) -> schemas.SelfEmployedRecurringInvoicePlanRunResult:
     issue_date = max(plan.next_issue_date, datetime.datetime.now(datetime.UTC).date())
     due_date = issue_date + datetime.timedelta(days=max(SELF_EMPLOYED_INVOICE_DUE_DAYS, 1))
     cadence = schemas.SelfEmployedRecurringCadence(plan.cadence)
@@ -1481,22 +1481,21 @@ async def _create_invoice_from_recurring_plan(
         payment_link_url=_build_self_employed_payment_link(str(invoice.id)),
         payment_link_provider=SELF_EMPLOYED_PAYMENT_LINK_PROVIDER,
     )
+    invoice_id = str(invoice.id)
+    invoice_number = str(invoice.invoice_number)
     next_issue_date = _next_cadence_date(date_value=issue_date, cadence=cadence)
     await crud.mark_recurring_plan_generated(
         db,
         plan,
         next_issue_date=next_issue_date,
-        last_generated_invoice_id=str(invoice.id),
+        last_generated_invoice_id=invoice_id,
     )
-    return (
-        schemas.SelfEmployedRecurringInvoicePlanRunResult(
-            plan_id=uuid.UUID(str(plan.id)),
-            invoice_id=uuid.UUID(str(invoice.id)),
-            invoice_number=str(invoice.invoice_number),
-            next_issue_date=next_issue_date,
-            message="Recurring invoice generated.",
-        ),
-        invoice,
+    return schemas.SelfEmployedRecurringInvoicePlanRunResult(
+        plan_id=uuid.UUID(str(plan.id)),
+        invoice_id=uuid.UUID(invoice_id),
+        invoice_number=invoice_number,
+        next_issue_date=next_issue_date,
+        message="Recurring invoice generated.",
     )
 
 
@@ -2637,7 +2636,7 @@ async def run_self_employed_recurring_plan_once(
             detail=f"Recurring plan is not due yet (next_issue_date={plan.next_issue_date.isoformat()})",
         )
 
-    run_result, generated_invoice = await _create_invoice_from_recurring_plan(
+    run_result = await _create_invoice_from_recurring_plan(
         db,
         user_id=user_id,
         plan=plan,
@@ -2647,8 +2646,8 @@ async def run_self_employed_recurring_plan_once(
         action="self_employed.invoice.recurring_plan.executed",
         details={
             "plan_id": str(plan_id),
-            "invoice_id": str(generated_invoice.id),
-            "invoice_number": generated_invoice.invoice_number,
+            "invoice_id": str(run_result.invoice_id),
+            "invoice_number": run_result.invoice_number,
             "next_issue_date": run_result.next_issue_date.isoformat(),
         },
     )
@@ -2671,7 +2670,7 @@ async def run_due_self_employed_recurring_plans(
     )
     generated: list[schemas.SelfEmployedRecurringInvoicePlanRunResult] = []
     for plan in plans:
-        run_result, generated_invoice = await _create_invoice_from_recurring_plan(
+        run_result = await _create_invoice_from_recurring_plan(
             db,
             user_id=user_id,
             plan=plan,
@@ -2682,8 +2681,8 @@ async def run_due_self_employed_recurring_plans(
             action="self_employed.invoice.recurring_plan.executed",
             details={
                 "plan_id": str(plan.id),
-                "invoice_id": str(generated_invoice.id),
-                "invoice_number": generated_invoice.invoice_number,
+                "invoice_id": str(run_result.invoice_id),
+                "invoice_number": run_result.invoice_number,
                 "next_issue_date": run_result.next_issue_date.isoformat(),
             },
         )
