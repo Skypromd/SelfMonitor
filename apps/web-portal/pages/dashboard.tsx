@@ -165,12 +165,40 @@ type SelfEmployedInvoiceSummary = {
   id: string;
   invoice_number: string;
   issue_date: string;
+  payment_link_url?: string | null;
   status: SelfEmployedInvoiceStatus;
   total_amount_gbp: number;
 };
 
 type SelfEmployedInvoiceListResponse = {
   items: SelfEmployedInvoiceSummary[];
+  total: number;
+};
+
+type SelfEmployedBrandProfileResponse = {
+  accent_color?: string | null;
+  business_name: string;
+  logo_url?: string | null;
+  message: string;
+  payment_terms_note?: string | null;
+  updated_at: string;
+};
+
+type SelfEmployedRecurringCadence = 'weekly' | 'monthly' | 'quarterly';
+
+type SelfEmployedRecurringPlanSummary = {
+  active: boolean;
+  cadence: SelfEmployedRecurringCadence;
+  created_at: string;
+  customer_name: string;
+  id: string;
+  last_generated_invoice_id?: string | null;
+  next_issue_date: string;
+  updated_at: string;
+};
+
+type SelfEmployedRecurringPlanListResponse = {
+  items: SelfEmployedRecurringPlanSummary[];
   total: number;
 };
 
@@ -482,6 +510,7 @@ function ActionCenter({ token }: { token: string }) {
 
 function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   const [invoices, setInvoices] = useState<SelfEmployedInvoiceSummary[]>([]);
+  const [recurringPlans, setRecurringPlans] = useState<SelfEmployedRecurringPlanSummary[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -490,23 +519,54 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState(100);
   const [taxRate, setTaxRate] = useState(0);
+  const [recurringCadence, setRecurringCadence] = useState<SelfEmployedRecurringCadence>('monthly');
+  const [brandBusinessName, setBrandBusinessName] = useState('');
+  const [brandLogoUrl, setBrandLogoUrl] = useState('');
+  const [brandAccentColor, setBrandAccentColor] = useState('#2244AA');
+  const [brandPaymentTerms, setBrandPaymentTerms] = useState('Payment due within 14 days.');
   const [createState, setCreateState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
     isLoading: false,
   });
   const [updatingInvoiceId, setUpdatingInvoiceId] = useState<string | null>(null);
+  const [automationState, setAutomationState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
+    isLoading: false,
+  });
 
   const loadInvoices = useCallback(async () => {
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices?limit=20&offset=0`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const payload = (await response.json()) as SelfEmployedInvoiceListResponse | { detail?: string };
-      if (!response.ok) {
-        throw new Error((payload as { detail?: string }).detail || 'Failed to load invoices');
+      const [invoicesResponse, recurringResponse, brandResponse] = await Promise.all([
+        fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices?limit=20&offset=0`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/recurring-plans?limit=20&offset=0`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/brand`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
+      const invoicesPayload = (await invoicesResponse.json()) as SelfEmployedInvoiceListResponse | { detail?: string };
+      if (!invoicesResponse.ok) {
+        throw new Error((invoicesPayload as { detail?: string }).detail || 'Failed to load invoices');
       }
-      setInvoices((payload as SelfEmployedInvoiceListResponse).items || []);
+      setInvoices((invoicesPayload as SelfEmployedInvoiceListResponse).items || []);
+
+      const recurringPayload = (await recurringResponse.json()) as SelfEmployedRecurringPlanListResponse | { detail?: string };
+      if (!recurringResponse.ok) {
+        throw new Error((recurringPayload as { detail?: string }).detail || 'Failed to load recurring plans');
+      }
+      setRecurringPlans((recurringPayload as SelfEmployedRecurringPlanListResponse).items || []);
+
+      if (brandResponse.ok) {
+        const brandPayload = (await brandResponse.json()) as SelfEmployedBrandProfileResponse;
+        setBrandBusinessName(brandPayload.business_name || '');
+        setBrandLogoUrl(brandPayload.logo_url || '');
+        setBrandAccentColor(brandPayload.accent_color || '#2244AA');
+        setBrandPaymentTerms(brandPayload.payment_terms_note || 'Payment due within 14 days.');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load invoices');
     } finally {
@@ -532,6 +592,9 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
           customer_name: customerName.trim(),
           customer_email: customerEmail.trim() || undefined,
           tax_rate_percent: taxRate,
+          brand_business_name: brandBusinessName.trim() || undefined,
+          brand_logo_url: brandLogoUrl.trim() || undefined,
+          brand_accent_color: brandAccentColor.trim() || undefined,
           lines: [
             {
               description: lineDescription.trim(),
@@ -557,6 +620,123 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
       setCreateState({
         isLoading: false,
         error: err instanceof Error ? err.message : 'Invoice creation failed',
+      });
+    }
+  };
+
+  const saveBrandProfile = async () => {
+    setAutomationState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/brand`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          business_name: brandBusinessName.trim(),
+          logo_url: brandLogoUrl.trim() || undefined,
+          accent_color: brandAccentColor.trim() || undefined,
+          payment_terms_note: brandPaymentTerms.trim() || undefined,
+        }),
+      });
+      const payload = (await response.json()) as { detail?: string; message?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to save brand profile');
+      }
+      setAutomationState({
+        isLoading: false,
+        message: payload.message || 'Brand profile saved.',
+      });
+    } catch (err) {
+      setAutomationState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to save brand profile',
+      });
+    }
+  };
+
+  const createRecurringPlan = async () => {
+    setAutomationState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/recurring-plans`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          customer_name: customerName.trim(),
+          customer_email: customerEmail.trim() || undefined,
+          tax_rate_percent: taxRate,
+          cadence: recurringCadence,
+          lines: [
+            {
+              description: lineDescription.trim(),
+              quantity,
+              unit_price_gbp: unitPrice,
+            },
+          ],
+        }),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to create recurring plan');
+      }
+      setAutomationState({ isLoading: false, message: 'Recurring plan created.' });
+      void loadInvoices();
+    } catch (err) {
+      setAutomationState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to create recurring plan',
+      });
+    }
+  };
+
+  const runDueRecurringPlans = async () => {
+    setAutomationState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/recurring-plans/run-due`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json()) as { detail?: string; generated_count?: number };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to run recurring plans');
+      }
+      setAutomationState({
+        isLoading: false,
+        message: `Recurring automation done. Generated: ${payload.generated_count ?? 0}`,
+      });
+      void loadInvoices();
+    } catch (err) {
+      setAutomationState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to run recurring plans',
+      });
+    }
+  };
+
+  const runReminderNotifications = async () => {
+    setAutomationState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/reminders/run?due_in_days=14`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json()) as { detail?: string; reminders_sent_count?: number };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to run reminders');
+      }
+      setAutomationState({
+        isLoading: false,
+        message: `Reminder notifications sent: ${payload.reminders_sent_count ?? 0}`,
+      });
+      void loadInvoices();
+    } catch (err) {
+      setAutomationState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to run reminders',
       });
     }
   };
@@ -609,7 +789,52 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   return (
     <section className={styles.subContainer}>
       <h2>Client Invoicing (Self-Employed)</h2>
-      <p>Create invoices for your clients, track status, and export PDF/CSV.</p>
+      <p>Create invoices for your clients, manage recurring billing, run reminders, and export PDF/CSV.</p>
+      <div className={styles.copilotWhyBlock} style={{ marginBottom: '12px' }}>
+        <p>
+          <strong>Brand profile:</strong> used in generated invoices and exports.
+        </p>
+        <div className={styles.dateInputs}>
+          <input
+            className={styles.input}
+            onChange={(event) => setBrandBusinessName(event.target.value)}
+            placeholder="Business name for invoice template"
+            type="text"
+            value={brandBusinessName}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setBrandLogoUrl(event.target.value)}
+            placeholder="Logo URL (optional)"
+            type="url"
+            value={brandLogoUrl}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setBrandAccentColor(event.target.value)}
+            placeholder="#2244AA"
+            type="text"
+            value={brandAccentColor}
+          />
+        </div>
+        <div className={styles.dateInputs}>
+          <input
+            className={styles.input}
+            onChange={(event) => setBrandPaymentTerms(event.target.value)}
+            placeholder="Payment terms note"
+            type="text"
+            value={brandPaymentTerms}
+          />
+          <button
+            className={styles.tableActionButton}
+            disabled={automationState.isLoading || !brandBusinessName.trim()}
+            onClick={saveBrandProfile}
+            type="button"
+          >
+            Save brand profile
+          </button>
+        </div>
+      </div>
       <form onSubmit={createInvoice}>
         <div className={styles.dateInputs}>
           <input
@@ -662,14 +887,65 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
             type="number"
             value={taxRate}
           />
+          <select
+            className={styles.input}
+            onChange={(event) => setRecurringCadence(event.target.value as SelfEmployedRecurringCadence)}
+            value={recurringCadence}
+          >
+            <option value="weekly">Weekly recurring</option>
+            <option value="monthly">Monthly recurring</option>
+            <option value="quarterly">Quarterly recurring</option>
+          </select>
         </div>
-        <button className={styles.button} disabled={createState.isLoading} type="submit">
-          {createState.isLoading ? 'Creating invoice...' : 'Create client invoice'}
-        </button>
+        <div className={styles.npsScoreRow}>
+          <button className={styles.button} disabled={createState.isLoading} type="submit">
+            {createState.isLoading ? 'Creating invoice...' : 'Create client invoice'}
+          </button>
+          <button
+            className={styles.tableActionButton}
+            disabled={automationState.isLoading || !customerName.trim() || !lineDescription.trim()}
+            onClick={createRecurringPlan}
+            type="button"
+          >
+            Save recurring plan
+          </button>
+          <button
+            className={styles.tableActionButton}
+            disabled={automationState.isLoading}
+            onClick={runDueRecurringPlans}
+            type="button"
+          >
+            Run recurring now
+          </button>
+          <button
+            className={styles.tableActionButton}
+            disabled={automationState.isLoading}
+            onClick={runReminderNotifications}
+            type="button"
+          >
+            Send reminders
+          </button>
+        </div>
       </form>
       {createState.message && <p className={styles.message}>{createState.message}</p>}
       {createState.error && <p className={styles.error}>{createState.error}</p>}
+      {automationState.message && <p className={styles.message}>{automationState.message}</p>}
+      {automationState.error && <p className={styles.error}>{automationState.error}</p>}
       {error && <p className={styles.error}>{error}</p>}
+      {recurringPlans.length > 0 && (
+        <div className={styles.copilotWhyBlock} style={{ marginBottom: '14px' }}>
+          <p>
+            <strong>Recurring plans:</strong> {recurringPlans.length}
+          </p>
+          <ul className={styles.partnerList}>
+            {recurringPlans.map((plan) => (
+              <li key={plan.id}>
+                {plan.customer_name} - {plan.cadence}, next issue {plan.next_issue_date}, {plan.active ? 'active' : 'paused'}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {isLoading ? (
         <p>Loading invoices...</p>
       ) : invoices.length === 0 ? (
@@ -683,6 +959,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
               <th>Status</th>
               <th>Total</th>
               <th>Due date</th>
+              <th>Payment</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -694,6 +971,15 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
                 <td>{invoice.status}</td>
                 <td>£{invoice.total_amount_gbp.toFixed(2)}</td>
                 <td>{invoice.due_date}</td>
+                <td>
+                  {invoice.payment_link_url ? (
+                    <a href={invoice.payment_link_url} rel="noreferrer" target="_blank">
+                      Pay link
+                    </a>
+                  ) : (
+                    '—'
+                  )}
+                </td>
                 <td>
                   <div className={styles.npsScoreRow}>
                     {invoice.status === 'draft' && (

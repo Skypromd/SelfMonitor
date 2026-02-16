@@ -1,0 +1,97 @@
+Self-Employed Invoicing Advanced Layer (Implemented)
+Date: 2026-02-12
+
+Goal
+- Complete the advanced invoicing layer for UK self-employed users:
+  1) recurring invoices
+  2) payment links
+  3) auto-overdue by due date
+  4) reminder notifications
+  5) branded templates
+
+What is implemented
+
+1. Recurring invoices
+- New recurring plan model and API for schedule-based invoice generation.
+- Supported cadences: weekly, monthly, quarterly.
+- One-shot run endpoint (manual trigger).
+- Batch run endpoint for all due plans.
+- Generated invoices are linked to the originating recurring plan.
+
+2. Payment links
+- Every created self-employed invoice gets a payment link URL.
+- Link base URL and provider are configurable via env vars:
+  - SELF_EMPLOYED_PAYMENT_LINK_BASE_URL
+  - SELF_EMPLOYED_PAYMENT_LINK_PROVIDER
+- Payment link is exposed in API responses and visible in dashboard table.
+
+3. Auto-overdue
+- Issued invoices with due_date in the past are auto-transitioned to overdue.
+- Auto-overdue is executed on key read paths (list/detail/status flow), so status is kept fresh.
+
+4. Reminder notifications
+- Reminder events are persisted (type, channel, status, message, sent_at).
+- Reminder run endpoint processes:
+  - due_soon invoices (within configurable window)
+  - overdue invoices
+- Reminder cooldown guard prevents noisy repeats (24h window per invoice using reminder_last_sent_at).
+- Reminder history list endpoint added.
+
+5. Branded templates
+- User-level invoice brand profile:
+  - business_name
+  - logo_url
+  - accent_color
+  - payment_terms_note
+- Brand profile can be saved and reused on new invoices.
+- Invoice PDF/CSV export now includes branding and payment link fields.
+
+Database additions
+- Table: self_employed_invoice_brand_profiles
+- Table: self_employed_recurring_invoice_plans
+- Table: self_employed_invoice_reminders
+- Added columns to self_employed_invoices:
+  - payment_link_url
+  - payment_link_provider
+  - recurring_plan_id
+  - brand_business_name
+  - brand_logo_url
+  - brand_accent_color
+  - reminder_last_sent_at
+- Migration file:
+  - services/partner-registry/alembic/versions/2026_02_16_17_45_00_add_self_employed_invoice_advanced_features.py
+
+New/updated API endpoints
+- Brand profile
+  - GET  /self-employed/invoicing/brand
+  - PUT  /self-employed/invoicing/brand
+- Recurring plans
+  - POST /self-employed/invoices/recurring-plans
+  - GET  /self-employed/invoices/recurring-plans
+  - PATCH /self-employed/invoices/recurring-plans/{plan_id}
+  - POST /self-employed/invoices/recurring-plans/{plan_id}/run
+  - POST /self-employed/invoices/recurring-plans/run-due
+- Reminders
+  - POST /self-employed/invoices/reminders/run
+  - GET  /self-employed/invoices/reminders
+- Existing invoice endpoints now include payment/branding fields in responses.
+
+Frontend updates (dashboard)
+- Extended "Client Invoicing (Self-Employed)" panel with:
+  - Brand profile editor
+  - Recurring cadence + "Save recurring plan"
+  - "Run recurring now" action
+  - "Send reminders" action
+  - Payment link display in invoice list
+  - Recurring plans summary block
+
+Config added
+- .env.example:
+  - PARTNER_SELF_EMPLOYED_PAYMENT_LINK_BASE_URL
+  - PARTNER_SELF_EMPLOYED_PAYMENT_LINK_PROVIDER
+  - PARTNER_SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS
+- docker-compose partner-registry env passthrough added for all three vars.
+
+Operational note
+- Reminder channel is currently persisted as in_app event.
+- External email/SMS dispatch can be connected later to this reminder event queue without schema changes.

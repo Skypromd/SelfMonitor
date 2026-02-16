@@ -1017,6 +1017,8 @@ def test_self_employed_invoice_lifecycle_and_exports(mocker):
     assert invoice_payload["subtotal_gbp"] == 350.0
     assert invoice_payload["tax_amount_gbp"] == 70.0
     assert invoice_payload["total_amount_gbp"] == 420.0
+    assert invoice_payload["payment_link_url"].startswith("https://pay.selfmonitor.app/invoices/")
+    assert invoice_payload["payment_link_provider"] == "selfmonitor_payment_link"
     assert len(invoice_payload["lines"]) == 2
 
     list_response = client.get("/self-employed/invoices", headers=owner_headers)
@@ -1081,4 +1083,117 @@ def test_self_employed_invoice_rejects_invalid_due_date(mocker):
     )
     assert response.status_code == 400
     assert "due_date cannot be earlier than issue_date" in response.json()["detail"]
+
+
+def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    owner_headers = get_auth_headers("freelancer-advanced@example.com")
+
+    brand_response = client.put(
+        "/self-employed/invoicing/brand",
+        headers=owner_headers,
+        json={
+            "business_name": "North Star Consulting",
+            "logo_url": "https://assets.example.com/logo.png",
+            "accent_color": "#2244AA",
+            "payment_terms_note": "Payment due within 14 days.",
+        },
+    )
+    assert brand_response.status_code == 200
+    assert brand_response.json()["business_name"] == "North Star Consulting"
+
+    recurring_create = client.post(
+        "/self-employed/invoices/recurring-plans",
+        headers=owner_headers,
+        json={
+            "customer_name": "Repeat Client Ltd",
+            "customer_email": "billing@repeat.example",
+            "currency": "GBP",
+            "tax_rate_percent": 20,
+            "cadence": "monthly",
+            "next_issue_date": "2026-01-01",
+            "lines": [{"description": "Monthly bookkeeping", "quantity": 1, "unit_price_gbp": 120}],
+        },
+    )
+    assert recurring_create.status_code == 201
+    recurring_plan_id = recurring_create.json()["id"]
+    assert recurring_create.json()["active"] is True
+
+    run_due_response = client.post("/self-employed/invoices/recurring-plans/run-due", headers=owner_headers)
+    assert run_due_response.status_code == 200
+    run_due_payload = run_due_response.json()
+    assert run_due_payload["generated_count"] == 1
+    generated_invoice_id = run_due_payload["generated"][0]["invoice_id"]
+
+    generated_invoice_response = client.get(
+        f"/self-employed/invoices/{generated_invoice_id}",
+        headers=owner_headers,
+    )
+    assert generated_invoice_response.status_code == 200
+    generated_invoice = generated_invoice_response.json()
+    assert generated_invoice["recurring_plan_id"] == recurring_plan_id
+    assert generated_invoice["brand_business_name"] == "North Star Consulting"
+    assert generated_invoice["brand_accent_color"] == "#2244AA"
+    assert generated_invoice["payment_link_url"].startswith("https://pay.selfmonitor.app/invoices/")
+
+    issue_generated = client.patch(
+        f"/self-employed/invoices/{generated_invoice_id}/status",
+        headers=owner_headers,
+        json={"status": "issued"},
+    )
+    assert issue_generated.status_code == 200
+    assert issue_generated.json()["status"] == "issued"
+
+    overdue_candidate_create = client.post(
+        "/self-employed/invoices",
+        headers=owner_headers,
+        json={
+            "customer_name": "Late Payer Ltd",
+            "issue_date": "2026-01-10",
+            "due_date": "2026-01-15",
+            "lines": [{"description": "One-off project", "quantity": 1, "unit_price_gbp": 200}],
+        },
+    )
+    assert overdue_candidate_create.status_code == 201
+    overdue_invoice_id = overdue_candidate_create.json()["id"]
+
+    issued_overdue_candidate = client.patch(
+        f"/self-employed/invoices/{overdue_invoice_id}/status",
+        headers=owner_headers,
+        json={"status": "issued"},
+    )
+    assert issued_overdue_candidate.status_code == 200
+
+    invoice_list = client.get("/self-employed/invoices", headers=owner_headers)
+    assert invoice_list.status_code == 200
+    listed_by_id = {item["id"]: item for item in invoice_list.json()["items"]}
+    assert listed_by_id[overdue_invoice_id]["status"] == "overdue"
+
+    reminders_run = client.post(
+        "/self-employed/invoices/reminders/run?due_in_days=30",
+        headers=owner_headers,
+    )
+    assert reminders_run.status_code == 200
+    reminders_payload = reminders_run.json()
+    assert reminders_payload["reminders_sent_count"] >= 2
+    reminder_types = {item["reminder_type"] for item in reminders_payload["reminders"]}
+    assert "due_soon" in reminder_types
+    assert "overdue" in reminder_types
+
+    reminders_list = client.get("/self-employed/invoices/reminders", headers=owner_headers)
+    assert reminders_list.status_code == 200
+    assert reminders_list.json()["total"] >= reminders_payload["reminders_sent_count"]
+
+    recurring_list = client.get("/self-employed/invoices/recurring-plans", headers=owner_headers)
+    assert recurring_list.status_code == 200
+    assert recurring_list.json()["total"] == 1
+    assert recurring_list.json()["items"][0]["id"] == recurring_plan_id
+
+    pause_plan = client.patch(
+        f"/self-employed/invoices/recurring-plans/{recurring_plan_id}",
+        headers=owner_headers,
+        json={"active": False},
+    )
+    assert pause_plan.status_code == 200
+    assert pause_plan.json()["active"] is False
 

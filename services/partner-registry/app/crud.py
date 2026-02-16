@@ -565,6 +565,12 @@ async def create_self_employed_invoice(
     currency: str,
     tax_rate_percent: float,
     notes: str | None,
+    payment_link_url: str | None,
+    payment_link_provider: str | None,
+    recurring_plan_id: str | None,
+    brand_business_name: str | None,
+    brand_logo_url: str | None,
+    brand_accent_color: str | None,
     lines: list[dict[str, object]],
 ) -> models.SelfEmployedInvoice:
     subtotal_gbp = round(
@@ -590,6 +596,12 @@ async def create_self_employed_invoice(
         tax_rate_percent=tax_rate_percent,
         tax_amount_gbp=tax_amount_gbp,
         total_amount_gbp=total_amount_gbp,
+        payment_link_url=payment_link_url,
+        payment_link_provider=payment_link_provider,
+        recurring_plan_id=recurring_plan_id,
+        brand_business_name=brand_business_name,
+        brand_logo_url=brand_logo_url,
+        brand_accent_color=brand_accent_color,
         status="draft",
         notes=notes,
     )
@@ -680,4 +692,267 @@ async def update_self_employed_invoice_status(
     await db.commit()
     await db.refresh(invoice)
     return invoice
+
+
+async def update_self_employed_invoice_payment_link(
+    db: AsyncSession,
+    invoice: models.SelfEmployedInvoice,
+    *,
+    payment_link_url: str,
+    payment_link_provider: str,
+) -> models.SelfEmployedInvoice:
+    invoice.payment_link_url = payment_link_url
+    invoice.payment_link_provider = payment_link_provider
+    invoice.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def mark_self_employed_invoice_reminder_sent(
+    db: AsyncSession,
+    invoice: models.SelfEmployedInvoice,
+    *,
+    reminder_at: datetime.datetime,
+) -> models.SelfEmployedInvoice:
+    invoice.reminder_last_sent_at = reminder_at
+    invoice.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def mark_overdue_self_employed_invoices_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    as_of_date: datetime.date,
+) -> int:
+    result = await db.execute(
+        select(models.SelfEmployedInvoice).filter(
+            models.SelfEmployedInvoice.user_id == user_id,
+            models.SelfEmployedInvoice.status == "issued",
+            models.SelfEmployedInvoice.due_date < as_of_date,
+        )
+    )
+    rows = list(result.scalars().all())
+    if not rows:
+        return 0
+    for item in rows:
+        item.status = "overdue"
+        item.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    return len(rows)
+
+
+async def get_brand_profile_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+) -> models.SelfEmployedInvoiceBrandProfile | None:
+    result = await db.execute(
+        select(models.SelfEmployedInvoiceBrandProfile).filter(
+            models.SelfEmployedInvoiceBrandProfile.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def upsert_brand_profile_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    business_name: str,
+    logo_url: str | None,
+    accent_color: str | None,
+    payment_terms_note: str | None,
+) -> models.SelfEmployedInvoiceBrandProfile:
+    profile = await get_brand_profile_for_user(db, user_id=user_id)
+    if profile is None:
+        profile = models.SelfEmployedInvoiceBrandProfile(
+            user_id=user_id,
+            business_name=business_name,
+            logo_url=logo_url,
+            accent_color=accent_color,
+            payment_terms_note=payment_terms_note,
+        )
+        db.add(profile)
+    else:
+        profile.business_name = business_name
+        profile.logo_url = logo_url
+        profile.accent_color = accent_color
+        profile.payment_terms_note = payment_terms_note
+        profile.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+async def create_recurring_invoice_plan(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    customer_name: str,
+    customer_email: str | None,
+    customer_address: str | None,
+    currency: str,
+    tax_rate_percent: float,
+    notes: str | None,
+    line_items: list[dict[str, object]],
+    cadence: str,
+    next_issue_date: datetime.date,
+) -> models.SelfEmployedRecurringInvoicePlan:
+    plan = models.SelfEmployedRecurringInvoicePlan(
+        user_id=user_id,
+        customer_name=customer_name,
+        customer_email=customer_email,
+        customer_address=customer_address,
+        currency=currency,
+        tax_rate_percent=tax_rate_percent,
+        notes=notes,
+        line_items=line_items,
+        cadence=cadence,
+        next_issue_date=next_issue_date,
+        active=1,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+async def list_recurring_invoice_plans_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    active_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedRecurringInvoicePlan]]:
+    count_query = select(func.count(models.SelfEmployedRecurringInvoicePlan.id)).filter(
+        models.SelfEmployedRecurringInvoicePlan.user_id == user_id
+    )
+    query = (
+        select(models.SelfEmployedRecurringInvoicePlan)
+        .filter(models.SelfEmployedRecurringInvoicePlan.user_id == user_id)
+        .order_by(
+            models.SelfEmployedRecurringInvoicePlan.next_issue_date.asc(),
+            models.SelfEmployedRecurringInvoicePlan.created_at.desc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    if active_only:
+        count_query = count_query.filter(models.SelfEmployedRecurringInvoicePlan.active == 1)
+        query = query.filter(models.SelfEmployedRecurringInvoicePlan.active == 1)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
+
+
+async def get_recurring_invoice_plan_for_user(
+    db: AsyncSession,
+    *,
+    plan_id: str,
+    user_id: str,
+) -> models.SelfEmployedRecurringInvoicePlan | None:
+    result = await db.execute(
+        select(models.SelfEmployedRecurringInvoicePlan).filter(
+            models.SelfEmployedRecurringInvoicePlan.id == plan_id,
+            models.SelfEmployedRecurringInvoicePlan.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def update_recurring_invoice_plan_activity(
+    db: AsyncSession,
+    plan: models.SelfEmployedRecurringInvoicePlan,
+    *,
+    active: bool,
+) -> models.SelfEmployedRecurringInvoicePlan:
+    plan.active = 1 if active else 0
+    plan.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+async def list_due_recurring_invoice_plans_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    as_of_date: datetime.date,
+) -> list[models.SelfEmployedRecurringInvoicePlan]:
+    result = await db.execute(
+        select(models.SelfEmployedRecurringInvoicePlan).filter(
+            models.SelfEmployedRecurringInvoicePlan.user_id == user_id,
+            models.SelfEmployedRecurringInvoicePlan.active == 1,
+            models.SelfEmployedRecurringInvoicePlan.next_issue_date <= as_of_date,
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def mark_recurring_plan_generated(
+    db: AsyncSession,
+    plan: models.SelfEmployedRecurringInvoicePlan,
+    *,
+    next_issue_date: datetime.date,
+    last_generated_invoice_id: str,
+) -> models.SelfEmployedRecurringInvoicePlan:
+    plan.next_issue_date = next_issue_date
+    plan.last_generated_invoice_id = last_generated_invoice_id
+    plan.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+async def create_invoice_reminder_event(
+    db: AsyncSession,
+    *,
+    invoice_id: str,
+    user_id: str,
+    reminder_type: str,
+    channel: str,
+    status: str,
+    message: str,
+    sent_at: datetime.datetime | None,
+) -> models.SelfEmployedInvoiceReminder:
+    event = models.SelfEmployedInvoiceReminder(
+        invoice_id=invoice_id,
+        user_id=user_id,
+        reminder_type=reminder_type,
+        channel=channel,
+        status=status,
+        message=message,
+        sent_at=sent_at,
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def list_invoice_reminder_events_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedInvoiceReminder]]:
+    count_query = select(func.count(models.SelfEmployedInvoiceReminder.id)).filter(
+        models.SelfEmployedInvoiceReminder.user_id == user_id
+    )
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+    query = (
+        select(models.SelfEmployedInvoiceReminder)
+        .filter(models.SelfEmployedInvoiceReminder.user_id == user_id)
+        .order_by(models.SelfEmployedInvoiceReminder.created_at.desc(), models.SelfEmployedInvoiceReminder.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
 

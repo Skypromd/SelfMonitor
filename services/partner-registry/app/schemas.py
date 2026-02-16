@@ -28,6 +28,12 @@ class SelfEmployedInvoiceStatus(str, Enum):
     void = "void"
 
 
+class SelfEmployedRecurringCadence(str, Enum):
+    weekly = "weekly"
+    monthly = "monthly"
+    quarterly = "quarterly"
+
+
 class Partner(BaseModel):
     id: uuid.UUID
     name: str
@@ -375,6 +381,9 @@ class SelfEmployedInvoiceCreateRequest(BaseModel):
     currency: str = Field(default="GBP", min_length=3, max_length=3)
     tax_rate_percent: float = Field(default=0, ge=0, le=100)
     notes: Optional[str] = Field(default=None, max_length=1000)
+    brand_business_name: Optional[str] = Field(default=None, max_length=180)
+    brand_logo_url: Optional[str] = Field(default=None, max_length=500)
+    brand_accent_color: Optional[str] = Field(default=None, max_length=16)
     lines: List[SelfEmployedInvoiceLineInput] = Field(min_length=1)
 
 
@@ -395,6 +404,7 @@ class SelfEmployedInvoiceSummary(BaseModel):
     issue_date: datetime.date
     due_date: datetime.date
     currency: str
+    payment_link_url: Optional[str] = None
     status: SelfEmployedInvoiceStatus
     total_amount_gbp: float
     created_at: datetime.datetime
@@ -408,6 +418,12 @@ class SelfEmployedInvoiceDetail(SelfEmployedInvoiceSummary):
     subtotal_gbp: float
     tax_rate_percent: float
     tax_amount_gbp: float
+    payment_link_provider: Optional[str] = None
+    recurring_plan_id: Optional[uuid.UUID] = None
+    brand_business_name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    brand_accent_color: Optional[str] = None
+    reminder_last_sent_at: Optional[datetime.datetime] = None
     notes: Optional[str] = None
     updated_at: datetime.datetime
     lines: List[SelfEmployedInvoiceLine]
@@ -420,4 +436,88 @@ class SelfEmployedInvoiceListResponse(BaseModel):
 
 class SelfEmployedInvoiceStatusUpdateRequest(BaseModel):
     status: SelfEmployedInvoiceStatus
+
+
+class SelfEmployedInvoiceBrandProfileUpdateRequest(BaseModel):
+    business_name: str = Field(min_length=2, max_length=180)
+    logo_url: Optional[str] = Field(default=None, max_length=500)
+    accent_color: Optional[str] = Field(default=None, max_length=16)
+    payment_terms_note: Optional[str] = Field(default=None, max_length=500)
+
+
+class SelfEmployedInvoiceBrandProfileResponse(BaseModel):
+    business_name: str
+    logo_url: Optional[str] = None
+    accent_color: Optional[str] = None
+    payment_terms_note: Optional[str] = None
+    updated_at: datetime.datetime
+    message: str
+
+
+class SelfEmployedRecurringInvoicePlanCreateRequest(BaseModel):
+    customer_name: str = Field(min_length=2, max_length=180)
+    customer_email: Optional[str] = Field(default=None, max_length=255)
+    customer_address: Optional[str] = Field(default=None, max_length=500)
+    currency: str = Field(default="GBP", min_length=3, max_length=3)
+    tax_rate_percent: float = Field(default=0, ge=0, le=100)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    cadence: SelfEmployedRecurringCadence = SelfEmployedRecurringCadence.monthly
+    next_issue_date: Optional[datetime.date] = None
+    lines: List[SelfEmployedInvoiceLineInput] = Field(min_length=1)
+
+
+class SelfEmployedRecurringInvoicePlanSummary(BaseModel):
+    id: uuid.UUID
+    customer_name: str
+    cadence: SelfEmployedRecurringCadence
+    next_issue_date: datetime.date
+    active: bool
+    last_generated_invoice_id: Optional[uuid.UUID] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class SelfEmployedRecurringInvoicePlanListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedRecurringInvoicePlanSummary]
+
+
+class SelfEmployedRecurringInvoicePlanRunResult(BaseModel):
+    plan_id: uuid.UUID
+    invoice_id: uuid.UUID
+    invoice_number: str
+    next_issue_date: datetime.date
+    message: str
+
+
+class SelfEmployedRecurringInvoicePlanRunBatchResponse(BaseModel):
+    generated_count: int
+    generated: List[SelfEmployedRecurringInvoicePlanRunResult]
+    note: str
+
+
+class SelfEmployedRecurringInvoicePlanStatusUpdateRequest(BaseModel):
+    active: bool
+
+
+class SelfEmployedInvoiceReminderEvent(BaseModel):
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    reminder_type: Literal["due_soon", "overdue"]
+    channel: Literal["email", "in_app"]
+    status: Literal["queued", "sent", "failed"]
+    message: str
+    created_at: datetime.datetime
+    sent_at: Optional[datetime.datetime] = None
+
+
+class SelfEmployedInvoiceReminderRunResponse(BaseModel):
+    reminders_sent_count: int
+    reminders: List[SelfEmployedInvoiceReminderEvent]
+    note: str
+
+
+class SelfEmployedInvoiceReminderListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedInvoiceReminderEvent]
 

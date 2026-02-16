@@ -119,6 +119,7 @@ class SelfEmployedInvoice(Base):
         Index("ix_self_employed_invoices_status", "status"),
         Index("ix_self_employed_invoices_due_date", "due_date"),
         Index("ix_self_employed_invoices_invoice_number", "invoice_number", unique=True),
+        Index("ix_self_employed_invoices_recurring_plan_id", "recurring_plan_id"),
     )
 
     id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
@@ -134,6 +135,13 @@ class SelfEmployedInvoice(Base):
     tax_rate_percent = Column(Float, nullable=False, default=0.0)
     tax_amount_gbp = Column(Float, nullable=False, default=0.0)
     total_amount_gbp = Column(Float, nullable=False, default=0.0)
+    payment_link_url = Column(String(length=500), nullable=True)
+    payment_link_provider = Column(String(length=64), nullable=True)
+    recurring_plan_id = Column(String, ForeignKey("self_employed_recurring_invoice_plans.id", ondelete="SET NULL"), nullable=True)
+    brand_business_name = Column(String(length=180), nullable=True)
+    brand_logo_url = Column(String(length=500), nullable=True)
+    brand_accent_color = Column(String(length=16), nullable=True)
+    reminder_last_sent_at = Column(DateTime(timezone=True), nullable=True)
     status = Column(String(length=16), nullable=False, default="draft")
     notes = Column(String(length=1000), nullable=True)
     created_at = Column(
@@ -164,6 +172,92 @@ class SelfEmployedInvoiceLine(Base):
     quantity = Column(Float, nullable=False, default=1.0)
     unit_price_gbp = Column(Float, nullable=False, default=0.0)
     line_total_gbp = Column(Float, nullable=False, default=0.0)
+
+
+class SelfEmployedInvoiceBrandProfile(Base):
+    __tablename__ = "self_employed_invoice_brand_profiles"
+    __table_args__ = (
+        Index("ix_self_employed_invoice_brand_profiles_user_id", "user_id", unique=True),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    business_name = Column(String(length=180), nullable=False)
+    logo_url = Column(String(length=500), nullable=True)
+    accent_color = Column(String(length=16), nullable=True)
+    payment_terms_note = Column(String(length=500), nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+    )
+
+
+class SelfEmployedRecurringInvoicePlan(Base):
+    __tablename__ = "self_employed_recurring_invoice_plans"
+    __table_args__ = (
+        CheckConstraint("cadence IN ('weekly', 'monthly', 'quarterly')", name="ck_self_employed_recurring_invoice_plans_cadence"),
+        CheckConstraint("tax_rate_percent >= 0 AND tax_rate_percent <= 100", name="ck_self_employed_recurring_invoice_plans_tax_rate"),
+        Index("ix_self_employed_recurring_invoice_plans_user_id", "user_id"),
+        Index("ix_self_employed_recurring_invoice_plans_next_issue_date", "next_issue_date"),
+        Index("ix_self_employed_recurring_invoice_plans_active", "active"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    customer_name = Column(String(length=180), nullable=False)
+    customer_email = Column(String(length=255), nullable=True)
+    customer_address = Column(String(length=500), nullable=True)
+    currency = Column(String(length=3), nullable=False, default="GBP")
+    tax_rate_percent = Column(Float, nullable=False, default=0.0)
+    notes = Column(String(length=1000), nullable=True)
+    line_items = Column(JSON, nullable=False)
+    cadence = Column(String(length=16), nullable=False, default="monthly")
+    next_issue_date = Column(Date, nullable=False)
+    active = Column(Integer, nullable=False, default=1)
+    last_generated_invoice_id = Column(String, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+
+
+class SelfEmployedInvoiceReminder(Base):
+    __tablename__ = "self_employed_invoice_reminders"
+    __table_args__ = (
+        CheckConstraint("reminder_type IN ('due_soon', 'overdue')", name="ck_self_employed_invoice_reminders_type"),
+        CheckConstraint("channel IN ('email', 'in_app')", name="ck_self_employed_invoice_reminders_channel"),
+        CheckConstraint("status IN ('queued', 'sent', 'failed')", name="ck_self_employed_invoice_reminders_status"),
+        Index("ix_self_employed_invoice_reminders_invoice_id", "invoice_id"),
+        Index("ix_self_employed_invoice_reminders_user_id_created_at", "user_id", "created_at"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    invoice_id = Column(String, ForeignKey("self_employed_invoices.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(String, nullable=False, index=True)
+    reminder_type = Column(String(length=16), nullable=False)
+    channel = Column(String(length=16), nullable=False, default="in_app")
+    status = Column(String(length=16), nullable=False, default="sent")
+    message = Column(String(length=500), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    sent_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class NPSResponse(Base):

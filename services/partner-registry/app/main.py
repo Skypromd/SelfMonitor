@@ -85,6 +85,15 @@ def _parse_non_negative_float_env(name: str, default: float) -> float:
 
 BILLING_INVOICE_DUE_DAYS = _parse_positive_int_env("BILLING_INVOICE_DUE_DAYS", 14)
 SELF_EMPLOYED_INVOICE_DUE_DAYS = _parse_positive_int_env("SELF_EMPLOYED_INVOICE_DUE_DAYS", 14)
+SELF_EMPLOYED_PAYMENT_LINK_BASE_URL = os.getenv(
+    "SELF_EMPLOYED_PAYMENT_LINK_BASE_URL",
+    "https://pay.selfmonitor.app/invoices",
+).rstrip("/")
+SELF_EMPLOYED_PAYMENT_LINK_PROVIDER = os.getenv(
+    "SELF_EMPLOYED_PAYMENT_LINK_PROVIDER",
+    "selfmonitor_payment_link",
+)
+SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS = _parse_positive_int_env("SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS", 3)
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
     schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
@@ -268,6 +277,35 @@ def _shift_month(date_value: datetime.date, delta_months: int) -> datetime.date:
 
 def _month_key(date_value: datetime.date) -> str:
     return date_value.strftime("%Y-%m")
+
+
+def _next_cadence_date(
+    *,
+    date_value: datetime.date,
+    cadence: schemas.SelfEmployedRecurringCadence,
+) -> datetime.date:
+    if cadence == schemas.SelfEmployedRecurringCadence.weekly:
+        return date_value + datetime.timedelta(days=7)
+    if cadence == schemas.SelfEmployedRecurringCadence.quarterly:
+        return _shift_month(_month_start(date_value), 3).replace(day=min(date_value.day, 28))
+    return _shift_month(_month_start(date_value), 1).replace(day=min(date_value.day, 28))
+
+
+def _normalize_brand_accent_color(value: str | None) -> str | None:
+    if not value:
+        return None
+    color = value.strip()
+    if not color:
+        return None
+    if not color.startswith("#"):
+        color = f"#{color}"
+    if len(color) not in {4, 7}:
+        return None
+    return color.upper()
+
+
+def _build_self_employed_payment_link(invoice_id: str) -> str:
+    return f"{SELF_EMPLOYED_PAYMENT_LINK_BASE_URL}/{invoice_id}"
 
 
 async def _load_seed_invoice_metrics(
@@ -1220,6 +1258,7 @@ def _to_self_employed_invoice_summary(invoice: Any) -> schemas.SelfEmployedInvoi
         issue_date=invoice.issue_date,
         due_date=invoice.due_date,
         currency=invoice.currency,
+        payment_link_url=invoice.payment_link_url,
         status=schemas.SelfEmployedInvoiceStatus(invoice.status),
         total_amount_gbp=invoice.total_amount_gbp,
         created_at=invoice.created_at,
@@ -1288,11 +1327,18 @@ async def _load_self_employed_invoice_detail(
         issue_date=invoice.issue_date,
         due_date=invoice.due_date,
         currency=invoice.currency,
+        payment_link_url=invoice.payment_link_url,
+        payment_link_provider=invoice.payment_link_provider,
         status=schemas.SelfEmployedInvoiceStatus(invoice.status),
         subtotal_gbp=invoice.subtotal_gbp,
         tax_rate_percent=invoice.tax_rate_percent,
         tax_amount_gbp=invoice.tax_amount_gbp,
         total_amount_gbp=invoice.total_amount_gbp,
+        recurring_plan_id=uuid.UUID(str(invoice.recurring_plan_id)) if invoice.recurring_plan_id else None,
+        brand_business_name=invoice.brand_business_name,
+        brand_logo_url=invoice.brand_logo_url,
+        brand_accent_color=invoice.brand_accent_color,
+        reminder_last_sent_at=invoice.reminder_last_sent_at,
         notes=invoice.notes,
         created_at=invoice.created_at,
         updated_at=invoice.updated_at,
@@ -1306,6 +1352,151 @@ async def _load_self_employed_invoice_detail(
             )
             for item in lines
         ],
+    )
+
+
+def _to_recurring_plan_summary(plan: Any) -> schemas.SelfEmployedRecurringInvoicePlanSummary:
+    return schemas.SelfEmployedRecurringInvoicePlanSummary(
+        id=uuid.UUID(str(plan.id)),
+        customer_name=str(plan.customer_name),
+        cadence=schemas.SelfEmployedRecurringCadence(plan.cadence),
+        next_issue_date=plan.next_issue_date,
+        active=bool(plan.active),
+        last_generated_invoice_id=uuid.UUID(str(plan.last_generated_invoice_id))
+        if plan.last_generated_invoice_id
+        else None,
+        created_at=plan.created_at,
+        updated_at=plan.updated_at,
+    )
+
+
+def _to_brand_profile_response(profile: Any) -> schemas.SelfEmployedInvoiceBrandProfileResponse:
+    return schemas.SelfEmployedInvoiceBrandProfileResponse(
+        business_name=str(profile.business_name),
+        logo_url=profile.logo_url,
+        accent_color=profile.accent_color,
+        payment_terms_note=profile.payment_terms_note,
+        updated_at=profile.updated_at,
+        message="Brand profile loaded.",
+    )
+
+
+def _to_reminder_event(item: Any) -> schemas.SelfEmployedInvoiceReminderEvent:
+    return schemas.SelfEmployedInvoiceReminderEvent(
+        id=uuid.UUID(str(item.id)),
+        invoice_id=uuid.UUID(str(item.invoice_id)),
+        reminder_type=item.reminder_type,
+        channel=item.channel,
+        status=item.status,
+        message=item.message,
+        created_at=item.created_at,
+        sent_at=item.sent_at,
+    )
+
+
+async def _mark_overdue_invoices_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+) -> int:
+    return await crud.mark_overdue_self_employed_invoices_for_user(
+        db,
+        user_id=user_id,
+        as_of_date=datetime.datetime.now(datetime.UTC).date(),
+    )
+
+
+async def _resolve_branding_for_invoice(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    payload: schemas.SelfEmployedInvoiceCreateRequest,
+) -> tuple[str | None, str | None, str | None]:
+    profile = await crud.get_brand_profile_for_user(db, user_id=user_id)
+    business_name = payload.brand_business_name.strip() if payload.brand_business_name else None
+    logo_url = payload.brand_logo_url.strip() if payload.brand_logo_url else None
+    accent_color = _normalize_brand_accent_color(payload.brand_accent_color)
+
+    if profile:
+        if not business_name:
+            business_name = str(profile.business_name)
+        if not logo_url:
+            logo_url = profile.logo_url
+        if accent_color is None:
+            accent_color = _normalize_brand_accent_color(profile.accent_color)
+    return business_name, logo_url, accent_color
+
+
+async def _create_invoice_from_recurring_plan(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    plan: Any,
+) -> tuple[schemas.SelfEmployedRecurringInvoicePlanRunResult, models.SelfEmployedInvoice]:
+    issue_date = max(plan.next_issue_date, datetime.datetime.now(datetime.UTC).date())
+    due_date = issue_date + datetime.timedelta(days=max(SELF_EMPLOYED_INVOICE_DUE_DAYS, 1))
+    cadence = schemas.SelfEmployedRecurringCadence(plan.cadence)
+    line_items_raw = list(plan.line_items or [])
+    line_items: list[dict[str, object]] = []
+    for item in line_items_raw:
+        description = str(item.get("description", "")).strip()
+        if not description:
+            continue
+        line_items.append(
+            {
+                "description": description,
+                "quantity": float(item.get("quantity", 1.0) or 1.0),
+                "unit_price_gbp": float(item.get("unit_price_gbp", 0.0) or 0.0),
+            }
+        )
+    if not line_items:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Recurring plan {plan.id} has no valid line items",
+        )
+
+    brand_profile = await crud.get_brand_profile_for_user(db, user_id=user_id)
+    invoice = await crud.create_self_employed_invoice(
+        db,
+        user_id=user_id,
+        customer_name=plan.customer_name,
+        customer_email=plan.customer_email,
+        customer_address=plan.customer_address,
+        issue_date=issue_date,
+        due_date=due_date,
+        currency=str(plan.currency).upper(),
+        tax_rate_percent=float(plan.tax_rate_percent),
+        notes=plan.notes,
+        payment_link_url=None,
+        payment_link_provider=None,
+        recurring_plan_id=str(plan.id),
+        brand_business_name=str(brand_profile.business_name) if brand_profile else None,
+        brand_logo_url=brand_profile.logo_url if brand_profile else None,
+        brand_accent_color=_normalize_brand_accent_color(brand_profile.accent_color) if brand_profile else None,
+        lines=line_items,
+    )
+    invoice = await crud.update_self_employed_invoice_payment_link(
+        db,
+        invoice,
+        payment_link_url=_build_self_employed_payment_link(str(invoice.id)),
+        payment_link_provider=SELF_EMPLOYED_PAYMENT_LINK_PROVIDER,
+    )
+    next_issue_date = _next_cadence_date(date_value=issue_date, cadence=cadence)
+    await crud.mark_recurring_plan_generated(
+        db,
+        plan,
+        next_issue_date=next_issue_date,
+        last_generated_invoice_id=str(invoice.id),
+    )
+    return (
+        schemas.SelfEmployedRecurringInvoicePlanRunResult(
+            plan_id=uuid.UUID(str(plan.id)),
+            invoice_id=uuid.UUID(str(invoice.id)),
+            invoice_number=str(invoice.invoice_number),
+            next_issue_date=next_issue_date,
+            message="Recurring invoice generated.",
+        ),
+        invoice,
     )
 
 
@@ -1791,25 +1982,30 @@ def _accounting_csv_response(
 
 
 def _build_self_employed_invoice_pdf(invoice: schemas.SelfEmployedInvoiceDetail) -> bytes:
-    lines = [
-        "Self-Employed Client Invoice",
-        f"Invoice number: {invoice.invoice_number}",
-        f"Issue date: {invoice.issue_date.isoformat()}",
-        f"Due date: {invoice.due_date.isoformat()}",
-        f"Status: {invoice.status.value}",
-        f"Customer: {invoice.customer_name}",
-        f"Customer email: {invoice.customer_email or 'N/A'}",
-        f"Currency: {invoice.currency}",
-        "",
-        "Line items",
-    ]
+    lines = []
+    if invoice.brand_business_name:
+        lines.append(f"Brand: {invoice.brand_business_name}")
+    if invoice.brand_accent_color:
+        lines.append(f"Brand accent: {invoice.brand_accent_color}")
+    if invoice.brand_logo_url:
+        lines.append(f"Brand logo: {invoice.brand_logo_url}")
+    lines.extend(
+        [
+            "Self-Employed Client Invoice",
+            f"Invoice number: {invoice.invoice_number}",
+            f"Issue date: {invoice.issue_date.isoformat()}",
+            f"Due date: {invoice.due_date.isoformat()}",
+            f"Status: {invoice.status.value}",
+            f"Customer: {invoice.customer_name}",
+            f"Customer email: {invoice.customer_email or 'N/A'}",
+            f"Currency: {invoice.currency}",
+        ]
+    )
+    if invoice.payment_link_url:
+        lines.append(f"Payment link: {invoice.payment_link_url}")
+    lines.extend(["", "Line items"])
     for item in invoice.lines:
-        lines.append(
-            (
-                f"- {item.description}: {item.quantity:.2f} x "
-                f"{item.unit_price_gbp:.2f} = {item.line_total_gbp:.2f} {invoice.currency}"
-            )
-        )
+        lines.append(f"- {item.description}: {item.quantity:.2f} x {item.unit_price_gbp:.2f} = {item.line_total_gbp:.2f} {invoice.currency}")
     lines.extend(
         [
             "",
@@ -1847,6 +2043,9 @@ def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail)
             "unit_price_gbp",
             "line_total_gbp",
             "currency",
+            "payment_link_url",
+            "brand_business_name",
+            "brand_accent_color",
         ]
     )
     for item in invoice.lines:
@@ -1862,6 +2061,9 @@ def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail)
                 f"{item.unit_price_gbp:.2f}",
                 f"{item.line_total_gbp:.2f}",
                 invoice.currency,
+                invoice.payment_link_url or "",
+                invoice.brand_business_name or "",
+                invoice.brand_accent_color or "",
             ]
         )
     writer.writerow(
@@ -1876,106 +2078,9 @@ def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail)
             "",
             f"{invoice.total_amount_gbp:.2f}",
             invoice.currency,
-        ]
-    )
-    return output.getvalue()
-
-
-def _self_employed_invoice_csv_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
-    filename = f"{invoice.invoice_number}.csv"
-    return Response(
-        content=_build_self_employed_invoice_csv(invoice),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-def _build_self_employed_invoice_pdf(invoice: schemas.SelfEmployedInvoiceDetail) -> bytes:
-    lines = [
-        "Self-Employed Client Invoice",
-        f"Invoice number: {invoice.invoice_number}",
-        f"Issue date: {invoice.issue_date.isoformat()}",
-        f"Due date: {invoice.due_date.isoformat()}",
-        f"Status: {invoice.status.value}",
-        f"Customer: {invoice.customer_name}",
-        f"Customer email: {invoice.customer_email or 'N/A'}",
-        f"Currency: {invoice.currency}",
-        "",
-        "Line items",
-    ]
-    for item in invoice.lines:
-        lines.append(
-            (
-                f"- {item.description}: {item.quantity:.2f} x "
-                f"{item.unit_price_gbp:.2f} = {item.line_total_gbp:.2f} {invoice.currency}"
-            )
-        )
-    lines.extend(
-        [
-            "",
-            f"Subtotal: {invoice.subtotal_gbp:.2f} {invoice.currency}",
-            f"Tax ({invoice.tax_rate_percent:.2f}%): {invoice.tax_amount_gbp:.2f} {invoice.currency}",
-            f"Total: {invoice.total_amount_gbp:.2f} {invoice.currency}",
-        ]
-    )
-    if invoice.notes:
-        lines.extend(["", f"Notes: {invoice.notes}"])
-    return _render_simple_pdf(lines)
-
-
-def _self_employed_invoice_pdf_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
-    filename = f"{invoice.invoice_number}.pdf"
-    return Response(
-        content=_build_self_employed_invoice_pdf(invoice),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail) -> str:
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(
-        [
-            "invoice_number",
-            "issue_date",
-            "due_date",
-            "status",
-            "customer_name",
-            "description",
-            "quantity",
-            "unit_price_gbp",
-            "line_total_gbp",
-            "currency",
-        ]
-    )
-    for item in invoice.lines:
-        writer.writerow(
-            [
-                invoice.invoice_number,
-                invoice.issue_date.isoformat(),
-                invoice.due_date.isoformat(),
-                invoice.status.value,
-                invoice.customer_name,
-                item.description,
-                f"{item.quantity:.2f}",
-                f"{item.unit_price_gbp:.2f}",
-                f"{item.line_total_gbp:.2f}",
-                invoice.currency,
-            ]
-        )
-    writer.writerow(
-        [
-            invoice.invoice_number,
-            invoice.issue_date.isoformat(),
-            invoice.due_date.isoformat(),
-            invoice.status.value,
-            invoice.customer_name,
-            "TOTAL",
-            "",
-            "",
-            f"{invoice.total_amount_gbp:.2f}",
-            invoice.currency,
+            invoice.payment_link_url or "",
+            invoice.brand_business_name or "",
+            invoice.brand_accent_color or "",
         ]
     )
     return output.getvalue()
@@ -2196,6 +2301,11 @@ async def create_self_employed_invoice(
             }
         )
 
+    brand_business_name, brand_logo_url, brand_accent_color = await _resolve_branding_for_invoice(
+        db,
+        user_id=user_id,
+        payload=payload,
+    )
     invoice = await crud.create_self_employed_invoice(
         db,
         user_id=user_id,
@@ -2207,7 +2317,19 @@ async def create_self_employed_invoice(
         currency=payload.currency.strip().upper(),
         tax_rate_percent=payload.tax_rate_percent,
         notes=payload.notes.strip() if payload.notes else None,
+        payment_link_url=None,
+        payment_link_provider=None,
+        recurring_plan_id=None,
+        brand_business_name=brand_business_name,
+        brand_logo_url=brand_logo_url,
+        brand_accent_color=brand_accent_color,
         lines=line_items,
+    )
+    invoice = await crud.update_self_employed_invoice_payment_link(
+        db,
+        invoice,
+        payment_link_url=_build_self_employed_payment_link(str(invoice.id)),
+        payment_link_provider=SELF_EMPLOYED_PAYMENT_LINK_PROVIDER,
     )
     await log_audit_event(
         user_id=user_id,
@@ -2217,6 +2339,7 @@ async def create_self_employed_invoice(
             "invoice_number": invoice.invoice_number,
             "total_amount_gbp": invoice.total_amount_gbp,
             "status": invoice.status,
+            "payment_link_provider": invoice.payment_link_provider,
         },
     )
     return await _load_self_employed_invoice_detail(
@@ -2234,6 +2357,7 @@ async def list_self_employed_invoices(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
+    await _mark_overdue_invoices_for_user(db, user_id=user_id)
     total, rows = await crud.list_self_employed_invoices_for_user(
         db,
         user_id=user_id,
@@ -2253,6 +2377,7 @@ async def get_self_employed_invoice(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
+    await _mark_overdue_invoices_for_user(db, user_id=user_id)
     return await _load_self_employed_invoice_detail(
         db,
         invoice_id=invoice_id,
@@ -2267,6 +2392,7 @@ async def update_self_employed_invoice_status(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
+    await _mark_overdue_invoices_for_user(db, user_id=user_id)
     invoice = await crud.get_self_employed_invoice_by_id_for_user(
         db,
         invoice_id=str(invoice_id),
@@ -2336,6 +2462,339 @@ async def download_self_employed_invoice_csv(
         details={"invoice_id": str(invoice_id), "invoice_number": invoice.invoice_number},
     )
     return _self_employed_invoice_csv_response(invoice)
+
+
+@app.get(
+    "/self-employed/invoicing/brand",
+    response_model=schemas.SelfEmployedInvoiceBrandProfileResponse,
+)
+async def get_self_employed_invoice_brand_profile(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    profile = await crud.get_brand_profile_for_user(db, user_id=user_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Brand profile is not configured")
+    return _to_brand_profile_response(profile)
+
+
+@app.put(
+    "/self-employed/invoicing/brand",
+    response_model=schemas.SelfEmployedInvoiceBrandProfileResponse,
+)
+async def upsert_self_employed_invoice_brand_profile(
+    payload: schemas.SelfEmployedInvoiceBrandProfileUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    accent_color = _normalize_brand_accent_color(payload.accent_color)
+    profile = await crud.upsert_brand_profile_for_user(
+        db,
+        user_id=user_id,
+        business_name=payload.business_name.strip(),
+        logo_url=payload.logo_url.strip() if payload.logo_url else None,
+        accent_color=accent_color,
+        payment_terms_note=payload.payment_terms_note.strip() if payload.payment_terms_note else None,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.brand_profile.upserted",
+        details={
+            "business_name": profile.business_name,
+            "accent_color": profile.accent_color,
+        },
+    )
+    response = _to_brand_profile_response(profile)
+    return response.model_copy(update={"message": "Brand profile saved."})
+
+
+@app.post(
+    "/self-employed/invoices/recurring-plans",
+    response_model=schemas.SelfEmployedRecurringInvoicePlanSummary,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_self_employed_recurring_plan(
+    payload: schemas.SelfEmployedRecurringInvoicePlanCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    line_items: list[dict[str, object]] = []
+    for line in payload.lines:
+        description = line.description.strip()
+        if not description:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="line item description cannot be empty")
+        line_items.append(
+            {
+                "description": description,
+                "quantity": float(line.quantity),
+                "unit_price_gbp": float(line.unit_price_gbp),
+            }
+        )
+
+    issue_date = payload.next_issue_date or datetime.datetime.now(datetime.UTC).date()
+    plan = await crud.create_recurring_invoice_plan(
+        db,
+        user_id=user_id,
+        customer_name=payload.customer_name.strip(),
+        customer_email=payload.customer_email.strip() if payload.customer_email else None,
+        customer_address=payload.customer_address.strip() if payload.customer_address else None,
+        currency=payload.currency.strip().upper(),
+        tax_rate_percent=float(payload.tax_rate_percent),
+        notes=payload.notes.strip() if payload.notes else None,
+        line_items=line_items,
+        cadence=payload.cadence.value,
+        next_issue_date=issue_date,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.recurring_plan.created",
+        details={
+            "plan_id": str(plan.id),
+            "cadence": plan.cadence,
+            "next_issue_date": plan.next_issue_date.isoformat(),
+        },
+    )
+    return _to_recurring_plan_summary(plan)
+
+
+@app.get(
+    "/self-employed/invoices/recurring-plans",
+    response_model=schemas.SelfEmployedRecurringInvoicePlanListResponse,
+)
+async def list_self_employed_recurring_plans(
+    active_only: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, rows = await crud.list_recurring_invoice_plans_for_user(
+        db,
+        user_id=user_id,
+        active_only=active_only,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.SelfEmployedRecurringInvoicePlanListResponse(
+        total=total,
+        items=[_to_recurring_plan_summary(item) for item in rows],
+    )
+
+
+@app.patch(
+    "/self-employed/invoices/recurring-plans/{plan_id}",
+    response_model=schemas.SelfEmployedRecurringInvoicePlanSummary,
+)
+async def update_self_employed_recurring_plan_status(
+    plan_id: uuid.UUID,
+    payload: schemas.SelfEmployedRecurringInvoicePlanStatusUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    plan = await crud.get_recurring_invoice_plan_for_user(
+        db,
+        plan_id=str(plan_id),
+        user_id=user_id,
+    )
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring plan not found")
+    updated = await crud.update_recurring_invoice_plan_activity(
+        db,
+        plan,
+        active=payload.active,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.recurring_plan.updated",
+        details={"plan_id": str(plan_id), "active": payload.active},
+    )
+    return _to_recurring_plan_summary(updated)
+
+
+@app.post(
+    "/self-employed/invoices/recurring-plans/{plan_id}/run",
+    response_model=schemas.SelfEmployedRecurringInvoicePlanRunResult,
+)
+async def run_self_employed_recurring_plan_once(
+    plan_id: uuid.UUID,
+    force: bool = Query(default=False),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    plan = await crud.get_recurring_invoice_plan_for_user(
+        db,
+        plan_id=str(plan_id),
+        user_id=user_id,
+    )
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Recurring plan not found")
+    if not bool(plan.active):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Recurring plan is inactive")
+    today = datetime.datetime.now(datetime.UTC).date()
+    if not force and plan.next_issue_date > today:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Recurring plan is not due yet (next_issue_date={plan.next_issue_date.isoformat()})",
+        )
+
+    run_result, generated_invoice = await _create_invoice_from_recurring_plan(
+        db,
+        user_id=user_id,
+        plan=plan,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.recurring_plan.executed",
+        details={
+            "plan_id": str(plan_id),
+            "invoice_id": str(generated_invoice.id),
+            "invoice_number": generated_invoice.invoice_number,
+            "next_issue_date": run_result.next_issue_date.isoformat(),
+        },
+    )
+    return run_result
+
+
+@app.post(
+    "/self-employed/invoices/recurring-plans/run-due",
+    response_model=schemas.SelfEmployedRecurringInvoicePlanRunBatchResponse,
+)
+async def run_due_self_employed_recurring_plans(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    today = datetime.datetime.now(datetime.UTC).date()
+    plans = await crud.list_due_recurring_invoice_plans_for_user(
+        db,
+        user_id=user_id,
+        as_of_date=today,
+    )
+    generated: list[schemas.SelfEmployedRecurringInvoicePlanRunResult] = []
+    for plan in plans:
+        run_result, generated_invoice = await _create_invoice_from_recurring_plan(
+            db,
+            user_id=user_id,
+            plan=plan,
+        )
+        generated.append(run_result)
+        await log_audit_event(
+            user_id=user_id,
+            action="self_employed.invoice.recurring_plan.executed",
+            details={
+                "plan_id": str(plan.id),
+                "invoice_id": str(generated_invoice.id),
+                "invoice_number": generated_invoice.invoice_number,
+                "next_issue_date": run_result.next_issue_date.isoformat(),
+            },
+        )
+
+    note = "No due recurring plans." if not generated else "Generated due recurring invoices."
+    return schemas.SelfEmployedRecurringInvoicePlanRunBatchResponse(
+        generated_count=len(generated),
+        generated=generated,
+        note=note,
+    )
+
+
+@app.post(
+    "/self-employed/invoices/reminders/run",
+    response_model=schemas.SelfEmployedInvoiceReminderRunResponse,
+)
+async def run_self_employed_invoice_reminders(
+    due_in_days: int = Query(default=SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS, ge=1, le=30),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    await _mark_overdue_invoices_for_user(db, user_id=user_id)
+    issued_total, issued_rows = await crud.list_self_employed_invoices_for_user(
+        db,
+        user_id=user_id,
+        status=schemas.SelfEmployedInvoiceStatus.issued.value,
+        limit=500,
+        offset=0,
+    )
+    overdue_total, overdue_rows = await crud.list_self_employed_invoices_for_user(
+        db,
+        user_id=user_id,
+        status=schemas.SelfEmployedInvoiceStatus.overdue.value,
+        limit=500,
+        offset=0,
+    )
+    _ = issued_total + overdue_total  # Retained for future pagination improvements.
+    today = datetime.datetime.now(datetime.UTC).date()
+    due_soon_cutoff = today + datetime.timedelta(days=due_in_days)
+    now = datetime.datetime.now(datetime.UTC)
+
+    reminders: list[schemas.SelfEmployedInvoiceReminderEvent] = []
+    for invoice in list(issued_rows) + list(overdue_rows):
+        reminder_type: Literal["due_soon", "overdue"] | None = None
+        if invoice.status == schemas.SelfEmployedInvoiceStatus.overdue.value:
+            reminder_type = "overdue"
+        elif today <= invoice.due_date <= due_soon_cutoff:
+            reminder_type = "due_soon"
+        if reminder_type is None:
+            continue
+        if invoice.reminder_last_sent_at and (now - invoice.reminder_last_sent_at).total_seconds() < 24 * 3600:
+            continue
+
+        message = (
+            f"Invoice {invoice.invoice_number} is overdue since {invoice.due_date.isoformat()}."
+            if reminder_type == "overdue"
+            else (
+                f"Invoice {invoice.invoice_number} is due on {invoice.due_date.isoformat()} "
+                f"(in {(invoice.due_date - today).days} day(s))."
+            )
+        )
+        event = await crud.create_invoice_reminder_event(
+            db,
+            invoice_id=str(invoice.id),
+            user_id=user_id,
+            reminder_type=reminder_type,
+            channel="in_app",
+            status="sent",
+            message=message,
+            sent_at=now,
+        )
+        await crud.mark_self_employed_invoice_reminder_sent(
+            db,
+            invoice,
+            reminder_at=now,
+        )
+        reminders.append(_to_reminder_event(event))
+
+    if reminders:
+        await log_audit_event(
+            user_id=user_id,
+            action="self_employed.invoice.reminders.sent",
+            details={"count": len(reminders), "due_in_days": due_in_days},
+        )
+    return schemas.SelfEmployedInvoiceReminderRunResponse(
+        reminders_sent_count=len(reminders),
+        reminders=reminders,
+        note="Reminders generated for due-soon/overdue invoices.",
+    )
+
+
+@app.get(
+    "/self-employed/invoices/reminders",
+    response_model=schemas.SelfEmployedInvoiceReminderListResponse,
+)
+async def list_self_employed_invoice_reminders(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, rows = await crud.list_invoice_reminder_events_for_user(
+        db,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.SelfEmployedInvoiceReminderListResponse(
+        total=total,
+        items=[_to_reminder_event(item) for item in rows],
+    )
 
 
 @app.post(
