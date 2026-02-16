@@ -36,6 +36,10 @@ What is implemented
   - overdue invoices
 - Reminder cooldown guard prevents noisy repeats (24h window per invoice using reminder_last_sent_at).
 - Reminder history list endpoint added.
+- Real dispatch channels supported:
+  - in_app (always)
+  - email (if enabled + customer_email present)
+  - sms (if enabled + customer_phone present)
 
 5. Branded templates
 - User-level invoice brand profile:
@@ -54,12 +58,16 @@ Database additions
   - payment_link_url
   - payment_link_provider
   - recurring_plan_id
+  - customer_phone
   - brand_business_name
   - brand_logo_url
   - brand_accent_color
   - reminder_last_sent_at
+- Added column to self_employed_recurring_invoice_plans:
+  - customer_phone
 - Migration file:
   - services/partner-registry/alembic/versions/2026_02_16_17_45_00_add_self_employed_invoice_advanced_features.py
+  - services/partner-registry/alembic/versions/2026_02_16_19_20_00_add_sms_dispatch_and_customer_phone.py
 
 New/updated API endpoints
 - Brand profile
@@ -75,6 +83,7 @@ New/updated API endpoints
   - POST /self-employed/invoicing/reminders/run
   - GET  /self-employed/invoicing/reminders
 - Existing invoice endpoints now include payment/branding fields in responses.
+- Existing invoice endpoints now include payment/branding and customer_phone fields in responses.
 
 Frontend updates (dashboard)
 - Extended "Client Invoicing (Self-Employed)" panel with:
@@ -90,8 +99,14 @@ Config added
   - PARTNER_SELF_EMPLOYED_PAYMENT_LINK_BASE_URL
   - PARTNER_SELF_EMPLOYED_PAYMENT_LINK_PROVIDER
   - PARTNER_SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS
-- docker-compose partner-registry env passthrough added for all three vars.
+  - PARTNER_SELF_EMPLOYED_REMINDER_EMAIL_ENABLED
+  - PARTNER_SELF_EMPLOYED_REMINDER_SMS_ENABLED
+  - PARTNER_SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL
+  - PARTNER_SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL
+  - PARTNER_SELF_EMPLOYED_REMINDER_EMAIL_FROM
+  - PARTNER_SELF_EMPLOYED_REMINDER_SMS_FROM
+  - PARTNER_SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS
+- docker-compose partner-registry env passthrough added for all vars above.
 
 Operational note
-- Reminder channel is currently persisted as in_app event.
-- External email/SMS dispatch can be connected later to this reminder event queue without schema changes.
+- External dispatch failures are persisted as failed reminder events (per channel) and do not break reminder run execution.

@@ -1000,6 +1000,7 @@ def test_self_employed_invoice_lifecycle_and_exports(mocker):
         json={
             "customer_name": "Acme Client Ltd",
             "customer_email": "accounts@acme-client.example",
+            "customer_phone": "+447700900111",
             "customer_address": "10 High Street, London",
             "tax_rate_percent": 20,
             "notes": "Thank you for your business.",
@@ -1014,6 +1015,7 @@ def test_self_employed_invoice_lifecycle_and_exports(mocker):
     invoice_id = invoice_payload["id"]
     assert invoice_payload["invoice_number"].startswith("SEI-")
     assert invoice_payload["status"] == "draft"
+    assert invoice_payload["customer_phone"] == "+447700900111"
     assert invoice_payload["subtotal_gbp"] == 350.0
     assert invoice_payload["tax_amount_gbp"] == 70.0
     assert invoice_payload["total_amount_gbp"] == 420.0
@@ -1196,4 +1198,51 @@ def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
     )
     assert pause_plan.status_code == 200
     assert pause_plan.json()["active"] is False
+
+
+def test_self_employed_reminders_dispatch_email_and_sms_channels(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL", "http://dispatch.local/email")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL", "http://dispatch.local/sms")
+    mock_dispatch = mocker.patch("app.main.post_json_with_retry", new_callable=mocker.AsyncMock, return_value=None)
+
+    owner_headers = get_auth_headers("freelancer-dispatch@example.com")
+    today = datetime.datetime.now(datetime.UTC).date()
+    create_response = client.post(
+        "/self-employed/invoices",
+        headers=owner_headers,
+        json={
+            "customer_name": "Dispatch Client",
+            "customer_email": "billing@dispatch-client.example",
+            "customer_phone": "+447700900222",
+            "issue_date": today.isoformat(),
+            "due_date": (today + datetime.timedelta(days=1)).isoformat(),
+            "lines": [{"description": "Dispatch test service", "quantity": 1, "unit_price_gbp": 90}],
+        },
+    )
+    assert create_response.status_code == 201
+    invoice_id = create_response.json()["id"]
+
+    issued_response = client.patch(
+        f"/self-employed/invoices/{invoice_id}/status",
+        headers=owner_headers,
+        json={"status": "issued"},
+    )
+    assert issued_response.status_code == 200
+
+    reminders_run = client.post(
+        "/self-employed/invoicing/reminders/run?due_in_days=7",
+        headers=owner_headers,
+    )
+    assert reminders_run.status_code == 200
+    reminder_payload = reminders_run.json()
+    channels = {item["channel"] for item in reminder_payload["reminders"]}
+    assert {"in_app", "email", "sms"}.issubset(channels)
+    assert mock_dispatch.await_count == 2
+
+    called_urls = {call.args[0] for call in mock_dispatch.await_args_list}
+    assert "http://dispatch.local/email" in called_urls
+    assert "http://dispatch.local/sms" in called_urls
 

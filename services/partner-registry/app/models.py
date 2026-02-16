@@ -127,6 +127,7 @@ class SelfEmployedInvoice(Base):
     invoice_number = Column(String(length=32), nullable=False)
     customer_name = Column(String(length=180), nullable=False)
     customer_email = Column(String(length=255), nullable=True)
+    customer_phone = Column(String(length=32), nullable=True)
     customer_address = Column(String(length=500), nullable=True)
     issue_date = Column(Date, nullable=False)
     due_date = Column(Date, nullable=False)
@@ -213,6 +214,7 @@ class SelfEmployedRecurringInvoicePlan(Base):
     user_id = Column(String, nullable=False)
     customer_name = Column(String(length=180), nullable=False)
     customer_email = Column(String(length=255), nullable=True)
+    customer_phone = Column(String(length=32), nullable=True)
     customer_address = Column(String(length=500), nullable=True)
     currency = Column(String(length=3), nullable=False, default="GBP")
     tax_rate_percent = Column(Float, nullable=False, default=0.0)
@@ -239,7 +241,7 @@ class SelfEmployedInvoiceReminder(Base):
     __tablename__ = "self_employed_invoice_reminders"
     __table_args__ = (
         CheckConstraint("reminder_type IN ('due_soon', 'overdue')", name="ck_self_employed_invoice_reminders_type"),
-        CheckConstraint("channel IN ('email', 'in_app')", name="ck_self_employed_invoice_reminders_channel"),
+        CheckConstraint("channel IN ('email', 'sms', 'in_app')", name="ck_self_employed_invoice_reminders_channel"),
         CheckConstraint("status IN ('queued', 'sent', 'failed')", name="ck_self_employed_invoice_reminders_status"),
         Index("ix_self_employed_invoice_reminders_invoice_id", "invoice_id"),
         Index("ix_self_employed_invoice_reminders_user_id_created_at", "user_id", "created_at"),

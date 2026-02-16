@@ -83,6 +83,13 @@ def _parse_non_negative_float_env(name: str, default: float) -> float:
     return parsed if parsed >= 0 else default
 
 
+def _parse_bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 BILLING_INVOICE_DUE_DAYS = _parse_positive_int_env("BILLING_INVOICE_DUE_DAYS", 14)
 SELF_EMPLOYED_INVOICE_DUE_DAYS = _parse_positive_int_env("SELF_EMPLOYED_INVOICE_DUE_DAYS", 14)
 SELF_EMPLOYED_PAYMENT_LINK_BASE_URL = os.getenv(
@@ -94,6 +101,16 @@ SELF_EMPLOYED_PAYMENT_LINK_PROVIDER = os.getenv(
     "selfmonitor_payment_link",
 )
 SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS = _parse_positive_int_env("SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS", 3)
+SELF_EMPLOYED_REMINDER_EMAIL_ENABLED = _parse_bool_env("SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", False)
+SELF_EMPLOYED_REMINDER_SMS_ENABLED = _parse_bool_env("SELF_EMPLOYED_REMINDER_SMS_ENABLED", False)
+SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL", "").strip()
+SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL = os.getenv("SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL", "").strip()
+SELF_EMPLOYED_REMINDER_EMAIL_FROM = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_FROM", "noreply@selfmonitor.app").strip()
+SELF_EMPLOYED_REMINDER_SMS_FROM = os.getenv("SELF_EMPLOYED_REMINDER_SMS_FROM", "SelfMonitor").strip()
+SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS = max(
+    _parse_non_negative_float_env("SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS", 5.0),
+    0.1,
+)
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
     schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
@@ -306,6 +323,87 @@ def _normalize_brand_accent_color(value: str | None) -> str | None:
 
 def _build_self_employed_payment_link(invoice_id: str) -> str:
     return f"{SELF_EMPLOYED_PAYMENT_LINK_BASE_URL}/{invoice_id}"
+
+
+def _truncate_text(value: str, *, max_length: int = 500) -> str:
+    if len(value) <= max_length:
+        return value
+    return value[: max_length - 3].rstrip() + "..."
+
+
+async def _dispatch_invoice_reminder_email(
+    *,
+    invoice_id: str,
+    invoice_number: str,
+    reminder_type: Literal["due_soon", "overdue"],
+    message: str,
+    recipient_email: str | None,
+) -> tuple[Literal["sent", "failed"], str]:
+    if not SELF_EMPLOYED_REMINDER_EMAIL_ENABLED:
+        return "failed", "Email dispatch disabled by configuration."
+    if not SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL:
+        return "failed", "Email dispatch URL is not configured."
+    if not recipient_email:
+        return "failed", "Customer email is missing."
+    payload = {
+        "provider": "self_employed_invoice_reminders",
+        "from": SELF_EMPLOYED_REMINDER_EMAIL_FROM,
+        "to": recipient_email,
+        "subject": f"Invoice reminder: {invoice_number} ({reminder_type})",
+        "message": message,
+        "metadata": {
+            "invoice_id": invoice_id,
+            "invoice_number": invoice_number,
+            "reminder_type": reminder_type,
+        },
+    }
+    try:
+        await post_json_with_retry(
+            SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL,
+            json_body=payload,
+            timeout=SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS,
+            expect_json=False,
+        )
+    except httpx.HTTPError as exc:
+        return "failed", _truncate_text(f"Email dispatch failed: {exc}")
+    return "sent", f"Email reminder sent to {recipient_email}."
+
+
+async def _dispatch_invoice_reminder_sms(
+    *,
+    invoice_id: str,
+    invoice_number: str,
+    reminder_type: Literal["due_soon", "overdue"],
+    message: str,
+    recipient_phone: str | None,
+) -> tuple[Literal["sent", "failed"], str]:
+    if not SELF_EMPLOYED_REMINDER_SMS_ENABLED:
+        return "failed", "SMS dispatch disabled by configuration."
+    if not SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL:
+        return "failed", "SMS dispatch URL is not configured."
+    if not recipient_phone:
+        return "failed", "Customer phone is missing."
+    payload = {
+        "provider": "self_employed_invoice_reminders",
+        "from": SELF_EMPLOYED_REMINDER_SMS_FROM,
+        "to": recipient_phone,
+        "message": message,
+        "metadata": {
+            "invoice_id": invoice_id,
+            "invoice_number": invoice_number,
+            "reminder_type": reminder_type,
+        },
+    }
+    try:
+        await post_json_with_retry(
+            SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL,
+            json_body=payload,
+            timeout=SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS,
+            expect_json=False,
+        )
+    except httpx.HTTPError as exc:
+        return "failed", _truncate_text(f"SMS dispatch failed: {exc}")
+    return "sent", f"SMS reminder sent to {recipient_phone}."
 
 
 async def _load_seed_invoice_metrics(
@@ -1323,6 +1421,7 @@ async def _load_self_employed_invoice_detail(
         invoice_number=str(invoice.invoice_number),
         customer_name=str(invoice.customer_name),
         customer_email=invoice.customer_email,
+        customer_phone=invoice.customer_phone,
         customer_address=invoice.customer_address,
         issue_date=invoice.issue_date,
         due_date=invoice.due_date,
@@ -1461,6 +1560,7 @@ async def _create_invoice_from_recurring_plan(
         user_id=user_id,
         customer_name=plan.customer_name,
         customer_email=plan.customer_email,
+        customer_phone=plan.customer_phone,
         customer_address=plan.customer_address,
         issue_date=issue_date,
         due_date=due_date,
@@ -1997,6 +2097,7 @@ def _build_self_employed_invoice_pdf(invoice: schemas.SelfEmployedInvoiceDetail)
             f"Status: {invoice.status.value}",
             f"Customer: {invoice.customer_name}",
             f"Customer email: {invoice.customer_email or 'N/A'}",
+            f"Customer phone: {invoice.customer_phone or 'N/A'}",
             f"Currency: {invoice.currency}",
         ]
     )
@@ -2037,6 +2138,7 @@ def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail)
             "due_date",
             "status",
             "customer_name",
+            "customer_phone",
             "description",
             "quantity",
             "unit_price_gbp",
@@ -2055,6 +2157,7 @@ def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail)
                 invoice.due_date.isoformat(),
                 invoice.status.value,
                 invoice.customer_name,
+                invoice.customer_phone or "",
                 item.description,
                 f"{item.quantity:.2f}",
                 f"{item.unit_price_gbp:.2f}",
@@ -2072,6 +2175,7 @@ def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail)
             invoice.due_date.isoformat(),
             invoice.status.value,
             invoice.customer_name,
+            invoice.customer_phone or "",
             "TOTAL",
             "",
             "",
@@ -2310,6 +2414,7 @@ async def create_self_employed_invoice(
         user_id=user_id,
         customer_name=customer_name,
         customer_email=payload.customer_email.strip() if payload.customer_email else None,
+        customer_phone=payload.customer_phone.strip() if payload.customer_phone else None,
         customer_address=payload.customer_address.strip() if payload.customer_address else None,
         issue_date=issue_date,
         due_date=due_date,
@@ -2536,6 +2641,7 @@ async def create_self_employed_recurring_plan(
         user_id=user_id,
         customer_name=payload.customer_name.strip(),
         customer_email=payload.customer_email.strip() if payload.customer_email else None,
+        customer_phone=payload.customer_phone.strip() if payload.customer_phone else None,
         customer_address=payload.customer_address.strip() if payload.customer_address else None,
         currency=payload.currency.strip().upper(),
         tax_rate_percent=float(payload.tax_rate_percent),
@@ -2730,6 +2836,8 @@ async def run_self_employed_invoice_reminders(
             "status": str(item.status),
             "due_date": item.due_date,
             "invoice_number": str(item.invoice_number),
+            "customer_email": item.customer_email,
+            "customer_phone": item.customer_phone,
             "reminder_last_sent_at": item.reminder_last_sent_at,
         }
         for item in [*issued_rows, *overdue_rows]
@@ -2768,6 +2876,47 @@ async def run_self_employed_invoice_reminders(
             sent_at=now,
         )
         reminders.append(_to_reminder_event(event))
+
+        if SELF_EMPLOYED_REMINDER_EMAIL_ENABLED:
+            email_status, email_message = await _dispatch_invoice_reminder_email(
+                invoice_id=invoice_candidate["id"],
+                invoice_number=invoice_candidate["invoice_number"],
+                reminder_type=reminder_type,
+                message=message,
+                recipient_email=invoice_candidate["customer_email"],
+            )
+            email_event = await crud.create_invoice_reminder_event(
+                db,
+                invoice_id=invoice_candidate["id"],
+                user_id=user_id,
+                reminder_type=reminder_type,
+                channel="email",
+                status=email_status,
+                message=email_message,
+                sent_at=now if email_status == "sent" else None,
+            )
+            reminders.append(_to_reminder_event(email_event))
+
+        if SELF_EMPLOYED_REMINDER_SMS_ENABLED:
+            sms_status, sms_message = await _dispatch_invoice_reminder_sms(
+                invoice_id=invoice_candidate["id"],
+                invoice_number=invoice_candidate["invoice_number"],
+                reminder_type=reminder_type,
+                message=message,
+                recipient_phone=invoice_candidate["customer_phone"],
+            )
+            sms_event = await crud.create_invoice_reminder_event(
+                db,
+                invoice_id=invoice_candidate["id"],
+                user_id=user_id,
+                reminder_type=reminder_type,
+                channel="sms",
+                status=sms_status,
+                message=sms_message,
+                sent_at=now if sms_status == "sent" else None,
+            )
+            reminders.append(_to_reminder_event(sms_event))
+
         invoice_to_update = await crud.get_self_employed_invoice_by_id_for_user(
             db,
             invoice_id=invoice_candidate["id"],
@@ -2782,10 +2931,19 @@ async def run_self_employed_invoice_reminders(
         )
 
     if reminders:
+        sent_by_channel = {
+            "in_app": len([item for item in reminders if item.channel == "in_app" and item.status == "sent"]),
+            "email": len([item for item in reminders if item.channel == "email" and item.status == "sent"]),
+            "sms": len([item for item in reminders if item.channel == "sms" and item.status == "sent"]),
+        }
         await log_audit_event(
             user_id=user_id,
             action="self_employed.invoice.reminders.sent",
-            details={"count": len(reminders), "due_in_days": due_in_days},
+            details={
+                "count": len(reminders),
+                "due_in_days": due_in_days,
+                "sent_by_channel": sent_by_channel,
+            },
         )
     return schemas.SelfEmployedInvoiceReminderRunResponse(
         reminders_sent_count=len(reminders),

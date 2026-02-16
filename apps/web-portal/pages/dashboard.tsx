@@ -515,6 +515,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   const [error, setError] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerEmail, setCustomerEmail] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [lineDescription, setLineDescription] = useState('Professional services');
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState(100);
@@ -591,6 +592,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
         body: JSON.stringify({
           customer_name: customerName.trim(),
           customer_email: customerEmail.trim() || undefined,
+          customer_phone: customerPhone.trim() || undefined,
           tax_rate_percent: taxRate,
           brand_business_name: brandBusinessName.trim() || undefined,
           brand_logo_url: brandLogoUrl.trim() || undefined,
@@ -611,6 +613,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
       setCreateState({ isLoading: false, message: 'Invoice created successfully.' });
       setCustomerName('');
       setCustomerEmail('');
+      setCustomerPhone('');
       setLineDescription('Professional services');
       setQuantity(1);
       setUnitPrice(100);
@@ -668,6 +671,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
         body: JSON.stringify({
           customer_name: customerName.trim(),
           customer_email: customerEmail.trim() || undefined,
+          customer_phone: customerPhone.trim() || undefined,
           tax_rate_percent: taxRate,
           cadence: recurringCadence,
           lines: [
@@ -851,6 +855,13 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
             placeholder="Customer email (optional)"
             type="email"
             value={customerEmail}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setCustomerPhone(event.target.value)}
+            placeholder="Customer phone (for SMS reminders, optional)"
+            type="tel"
+            value={customerPhone}
           />
         </div>
         <div className={styles.dateInputs}>

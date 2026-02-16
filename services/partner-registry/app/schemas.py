@@ -375,6 +375,7 @@ class SelfEmployedInvoiceLineInput(BaseModel):
 class SelfEmployedInvoiceCreateRequest(BaseModel):
     customer_name: str = Field(min_length=2, max_length=180)
     customer_email: Optional[str] = Field(default=None, max_length=255)
+    customer_phone: Optional[str] = Field(default=None, max_length=32)
     customer_address: Optional[str] = Field(default=None, max_length=500)
     issue_date: Optional[datetime.date] = None
     due_date: Optional[datetime.date] = None
@@ -414,6 +415,7 @@ class SelfEmployedInvoiceSummary(BaseModel):
 
 class SelfEmployedInvoiceDetail(SelfEmployedInvoiceSummary):
     customer_email: Optional[str] = None
+    customer_phone: Optional[str] = None
     customer_address: Optional[str] = None
     subtotal_gbp: float
     tax_rate_percent: float
@@ -457,6 +459,7 @@ class SelfEmployedInvoiceBrandProfileResponse(BaseModel):
 class SelfEmployedRecurringInvoicePlanCreateRequest(BaseModel):
     customer_name: str = Field(min_length=2, max_length=180)
     customer_email: Optional[str] = Field(default=None, max_length=255)
+    customer_phone: Optional[str] = Field(default=None, max_length=32)
     customer_address: Optional[str] = Field(default=None, max_length=500)
     currency: str = Field(default="GBP", min_length=3, max_length=3)
     tax_rate_percent: float = Field(default=0, ge=0, le=100)
@@ -504,7 +507,7 @@ class SelfEmployedInvoiceReminderEvent(BaseModel):
     id: uuid.UUID
     invoice_id: uuid.UUID
     reminder_type: Literal["due_soon", "overdue"]
-    channel: Literal["email", "in_app"]
+    channel: Literal["email", "sms", "in_app"]
     status: Literal["queued", "sent", "failed"]
     message: str
     created_at: datetime.datetime
