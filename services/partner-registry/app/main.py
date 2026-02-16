@@ -2724,29 +2724,42 @@ async def run_self_employed_invoice_reminders(
     due_soon_cutoff = today + datetime.timedelta(days=due_in_days)
     now = datetime.datetime.now(datetime.UTC)
 
+    invoice_candidates = [
+        {
+            "id": str(item.id),
+            "status": str(item.status),
+            "due_date": item.due_date,
+            "invoice_number": str(item.invoice_number),
+            "reminder_last_sent_at": item.reminder_last_sent_at,
+        }
+        for item in [*issued_rows, *overdue_rows]
+    ]
+
     reminders: list[schemas.SelfEmployedInvoiceReminderEvent] = []
-    for invoice in list(issued_rows) + list(overdue_rows):
+    for invoice_candidate in invoice_candidates:
         reminder_type: Literal["due_soon", "overdue"] | None = None
-        if invoice.status == schemas.SelfEmployedInvoiceStatus.overdue.value:
+        if invoice_candidate["status"] == schemas.SelfEmployedInvoiceStatus.overdue.value:
             reminder_type = "overdue"
-        elif today <= invoice.due_date <= due_soon_cutoff:
+        elif today <= invoice_candidate["due_date"] <= due_soon_cutoff:
             reminder_type = "due_soon"
         if reminder_type is None:
             continue
-        if invoice.reminder_last_sent_at and (now - invoice.reminder_last_sent_at).total_seconds() < 24 * 3600:
+        if invoice_candidate["reminder_last_sent_at"] and (
+            now - invoice_candidate["reminder_last_sent_at"]
+        ).total_seconds() < 24 * 3600:
             continue
 
         message = (
-            f"Invoice {invoice.invoice_number} is overdue since {invoice.due_date.isoformat()}."
+            f"Invoice {invoice_candidate['invoice_number']} is overdue since {invoice_candidate['due_date'].isoformat()}."
             if reminder_type == "overdue"
             else (
-                f"Invoice {invoice.invoice_number} is due on {invoice.due_date.isoformat()} "
-                f"(in {(invoice.due_date - today).days} day(s))."
+                f"Invoice {invoice_candidate['invoice_number']} is due on {invoice_candidate['due_date'].isoformat()} "
+                f"(in {(invoice_candidate['due_date'] - today).days} day(s))."
             )
         )
         event = await crud.create_invoice_reminder_event(
             db,
-            invoice_id=str(invoice.id),
+            invoice_id=invoice_candidate["id"],
             user_id=user_id,
             reminder_type=reminder_type,
             channel="in_app",
@@ -2755,9 +2768,16 @@ async def run_self_employed_invoice_reminders(
             sent_at=now,
         )
         reminders.append(_to_reminder_event(event))
+        invoice_to_update = await crud.get_self_employed_invoice_by_id_for_user(
+            db,
+            invoice_id=invoice_candidate["id"],
+            user_id=user_id,
+        )
+        if invoice_to_update is None:
+            continue
         await crud.mark_self_employed_invoice_reminder_sent(
             db,
-            invoice,
+            invoice_to_update,
             reminder_at=now,
         )
 
