@@ -52,6 +52,9 @@ EXPO_PUBLIC_WEB_PORTAL_URL=http://<YOUR_LAN_IP>:3000
 Implemented in this iteration:
 
 - WebView container for the existing web-portal;
+- Lottie onboarding screen for first-time launch;
+- biometric unlock gate (Face ID/Touch ID/device biometrics) for secured sessions;
+- push deep-link routing (path/route/url payload support);
 - cinematic command card (live time, connectivity pulse, secure-session state);
 - animated neo-dock with premium quick actions and route highlights;
 - haptic feedback for key interactions (navigation, scan launch, push setup);
@@ -68,7 +71,8 @@ Planned next:
 
 - backend endpoint for push token registration and user mapping;
 - in-app notification center with delivery status and action deep-links;
-- camera-first receipt capture shortcut with direct upload pipeline.
+- camera-first receipt capture shortcut with direct upload pipeline;
+- telemetry for onboarding completion and biometric success funnel.
 
 ## App Store / Google Play preparation
 

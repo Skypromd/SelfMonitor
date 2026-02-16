@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Device from "expo-device";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
+import * as LocalAuthentication from "expo-local-authentication";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
@@ -16,10 +17,12 @@ import {
   Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import LottieView from "lottie-react-native";
 import { WebView } from "react-native-webview";
 
 const DEFAULT_WEB_PORTAL_URL =
@@ -42,6 +45,16 @@ const SECURE_AUTH_TOKEN_KEY = "selfmonitor.authToken";
 const SECURE_AUTH_EMAIL_KEY = "selfmonitor.authUserEmail";
 const SECURE_THEME_KEY = "selfmonitor.theme";
 const SECURE_PUSH_TOKEN_KEY = "selfmonitor.pushToken";
+const SECURE_ONBOARDING_DONE_KEY = "selfmonitor.onboardingDone";
+
+const PUSH_ROUTE_MAP: Record<string, string> = {
+  dashboard: "/dashboard",
+  documents: "/documents",
+  invoices: "/dashboard?section=invoices",
+  reports: "/reports",
+  submission: "/submission",
+  transactions: "/transactions",
+};
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -64,6 +77,14 @@ type DockAction = {
   isPrimary?: boolean;
   label: string;
   onPress: () => void;
+};
+
+type NotificationPayloadLike = {
+  deeplink?: unknown;
+  path?: unknown;
+  route?: unknown;
+  screen?: unknown;
+  url?: unknown;
 };
 
 function toStorageStatement(key: string, value: string | null): string {
@@ -101,6 +122,11 @@ export default function App(): React.JSX.Element {
   const webRef = useRef<WebView>(null);
   const [isConnected, setIsConnected] = useState(true);
   const [isHydrating, setIsHydrating] = useState(true);
+  const [isOnboardingDone, setIsOnboardingDone] = useState(true);
+  const [biometricRequired, setBiometricRequired] = useState(false);
+  const [biometricUnlocked, setBiometricUnlocked] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState("биометрии");
+  const [isAuthenticatingBiometric, setIsAuthenticatingBiometric] = useState(false);
   const [canGoBack, setCanGoBack] = useState(false);
   const [activePath, setActivePath] = useState("/dashboard");
   const [isLoading, setIsLoading] = useState(true);
@@ -124,16 +150,47 @@ export default function App(): React.JSX.Element {
     let isMounted = true;
     const hydrateSecureSession = async () => {
       try {
-        const [token, email, theme, pushToken] = await Promise.all([
+        const [token, email, theme, pushToken, onboardingFlag] = await Promise.all([
           SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY),
           SecureStore.getItemAsync(SECURE_AUTH_EMAIL_KEY),
           SecureStore.getItemAsync(SECURE_THEME_KEY),
           SecureStore.getItemAsync(SECURE_PUSH_TOKEN_KEY),
+          SecureStore.getItemAsync(SECURE_ONBOARDING_DONE_KEY),
         ]);
         if (!isMounted) {
           return;
         }
         setStoredPushToken(pushToken ?? null);
+        setIsOnboardingDone(onboardingFlag === "1");
+        const hasAuthSession = Boolean(token);
+        if (hasAuthSession) {
+          const [hasBiometricHardware, biometricEnrolled, biometricTypes] = await Promise.all([
+            LocalAuthentication.hasHardwareAsync(),
+            LocalAuthentication.isEnrolledAsync(),
+            LocalAuthentication.supportedAuthenticationTypesAsync(),
+          ]);
+          if (!isMounted) {
+            return;
+          }
+          const firstType = biometricTypes[0];
+          if (firstType === LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION) {
+            setBiometricLabel("Face ID / распознаванию лица");
+          } else if (firstType === LocalAuthentication.AuthenticationType.FINGERPRINT) {
+            setBiometricLabel("Touch ID / отпечатку пальца");
+          } else {
+            setBiometricLabel("биометрии");
+          }
+          if (hasBiometricHardware && biometricEnrolled) {
+            setBiometricRequired(true);
+            setBiometricUnlocked(false);
+          } else {
+            setBiometricRequired(false);
+            setBiometricUnlocked(true);
+          }
+        } else {
+          setBiometricRequired(false);
+          setBiometricUnlocked(true);
+        }
         setBootstrapScript(
           buildBootstrapScript({
             token: token ?? null,
@@ -264,6 +321,35 @@ export default function App(): React.JSX.Element {
     await Haptics.impactAsync(style);
   }, []);
 
+  const resolveNotificationPath = useCallback((payload: unknown): string | null => {
+    if (!payload || typeof payload !== "object") {
+      return null;
+    }
+    const candidate = payload as NotificationPayloadLike;
+    const rawPath = candidate.path ?? candidate.deeplink ?? candidate.url ?? candidate.route ?? candidate.screen;
+    if (typeof rawPath !== "string" || !rawPath.trim()) {
+      return null;
+    }
+    if (rawPath.startsWith("/")) {
+      return rawPath;
+    }
+    const mapped = PUSH_ROUTE_MAP[rawPath.toLowerCase()];
+    if (mapped) {
+      return mapped;
+    }
+    try {
+      const rawUrl = new URL(rawPath);
+      const allowedOrigin = new URL(WEB_PORTAL_URL).origin;
+      if (rawUrl.origin !== allowedOrigin) {
+        return null;
+      }
+      const nextPath = `${rawUrl.pathname}${rawUrl.search || ""}`;
+      return nextPath || "/dashboard";
+    } catch {
+      return null;
+    }
+  }, []);
+
   const notifyAction = useCallback((message: string) => {
     setStatusMessage(message);
   }, []);
@@ -332,6 +418,10 @@ export default function App(): React.JSX.Element {
         const email = parsed.payload?.email ?? null;
         try {
           await setSecureAuthState(token ?? null, email ?? null);
+          if (!token) {
+            setBiometricRequired(false);
+            setBiometricUnlocked(true);
+          }
         } catch (error) {
           setStatusMessage(
             error instanceof Error
@@ -471,6 +561,49 @@ export default function App(): React.JSX.Element {
     }
   }, []);
 
+  const requestBiometricUnlock = useCallback(async () => {
+    if (!biometricRequired || biometricUnlocked || isAuthenticatingBiometric) {
+      return;
+    }
+    try {
+      setIsAuthenticatingBiometric(true);
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Разблокируйте SelfMonitor",
+        cancelLabel: "Позже",
+        fallbackLabel: "Ввести код устройства",
+      });
+      if (result.success) {
+        await runHaptic("heavy");
+        setBiometricUnlocked(true);
+        notifyAction("Приложение разблокировано.");
+      } else if (result.error !== "user_cancel") {
+        await runHaptic("medium");
+        notifyAction("Не удалось подтвердить биометрию. Повторите попытку.");
+      }
+    } catch (error) {
+      notifyAction(
+        error instanceof Error
+          ? `Ошибка биометрии: ${error.message}`
+          : "Ошибка биометрической проверки."
+      );
+    } finally {
+      setIsAuthenticatingBiometric(false);
+    }
+  }, [biometricRequired, biometricUnlocked, isAuthenticatingBiometric, notifyAction, runHaptic]);
+
+  const completeOnboarding = useCallback(async () => {
+    await runHaptic("heavy");
+    await SecureStore.setItemAsync(SECURE_ONBOARDING_DONE_KEY, "1");
+    setIsOnboardingDone(true);
+    notifyAction("Добро пожаловать в SelfMonitor Mobile.");
+  }, [notifyAction, runHaptic]);
+
+  useEffect(() => {
+    if (!isHydrating && biometricRequired && !biometricUnlocked) {
+      void requestBiometricUnlock();
+    }
+  }, [biometricRequired, biometricUnlocked, isHydrating, requestBiometricUnlock]);
+
   useEffect(() => {
     const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
       const title = notification.request.content.title;
@@ -479,8 +612,17 @@ export default function App(): React.JSX.Element {
       }
     });
     const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const maybePath = response.notification.request.content.data?.path;
-      if (typeof maybePath === "string" && maybePath) {
+      const maybePath = resolveNotificationPath(response.notification.request.content.data);
+      if (maybePath) {
+        void navigateInsidePortal(maybePath);
+      }
+    });
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (!response) {
+        return;
+      }
+      const maybePath = resolveNotificationPath(response.notification.request.content.data);
+      if (maybePath) {
         void navigateInsidePortal(maybePath);
       }
     });
@@ -488,7 +630,7 @@ export default function App(): React.JSX.Element {
       receivedSubscription.remove();
       responseSubscription.remove();
     };
-  }, [navigateInsidePortal, notifyAction]);
+  }, [navigateInsidePortal, notifyAction, resolveNotificationPath]);
 
   const isRouteActive = useCallback(
     (route: string) => activePath === route || activePath.startsWith(`${route}/`),
@@ -600,6 +742,77 @@ export default function App(): React.JSX.Element {
           <Text style={styles.errorSubtitle}>Подготовка защищенной мобильной сессии...</Text>
         </View>
       ) : null}
+      {!isHydrating && !isOnboardingDone ? (
+        <ScrollView contentContainerStyle={styles.onboardingContainer} style={styles.onboardingScroll}>
+          <LinearGradient
+            colors={["#1d4ed8", "#312e81", "#020617"]}
+            end={{ x: 1, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            style={styles.onboardingHero}
+          >
+            <LottieView
+              autoPlay
+              loop
+              source={require("./assets/lottie/onboarding-spark.json")}
+              style={styles.onboardingAnimation}
+            />
+            <Text style={styles.onboardingTitle}>SelfMonitor Mobile</Text>
+            <Text style={styles.onboardingSubtitle}>
+              Финансовый помощник премиум-уровня для самозанятых в UK — теперь в формате top mobile app.
+            </Text>
+          </LinearGradient>
+          <View style={styles.onboardingFeatureList}>
+            <View style={styles.onboardingFeatureItem}>
+              <Ionicons color="#1d4ed8" name="flash-outline" size={18} />
+              <Text style={styles.onboardingFeatureText}>Мгновенный скан чеков и умная обработка.</Text>
+            </View>
+            <View style={styles.onboardingFeatureItem}>
+              <Ionicons color="#1d4ed8" name="shield-checkmark-outline" size={18} />
+              <Text style={styles.onboardingFeatureText}>Защищенная сессия + биометрический unlock.</Text>
+            </View>
+            <View style={styles.onboardingFeatureItem}>
+              <Ionicons color="#1d4ed8" name="notifications-outline" size={18} />
+              <Text style={styles.onboardingFeatureText}>Push дедлайны HMRC и напоминания по инвойсам.</Text>
+            </View>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              void completeOnboarding();
+            }}
+            style={styles.onboardingPrimaryButton}
+          >
+            <Text style={styles.onboardingPrimaryButtonText}>Начать</Text>
+          </Pressable>
+        </ScrollView>
+      ) : null}
+      {!isHydrating && isOnboardingDone && biometricRequired && !biometricUnlocked ? (
+        <View style={styles.biometricGateContainer}>
+          <LinearGradient
+            colors={["#0f172a", "#1e3a8a", "#0f172a"]}
+            end={{ x: 1, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            style={styles.biometricCard}
+          >
+            <Ionicons color="#93c5fd" name="lock-closed-outline" size={40} />
+            <Text style={styles.biometricTitle}>Защищенный вход</Text>
+            <Text style={styles.biometricSubtitle}>
+              Подтвердите доступ по {biometricLabel}, чтобы продолжить работу.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                void requestBiometricUnlock();
+              }}
+              style={styles.biometricButton}
+            >
+              <Text style={styles.biometricButtonText}>
+                {isAuthenticatingBiometric ? "Проверяем..." : "Разблокировать"}
+              </Text>
+            </Pressable>
+          </LinearGradient>
+        </View>
+      ) : null}
       {statusMessage ? (
         <View style={styles.statusBanner}>
           <Text style={styles.statusBannerText}>{statusMessage}</Text>
@@ -623,7 +836,7 @@ export default function App(): React.JSX.Element {
           </Pressable>
           <Text style={styles.hintText}>Текущий URL: {WEB_PORTAL_URL}</Text>
         </View>
-      ) : !isHydrating ? (
+      ) : !isHydrating && isOnboardingDone && (!biometricRequired || biometricUnlocked) ? (
         <View style={styles.webViewWrapper}>
           <View style={styles.topOverlay}>
             <LinearGradient
@@ -786,6 +999,109 @@ const styles = StyleSheet.create({
   backgroundAura: {
     ...StyleSheet.absoluteFillObject,
     opacity: 0.2,
+  },
+  onboardingScroll: {
+    flex: 1,
+  },
+  onboardingContainer: {
+    padding: 18,
+    paddingTop: 28,
+    gap: 16,
+  },
+  onboardingHero: {
+    alignItems: "center",
+    borderRadius: 18,
+    gap: 10,
+    overflow: "hidden",
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+  },
+  onboardingAnimation: {
+    height: 180,
+    width: 180,
+  },
+  onboardingTitle: {
+    color: "#ffffff",
+    fontSize: 24,
+    fontWeight: "800",
+  },
+  onboardingSubtitle: {
+    color: "#cbd5e1",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  onboardingFeatureList: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderColor: "rgba(148,163,184,0.35)",
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 12,
+    padding: 14,
+  },
+  onboardingFeatureItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  onboardingFeatureText: {
+    color: "#1e293b",
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  onboardingPrimaryButton: {
+    alignItems: "center",
+    backgroundColor: "#1d4ed8",
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+  onboardingPrimaryButtonText: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  biometricGateContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    backgroundColor: "rgba(2,6,23,0.82)",
+    justifyContent: "center",
+    padding: 24,
+    zIndex: 30,
+  },
+  biometricCard: {
+    alignItems: "center",
+    borderColor: "rgba(147,197,253,0.4)",
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 12,
+    maxWidth: 420,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    width: "100%",
+  },
+  biometricTitle: {
+    color: "#ffffff",
+    fontSize: 22,
+    fontWeight: "700",
+  },
+  biometricSubtitle: {
+    color: "#cbd5e1",
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  biometricButton: {
+    backgroundColor: "#2563eb",
+    borderRadius: 12,
+    marginTop: 4,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  biometricButtonText: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "700",
   },
   topOverlay: {
     left: 12,
