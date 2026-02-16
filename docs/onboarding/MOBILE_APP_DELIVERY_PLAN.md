@@ -31,11 +31,14 @@ Make mobile the primary user channel while reusing the mature web product.
 - secure session bootstrap and persistence in native secure storage;
 - biometric unlock gate for secure sessions (face/fingerprint when available);
 - first-launch Lottie onboarding with premium product positioning;
+- branded splash layer with remote-configurable theme/copy;
+- onboarding A/B experiment assignment (stable bucket by installation ID);
 - bidirectional auth/theme sync bridge between web app and native shell;
 - native action bar for key mobile intents (dashboard, documents, receipt capture, push setup);
 - premium "wow UX" layer (animated command card, haptics, pulse indicators, neo-dock visuals);
 - push permission/token bootstrap flow with secure persistence.
 - deep-link routing from push payloads (`path`, `route`, `url`, `deeplink`) including cold-start handling.
+- mobile analytics funnel events (splash, onboarding, biometric, push permission, deep-link opens).
 - CI typecheck lane for mobile app.
 
 ## Release readiness checklist (next)

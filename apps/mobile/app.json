@@ -27,7 +27,9 @@
     },
     "extra": {
       "webPortalUrlEnvVar": "EXPO_PUBLIC_WEB_PORTAL_URL",
-      "easProjectIdEnvVar": "EXPO_PUBLIC_EAS_PROJECT_ID"
+      "easProjectIdEnvVar": "EXPO_PUBLIC_EAS_PROJECT_ID",
+      "mobileRemoteConfigUrlEnvVar": "EXPO_PUBLIC_MOBILE_REMOTE_CONFIG_URL",
+      "mobileAnalyticsUrlEnvVar": "EXPO_PUBLIC_MOBILE_ANALYTICS_URL"
     }
   }
 }

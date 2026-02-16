@@ -34,6 +34,9 @@ const DEFAULT_WEB_PORTAL_URL =
 
 const WEB_PORTAL_URL =
   process.env.EXPO_PUBLIC_WEB_PORTAL_URL?.trim() || DEFAULT_WEB_PORTAL_URL;
+const MOBILE_REMOTE_CONFIG_URL = process.env.EXPO_PUBLIC_MOBILE_REMOTE_CONFIG_URL?.trim() || "";
+const MOBILE_ANALYTICS_URL = process.env.EXPO_PUBLIC_MOBILE_ANALYTICS_URL?.trim() || "";
+const MOBILE_ANALYTICS_API_KEY = process.env.EXPO_PUBLIC_MOBILE_ANALYTICS_API_KEY?.trim() || "";
 
 const APP_USER_AGENT_SUFFIX = "SelfMonitorMobile/0.1";
 const AUTH_TOKEN_KEY = "authToken";
@@ -46,6 +49,7 @@ const SECURE_AUTH_EMAIL_KEY = "selfmonitor.authUserEmail";
 const SECURE_THEME_KEY = "selfmonitor.theme";
 const SECURE_PUSH_TOKEN_KEY = "selfmonitor.pushToken";
 const SECURE_ONBOARDING_DONE_KEY = "selfmonitor.onboardingDone";
+const SECURE_INSTALLATION_ID_KEY = "selfmonitor.installationId";
 
 const PUSH_ROUTE_MAP: Record<string, string> = {
   dashboard: "/dashboard",
@@ -55,6 +59,10 @@ const PUSH_ROUTE_MAP: Record<string, string> = {
   submission: "/submission",
   transactions: "/transactions",
 };
+
+const DEFAULT_SPLASH_COLORS = ["#0b1120", "#1e3a8a", "#3b82f6"] as const;
+const DEFAULT_SPLASH_TITLE = "SelfMonitor";
+const DEFAULT_SPLASH_TAGLINE = "World-class finance copilot for UK self-employed.";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -87,6 +95,89 @@ type NotificationPayloadLike = {
   url?: unknown;
 };
 
+type RemoteOnboardingVariant = {
+  ctaLabel?: string;
+  features?: string[];
+  gradient?: string[];
+  id: string;
+  subtitle?: string;
+  title?: string;
+  weight?: number;
+};
+
+type ResolvedOnboardingVariant = {
+  ctaLabel: string;
+  experimentId: string;
+  features: string[];
+  gradient: [string, string, string];
+  id: string;
+  subtitle: string;
+  title: string;
+};
+
+type MobileRemoteConfig = {
+  onboardingExperiment?: {
+    experimentId?: string;
+    forceVariantId?: string;
+    variants?: RemoteOnboardingVariant[];
+  };
+  splash?: {
+    gradient?: string[];
+    subtitle?: string;
+    title?: string;
+  };
+};
+
+type MobileAnalyticsEvent = {
+  event: string;
+  metadata: Record<string, unknown>;
+  occurred_at: string;
+  platform: string;
+  source: "mobile-app";
+};
+
+const FALLBACK_ONBOARDING_VARIANTS: ResolvedOnboardingVariant[] = [
+  {
+    id: "velocity",
+    experimentId: "local-default-onboarding-v1",
+    title: "Старт за минуты",
+    subtitle: "Подключите финансы, сканируйте чеки и держите отчеты под контролем без рутины.",
+    ctaLabel: "Начать быстро",
+    features: [
+      "Скан чеков и автозаполнение расходов",
+      "Push-дедлайны HMRC и инвойсов",
+      "Единая mobile-панель по бизнесу",
+    ],
+    gradient: ["#1d4ed8", "#312e81", "#020617"],
+  },
+  {
+    id: "security",
+    experimentId: "local-default-onboarding-v1",
+    title: "Безопасность уровня fintech",
+    subtitle: "Secure session, биометрический вход и защищенные операции по умолчанию.",
+    ctaLabel: "Включить защиту",
+    features: [
+      "Face ID / Touch ID для secure-доступа",
+      "Защищенное хранение сессии на устройстве",
+      "Контроль уведомлений и deep-link маршрутов",
+    ],
+    gradient: ["#0f172a", "#1e3a8a", "#1d4ed8"],
+  },
+  {
+    id: "investor",
+    experimentId: "local-default-onboarding-v1",
+    title: "Рост и предсказуемость",
+    subtitle: "Следите за выручкой, расходами и инвойсами в одном premium mobile опыте.",
+    ctaLabel: "Открыть dashboard",
+    features: [
+      "Инвойсы, напоминания и recurring billing",
+      "Готовность документов для ипотеки и отчетности",
+      "Фокус на эффективность и MRR-метрики",
+    ],
+    gradient: ["#1e3a8a", "#1d4ed8", "#0f172a"],
+  },
+];
+
 function toStorageStatement(key: string, value: string | null): string {
   if (value) {
     return `window.localStorage.setItem(${JSON.stringify(key)}, ${JSON.stringify(value)});`;
@@ -118,6 +209,110 @@ function buildBootstrapScript(payload: {
   `;
 }
 
+function createInstallationId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function stableBucket(input: string): number {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) % 100_000;
+  }
+  return hash % 100;
+}
+
+function normalizeGradientTriplet(candidate?: string[]): [string, string, string] {
+  if (!candidate || candidate.length < 3) {
+    return [...DEFAULT_SPLASH_COLORS];
+  }
+  const colors = candidate.slice(0, 3).map((color) => (typeof color === "string" ? color : ""));
+  if (colors.some((color) => !color.trim())) {
+    return [...DEFAULT_SPLASH_COLORS];
+  }
+  return [colors[0], colors[1], colors[2]];
+}
+
+function resolveOnboardingVariant(
+  installationId: string,
+  remoteConfig: MobileRemoteConfig | null
+): ResolvedOnboardingVariant {
+  const experiment = remoteConfig?.onboardingExperiment;
+  const experimentId = experiment?.experimentId?.trim() || FALLBACK_ONBOARDING_VARIANTS[0].experimentId;
+
+  const variants = (experiment?.variants ?? [])
+    .filter((variant): variant is RemoteOnboardingVariant => Boolean(variant?.id?.trim()))
+    .map((variant) => {
+      const fallback = FALLBACK_ONBOARDING_VARIANTS[0];
+      return {
+        id: variant.id.trim(),
+        experimentId,
+        title: variant.title?.trim() || fallback.title,
+        subtitle: variant.subtitle?.trim() || fallback.subtitle,
+        ctaLabel: variant.ctaLabel?.trim() || fallback.ctaLabel,
+        features:
+          variant.features?.filter((item): item is string => typeof item === "string" && item.trim().length > 0) ||
+          fallback.features,
+        gradient: normalizeGradientTriplet(variant.gradient),
+        weight: typeof variant.weight === "number" && variant.weight > 0 ? variant.weight : 1,
+      };
+    });
+
+  const normalizedVariants =
+    variants.length > 0
+      ? variants
+      : FALLBACK_ONBOARDING_VARIANTS.map((variant) => ({
+          ...variant,
+          experimentId,
+          weight: 1,
+        }));
+
+  const forcedVariantId = experiment?.forceVariantId?.trim();
+  if (forcedVariantId) {
+    const forced = normalizedVariants.find((variant) => variant.id === forcedVariantId);
+    if (forced) {
+      return forced;
+    }
+  }
+
+  const totalWeight = normalizedVariants.reduce((sum, variant) => sum + variant.weight, 0);
+  const bucket = stableBucket(`${experimentId}:${installationId}`);
+  const point = (bucket / 100) * totalWeight;
+  let running = 0;
+  for (const variant of normalizedVariants) {
+    running += variant.weight;
+    if (point <= running) {
+      return variant;
+    }
+  }
+  return normalizedVariants[normalizedVariants.length - 1];
+}
+
+async function fetchRemoteConfigWithTimeout(): Promise<MobileRemoteConfig | null> {
+  if (!MOBILE_REMOTE_CONFIG_URL) {
+    return null;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2400);
+  try {
+    const response = await fetch(MOBILE_REMOTE_CONFIG_URL, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = (await response.json()) as MobileRemoteConfig;
+    return payload;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export default function App(): React.JSX.Element {
   const webRef = useRef<WebView>(null);
   const [isConnected, setIsConnected] = useState(true);
@@ -134,7 +329,14 @@ export default function App(): React.JSX.Element {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [bootstrapScript, setBootstrapScript] = useState("true;");
   const [storedPushToken, setStoredPushToken] = useState<string | null>(null);
+  const [installationId, setInstallationId] = useState("");
+  const [remoteConfig, setRemoteConfig] = useState<MobileRemoteConfig | null>(null);
+  const [onboardingVariant, setOnboardingVariant] = useState<ResolvedOnboardingVariant>(
+    FALLBACK_ONBOARDING_VARIANTS[0]
+  );
+  const [showBrandedSplash, setShowBrandedSplash] = useState(true);
   const [clock, setClock] = useState(() => new Date());
+  const analyticsTrackedRef = useRef<Set<string>>(new Set());
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const dockFloatAnim = useRef(new Animated.Value(0)).current;
   const glowAnim = useRef(new Animated.Value(0)).current;
@@ -150,16 +352,27 @@ export default function App(): React.JSX.Element {
     let isMounted = true;
     const hydrateSecureSession = async () => {
       try {
-        const [token, email, theme, pushToken, onboardingFlag] = await Promise.all([
+        const [token, email, theme, pushToken, onboardingFlag, existingInstallationId, fetchedRemoteConfig] =
+          await Promise.all([
           SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY),
           SecureStore.getItemAsync(SECURE_AUTH_EMAIL_KEY),
           SecureStore.getItemAsync(SECURE_THEME_KEY),
           SecureStore.getItemAsync(SECURE_PUSH_TOKEN_KEY),
           SecureStore.getItemAsync(SECURE_ONBOARDING_DONE_KEY),
-        ]);
+            SecureStore.getItemAsync(SECURE_INSTALLATION_ID_KEY),
+            fetchRemoteConfigWithTimeout(),
+          ]);
         if (!isMounted) {
           return;
         }
+        const resolvedInstallationId = existingInstallationId ?? createInstallationId();
+        if (!existingInstallationId) {
+          await SecureStore.setItemAsync(SECURE_INSTALLATION_ID_KEY, resolvedInstallationId);
+        }
+        setInstallationId(resolvedInstallationId);
+        setRemoteConfig(fetchedRemoteConfig);
+        const resolvedVariant = resolveOnboardingVariant(resolvedInstallationId, fetchedRemoteConfig);
+        setOnboardingVariant(resolvedVariant);
         setStoredPushToken(pushToken ?? null);
         setIsOnboardingDone(onboardingFlag === "1");
         const hasAuthSession = Boolean(token);
@@ -199,6 +412,12 @@ export default function App(): React.JSX.Element {
             pushToken: pushToken ?? null,
           })
         );
+        void trackAnalyticsEvent("mobile.remote_config.loaded", {
+          remote_config_url: MOBILE_REMOTE_CONFIG_URL || null,
+          used_remote_config: Boolean(fetchedRemoteConfig),
+          selected_variant: resolvedVariant.id,
+          selected_experiment: resolvedVariant.experimentId,
+        });
       } catch (error) {
         if (isMounted) {
           setStatusMessage(
@@ -206,6 +425,9 @@ export default function App(): React.JSX.Element {
               ? `Secure session bootstrap failed: ${error.message}`
               : "Secure session bootstrap failed."
           );
+          void trackAnalyticsEvent("mobile.remote_config.failed", {
+            reason: error instanceof Error ? error.message : "unknown",
+          });
         }
       } finally {
         if (isMounted) {
@@ -296,6 +518,58 @@ export default function App(): React.JSX.Element {
   }, [statusMessage]);
 
   useEffect(() => {
+    if (isHydrating) {
+      return;
+    }
+    trackAnalyticsOnce("mobile.splash.impression", "mobile.splash.impression", {
+      splash_title: remoteConfig?.splash?.title ?? DEFAULT_SPLASH_TITLE,
+    });
+    const timeout = setTimeout(() => {
+      setShowBrandedSplash(false);
+      void trackAnalyticsEvent("mobile.splash.dismissed", {
+        splash_title: remoteConfig?.splash?.title ?? DEFAULT_SPLASH_TITLE,
+      });
+    }, 1200);
+    return () => clearTimeout(timeout);
+  }, [isHydrating, remoteConfig, trackAnalyticsEvent, trackAnalyticsOnce]);
+
+  useEffect(() => {
+    if (isHydrating || showBrandedSplash || isOnboardingDone) {
+      return;
+    }
+    trackAnalyticsOnce(
+      `mobile.onboarding.impression.${onboardingVariant.experimentId}.${onboardingVariant.id}`,
+      "mobile.onboarding.impression",
+      {
+        onboarding_variant: onboardingVariant.id,
+        onboarding_experiment: onboardingVariant.experimentId,
+      }
+    );
+  }, [
+    isHydrating,
+    isOnboardingDone,
+    onboardingVariant.experimentId,
+    onboardingVariant.id,
+    showBrandedSplash,
+    trackAnalyticsOnce,
+  ]);
+
+  useEffect(() => {
+    if (isHydrating || !biometricRequired || biometricUnlocked) {
+      return;
+    }
+    trackAnalyticsOnce("mobile.biometric.gate_shown", "mobile.biometric.gate_shown", {
+      biometric_label: biometricLabel,
+    });
+  }, [
+    biometricLabel,
+    biometricRequired,
+    biometricUnlocked,
+    isHydrating,
+    trackAnalyticsOnce,
+  ]);
+
+  useEffect(() => {
     const onBackPress = () => {
       if (canGoBack && webRef.current) {
         void Haptics.selectionAsync();
@@ -320,6 +594,53 @@ export default function App(): React.JSX.Element {
           : Haptics.ImpactFeedbackStyle.Medium;
     await Haptics.impactAsync(style);
   }, []);
+
+  const trackAnalyticsEvent = useCallback(
+    async (event: string, metadata: Record<string, unknown> = {}) => {
+      if (!event) {
+        return;
+      }
+      const payload: MobileAnalyticsEvent = {
+        event,
+        metadata: {
+          ...metadata,
+          onboarding_variant: onboardingVariant.id,
+          onboarding_experiment: onboardingVariant.experimentId,
+          installation_id: installationId || "unknown",
+        },
+        occurred_at: new Date().toISOString(),
+        platform: Platform.OS,
+        source: "mobile-app",
+      };
+      if (!MOBILE_ANALYTICS_URL) {
+        return;
+      }
+      try {
+        await fetch(MOBILE_ANALYTICS_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(MOBILE_ANALYTICS_API_KEY ? { "X-Api-Key": MOBILE_ANALYTICS_API_KEY } : {}),
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch {
+        // Intentionally ignored: analytics must never break user flow.
+      }
+    },
+    [installationId, onboardingVariant.experimentId, onboardingVariant.id]
+  );
+
+  const trackAnalyticsOnce = useCallback(
+    (key: string, event: string, metadata: Record<string, unknown> = {}) => {
+      if (analyticsTrackedRef.current.has(key)) {
+        return;
+      }
+      analyticsTrackedRef.current.add(key);
+      void trackAnalyticsEvent(event, metadata);
+    },
+    [trackAnalyticsEvent]
+  );
 
   const resolveNotificationPath = useCallback((payload: unknown): string | null => {
     if (!payload || typeof payload !== "object") {
@@ -455,8 +776,12 @@ export default function App(): React.JSX.Element {
   const registerPushNotifications = useCallback(async () => {
     try {
       await runHaptic("medium");
+      void trackAnalyticsEvent("mobile.push.permission_prompted");
       if (!Device.isDevice) {
         setStatusMessage("Push notifications работают только на физическом устройстве.");
+        void trackAnalyticsEvent("mobile.push.permission_unavailable", {
+          reason: "not_a_physical_device",
+        });
         return;
       }
       const permission = await Notifications.getPermissionsAsync();
@@ -467,6 +792,9 @@ export default function App(): React.JSX.Element {
       }
       if (finalStatus !== "granted") {
         setStatusMessage("Разрешение на push не выдано.");
+        void trackAnalyticsEvent("mobile.push.permission_denied", {
+          status: finalStatus,
+        });
         return;
       }
       const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
@@ -477,6 +805,9 @@ export default function App(): React.JSX.Element {
       setStoredPushToken(tokenResponse.data);
       syncPushTokenToWeb(tokenResponse.data);
       notifyAction("Push token успешно подключен.");
+      void trackAnalyticsEvent("mobile.push.permission_granted", {
+        token_preview: tokenResponse.data.slice(0, 12),
+      });
       await runHaptic("heavy");
     } catch (error) {
       setStatusMessage(
@@ -484,9 +815,12 @@ export default function App(): React.JSX.Element {
           ? `Не удалось включить push: ${error.message}`
           : "Не удалось включить push."
       );
+      void trackAnalyticsEvent("mobile.push.permission_error", {
+        message: error instanceof Error ? error.message : "unknown",
+      });
       await runHaptic("heavy");
     }
-  }, [notifyAction, runHaptic, syncPushTokenToWeb]);
+  }, [notifyAction, runHaptic, syncPushTokenToWeb, trackAnalyticsEvent]);
 
   const normalizePortalPath = useCallback((path: string) => {
     const base = WEB_PORTAL_URL.replace(/\/+$/, "");
@@ -495,7 +829,7 @@ export default function App(): React.JSX.Element {
   }, []);
 
   const navigateInsidePortal = useCallback(
-    async (path: string) => {
+    async (path: string, source: "dock" | "push" | "system" = "dock") => {
       await runHaptic("light");
       const targetUrl = normalizePortalPath(path);
       webRef.current?.injectJavaScript(
@@ -507,8 +841,12 @@ export default function App(): React.JSX.Element {
         `
       );
       notifyAction(`Переход: ${path}`);
+      void trackAnalyticsEvent("mobile.navigation.route_change", {
+        path,
+        source,
+      });
     },
-    [normalizePortalPath, notifyAction, runHaptic]
+    [normalizePortalPath, notifyAction, runHaptic, trackAnalyticsEvent]
   );
 
   const openReceiptCapture = useCallback(async () => {
@@ -532,7 +870,8 @@ export default function App(): React.JSX.Element {
       `
     );
     notifyAction("Открываем быстрый скан чека...");
-  }, [normalizePortalPath, notifyAction, runHaptic]);
+    void trackAnalyticsEvent("mobile.scan.quick_action");
+  }, [normalizePortalPath, notifyAction, runHaptic, trackAnalyticsEvent]);
 
   const onRetry = useCallback(async () => {
     await runHaptic("medium");
@@ -567,6 +906,9 @@ export default function App(): React.JSX.Element {
     }
     try {
       setIsAuthenticatingBiometric(true);
+      void trackAnalyticsEvent("mobile.biometric.challenge_started", {
+        biometric_label: biometricLabel,
+      });
       const result = await LocalAuthentication.authenticateAsync({
         promptMessage: "Разблокируйте SelfMonitor",
         cancelLabel: "Позже",
@@ -576,9 +918,20 @@ export default function App(): React.JSX.Element {
         await runHaptic("heavy");
         setBiometricUnlocked(true);
         notifyAction("Приложение разблокировано.");
+        void trackAnalyticsEvent("mobile.biometric.challenge_succeeded", {
+          biometric_label: biometricLabel,
+        });
       } else if (result.error !== "user_cancel") {
         await runHaptic("medium");
         notifyAction("Не удалось подтвердить биометрию. Повторите попытку.");
+        void trackAnalyticsEvent("mobile.biometric.challenge_failed", {
+          biometric_label: biometricLabel,
+          reason: result.error,
+        });
+      } else {
+        void trackAnalyticsEvent("mobile.biometric.challenge_cancelled", {
+          biometric_label: biometricLabel,
+        });
       }
     } catch (error) {
       notifyAction(
@@ -586,23 +939,48 @@ export default function App(): React.JSX.Element {
           ? `Ошибка биометрии: ${error.message}`
           : "Ошибка биометрической проверки."
       );
+      void trackAnalyticsEvent("mobile.biometric.challenge_error", {
+        message: error instanceof Error ? error.message : "unknown",
+      });
     } finally {
       setIsAuthenticatingBiometric(false);
     }
-  }, [biometricRequired, biometricUnlocked, isAuthenticatingBiometric, notifyAction, runHaptic]);
+  }, [
+    biometricLabel,
+    biometricRequired,
+    biometricUnlocked,
+    isAuthenticatingBiometric,
+    notifyAction,
+    runHaptic,
+    trackAnalyticsEvent,
+  ]);
 
   const completeOnboarding = useCallback(async () => {
     await runHaptic("heavy");
+    void trackAnalyticsEvent("mobile.onboarding.cta_tapped", {
+      onboarding_variant: onboardingVariant.id,
+      onboarding_experiment: onboardingVariant.experimentId,
+    });
     await SecureStore.setItemAsync(SECURE_ONBOARDING_DONE_KEY, "1");
     setIsOnboardingDone(true);
     notifyAction("Добро пожаловать в SelfMonitor Mobile.");
-  }, [notifyAction, runHaptic]);
+    void trackAnalyticsEvent("mobile.onboarding.completed", {
+      onboarding_variant: onboardingVariant.id,
+      onboarding_experiment: onboardingVariant.experimentId,
+    });
+  }, [
+    notifyAction,
+    onboardingVariant.experimentId,
+    onboardingVariant.id,
+    runHaptic,
+    trackAnalyticsEvent,
+  ]);
 
   useEffect(() => {
-    if (!isHydrating && biometricRequired && !biometricUnlocked) {
+    if (!isHydrating && !showBrandedSplash && biometricRequired && !biometricUnlocked) {
       void requestBiometricUnlock();
     }
-  }, [biometricRequired, biometricUnlocked, isHydrating, requestBiometricUnlock]);
+  }, [biometricRequired, biometricUnlocked, isHydrating, requestBiometricUnlock, showBrandedSplash]);
 
   useEffect(() => {
     const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
@@ -614,7 +992,10 @@ export default function App(): React.JSX.Element {
     const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const maybePath = resolveNotificationPath(response.notification.request.content.data);
       if (maybePath) {
-        void navigateInsidePortal(maybePath);
+        void navigateInsidePortal(maybePath, "push");
+        void trackAnalyticsEvent("mobile.push.deep_link_opened", {
+          path: maybePath,
+        });
       }
     });
     void Notifications.getLastNotificationResponseAsync().then((response) => {
@@ -623,14 +1004,17 @@ export default function App(): React.JSX.Element {
       }
       const maybePath = resolveNotificationPath(response.notification.request.content.data);
       if (maybePath) {
-        void navigateInsidePortal(maybePath);
+        void navigateInsidePortal(maybePath, "push");
+        void trackAnalyticsEvent("mobile.push.deep_link_cold_start", {
+          path: maybePath,
+        });
       }
     });
     return () => {
       receivedSubscription.remove();
       responseSubscription.remove();
     };
-  }, [navigateInsidePortal, notifyAction, resolveNotificationPath]);
+  }, [navigateInsidePortal, notifyAction, resolveNotificationPath, trackAnalyticsEvent]);
 
   const isRouteActive = useCallback(
     (route: string) => activePath === route || activePath.startsWith(`${route}/`),
@@ -677,6 +1061,14 @@ export default function App(): React.JSX.Element {
 
   const connectionLabel = isConnected ? "Online" : "Offline";
   const sessionLabel = storedPushToken ? "Secure + Push ready" : "Secure session";
+  const splashTitle = remoteConfig?.splash?.title?.trim() || DEFAULT_SPLASH_TITLE;
+  const splashTagline = remoteConfig?.splash?.subtitle?.trim() || DEFAULT_SPLASH_TAGLINE;
+  const splashGradient = normalizeGradientTriplet(remoteConfig?.splash?.gradient);
+
+  const onboardingFeatureIcons = useMemo<Array<keyof typeof Ionicons.glyphMap>>(
+    () => ["flash-outline", "shield-checkmark-outline", "notifications-outline"],
+    []
+  );
 
   const dockActions = useMemo<DockAction[]>(
     () => [
@@ -727,25 +1119,44 @@ export default function App(): React.JSX.Element {
         style={styles.backgroundAura}
       />
       <StatusBar style="dark" />
-      {isHydrating ? (
-        <View style={styles.errorContainer}>
-          <Animated.View
-            style={[
-              styles.hydratingOrb,
-              {
-                opacity: pulseOpacity,
-                transform: [{ scale: pulseScale }],
-              },
-            ]}
-          />
-          <ActivityIndicator size="large" color="#2563eb" />
-          <Text style={styles.errorSubtitle}>Подготовка защищенной мобильной сессии...</Text>
+      {isHydrating || showBrandedSplash ? (
+        <View style={styles.brandedSplashContainer}>
+          <LinearGradient
+            colors={splashGradient}
+            end={{ x: 1, y: 1 }}
+            start={{ x: 0, y: 0 }}
+            style={styles.brandedSplashCard}
+          >
+            <LottieView
+              autoPlay
+              loop
+              source={require("./assets/lottie/onboarding-spark.json")}
+              style={styles.brandedSplashAnimation}
+            />
+            <Animated.View
+              style={[
+                styles.hydratingOrb,
+                {
+                  opacity: pulseOpacity,
+                  transform: [{ scale: pulseScale }],
+                },
+              ]}
+            />
+            <Text style={styles.brandedSplashTitle}>{splashTitle}</Text>
+            <Text style={styles.brandedSplashTagline}>{splashTagline}</Text>
+            <View style={styles.brandedSplashStatusRow}>
+              <ActivityIndicator size="small" color="#dbeafe" />
+              <Text style={styles.brandedSplashStatusText}>
+                {isHydrating ? "Подготавливаем secure mobile experience..." : "Готовим запуск..."}
+              </Text>
+            </View>
+          </LinearGradient>
         </View>
       ) : null}
-      {!isHydrating && !isOnboardingDone ? (
+      {!isHydrating && !showBrandedSplash && !isOnboardingDone ? (
         <ScrollView contentContainerStyle={styles.onboardingContainer} style={styles.onboardingScroll}>
           <LinearGradient
-            colors={["#1d4ed8", "#312e81", "#020617"]}
+            colors={onboardingVariant.gradient}
             end={{ x: 1, y: 1 }}
             start={{ x: 0, y: 0 }}
             style={styles.onboardingHero}
@@ -756,24 +1167,21 @@ export default function App(): React.JSX.Element {
               source={require("./assets/lottie/onboarding-spark.json")}
               style={styles.onboardingAnimation}
             />
-            <Text style={styles.onboardingTitle}>SelfMonitor Mobile</Text>
-            <Text style={styles.onboardingSubtitle}>
-              Финансовый помощник премиум-уровня для самозанятых в UK — теперь в формате top mobile app.
-            </Text>
+            <Text style={styles.onboardingTitle}>{onboardingVariant.title}</Text>
+            <Text style={styles.onboardingSubtitle}>{onboardingVariant.subtitle}</Text>
+            <View style={styles.onboardingVariantChip}>
+              <Text style={styles.onboardingVariantChipText}>
+                A/B variant: {onboardingVariant.experimentId}.{onboardingVariant.id}
+              </Text>
+            </View>
           </LinearGradient>
           <View style={styles.onboardingFeatureList}>
-            <View style={styles.onboardingFeatureItem}>
-              <Ionicons color="#1d4ed8" name="flash-outline" size={18} />
-              <Text style={styles.onboardingFeatureText}>Мгновенный скан чеков и умная обработка.</Text>
-            </View>
-            <View style={styles.onboardingFeatureItem}>
-              <Ionicons color="#1d4ed8" name="shield-checkmark-outline" size={18} />
-              <Text style={styles.onboardingFeatureText}>Защищенная сессия + биометрический unlock.</Text>
-            </View>
-            <View style={styles.onboardingFeatureItem}>
-              <Ionicons color="#1d4ed8" name="notifications-outline" size={18} />
-              <Text style={styles.onboardingFeatureText}>Push дедлайны HMRC и напоминания по инвойсам.</Text>
-            </View>
+            {onboardingVariant.features.map((feature, index) => (
+              <View style={styles.onboardingFeatureItem} key={`${onboardingVariant.id}-feature-${index}`}>
+                <Ionicons color="#1d4ed8" name={onboardingFeatureIcons[index % onboardingFeatureIcons.length]} size={18} />
+                <Text style={styles.onboardingFeatureText}>{feature}</Text>
+              </View>
+            ))}
           </View>
           <Pressable
             accessibilityRole="button"
@@ -782,11 +1190,11 @@ export default function App(): React.JSX.Element {
             }}
             style={styles.onboardingPrimaryButton}
           >
-            <Text style={styles.onboardingPrimaryButtonText}>Начать</Text>
+            <Text style={styles.onboardingPrimaryButtonText}>{onboardingVariant.ctaLabel}</Text>
           </Pressable>
         </ScrollView>
       ) : null}
-      {!isHydrating && isOnboardingDone && biometricRequired && !biometricUnlocked ? (
+      {!isHydrating && !showBrandedSplash && isOnboardingDone && biometricRequired && !biometricUnlocked ? (
         <View style={styles.biometricGateContainer}>
           <LinearGradient
             colors={["#0f172a", "#1e3a8a", "#0f172a"]}
@@ -825,7 +1233,7 @@ export default function App(): React.JSX.Element {
           </Text>
         </View>
       ) : null}
-      {hasError && !isHydrating ? (
+      {hasError && !isHydrating && !showBrandedSplash ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>Не удалось открыть приложение</Text>
           <Text style={styles.errorSubtitle}>
@@ -836,7 +1244,10 @@ export default function App(): React.JSX.Element {
           </Pressable>
           <Text style={styles.hintText}>Текущий URL: {WEB_PORTAL_URL}</Text>
         </View>
-      ) : !isHydrating && isOnboardingDone && (!biometricRequired || biometricUnlocked) ? (
+      ) : !isHydrating &&
+        !showBrandedSplash &&
+        isOnboardingDone &&
+        (!biometricRequired || biometricUnlocked) ? (
         <View style={styles.webViewWrapper}>
           <View style={styles.topOverlay}>
             <LinearGradient
@@ -848,7 +1259,7 @@ export default function App(): React.JSX.Element {
               <View style={styles.commandCardHeader}>
                 <View>
                   <Text style={styles.commandGreeting}>{greeting}</Text>
-                  <Text style={styles.commandTitle}>SelfMonitor Mobile</Text>
+                  <Text style={styles.commandTitle}>{splashTitle}</Text>
                 </View>
                 <View style={styles.clockChip}>
                   <Ionicons color="#dbeafe" name="time-outline" size={14} />
@@ -1000,6 +1411,55 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     opacity: 0.2,
   },
+  brandedSplashContainer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    backgroundColor: "rgba(2,6,23,0.9)",
+    justifyContent: "center",
+    padding: 20,
+    zIndex: 80,
+  },
+  brandedSplashCard: {
+    alignItems: "center",
+    borderColor: "rgba(191,219,254,0.35)",
+    borderRadius: 20,
+    borderWidth: 1,
+    gap: 8,
+    maxWidth: 420,
+    overflow: "hidden",
+    paddingHorizontal: 22,
+    paddingVertical: 26,
+    width: "100%",
+  },
+  brandedSplashAnimation: {
+    height: 150,
+    width: 150,
+  },
+  brandedSplashTitle: {
+    color: "#ffffff",
+    fontSize: 28,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+    textAlign: "center",
+  },
+  brandedSplashTagline: {
+    color: "#dbeafe",
+    fontSize: 14,
+    lineHeight: 20,
+    maxWidth: 320,
+    textAlign: "center",
+  },
+  brandedSplashStatusRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 8,
+  },
+  brandedSplashStatusText: {
+    color: "#dbeafe",
+    fontSize: 12,
+    fontWeight: "600",
+  },
   onboardingScroll: {
     flex: 1,
   },
@@ -1030,6 +1490,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
+  },
+  onboardingVariantChip: {
+    backgroundColor: "rgba(15,23,42,0.5)",
+    borderColor: "rgba(191,219,254,0.5)",
+    borderRadius: 999,
+    borderWidth: 1,
+    marginTop: 2,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  onboardingVariantChipText: {
+    color: "#bfdbfe",
+    fontSize: 11,
+    fontWeight: "600",
   },
   onboardingFeatureList: {
     backgroundColor: "rgba(255,255,255,0.92)",
