@@ -1,12 +1,17 @@
 import NetInfo from "@react-native-community/netinfo";
+import { Ionicons } from "@expo/vector-icons";
 import * as Device from "expo-device";
+import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Animated,
   BackHandler,
+  Easing,
   Linking,
   Platform,
   Pressable,
@@ -38,9 +43,25 @@ const SECURE_AUTH_EMAIL_KEY = "selfmonitor.authUserEmail";
 const SECURE_THEME_KEY = "selfmonitor.theme";
 const SECURE_PUSH_TOKEN_KEY = "selfmonitor.pushToken";
 
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+    shouldShowAlert: true,
+  }),
+});
+
 type BridgeMessage = {
   payload?: Record<string, string | null | undefined>;
   type?: string;
+};
+
+type DockAction = {
+  icon: keyof typeof Ionicons.glyphMap;
+  id: "dashboard" | "documents" | "scan" | "push";
+  isPrimary?: boolean;
+  label: string;
+  onPress: () => void;
 };
 
 function toStorageStatement(key: string, value: string | null): string {
@@ -79,11 +100,16 @@ export default function App(): React.JSX.Element {
   const [isConnected, setIsConnected] = useState(true);
   const [isHydrating, setIsHydrating] = useState(true);
   const [canGoBack, setCanGoBack] = useState(false);
+  const [activePath, setActivePath] = useState("/dashboard");
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [bootstrapScript, setBootstrapScript] = useState("true;");
   const [storedPushToken, setStoredPushToken] = useState<string | null>(null);
+  const [clock, setClock] = useState(() => new Date());
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const dockFloatAnim = useRef(new Animated.Value(0)).current;
+  const glowAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const subscription = NetInfo.addEventListener((state) => {
@@ -135,6 +161,74 @@ export default function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
+    const interval = setInterval(() => setClock(new Date()), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          duration: 1200,
+          toValue: 1,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.quad),
+        }),
+        Animated.timing(pulseAnim, {
+          duration: 1200,
+          toValue: 0,
+          useNativeDriver: true,
+          easing: Easing.in(Easing.quad),
+        }),
+      ])
+    );
+    pulseLoop.start();
+    return () => pulseLoop.stop();
+  }, [pulseAnim]);
+
+  useEffect(() => {
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dockFloatAnim, {
+          duration: 1800,
+          toValue: 1,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.sin),
+        }),
+        Animated.timing(dockFloatAnim, {
+          duration: 1800,
+          toValue: 0,
+          useNativeDriver: true,
+          easing: Easing.inOut(Easing.sin),
+        }),
+      ])
+    );
+    floatLoop.start();
+    return () => floatLoop.stop();
+  }, [dockFloatAnim]);
+
+  useEffect(() => {
+    const glowLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          duration: 1000,
+          toValue: 1,
+          useNativeDriver: true,
+          easing: Easing.out(Easing.exp),
+        }),
+        Animated.timing(glowAnim, {
+          duration: 1000,
+          toValue: 0,
+          useNativeDriver: true,
+          easing: Easing.in(Easing.exp),
+        }),
+      ])
+    );
+    glowLoop.start();
+    return () => glowLoop.stop();
+  }, [glowAnim]);
+
+  useEffect(() => {
     if (!statusMessage) {
       return;
     }
@@ -145,6 +239,7 @@ export default function App(): React.JSX.Element {
   useEffect(() => {
     const onBackPress = () => {
       if (canGoBack && webRef.current) {
+        void Haptics.selectionAsync();
         webRef.current.goBack();
         return true;
       }
@@ -153,6 +248,39 @@ export default function App(): React.JSX.Element {
     const subscription = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => subscription.remove();
   }, [canGoBack]);
+
+  const runHaptic = useCallback(async (intensity: "light" | "medium" | "heavy") => {
+    if (Platform.OS === "web") {
+      return;
+    }
+    const style =
+      intensity === "light"
+        ? Haptics.ImpactFeedbackStyle.Light
+        : intensity === "heavy"
+          ? Haptics.ImpactFeedbackStyle.Heavy
+          : Haptics.ImpactFeedbackStyle.Medium;
+    await Haptics.impactAsync(style);
+  }, []);
+
+  const notifyAction = useCallback((message: string) => {
+    setStatusMessage(message);
+  }, []);
+
+  const derivePathFromUrl = useCallback((url: string) => {
+    if (!url || url.startsWith("about:blank")) {
+      return null;
+    }
+    try {
+      return new URL(url).pathname || null;
+    } catch {
+      const base = WEB_PORTAL_URL.replace(/\/+$/, "");
+      if (!url.startsWith(base)) {
+        return null;
+      }
+      const pathPart = url.slice(base.length) || "/";
+      return pathPart.startsWith("/") ? pathPart : `/${pathPart}`;
+    }
+  }, []);
 
   const syncPushTokenToWeb = useCallback((token: string) => {
     webRef.current?.injectJavaScript(
@@ -234,6 +362,7 @@ export default function App(): React.JSX.Element {
 
   const registerPushNotifications = useCallback(async () => {
     try {
+      await runHaptic("medium");
       if (!Device.isDevice) {
         setStatusMessage("Push notifications работают только на физическом устройстве.");
         return;
@@ -255,15 +384,17 @@ export default function App(): React.JSX.Element {
       await SecureStore.setItemAsync(SECURE_PUSH_TOKEN_KEY, tokenResponse.data);
       setStoredPushToken(tokenResponse.data);
       syncPushTokenToWeb(tokenResponse.data);
-      setStatusMessage("Push token успешно подключен.");
+      notifyAction("Push token успешно подключен.");
+      await runHaptic("heavy");
     } catch (error) {
       setStatusMessage(
         error instanceof Error
           ? `Не удалось включить push: ${error.message}`
           : "Не удалось включить push."
       );
+      await runHaptic("heavy");
     }
-  }, [syncPushTokenToWeb]);
+  }, [notifyAction, runHaptic, syncPushTokenToWeb]);
 
   const normalizePortalPath = useCallback((path: string) => {
     const base = WEB_PORTAL_URL.replace(/\/+$/, "");
@@ -272,7 +403,8 @@ export default function App(): React.JSX.Element {
   }, []);
 
   const navigateInsidePortal = useCallback(
-    (path: string) => {
+    async (path: string) => {
+      await runHaptic("light");
       const targetUrl = normalizePortalPath(path);
       webRef.current?.injectJavaScript(
         `
@@ -282,11 +414,13 @@ export default function App(): React.JSX.Element {
           true;
         `
       );
+      notifyAction(`Переход: ${path}`);
     },
-    [normalizePortalPath]
+    [normalizePortalPath, notifyAction, runHaptic]
   );
 
-  const openReceiptCapture = useCallback(() => {
+  const openReceiptCapture = useCallback(async () => {
+    await runHaptic("medium");
     const captureUrl = normalizePortalPath("/documents?mobile_capture=1");
     webRef.current?.injectJavaScript(
       `
@@ -305,12 +439,14 @@ export default function App(): React.JSX.Element {
         true;
       `
     );
-  }, [normalizePortalPath]);
+    notifyAction("Открываем быстрый скан чека...");
+  }, [normalizePortalPath, notifyAction, runHaptic]);
 
-  const onRetry = useCallback(() => {
+  const onRetry = useCallback(async () => {
+    await runHaptic("medium");
     setHasError(false);
     webRef.current?.reload();
-  }, []);
+  }, [runHaptic]);
 
   const shouldAllowNavigation = useCallback((url: string) => {
     if (!url || url.startsWith("about:blank")) {
@@ -333,6 +469,30 @@ export default function App(): React.JSX.Element {
     }
   }, []);
 
+  useEffect(() => {
+    const receivedSubscription = Notifications.addNotificationReceivedListener((notification) => {
+      const title = notification.request.content.title;
+      if (title) {
+        notifyAction(`Push: ${title}`);
+      }
+    });
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const maybePath = response.notification.request.content.data?.path;
+      if (typeof maybePath === "string" && maybePath) {
+        void navigateInsidePortal(maybePath);
+      }
+    });
+    return () => {
+      receivedSubscription.remove();
+      responseSubscription.remove();
+    };
+  }, [navigateInsidePortal, notifyAction]);
+
+  const isRouteActive = useCallback(
+    (route: string) => activePath === route || activePath.startsWith(`${route}/`),
+    [activePath]
+  );
+
   const webUserAgent = useMemo(() => {
     if (Platform.OS === "ios") {
       return `Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile ${APP_USER_AGENT_SUFFIX}`;
@@ -343,11 +503,97 @@ export default function App(): React.JSX.Element {
     return APP_USER_AGENT_SUFFIX;
   }, []);
 
+  const pulseScale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.24],
+  });
+  const pulseOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.28, 0.78],
+  });
+  const dockTranslateY = dockFloatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -4],
+  });
+  const glowOpacity = glowAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.16, 0.42],
+  });
+
+  const greeting = useMemo(() => {
+    const hour = clock.getHours();
+    if (hour < 12) {
+      return "Доброе утро";
+    }
+    if (hour < 18) {
+      return "Добрый день";
+    }
+    return "Добрый вечер";
+  }, [clock]);
+
+  const connectionLabel = isConnected ? "Online" : "Offline";
+  const sessionLabel = storedPushToken ? "Secure + Push ready" : "Secure session";
+
+  const dockActions = useMemo<DockAction[]>(
+    () => [
+      {
+        id: "dashboard",
+        label: "Главная",
+        icon: "home-outline",
+        onPress: () => {
+          void navigateInsidePortal("/dashboard");
+        },
+      },
+      {
+        id: "documents",
+        label: "Документы",
+        icon: "folder-open-outline",
+        onPress: () => {
+          void navigateInsidePortal("/documents");
+        },
+      },
+      {
+        id: "scan",
+        label: "Скан",
+        icon: "scan-circle-outline",
+        isPrimary: true,
+        onPress: () => {
+          void openReceiptCapture();
+        },
+      },
+      {
+        id: "push",
+        label: "Push",
+        icon: "notifications-outline",
+        onPress: () => {
+          void registerPushNotifications();
+        },
+      },
+    ],
+    [navigateInsidePortal, openReceiptCapture, registerPushNotifications]
+  );
+
   return (
     <SafeAreaView style={styles.container}>
+      <LinearGradient
+        colors={["#020617", "#0f172a", "#1d4ed8"]}
+        end={{ x: 1, y: 1 }}
+        pointerEvents="none"
+        start={{ x: 0, y: 0 }}
+        style={styles.backgroundAura}
+      />
       <StatusBar style="dark" />
       {isHydrating ? (
         <View style={styles.errorContainer}>
+          <Animated.View
+            style={[
+              styles.hydratingOrb,
+              {
+                opacity: pulseOpacity,
+                transform: [{ scale: pulseScale }],
+              },
+            ]}
+          />
           <ActivityIndicator size="large" color="#2563eb" />
           <Text style={styles.errorSubtitle}>Подготовка защищенной мобильной сессии...</Text>
         </View>
@@ -377,6 +623,62 @@ export default function App(): React.JSX.Element {
         </View>
       ) : !isHydrating ? (
         <View style={styles.webViewWrapper}>
+          <View style={styles.topOverlay}>
+            <LinearGradient
+              colors={["rgba(30,64,175,0.92)", "rgba(15,23,42,0.92)"]}
+              end={{ x: 1, y: 1 }}
+              start={{ x: 0, y: 0 }}
+              style={styles.commandCard}
+            >
+              <View style={styles.commandCardHeader}>
+                <View>
+                  <Text style={styles.commandGreeting}>{greeting}</Text>
+                  <Text style={styles.commandTitle}>SelfMonitor Mobile</Text>
+                </View>
+                <View style={styles.clockChip}>
+                  <Ionicons color="#dbeafe" name="time-outline" size={14} />
+                  <Text style={styles.clockChipText}>
+                    {clock.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.commandMetricsRow}>
+                <View style={styles.metricPill}>
+                  <View style={styles.onlineDotWrapper}>
+                    <Animated.View
+                      style={[
+                        styles.onlineDotPulse,
+                        {
+                          opacity: pulseOpacity,
+                          transform: [{ scale: pulseScale }],
+                        },
+                      ]}
+                    />
+                    <View style={[styles.onlineDotCore, !isConnected && styles.onlineDotOffline]} />
+                  </View>
+                  <Text style={styles.metricPillText}>{connectionLabel}</Text>
+                </View>
+                <View style={styles.metricPill}>
+                  <Ionicons color="#bfdbfe" name="shield-checkmark-outline" size={14} />
+                  <Text style={styles.metricPillText}>{sessionLabel}</Text>
+                </View>
+                {canGoBack ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      void runHaptic("light");
+                      webRef.current?.goBack();
+                    }}
+                    style={styles.backChipButton}
+                  >
+                    <Ionicons color="#e2e8f0" name="arrow-back-outline" size={16} />
+                    <Text style={styles.backChipText}>Назад</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </LinearGradient>
+          </View>
+
           <WebView
             ref={webRef}
             source={{ uri: WEB_PORTAL_URL }}
@@ -406,6 +708,10 @@ export default function App(): React.JSX.Element {
             }}
             onNavigationStateChange={(navigationState) => {
               setCanGoBack(navigationState.canGoBack);
+              const path = derivePathFromUrl(navigationState.url);
+              if (path) {
+                setActivePath(path);
+              }
             }}
             onError={() => {
               setHasError(true);
@@ -414,36 +720,56 @@ export default function App(): React.JSX.Element {
           />
           {isLoading ? (
             <View style={styles.loadingOverlay}>
+              <Animated.View style={[styles.loadingGlow, { opacity: glowOpacity }]} />
               <ActivityIndicator size="large" color="#2563eb" />
               <Text style={styles.loadingText}>Загружаем SelfMonitor...</Text>
             </View>
           ) : null}
-          <View style={styles.actionBar}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => navigateInsidePortal("/dashboard")}
-              style={styles.actionButton}
+          <Animated.View
+            style={[
+              styles.actionBar,
+              {
+                transform: [{ translateY: dockTranslateY }],
+              },
+            ]}
+          >
+            <LinearGradient
+              colors={["rgba(15,23,42,0.94)", "rgba(30,41,59,0.92)", "rgba(37,99,235,0.82)"]}
+              end={{ x: 1, y: 1 }}
+              start={{ x: 0, y: 0 }}
+              style={styles.actionBarGradient}
             >
-              <Text style={styles.actionButtonText}>Главная</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => navigateInsidePortal("/documents")}
-              style={styles.actionButton}
-            >
-              <Text style={styles.actionButtonText}>Документы</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" onPress={openReceiptCapture} style={styles.actionButtonPrimary}>
-              <Text style={styles.actionButtonTextPrimary}>Скан чека</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={registerPushNotifications}
-              style={styles.actionButton}
-            >
-              <Text style={styles.actionButtonText}>Push</Text>
-            </Pressable>
-          </View>
+              {dockActions.map((action) => {
+                const selected =
+                  action.id === "dashboard"
+                    ? isRouteActive("/dashboard")
+                    : action.id === "documents" || action.id === "scan"
+                      ? isRouteActive("/documents")
+                      : false;
+                return (
+                  <Pressable
+                    accessibilityRole="button"
+                    key={action.id}
+                    onPress={action.onPress}
+                    style={({ pressed }) => [
+                      action.isPrimary ? styles.actionButtonPrimary : styles.actionButton,
+                      selected ? styles.actionButtonActive : null,
+                      pressed ? styles.actionButtonPressed : null,
+                    ]}
+                  >
+                    <Ionicons
+                      color={action.isPrimary ? "#ffffff" : selected ? "#93c5fd" : "#e2e8f0"}
+                      name={action.icon}
+                      size={16}
+                    />
+                    <Text style={action.isPrimary ? styles.actionButtonTextPrimary : styles.actionButtonText}>
+                      {action.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </LinearGradient>
+          </Animated.View>
         </View>
       ) : null}
     </SafeAreaView>
@@ -455,37 +781,184 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#f8fafc",
   },
+  backgroundAura: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.2,
+  },
+  topOverlay: {
+    left: 12,
+    position: "absolute",
+    right: 12,
+    top: 10,
+    zIndex: 12,
+  },
+  commandCard: {
+    borderColor: "rgba(148,163,184,0.32)",
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: "#1d4ed8",
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  commandCardHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  commandGreeting: {
+    color: "#bfdbfe",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  commandTitle: {
+    color: "#ffffff",
+    fontSize: 19,
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  clockChip: {
+    alignItems: "center",
+    backgroundColor: "rgba(30,41,59,0.68)",
+    borderColor: "rgba(191,219,254,0.35)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  clockChipText: {
+    color: "#dbeafe",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  commandMetricsRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  metricPill: {
+    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.55)",
+    borderColor: "rgba(191,219,254,0.3)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  metricPillText: {
+    color: "#e2e8f0",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  onlineDotWrapper: {
+    alignItems: "center",
+    height: 12,
+    justifyContent: "center",
+    width: 12,
+  },
+  onlineDotPulse: {
+    backgroundColor: "#22c55e",
+    borderRadius: 999,
+    height: 12,
+    position: "absolute",
+    width: 12,
+  },
+  onlineDotCore: {
+    backgroundColor: "#22c55e",
+    borderRadius: 999,
+    height: 6,
+    width: 6,
+  },
+  onlineDotOffline: {
+    backgroundColor: "#ef4444",
+  },
+  backChipButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.55)",
+    borderColor: "rgba(191,219,254,0.3)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  backChipText: {
+    color: "#e2e8f0",
+    fontSize: 12,
+    fontWeight: "600",
+  },
   webViewWrapper: {
     flex: 1,
   },
+  hydratingOrb: {
+    backgroundColor: "#3b82f6",
+    borderRadius: 999,
+    height: 64,
+    marginBottom: 8,
+    width: 64,
+  },
   actionBar: {
-    position: "absolute",
     bottom: 12,
     left: 10,
+    position: "absolute",
     right: 10,
-    flexDirection: "row",
+    zIndex: 11,
+  },
+  actionBarGradient: {
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "rgba(15,23,42,0.9)",
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(191,219,254,0.3)",
+    flexDirection: "row",
+    gap: 8,
+    justifyContent: "space-between",
+    overflow: "hidden",
     paddingHorizontal: 10,
     paddingVertical: 8,
-    gap: 8,
   },
   actionButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.34)",
     borderRadius: 10,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.28)",
+    flexDirection: "row",
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 8,
     minWidth: 68,
   },
   actionButtonPrimary: {
+    alignItems: "center",
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(147,197,253,0.65)",
     backgroundColor: "#2563eb",
+    flexDirection: "row",
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 8,
     minWidth: 86,
+  },
+  actionButtonActive: {
+    borderColor: "rgba(147,197,253,0.9)",
+    backgroundColor: "rgba(37,99,235,0.28)",
+  },
+  actionButtonPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.97 }],
   },
   actionButtonText: {
     color: "#f8fafc",
@@ -505,6 +978,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(248,250,252,0.92)",
     gap: 12,
+  },
+  loadingGlow: {
+    backgroundColor: "#60a5fa",
+    borderRadius: 999,
+    height: 120,
+    position: "absolute",
+    width: 120,
   },
   loadingText: {
     color: "#1e293b",

@@ -52,6 +52,9 @@ EXPO_PUBLIC_WEB_PORTAL_URL=http://<YOUR_LAN_IP>:3000
 Implemented in this iteration:
 
 - WebView container for the existing web-portal;
+- cinematic command card (live time, connectivity pulse, secure-session state);
+- animated neo-dock with premium quick actions and route highlights;
+- haptic feedback for key interactions (navigation, scan launch, push setup);
 - pull-to-refresh support;
 - Android hardware back handling;
 - offline banner and error recovery action;
