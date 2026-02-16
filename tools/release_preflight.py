@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -15,6 +18,22 @@ class Check:
     id: str
     description: str
     command: list[str]
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    check_id: str
+    description: str
+    command: list[str]
+    cwd: str
+    duration_seconds: float
+    exit_code: int
+    started_at: str
+    finished_at: str
+
+    @property
+    def passed(self) -> bool:
+        return self.exit_code == 0
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -108,15 +127,58 @@ FRONTEND_CHECK = Check(
 QUICK_IDS = {"auth_login", "transactions_import", "handoff_audit", "invoice_exports"}
 
 
-def run_check(check: Check, *, cwd: Path) -> int:
+def run_check(check: Check, *, cwd: Path) -> CheckResult:
     print(f"\n[preflight] {check.id}: {check.description}")
     print(f"[preflight] command: {' '.join(check.command)}")
-    result = subprocess.run(check.command, cwd=str(cwd), check=False)
-    if result.returncode == 0:
-        print(f"[preflight] {check.id}: OK")
+    started = datetime.now(timezone.utc).isoformat()
+    start_perf = time.perf_counter()
+    completed = subprocess.run(check.command, cwd=str(cwd), check=False)
+    duration_seconds = time.perf_counter() - start_perf
+    finished = datetime.now(timezone.utc).isoformat()
+    if completed.returncode == 0:
+        print(f"[preflight] {check.id}: OK ({duration_seconds:.2f}s)")
     else:
-        print(f"[preflight] {check.id}: FAILED ({result.returncode})")
-    return result.returncode
+        print(
+            f"[preflight] {check.id}: FAILED ({completed.returncode}) "
+            f"({duration_seconds:.2f}s)"
+        )
+    return CheckResult(
+        check_id=check.id,
+        description=check.description,
+        command=check.command,
+        cwd=str(cwd),
+        duration_seconds=duration_seconds,
+        exit_code=completed.returncode,
+        started_at=started,
+        finished_at=finished,
+    )
+
+
+def write_timing_snapshot(path: Path, results: list[CheckResult]) -> None:
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "check_count": len(results),
+        "all_passed": all(result.passed for result in results),
+        "total_duration_seconds": round(
+            sum(result.duration_seconds for result in results), 4
+        ),
+        "checks": [
+            {
+                "id": result.check_id,
+                "description": result.description,
+                "command": result.command,
+                "cwd": result.cwd,
+                "duration_seconds": round(result.duration_seconds, 4),
+                "exit_code": result.exit_code,
+                "passed": result.passed,
+                "started_at": result.started_at,
+                "finished_at": result.finished_at,
+            }
+            for result in results
+        ],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n")
 
 
 def build_check_plan(
@@ -160,6 +222,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="List available check IDs and exit.",
     )
+    parser.add_argument(
+        "--timings-json",
+        default="",
+        help="Write a timing snapshot JSON file to the given path.",
+    )
     return parser.parse_args()
 
 
@@ -191,10 +258,23 @@ def main() -> int:
         print("No checks selected; nothing to run.")
         return 0
 
+    timing_results: list[CheckResult] = []
+    timing_path = Path(args.timings_json).resolve() if args.timings_json else None
+
     for check, cwd in plan:
-        exit_code = run_check(check, cwd=cwd)
-        if exit_code != 0:
-            return exit_code
+        check_result = run_check(check, cwd=cwd)
+        timing_results.append(check_result)
+        if check_result.exit_code != 0:
+            if timing_path:
+                write_timing_snapshot(timing_path, timing_results)
+                print(f"[preflight] timing snapshot written: {timing_path}")
+            return check_result.exit_code
+
+    total_duration = sum(result.duration_seconds for result in timing_results)
+    print(f"[preflight] total duration: {total_duration:.2f}s")
+    if timing_path:
+        write_timing_snapshot(timing_path, timing_results)
+        print(f"[preflight] timing snapshot written: {timing_path}")
 
     print("\n[preflight] all selected checks passed.")
     return 0

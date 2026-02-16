@@ -4,7 +4,7 @@
 
 ## Структура репозитория
 
-- **/apps**: Фронтенд-приложения (веб и мобильные).
+- **/apps**: Фронтенд-приложения (веб и mobile web).
 - **/services**: Бэкенд-микросервисы на Python (FastAPI).
 - **/libs**: Общие библиотеки и модули (DTO, утилиты для БД).
 - **/infra**: Код инфраструктуры (Terraform, Kubernetes).
@@ -42,6 +42,14 @@
 4.  **Откройте приложение:**
     Откройте в браузере `http://localhost:3000`. Вы должны увидеть страницу регистрации/входа.
 
+## Поддержка устройств (web-only)
+
+Текущий формат продукта — **web-only**:
+
+- доступен на ноутбуке/ПК через браузер;
+- доступен на телефоне через мобильный браузер;
+- отдельного нативного приложения для iOS/Android пока нет.
+
 ## Запуск отдельных сервисов
 
 Каждый сервис в директории `services` является независимым приложением. Для запуска отдельного сервиса:
@@ -77,6 +85,15 @@ python3 tools/release_preflight.py --quick
 ```bash
 python3 tools/release_preflight.py --include-frontend
 ```
+
+Для фиксации baseline по времени выполнения критических проверок:
+
+```bash
+python3 tools/release_preflight.py --quick --include-frontend \
+  --timings-json docs/observability/baselines/preflight_quick_YYYY-MM-DD.json
+```
+
+См. также: `docs/observability/PERFORMANCE_BASELINE.md`.
 
 Операционные инструкции:
 

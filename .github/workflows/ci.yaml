@@ -1,6 +1,6 @@
 name: Monorepo CI
 
-on:
+"on":
   push:
     branches: ["main"]
   pull_request:
@@ -60,6 +60,44 @@ jobs:
           else
             echo "No tests directory found; skipping."
           fi
+
+  python-dependency-audit:
+    name: Python dependency audit (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - agent-service
+          - auth-service
+          - banking-connector
+          - compliance-service
+          - consent-service
+          - partner-registry
+          - tax-engine
+          - transactions-service
+          - user-profile-service
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+
+      - name: Audit runtime dependencies for ${{ matrix.service }}
+        run: |
+          TARGET_DIR="$(mktemp -d)"
+          python -m pip install -r services/${{ matrix.service }}/requirements.txt --target "$TARGET_DIR"
+          # CVE-2024-23342 (ecdsa) currently has no published fixed version.
+          python -m pip_audit --path "$TARGET_DIR" --ignore-vuln CVE-2024-23342
 
   smoke-core-flow:
     name: Smoke core flow checks
@@ -157,6 +195,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
 
       - name: Type check
         run: npx next typegen && npx tsc --noEmit
