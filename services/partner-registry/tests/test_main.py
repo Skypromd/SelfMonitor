@@ -1103,7 +1103,7 @@ def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
     assert brand_response.json()["business_name"] == "North Star Consulting"
 
     recurring_create = client.post(
-        "/self-employed/invoices/recurring-plans",
+        "/self-employed/invoicing/recurring-plans",
         headers=owner_headers,
         json={
             "customer_name": "Repeat Client Ltd",
@@ -1119,7 +1119,7 @@ def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
     recurring_plan_id = recurring_create.json()["id"]
     assert recurring_create.json()["active"] is True
 
-    run_due_response = client.post("/self-employed/invoices/recurring-plans/run-due", headers=owner_headers)
+    run_due_response = client.post("/self-employed/invoicing/recurring-plans/run-due", headers=owner_headers)
     assert run_due_response.status_code == 200
     run_due_payload = run_due_response.json()
     assert run_due_payload["generated_count"] == 1
@@ -1184,13 +1184,13 @@ def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
     assert reminders_list.status_code == 200
     assert reminders_list.json()["total"] >= reminders_payload["reminders_sent_count"]
 
-    recurring_list = client.get("/self-employed/invoices/recurring-plans", headers=owner_headers)
+    recurring_list = client.get("/self-employed/invoicing/recurring-plans", headers=owner_headers)
     assert recurring_list.status_code == 200
     assert recurring_list.json()["total"] == 1
     assert recurring_list.json()["items"][0]["id"] == recurring_plan_id
 
     pause_plan = client.patch(
-        f"/self-employed/invoices/recurring-plans/{recurring_plan_id}",
+        f"/self-employed/invoicing/recurring-plans/{recurring_plan_id}",
         headers=owner_headers,
         json={"active": False},
     )

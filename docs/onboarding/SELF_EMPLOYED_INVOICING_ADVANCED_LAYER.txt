@@ -66,11 +66,11 @@ New/updated API endpoints
   - GET  /self-employed/invoicing/brand
   - PUT  /self-employed/invoicing/brand
 - Recurring plans
-  - POST /self-employed/invoices/recurring-plans
-  - GET  /self-employed/invoices/recurring-plans
-  - PATCH /self-employed/invoices/recurring-plans/{plan_id}
-  - POST /self-employed/invoices/recurring-plans/{plan_id}/run
-  - POST /self-employed/invoices/recurring-plans/run-due
+  - POST /self-employed/invoicing/recurring-plans
+  - GET  /self-employed/invoicing/recurring-plans
+  - PATCH /self-employed/invoicing/recurring-plans/{plan_id}
+  - POST /self-employed/invoicing/recurring-plans/{plan_id}/run
+  - POST /self-employed/invoicing/recurring-plans/run-due
 - Reminders
   - POST /self-employed/invoicing/reminders/run
   - GET  /self-employed/invoicing/reminders

@@ -2508,7 +2508,7 @@ async def upsert_self_employed_invoice_brand_profile(
 
 
 @app.post(
-    "/self-employed/invoices/recurring-plans",
+    "/self-employed/invoicing/recurring-plans",
     response_model=schemas.SelfEmployedRecurringInvoicePlanSummary,
     status_code=status.HTTP_201_CREATED,
 )
@@ -2557,7 +2557,7 @@ async def create_self_employed_recurring_plan(
 
 
 @app.get(
-    "/self-employed/invoices/recurring-plans",
+    "/self-employed/invoicing/recurring-plans",
     response_model=schemas.SelfEmployedRecurringInvoicePlanListResponse,
 )
 async def list_self_employed_recurring_plans(
@@ -2581,7 +2581,7 @@ async def list_self_employed_recurring_plans(
 
 
 @app.patch(
-    "/self-employed/invoices/recurring-plans/{plan_id}",
+    "/self-employed/invoicing/recurring-plans/{plan_id}",
     response_model=schemas.SelfEmployedRecurringInvoicePlanSummary,
 )
 async def update_self_employed_recurring_plan_status(
@@ -2611,7 +2611,7 @@ async def update_self_employed_recurring_plan_status(
 
 
 @app.post(
-    "/self-employed/invoices/recurring-plans/{plan_id}/run",
+    "/self-employed/invoicing/recurring-plans/{plan_id}/run",
     response_model=schemas.SelfEmployedRecurringInvoicePlanRunResult,
 )
 async def run_self_employed_recurring_plan_once(
@@ -2655,7 +2655,7 @@ async def run_self_employed_recurring_plan_once(
 
 
 @app.post(
-    "/self-employed/invoices/recurring-plans/run-due",
+    "/self-employed/invoicing/recurring-plans/run-due",
     response_model=schemas.SelfEmployedRecurringInvoicePlanRunBatchResponse,
 )
 async def run_due_self_employed_recurring_plans(

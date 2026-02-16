@@ -540,7 +540,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
         fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices?limit=20&offset=0`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/recurring-plans?limit=20&offset=0`, {
+        fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/recurring-plans?limit=20&offset=0`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
         fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/brand`, {
@@ -659,7 +659,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   const createRecurringPlan = async () => {
     setAutomationState({ isLoading: true });
     try {
-      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/recurring-plans`, {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/recurring-plans`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -696,7 +696,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   const runDueRecurringPlans = async () => {
     setAutomationState({ isLoading: true });
     try {
-      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/recurring-plans/run-due`, {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/recurring-plans/run-due`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
