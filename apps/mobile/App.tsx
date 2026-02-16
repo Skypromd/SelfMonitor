@@ -48,6 +48,8 @@ Notifications.setNotificationHandler({
     shouldPlaySound: false,
     shouldSetBadge: false,
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
