@@ -72,8 +72,8 @@ New/updated API endpoints
   - POST /self-employed/invoices/recurring-plans/{plan_id}/run
   - POST /self-employed/invoices/recurring-plans/run-due
 - Reminders
-  - POST /self-employed/invoices/reminders/run
-  - GET  /self-employed/invoices/reminders
+  - POST /self-employed/invoicing/reminders/run
+  - GET  /self-employed/invoicing/reminders
 - Existing invoice endpoints now include payment/branding fields in responses.
 
 Frontend updates (dashboard)

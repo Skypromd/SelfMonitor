@@ -720,7 +720,7 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   const runReminderNotifications = async () => {
     setAutomationState({ isLoading: true });
     try {
-      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoices/reminders/run?due_in_days=14`, {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/reminders/run?due_in_days=14`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });

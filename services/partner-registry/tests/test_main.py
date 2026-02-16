@@ -1170,7 +1170,7 @@ def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
     assert listed_by_id[overdue_invoice_id]["status"] == "overdue"
 
     reminders_run = client.post(
-        "/self-employed/invoices/reminders/run?due_in_days=30",
+        "/self-employed/invoicing/reminders/run?due_in_days=30",
         headers=owner_headers,
     )
     assert reminders_run.status_code == 200
@@ -1180,7 +1180,7 @@ def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
     assert "due_soon" in reminder_types
     assert "overdue" in reminder_types
 
-    reminders_list = client.get("/self-employed/invoices/reminders", headers=owner_headers)
+    reminders_list = client.get("/self-employed/invoicing/reminders", headers=owner_headers)
     assert reminders_list.status_code == 200
     assert reminders_list.json()["total"] >= reminders_payload["reminders_sent_count"]
 

@@ -2696,7 +2696,7 @@ async def run_due_self_employed_recurring_plans(
 
 
 @app.post(
-    "/self-employed/invoices/reminders/run",
+    "/self-employed/invoicing/reminders/run",
     response_model=schemas.SelfEmployedInvoiceReminderRunResponse,
 )
 async def run_self_employed_invoice_reminders(
@@ -2795,7 +2795,7 @@ async def run_self_employed_invoice_reminders(
 
 
 @app.get(
-    "/self-employed/invoices/reminders",
+    "/self-employed/invoicing/reminders",
     response_model=schemas.SelfEmployedInvoiceReminderListResponse,
 )
 async def list_self_employed_invoice_reminders(
