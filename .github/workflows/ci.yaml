@@ -149,7 +149,6 @@ jobs:
     env:
       PYTHONPATH: ${{ github.workspace }}
       ENABLE_CONTRACT_TESTS: "1"
-      PACT_OUTPUT_DIR: ${{ runner.temp }}/pacts
 
     steps:
       - name: Checkout code
@@ -167,11 +166,16 @@ jobs:
           pip install -r services/transactions-service/requirements.txt
 
       - name: Run consumer contract tests (tax-engine)
+        env:
+          PACT_OUTPUT_DIR: ${{ runner.temp }}/pacts
         run: |
+          mkdir -p "$PACT_OUTPUT_DIR"
           pytest -q services/tax-engine/tests/test_contract.py
           test -f "$PACT_OUTPUT_DIR/TaxEngineService-TransactionsService.json"
 
       - name: Run provider contract tests (transactions-service)
+        env:
+          PACT_OUTPUT_DIR: ${{ runner.temp }}/pacts
         run: |
           pytest -q services/transactions-service/tests/test_contract.py
 
