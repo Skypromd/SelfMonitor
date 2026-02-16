@@ -565,6 +565,101 @@ async def _dispatch_invoice_reminder_sms(
         return "failed", _truncate_text(f"SMS dispatch failed: {exc}")
 
 
+def _email_reminder_config_issues() -> list[str]:
+    issues: list[str] = []
+    if SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER not in {"webhook", "sendgrid"}:
+        issues.append(f"Unsupported email provider: {SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER}")
+        return issues
+    if SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER == "webhook":
+        if not SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL:
+            issues.append("SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL is not configured.")
+    elif SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER == "sendgrid":
+        if not SELF_EMPLOYED_SENDGRID_API_KEY:
+            issues.append("SELF_EMPLOYED_SENDGRID_API_KEY is missing.")
+        if not SELF_EMPLOYED_SENDGRID_API_URL:
+            issues.append("SELF_EMPLOYED_SENDGRID_API_URL is missing.")
+    if not SELF_EMPLOYED_REMINDER_EMAIL_FROM:
+        issues.append("SELF_EMPLOYED_REMINDER_EMAIL_FROM is not configured.")
+    return issues
+
+
+def _sms_reminder_config_issues() -> list[str]:
+    issues: list[str] = []
+    if SELF_EMPLOYED_REMINDER_SMS_PROVIDER not in {"webhook", "twilio"}:
+        issues.append(f"Unsupported SMS provider: {SELF_EMPLOYED_REMINDER_SMS_PROVIDER}")
+        return issues
+    if SELF_EMPLOYED_REMINDER_SMS_PROVIDER == "webhook":
+        if not SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL:
+            issues.append("SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL is not configured.")
+    elif SELF_EMPLOYED_REMINDER_SMS_PROVIDER == "twilio":
+        if not SELF_EMPLOYED_TWILIO_ACCOUNT_SID:
+            issues.append("SELF_EMPLOYED_TWILIO_ACCOUNT_SID is missing.")
+        if not SELF_EMPLOYED_TWILIO_AUTH_TOKEN:
+            issues.append("SELF_EMPLOYED_TWILIO_AUTH_TOKEN is missing.")
+        if not SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID and not SELF_EMPLOYED_REMINDER_SMS_FROM:
+            issues.append(
+                "Configure SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID or SELF_EMPLOYED_REMINDER_SMS_FROM."
+            )
+    return issues
+
+
+def _build_reminder_channel_readiness(
+    *,
+    channel: Literal["email", "sms"],
+) -> schemas.SelfEmployedReminderChannelReadiness:
+    if channel == "email":
+        provider = SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER
+        enabled = SELF_EMPLOYED_REMINDER_EMAIL_ENABLED
+        issues = _email_reminder_config_issues()
+        checks = [
+            f"provider={provider}",
+            f"dispatch_timeout_seconds={SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS}",
+            f"retry_attempts={SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_ATTEMPTS}",
+        ]
+    else:
+        provider = SELF_EMPLOYED_REMINDER_SMS_PROVIDER
+        enabled = SELF_EMPLOYED_REMINDER_SMS_ENABLED
+        issues = _sms_reminder_config_issues()
+        checks = [
+            f"provider={provider}",
+            f"dispatch_timeout_seconds={SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS}",
+            f"retry_attempts={SELF_EMPLOYED_REMINDER_DELIVERY_RETRY_ATTEMPTS}",
+        ]
+
+    configured = not issues
+    warnings: list[str] = []
+    if not enabled:
+        warnings.append(f"{channel} channel is disabled.")
+    warnings.extend(issues)
+    return schemas.SelfEmployedReminderChannelReadiness(
+        channel=channel,
+        provider=provider,
+        enabled=enabled,
+        configured=configured,
+        can_dispatch=enabled and configured,
+        checks=checks,
+        warnings=warnings,
+    )
+
+
+def _build_reminder_delivery_readiness_snapshot() -> schemas.SelfEmployedReminderDeliveryReadinessResponse:
+    email = _build_reminder_channel_readiness(channel="email")
+    sms = _build_reminder_channel_readiness(channel="sms")
+    overall_ready = email.can_dispatch or sms.can_dispatch
+    note = (
+        "At least one delivery channel is ready."
+        if overall_ready
+        else "No delivery channels are currently ready."
+    )
+    return schemas.SelfEmployedReminderDeliveryReadinessResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        email=email,
+        sms=sms,
+        overall_ready=overall_ready,
+        note=note,
+    )
+
+
 async def _load_seed_invoice_metrics(
     db: AsyncSession,
     *,
@@ -2957,6 +3052,151 @@ async def run_due_self_employed_recurring_plans(
         generated_count=len(generated),
         generated=generated,
         note=note,
+    )
+
+
+@app.get(
+    "/self-employed/invoicing/reminders/readiness",
+    response_model=schemas.SelfEmployedReminderDeliveryReadinessResponse,
+)
+async def get_self_employed_reminder_delivery_readiness(
+    _user_id: str = Depends(get_current_user_id),
+):
+    return _build_reminder_delivery_readiness_snapshot()
+
+
+@app.post(
+    "/self-employed/invoicing/reminders/smoke-check",
+    response_model=schemas.SelfEmployedReminderSmokeCheckResponse,
+)
+async def run_self_employed_reminder_delivery_smoke_check(
+    payload: schemas.SelfEmployedReminderSmokeCheckRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    readiness = _build_reminder_delivery_readiness_snapshot()
+    selected_channels: list[Literal["email", "sms"]]
+    if payload.channel == "both":
+        selected_channels = ["email", "sms"]
+    else:
+        selected_channels = [payload.channel]
+
+    results: list[schemas.SelfEmployedReminderSmokeCheckChannelResult] = []
+    for channel in selected_channels:
+        channel_state = readiness.email if channel == "email" else readiness.sms
+        if not channel_state.enabled:
+            results.append(
+                schemas.SelfEmployedReminderSmokeCheckChannelResult(
+                    channel=channel,
+                    provider=channel_state.provider,
+                    enabled=channel_state.enabled,
+                    configured=channel_state.configured,
+                    network_check_performed=False,
+                    delivery_status="skipped",
+                    detail=f"{channel} channel is disabled.",
+                )
+            )
+            continue
+        if not channel_state.configured:
+            results.append(
+                schemas.SelfEmployedReminderSmokeCheckChannelResult(
+                    channel=channel,
+                    provider=channel_state.provider,
+                    enabled=channel_state.enabled,
+                    configured=channel_state.configured,
+                    network_check_performed=False,
+                    delivery_status="failed",
+                    detail=_truncate_text("; ".join(channel_state.warnings) or f"{channel} channel is misconfigured."),
+                )
+            )
+            continue
+        if not payload.perform_network_check:
+            results.append(
+                schemas.SelfEmployedReminderSmokeCheckChannelResult(
+                    channel=channel,
+                    provider=channel_state.provider,
+                    enabled=channel_state.enabled,
+                    configured=channel_state.configured,
+                    network_check_performed=False,
+                    delivery_status="skipped",
+                    detail="Configuration is valid. Network check was skipped.",
+                )
+            )
+            continue
+
+        if channel == "email":
+            recipient_email = payload.test_recipient_email.strip() if payload.test_recipient_email else None
+            if not recipient_email:
+                results.append(
+                    schemas.SelfEmployedReminderSmokeCheckChannelResult(
+                        channel=channel,
+                        provider=channel_state.provider,
+                        enabled=channel_state.enabled,
+                        configured=channel_state.configured,
+                        network_check_performed=True,
+                        delivery_status="failed",
+                        detail="Provide test_recipient_email for email smoke check.",
+                    )
+                )
+                continue
+            delivery_status, detail = await _dispatch_invoice_reminder_email(
+                invoice_id="smoke-check",
+                invoice_number="SMOKE-CHECK-EMAIL",
+                reminder_type=payload.reminder_type,
+                message="Smoke-check reminder dispatch for email channel.",
+                recipient_email=recipient_email,
+            )
+        else:
+            recipient_phone = payload.test_recipient_phone.strip() if payload.test_recipient_phone else None
+            if not recipient_phone:
+                results.append(
+                    schemas.SelfEmployedReminderSmokeCheckChannelResult(
+                        channel=channel,
+                        provider=channel_state.provider,
+                        enabled=channel_state.enabled,
+                        configured=channel_state.configured,
+                        network_check_performed=True,
+                        delivery_status="failed",
+                        detail="Provide test_recipient_phone for SMS smoke check.",
+                    )
+                )
+                continue
+            delivery_status, detail = await _dispatch_invoice_reminder_sms(
+                invoice_id="smoke-check",
+                invoice_number="SMOKE-CHECK-SMS",
+                reminder_type=payload.reminder_type,
+                message="Smoke-check reminder dispatch for SMS channel.",
+                recipient_phone=recipient_phone,
+            )
+
+        results.append(
+            schemas.SelfEmployedReminderSmokeCheckChannelResult(
+                channel=channel,
+                provider=channel_state.provider,
+                enabled=channel_state.enabled,
+                configured=channel_state.configured,
+                network_check_performed=True,
+                delivery_status=delivery_status if delivery_status in {"sent", "failed"} else "failed",
+                detail=_truncate_text(detail),
+            )
+        )
+
+    passed = all(item.delivery_status != "failed" for item in results)
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.invoice.reminders.smoke_check",
+        details={
+            "requested_channel": payload.channel,
+            "perform_network_check": payload.perform_network_check,
+            "passed": passed,
+            "results": [item.model_dump() for item in results],
+        },
+    )
+    return schemas.SelfEmployedReminderSmokeCheckResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        requested_channel=payload.channel,
+        perform_network_check=payload.perform_network_check,
+        results=results,
+        passed=passed,
     )
 
 

@@ -1343,3 +1343,54 @@ def test_self_employed_reminders_dispatch_twilio_provider(mocker):
     assert "api.twilio.com/2010-04-01/Accounts/AC_TEST_SID/Messages.json" in dispatch_call.args[0]
     assert dispatch_call.kwargs["form_body"]["To"] == "+447700900333"
 
+
+def test_self_employed_reminder_readiness_endpoint_reports_channel_status(mocker):
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER", "sendgrid")
+    mocker.patch("app.main.SELF_EMPLOYED_SENDGRID_API_KEY", "")
+    mocker.patch("app.main.SELF_EMPLOYED_SENDGRID_API_URL", "https://api.sendgrid.com/v3/mail/send")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_PROVIDER", "twilio")
+    mocker.patch("app.main.SELF_EMPLOYED_TWILIO_ACCOUNT_SID", "AC_TEST")
+    mocker.patch("app.main.SELF_EMPLOYED_TWILIO_AUTH_TOKEN", "TOKEN_TEST")
+    mocker.patch("app.main.SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID", "MG_TEST")
+
+    response = client.get(
+        "/self-employed/invoicing/reminders/readiness",
+        headers=get_auth_headers("freelancer-readiness@example.com"),
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["email"]["provider"] == "sendgrid"
+    assert payload["email"]["enabled"] is True
+    assert payload["email"]["configured"] is False
+    assert payload["sms"]["provider"] == "twilio"
+    assert payload["sms"]["enabled"] is True
+    assert payload["sms"]["configured"] is True
+    assert payload["overall_ready"] is True
+
+
+def test_self_employed_reminder_smoke_check_without_network_check(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER", "webhook")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL", "http://dispatch.local/email")
+    mock_dispatch = mocker.patch("app.main._post_with_delivery_retry", new_callable=mocker.AsyncMock)
+
+    response = client.post(
+        "/self-employed/invoicing/reminders/smoke-check",
+        headers=get_auth_headers("freelancer-smoke@example.com"),
+        json={
+            "channel": "email",
+            "perform_network_check": False,
+            "test_recipient_email": "billing@smoke.example",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["passed"] is True
+    assert len(payload["results"]) == 1
+    assert payload["results"][0]["channel"] == "email"
+    assert payload["results"][0]["delivery_status"] == "skipped"
+    assert mock_dispatch.await_count == 0
+

@@ -86,6 +86,8 @@ New/updated API endpoints
   - POST /self-employed/invoicing/recurring-plans/{plan_id}/run
   - POST /self-employed/invoicing/recurring-plans/run-due
 - Reminders
+  - GET  /self-employed/invoicing/reminders/readiness
+  - POST /self-employed/invoicing/reminders/smoke-check
   - POST /self-employed/invoicing/reminders/run
   - GET  /self-employed/invoicing/reminders
 - Existing invoice endpoints now include payment/branding fields in responses.
@@ -126,3 +128,5 @@ Config added
 
 Operational note
 - External dispatch failures are persisted as failed reminder events (per channel) and do not break reminder run execution.
+- Readiness endpoint gives channel/provider config health without sending messages.
+- Smoke-check endpoint validates configuration and can optionally perform real sandbox delivery checks.

@@ -524,3 +524,47 @@ class SelfEmployedInvoiceReminderListResponse(BaseModel):
     total: int
     items: List[SelfEmployedInvoiceReminderEvent]
 
+
+class SelfEmployedReminderChannelReadiness(BaseModel):
+    channel: Literal["email", "sms"]
+    provider: str
+    enabled: bool
+    configured: bool
+    can_dispatch: bool
+    checks: List[str]
+    warnings: List[str]
+
+
+class SelfEmployedReminderDeliveryReadinessResponse(BaseModel):
+    generated_at: datetime.datetime
+    email: SelfEmployedReminderChannelReadiness
+    sms: SelfEmployedReminderChannelReadiness
+    overall_ready: bool
+    note: str
+
+
+class SelfEmployedReminderSmokeCheckRequest(BaseModel):
+    channel: Literal["email", "sms", "both"] = "both"
+    perform_network_check: bool = False
+    test_recipient_email: Optional[str] = Field(default=None, max_length=255)
+    test_recipient_phone: Optional[str] = Field(default=None, max_length=32)
+    reminder_type: Literal["due_soon", "overdue"] = "due_soon"
+
+
+class SelfEmployedReminderSmokeCheckChannelResult(BaseModel):
+    channel: Literal["email", "sms"]
+    provider: str
+    enabled: bool
+    configured: bool
+    network_check_performed: bool
+    delivery_status: Literal["sent", "failed", "skipped"]
+    detail: str
+
+
+class SelfEmployedReminderSmokeCheckResponse(BaseModel):
+    generated_at: datetime.datetime
+    requested_channel: Literal["email", "sms", "both"]
+    perform_network_check: bool
+    results: List[SelfEmployedReminderSmokeCheckChannelResult]
+    passed: bool
+
