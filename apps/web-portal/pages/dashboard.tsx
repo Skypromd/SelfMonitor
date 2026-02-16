@@ -202,6 +202,42 @@ type SelfEmployedRecurringPlanListResponse = {
   total: number;
 };
 
+type SelfEmployedReminderChannelReadiness = {
+  can_dispatch: boolean;
+  channel: 'email' | 'sms';
+  checks: string[];
+  configured: boolean;
+  enabled: boolean;
+  provider: string;
+  warnings: string[];
+};
+
+type SelfEmployedReminderDeliveryReadinessResponse = {
+  email: SelfEmployedReminderChannelReadiness;
+  generated_at: string;
+  note: string;
+  overall_ready: boolean;
+  sms: SelfEmployedReminderChannelReadiness;
+};
+
+type SelfEmployedReminderSmokeCheckChannelResult = {
+  channel: 'email' | 'sms';
+  configured: boolean;
+  delivery_status: 'sent' | 'failed' | 'skipped';
+  detail: string;
+  enabled: boolean;
+  network_check_performed: boolean;
+  provider: string;
+};
+
+type SelfEmployedReminderSmokeCheckResponse = {
+  generated_at: string;
+  passed: boolean;
+  perform_network_check: boolean;
+  requested_channel: 'email' | 'sms' | 'both';
+  results: SelfEmployedReminderSmokeCheckChannelResult[];
+};
+
 type NPSMonthlyTrendPoint = {
   detractors_count: number;
   month: string;
@@ -532,6 +568,22 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   const [automationState, setAutomationState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
     isLoading: false,
   });
+  const [readiness, setReadiness] = useState<SelfEmployedReminderDeliveryReadinessResponse | null>(null);
+  const [readinessState, setReadinessState] = useState<{ error?: string; isLoading: boolean }>({
+    isLoading: false,
+  });
+  const [smokeChannel, setSmokeChannel] = useState<'email' | 'sms' | 'both'>('both');
+  const [smokeEmail, setSmokeEmail] = useState('');
+  const [smokePhone, setSmokePhone] = useState('');
+  const [performSmokeNetworkCheck, setPerformSmokeNetworkCheck] = useState(false);
+  const [smokeState, setSmokeState] = useState<{
+    error?: string;
+    isLoading: boolean;
+    message?: string;
+    result?: SelfEmployedReminderSmokeCheckResponse;
+  }>({
+    isLoading: false,
+  });
 
   const loadInvoices = useCallback(async () => {
     setIsLoading(true);
@@ -745,6 +797,60 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
     }
   };
 
+  const checkReminderReadiness = async () => {
+    setReadinessState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/reminders/readiness`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json()) as SelfEmployedReminderDeliveryReadinessResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to fetch delivery readiness');
+      }
+      setReadiness(payload as SelfEmployedReminderDeliveryReadinessResponse);
+      setReadinessState({ isLoading: false });
+    } catch (err) {
+      setReadinessState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to fetch delivery readiness',
+      });
+    }
+  };
+
+  const runReminderSmokeCheck = async () => {
+    setSmokeState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/invoicing/reminders/smoke-check`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          channel: smokeChannel,
+          perform_network_check: performSmokeNetworkCheck,
+          test_recipient_email: smokeEmail.trim() || undefined,
+          test_recipient_phone: smokePhone.trim() || undefined,
+        }),
+      });
+      const payload = (await response.json()) as SelfEmployedReminderSmokeCheckResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to run reminder smoke-check');
+      }
+      const smokePayload = payload as SelfEmployedReminderSmokeCheckResponse;
+      setSmokeState({
+        isLoading: false,
+        message: smokePayload.passed ? 'Smoke-check passed.' : 'Smoke-check completed with issues.',
+        result: smokePayload,
+      });
+    } catch (err) {
+      setSmokeState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to run reminder smoke-check',
+      });
+    }
+  };
+
   const updateStatus = async (invoiceId: string, status: SelfEmployedInvoiceStatus) => {
     setUpdatingInvoiceId(invoiceId);
     try {
@@ -789,6 +895,11 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
       setError(err instanceof Error ? err.message : 'Download failed');
     }
   };
+
+  const requiresSmokeEmail = performSmokeNetworkCheck && (smokeChannel === 'email' || smokeChannel === 'both');
+  const requiresSmokePhone = performSmokeNetworkCheck && (smokeChannel === 'sms' || smokeChannel === 'both');
+  const smokeCheckInputInvalid =
+    (requiresSmokeEmail && !smokeEmail.trim()) || (requiresSmokePhone && !smokePhone.trim());
 
   return (
     <section className={styles.subContainer}>
@@ -942,6 +1053,85 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
       {createState.error && <p className={styles.error}>{createState.error}</p>}
       {automationState.message && <p className={styles.message}>{automationState.message}</p>}
       {automationState.error && <p className={styles.error}>{automationState.error}</p>}
+      <div className={styles.copilotWhyBlock} style={{ marginBottom: '14px' }}>
+        <p>
+          <strong>Reminder delivery operations:</strong> run readiness and smoke-check without leaving dashboard.
+        </p>
+        <div className={styles.npsScoreRow}>
+          <button className={styles.tableActionButton} disabled={readinessState.isLoading} onClick={checkReminderReadiness} type="button">
+            {readinessState.isLoading ? 'Checking readiness...' : 'Check readiness'}
+          </button>
+          <select
+            className={styles.input}
+            onChange={(event) => setSmokeChannel(event.target.value as 'email' | 'sms' | 'both')}
+            value={smokeChannel}
+          >
+            <option value="both">Smoke-check: both channels</option>
+            <option value="email">Smoke-check: email only</option>
+            <option value="sms">Smoke-check: SMS only</option>
+          </select>
+          <label style={{ alignItems: 'center', display: 'flex', gap: '6px' }}>
+            <input
+              checked={performSmokeNetworkCheck}
+              onChange={(event) => setPerformSmokeNetworkCheck(event.target.checked)}
+              type="checkbox"
+            />
+            Perform network check
+          </label>
+          <button
+            className={styles.tableActionButton}
+            disabled={smokeState.isLoading || smokeCheckInputInvalid}
+            onClick={runReminderSmokeCheck}
+            type="button"
+          >
+            {smokeState.isLoading ? 'Running smoke-check...' : 'Run smoke-check'}
+          </button>
+        </div>
+        <div className={styles.dateInputs} style={{ marginTop: '10px' }}>
+          <input
+            className={styles.input}
+            onChange={(event) => setSmokeEmail(event.target.value)}
+            placeholder="Test recipient email (required for email network check)"
+            type="email"
+            value={smokeEmail}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setSmokePhone(event.target.value)}
+            placeholder="Test recipient phone (required for SMS network check)"
+            type="tel"
+            value={smokePhone}
+          />
+        </div>
+        {readinessState.error && <p className={styles.error}>{readinessState.error}</p>}
+        {readiness && (
+          <div style={{ marginTop: '10px' }}>
+            <p>
+              <strong>Readiness:</strong> {readiness.overall_ready ? 'ready' : 'not ready'} - {readiness.note}
+            </p>
+            <ul className={styles.partnerList}>
+              {[readiness.email, readiness.sms].map((channel) => (
+                <li key={channel.channel}>
+                  {channel.channel.toUpperCase()} ({channel.provider}): enabled={String(channel.enabled)}, configured=
+                  {String(channel.configured)}, can_dispatch={String(channel.can_dispatch)}
+                  {channel.warnings.length ? `, warnings: ${channel.warnings.join(' | ')}` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {smokeState.message && <p className={styles.message}>{smokeState.message}</p>}
+        {smokeState.error && <p className={styles.error}>{smokeState.error}</p>}
+        {smokeState.result && (
+          <ul className={styles.partnerList} style={{ marginTop: '8px' }}>
+            {smokeState.result.results.map((result, index) => (
+              <li key={`${result.channel}-${index}`}>
+                {result.channel.toUpperCase()} ({result.provider}) - {result.delivery_status}: {result.detail}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       {error && <p className={styles.error}>{error}</p>}
       {recurringPlans.length > 0 && (
         <div className={styles.copilotWhyBlock} style={{ marginBottom: '14px' }}>
