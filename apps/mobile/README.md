@@ -21,6 +21,7 @@ npm run start
 ## Environment
 
 - `EXPO_PUBLIC_WEB_PORTAL_URL`: URL of deployed web portal or local dev instance.
+- `EXPO_PUBLIC_EAS_PROJECT_ID`: Expo project ID for stable push token issuance in EAS builds.
 
 Local Android emulator default usually works with:
 
@@ -54,13 +55,17 @@ Implemented in this iteration:
 - pull-to-refresh support;
 - Android hardware back handling;
 - offline banner and error recovery action;
+- secure session bootstrap from native secure storage;
+- web/native auth bridge (session state sync);
+- push-notification permission and token registration shortcut;
+- quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.
 
 Planned next:
 
-- secure token storage with native keychain/keystore;
-- push notifications for HMRC deadlines and invoice reminders;
-- camera-first receipt capture shortcut with native permissions flow.
+- backend endpoint for push token registration and user mapping;
+- in-app notification center with delivery status and action deep-links;
+- camera-first receipt capture shortcut with direct upload pipeline.
 
 ## App Store / Google Play preparation
 

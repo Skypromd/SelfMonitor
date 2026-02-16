@@ -11,13 +11,23 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.selfmonitor.mobile"
+      "bundleIdentifier": "com.selfmonitor.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SelfMonitor uses camera access for receipt capture.",
+        "NSUserTrackingUsageDescription": "SelfMonitor does not track users across third-party apps.",
+        "NSUserNotificationUsageDescription": "SelfMonitor uses notifications for reminders and filing deadlines."
+      }
     },
     "android": {
-      "package": "com.selfmonitor.mobile"
+      "package": "com.selfmonitor.mobile",
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "CAMERA"
+      ]
     },
     "extra": {
-      "webPortalUrlEnvVar": "EXPO_PUBLIC_WEB_PORTAL_URL"
+      "webPortalUrlEnvVar": "EXPO_PUBLIC_WEB_PORTAL_URL",
+      "easProjectIdEnvVar": "EXPO_PUBLIC_EAS_PROJECT_ID"
     }
   }
 }

@@ -10,11 +10,47 @@ const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_EMAIL_KEY = 'authUserEmail';
 const THEME_KEY = 'appTheme';
 type ThemeMode = 'light' | 'dark';
+type NativeBridgeMessage =
+  | {
+      type: 'WEB_AUTH_STATE';
+      payload: {
+        email: string | null;
+        token: string | null;
+      };
+    }
+  | {
+      type: 'WEB_THEME_STATE';
+      payload: {
+        theme: ThemeMode;
+      };
+    };
+
+type ReactNativeBridgeWindow = Window & {
+  ReactNativeWebView?: {
+    postMessage: (message: string) => void;
+  };
+};
+
+function postMessageToNativeApp(message: NativeBridgeMessage): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  const bridge = (window as ReactNativeBridgeWindow).ReactNativeWebView;
+  if (!bridge || typeof bridge.postMessage !== 'function') {
+    return;
+  }
+  try {
+    bridge.postMessage(JSON.stringify(message));
+  } catch (error) {
+    console.error('Failed to send message to native shell:', error);
+  }
+}
 
 function AppContent({ Component, pageProps }: AppProps) {
   const [token, setToken] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>('light');
+  const [authHydrated, setAuthHydrated] = useState(false);
   const router = useRouter();
   const { setFormatStandards, setLocale, setTranslations } = useContext(I18nContext);
   const { defaultLocale, locale } = router;
@@ -57,6 +93,7 @@ function AppContent({ Component, pageProps }: AppProps) {
     } else if (router.pathname !== '/') {
       router.push('/');
     }
+    setAuthHydrated(true);
   }, [router]);
 
   useEffect(() => {
@@ -74,6 +111,28 @@ function AppContent({ Component, pageProps }: AppProps) {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  useEffect(() => {
+    if (!authHydrated) {
+      return;
+    }
+    postMessageToNativeApp({
+      type: 'WEB_AUTH_STATE',
+      payload: {
+        token,
+        email: userEmail,
+      },
+    });
+  }, [authHydrated, token, userEmail]);
+
+  useEffect(() => {
+    postMessageToNativeApp({
+      type: 'WEB_THEME_STATE',
+      payload: {
+        theme,
+      },
+    });
   }, [theme]);
 
   const handleLoginSuccess = (newToken: string, email?: string) => {

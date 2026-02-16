@@ -28,6 +28,10 @@ Make mobile the primary user channel while reusing the mature web product.
   - Android hardware back navigation,
   - offline banner and retry flow,
   - env-configurable web URL (`EXPO_PUBLIC_WEB_PORTAL_URL`);
+- secure session bootstrap and persistence in native secure storage;
+- bidirectional auth/theme sync bridge between web app and native shell;
+- native action bar for key mobile intents (dashboard, documents, receipt capture, push setup);
+- push permission/token bootstrap flow with secure persistence.
 - CI typecheck lane for mobile app.
 
 ## Release readiness checklist (next)

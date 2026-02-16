@@ -1,4 +1,5 @@
-import { Fragment, useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useRouter } from 'next/router';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
@@ -208,6 +209,8 @@ function SemanticSearch({ token }: { token: string }) {
 }
 
 export default function DocumentsPage({ token }: DocumentsPageProps) {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [reviewQueue, setReviewQueue] = useState<DocumentRecord[]>([]);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
@@ -270,6 +273,20 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
   useEffect(() => {
     fetchReviewQueue();
   }, [fetchReviewQueue]);
+
+  useEffect(() => {
+    if (!router.isReady) {
+      return;
+    }
+    const captureParam = router.query.mobile_capture;
+    const shouldOpenCapture =
+      captureParam === '1' || (Array.isArray(captureParam) && captureParam.includes('1'));
+    if (!shouldOpenCapture) {
+      return;
+    }
+    fileInputRef.current?.click();
+    void router.replace('/documents', undefined, { shallow: true });
+  }, [router]);
 
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) {
@@ -424,7 +441,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         <h2>{t('documents.upload_title')}</h2>
         <form onSubmit={handleUpload}>
           <div className={styles.fileInputContainer}>
-            <input onChange={handleFileSelect} type="file" />
+            <input onChange={handleFileSelect} ref={fileInputRef} type="file" />
             <button className={styles.button} disabled={!selectedFile || isUploading} type="submit">
               {isUploading ? 'Uploading...' : t('documents.upload_button')}
             </button>
