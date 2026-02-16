@@ -2754,12 +2754,12 @@ async def run_self_employed_invoice_reminders(
             message=message,
             sent_at=now,
         )
+        reminders.append(_to_reminder_event(event))
         await crud.mark_self_employed_invoice_reminder_sent(
             db,
             invoice,
             reminder_at=now,
         )
-        reminders.append(_to_reminder_event(event))
 
     if reminders:
         await log_audit_event(
