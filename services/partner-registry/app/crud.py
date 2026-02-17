@@ -960,3 +960,202 @@ async def list_invoice_reminder_events_for_user(
     rows = list((await db.execute(query)).scalars().all())
     return total, rows
 
+
+async def create_calendar_event(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    title: str,
+    starts_at: datetime.datetime,
+    ends_at: datetime.datetime | None,
+    description: str | None,
+    category: str,
+    recipient_name: str | None,
+    recipient_email: str | None,
+    recipient_phone: str | None,
+    notify_in_app: bool,
+    notify_email: bool,
+    notify_sms: bool,
+    notify_before_minutes: int,
+) -> models.SelfEmployedCalendarEvent:
+    event = models.SelfEmployedCalendarEvent(
+        user_id=user_id,
+        title=title,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        description=description,
+        category=category,
+        recipient_name=recipient_name,
+        recipient_email=recipient_email,
+        recipient_phone=recipient_phone,
+        notify_in_app=1 if notify_in_app else 0,
+        notify_email=1 if notify_email else 0,
+        notify_sms=1 if notify_sms else 0,
+        notify_before_minutes=notify_before_minutes,
+        status="scheduled",
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def list_calendar_events_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    status: str | None = None,
+    start_at: datetime.datetime | None = None,
+    end_before: datetime.datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedCalendarEvent]]:
+    count_query = select(func.count(models.SelfEmployedCalendarEvent.id)).filter(
+        models.SelfEmployedCalendarEvent.user_id == user_id
+    )
+    if status:
+        count_query = count_query.filter(models.SelfEmployedCalendarEvent.status == status)
+    if start_at:
+        count_query = count_query.filter(models.SelfEmployedCalendarEvent.starts_at >= start_at)
+    if end_before:
+        count_query = count_query.filter(models.SelfEmployedCalendarEvent.starts_at < end_before)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+
+    query = (
+        select(models.SelfEmployedCalendarEvent)
+        .filter(models.SelfEmployedCalendarEvent.user_id == user_id)
+        .order_by(
+            models.SelfEmployedCalendarEvent.starts_at.asc(),
+            models.SelfEmployedCalendarEvent.created_at.desc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    if status:
+        query = query.filter(models.SelfEmployedCalendarEvent.status == status)
+    if start_at:
+        query = query.filter(models.SelfEmployedCalendarEvent.starts_at >= start_at)
+    if end_before:
+        query = query.filter(models.SelfEmployedCalendarEvent.starts_at < end_before)
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
+
+
+async def get_calendar_event_by_id_for_user(
+    db: AsyncSession,
+    *,
+    event_id: str,
+    user_id: str,
+) -> models.SelfEmployedCalendarEvent | None:
+    result = await db.execute(
+        select(models.SelfEmployedCalendarEvent).filter(
+            models.SelfEmployedCalendarEvent.id == event_id,
+            models.SelfEmployedCalendarEvent.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def update_calendar_event(
+    db: AsyncSession,
+    event: models.SelfEmployedCalendarEvent,
+    *,
+    updates: dict[str, object],
+) -> models.SelfEmployedCalendarEvent:
+    for field_name, field_value in updates.items():
+        setattr(event, field_name, field_value)
+    event.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def delete_calendar_event(
+    db: AsyncSession,
+    event: models.SelfEmployedCalendarEvent,
+) -> None:
+    await db.delete(event)
+    await db.commit()
+
+
+async def list_calendar_events_due_for_reminders(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    horizon_end: datetime.datetime,
+    limit: int = 500,
+) -> list[models.SelfEmployedCalendarEvent]:
+    query = (
+        select(models.SelfEmployedCalendarEvent)
+        .filter(
+            models.SelfEmployedCalendarEvent.user_id == user_id,
+            models.SelfEmployedCalendarEvent.status == "scheduled",
+            models.SelfEmployedCalendarEvent.starts_at <= horizon_end,
+        )
+        .order_by(models.SelfEmployedCalendarEvent.starts_at.asc())
+        .limit(limit)
+    )
+    rows = (await db.execute(query)).scalars().all()
+    return list(rows)
+
+
+async def mark_calendar_event_reminder_sent(
+    db: AsyncSession,
+    event: models.SelfEmployedCalendarEvent,
+    *,
+    reminder_at: datetime.datetime,
+) -> models.SelfEmployedCalendarEvent:
+    event.reminder_last_sent_at = reminder_at
+    event.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def create_calendar_reminder_event(
+    db: AsyncSession,
+    *,
+    event_id: str,
+    user_id: str,
+    reminder_type: str,
+    channel: str,
+    status: str,
+    message: str,
+    sent_at: datetime.datetime | None,
+) -> models.SelfEmployedCalendarReminder:
+    reminder = models.SelfEmployedCalendarReminder(
+        event_id=event_id,
+        user_id=user_id,
+        reminder_type=reminder_type,
+        channel=channel,
+        status=status,
+        message=message,
+        sent_at=sent_at,
+    )
+    db.add(reminder)
+    await db.commit()
+    await db.refresh(reminder)
+    return reminder
+
+
+async def list_calendar_reminder_events_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedCalendarReminder]]:
+    count_query = select(func.count(models.SelfEmployedCalendarReminder.id)).filter(
+        models.SelfEmployedCalendarReminder.user_id == user_id
+    )
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+    query = (
+        select(models.SelfEmployedCalendarReminder)
+        .filter(models.SelfEmployedCalendarReminder.user_id == user_id)
+        .order_by(models.SelfEmployedCalendarReminder.created_at.desc(), models.SelfEmployedCalendarReminder.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
+

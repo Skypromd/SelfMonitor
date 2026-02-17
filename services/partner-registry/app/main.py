@@ -125,6 +125,10 @@ SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS = max(
     _parse_non_negative_float_env("SELF_EMPLOYED_REMINDER_DISPATCH_TIMEOUT_SECONDS", 5.0),
     0.1,
 )
+SELF_EMPLOYED_CALENDAR_REMINDER_COOLDOWN_HOURS = _parse_positive_int_env(
+    "SELF_EMPLOYED_CALENDAR_REMINDER_COOLDOWN_HOURS",
+    12,
+)
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
     schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
@@ -345,6 +349,12 @@ def _truncate_text(value: str, *, max_length: int = 500) -> str:
     return value[: max_length - 3].rstrip() + "..."
 
 
+def _to_utc_datetime(value: datetime.datetime) -> datetime.datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=datetime.UTC)
+    return value.astimezone(datetime.UTC)
+
+
 def _is_retryable_delivery_status(status_code: int) -> bool:
     return status_code in {408, 409, 425, 429, 500, 502, 503, 504}
 
@@ -563,6 +573,195 @@ async def _dispatch_invoice_reminder_sms(
         return "failed", f"Unsupported SMS provider: {SELF_EMPLOYED_REMINDER_SMS_PROVIDER}"
     except httpx.HTTPError as exc:
         return "failed", _truncate_text(f"SMS dispatch failed: {exc}")
+
+
+def _build_calendar_reminder_email_subject(
+    *,
+    title: str,
+    reminder_type: Literal["upcoming", "overdue"],
+) -> str:
+    if reminder_type == "overdue":
+        return f"Missed event alert: {title}"
+    return f"Upcoming event reminder: {title}"
+
+
+def _build_calendar_reminder_email_body(
+    *,
+    title: str,
+    starts_at: datetime.datetime,
+    reminder_type: Literal["upcoming", "overdue"],
+    message: str,
+) -> str:
+    starts_at_utc = _to_utc_datetime(starts_at)
+    headline = (
+        f"The event '{title}' is now overdue."
+        if reminder_type == "overdue"
+        else f"The event '{title}' is coming up soon."
+    )
+    return "\n".join(
+        [
+            headline,
+            f"Scheduled at (UTC): {starts_at_utc.strftime('%Y-%m-%d %H:%M')}",
+            "",
+            message,
+            "",
+            "Sent by SelfMonitor calendar automation.",
+        ]
+    )
+
+
+def _build_calendar_reminder_sms_body(
+    *,
+    title: str,
+    starts_at: datetime.datetime,
+    reminder_type: Literal["upcoming", "overdue"],
+    message: str,
+) -> str:
+    starts_at_utc = _to_utc_datetime(starts_at)
+    prefix = "MISSED EVENT" if reminder_type == "overdue" else "UPCOMING EVENT"
+    raw = f"{prefix}: {title} at {starts_at_utc.strftime('%Y-%m-%d %H:%M')} UTC. {message}"
+    return _truncate_text(raw, max_length=320)
+
+
+async def _dispatch_calendar_reminder_email(
+    *,
+    event_id: str,
+    title: str,
+    starts_at: datetime.datetime,
+    reminder_type: Literal["upcoming", "overdue"],
+    message: str,
+    recipient_email: str | None,
+) -> tuple[Literal["sent", "failed"], str]:
+    if not SELF_EMPLOYED_REMINDER_EMAIL_ENABLED:
+        return "failed", "Email dispatch disabled by configuration."
+    if not recipient_email:
+        return "failed", "Recipient email is missing."
+    subject = _build_calendar_reminder_email_subject(title=title, reminder_type=reminder_type)
+    body = _build_calendar_reminder_email_body(
+        title=title,
+        starts_at=starts_at,
+        reminder_type=reminder_type,
+        message=message,
+    )
+
+    try:
+        if SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER == "sendgrid":
+            if not SELF_EMPLOYED_SENDGRID_API_KEY:
+                return "failed", "SendGrid API key is missing."
+            payload = {
+                "personalizations": [{"to": [{"email": recipient_email}]}],
+                "from": {"email": SELF_EMPLOYED_REMINDER_EMAIL_FROM},
+                "subject": subject,
+                "content": [{"type": "text/plain", "value": body}],
+                "custom_args": {
+                    "calendar_event_id": event_id,
+                    "calendar_reminder_type": reminder_type,
+                },
+            }
+            await _post_with_delivery_retry(
+                SELF_EMPLOYED_SENDGRID_API_URL,
+                headers={
+                    "Authorization": f"Bearer {SELF_EMPLOYED_SENDGRID_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json_body=payload,
+            )
+            return "sent", f"Calendar email reminder sent via SendGrid to {recipient_email}."
+
+        if SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER == "webhook":
+            if not SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL:
+                return "failed", "Email dispatch URL is not configured."
+            payload = {
+                "provider": "self_employed_calendar_reminders",
+                "from": SELF_EMPLOYED_REMINDER_EMAIL_FROM,
+                "to": recipient_email,
+                "subject": subject,
+                "message": body,
+                "metadata": {
+                    "event_id": event_id,
+                    "event_title": title,
+                    "reminder_type": reminder_type,
+                    "dispatch_provider": "webhook",
+                },
+            }
+            await _post_with_delivery_retry(
+                SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL,
+                json_body=payload,
+            )
+            return "sent", f"Calendar email reminder sent to {recipient_email}."
+
+        return "failed", f"Unsupported email provider: {SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER}"
+    except httpx.HTTPError as exc:
+        return "failed", _truncate_text(f"Calendar email dispatch failed: {exc}")
+
+
+async def _dispatch_calendar_reminder_sms(
+    *,
+    event_id: str,
+    title: str,
+    starts_at: datetime.datetime,
+    reminder_type: Literal["upcoming", "overdue"],
+    message: str,
+    recipient_phone: str | None,
+) -> tuple[Literal["sent", "failed"], str]:
+    if not SELF_EMPLOYED_REMINDER_SMS_ENABLED:
+        return "failed", "SMS dispatch disabled by configuration."
+    if not recipient_phone:
+        return "failed", "Recipient phone is missing."
+    sms_body = _build_calendar_reminder_sms_body(
+        title=title,
+        starts_at=starts_at,
+        reminder_type=reminder_type,
+        message=message,
+    )
+
+    try:
+        if SELF_EMPLOYED_REMINDER_SMS_PROVIDER == "twilio":
+            if not SELF_EMPLOYED_TWILIO_ACCOUNT_SID or not SELF_EMPLOYED_TWILIO_AUTH_TOKEN:
+                return "failed", "Twilio credentials are missing."
+            twilio_url = (
+                f"{SELF_EMPLOYED_TWILIO_API_BASE_URL}/2010-04-01/Accounts/"
+                f"{SELF_EMPLOYED_TWILIO_ACCOUNT_SID}/Messages.json"
+            )
+            form_payload: dict[str, str] = {
+                "To": recipient_phone,
+                "Body": sms_body,
+            }
+            if SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID:
+                form_payload["MessagingServiceSid"] = SELF_EMPLOYED_TWILIO_MESSAGING_SERVICE_SID
+            else:
+                form_payload["From"] = SELF_EMPLOYED_REMINDER_SMS_FROM
+            await _post_with_delivery_retry(
+                twilio_url,
+                form_body=form_payload,
+                auth=(SELF_EMPLOYED_TWILIO_ACCOUNT_SID, SELF_EMPLOYED_TWILIO_AUTH_TOKEN),
+            )
+            return "sent", f"Calendar SMS reminder sent via Twilio to {recipient_phone}."
+
+        if SELF_EMPLOYED_REMINDER_SMS_PROVIDER == "webhook":
+            if not SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL:
+                return "failed", "SMS dispatch URL is not configured."
+            payload = {
+                "provider": "self_employed_calendar_reminders",
+                "from": SELF_EMPLOYED_REMINDER_SMS_FROM,
+                "to": recipient_phone,
+                "message": sms_body,
+                "metadata": {
+                    "event_id": event_id,
+                    "event_title": title,
+                    "reminder_type": reminder_type,
+                    "dispatch_provider": "webhook",
+                },
+            }
+            await _post_with_delivery_retry(
+                SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL,
+                json_body=payload,
+            )
+            return "sent", f"Calendar SMS reminder sent to {recipient_phone}."
+
+        return "failed", f"Unsupported SMS provider: {SELF_EMPLOYED_REMINDER_SMS_PROVIDER}"
+    except httpx.HTTPError as exc:
+        return "failed", _truncate_text(f"Calendar SMS dispatch failed: {exc}")
 
 
 def _email_reminder_config_issues() -> list[str]:
@@ -1745,6 +1944,66 @@ def _to_reminder_event(item: Any) -> schemas.SelfEmployedInvoiceReminderEvent:
         created_at=item.created_at,
         sent_at=item.sent_at,
     )
+
+
+def _to_calendar_event(item: Any) -> schemas.SelfEmployedCalendarEvent:
+    return schemas.SelfEmployedCalendarEvent(
+        id=uuid.UUID(str(item.id)),
+        title=str(item.title),
+        starts_at=_to_utc_datetime(item.starts_at),
+        ends_at=_to_utc_datetime(item.ends_at) if item.ends_at else None,
+        description=item.description,
+        category=str(item.category or "general"),
+        recipient_name=item.recipient_name,
+        recipient_email=item.recipient_email,
+        recipient_phone=item.recipient_phone,
+        notify_in_app=bool(item.notify_in_app),
+        notify_email=bool(item.notify_email),
+        notify_sms=bool(item.notify_sms),
+        notify_before_minutes=int(item.notify_before_minutes or 0),
+        reminder_last_sent_at=_to_utc_datetime(item.reminder_last_sent_at) if item.reminder_last_sent_at else None,
+        status=schemas.SelfEmployedCalendarEventStatus(item.status),
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
+
+
+def _to_calendar_reminder_event(item: Any) -> schemas.SelfEmployedCalendarReminderEvent:
+    return schemas.SelfEmployedCalendarReminderEvent(
+        id=uuid.UUID(str(item.id)),
+        event_id=uuid.UUID(str(item.event_id)),
+        reminder_type=item.reminder_type,
+        channel=item.channel,
+        status=item.status,
+        message=item.message,
+        created_at=item.created_at,
+        sent_at=item.sent_at,
+    )
+
+
+def _validate_calendar_notification_channels(
+    *,
+    notify_in_app: bool,
+    notify_email: bool,
+    notify_sms: bool,
+    recipient_email: str | None,
+    recipient_phone: str | None,
+) -> None:
+    if not any([notify_in_app, notify_email, notify_sms]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one notification channel must be enabled.",
+        )
+    if notify_email and not recipient_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="recipient_email is required when notify_email=true",
+        )
+    if notify_sms and not recipient_phone:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="recipient_phone is required when notify_sms=true",
+        )
 
 
 async def _mark_overdue_invoices_for_user(
@@ -3370,6 +3629,385 @@ async def list_self_employed_invoice_reminders(
     return schemas.SelfEmployedInvoiceReminderListResponse(
         total=total,
         items=[_to_reminder_event(item) for item in rows],
+    )
+
+
+@app.post(
+    "/self-employed/calendar/events",
+    response_model=schemas.SelfEmployedCalendarEvent,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_self_employed_calendar_event(
+    payload: schemas.SelfEmployedCalendarEventCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title cannot be empty")
+
+    starts_at = _to_utc_datetime(payload.starts_at)
+    ends_at = _to_utc_datetime(payload.ends_at) if payload.ends_at else None
+    if ends_at and ends_at < starts_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ends_at cannot be earlier than starts_at")
+
+    category = (payload.category or "general").strip() or "general"
+    description = payload.description.strip() if payload.description else None
+    recipient_name = payload.recipient_name.strip() if payload.recipient_name else None
+    recipient_email = payload.recipient_email.strip() if payload.recipient_email else None
+    recipient_phone = payload.recipient_phone.strip() if payload.recipient_phone else None
+    _validate_calendar_notification_channels(
+        notify_in_app=payload.notify_in_app,
+        notify_email=payload.notify_email,
+        notify_sms=payload.notify_sms,
+        recipient_email=recipient_email,
+        recipient_phone=recipient_phone,
+    )
+
+    event = await crud.create_calendar_event(
+        db,
+        user_id=user_id,
+        title=title,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        description=description,
+        category=category,
+        recipient_name=recipient_name,
+        recipient_email=recipient_email,
+        recipient_phone=recipient_phone,
+        notify_in_app=payload.notify_in_app,
+        notify_email=payload.notify_email,
+        notify_sms=payload.notify_sms,
+        notify_before_minutes=payload.notify_before_minutes,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.calendar.event.created",
+        details={
+            "event_id": str(event.id),
+            "title": event.title,
+            "starts_at": _to_utc_datetime(event.starts_at).isoformat(),
+            "channels": {
+                "in_app": bool(event.notify_in_app),
+                "email": bool(event.notify_email),
+                "sms": bool(event.notify_sms),
+            },
+        },
+    )
+    return _to_calendar_event(event)
+
+
+@app.get(
+    "/self-employed/calendar/events",
+    response_model=schemas.SelfEmployedCalendarEventListResponse,
+)
+async def list_self_employed_calendar_events(
+    status_filter: Optional[schemas.SelfEmployedCalendarEventStatus] = Query(default=None, alias="status"),
+    start_at: Optional[datetime.datetime] = Query(default=None),
+    end_before: Optional[datetime.datetime] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    normalized_start_at = _to_utc_datetime(start_at) if start_at else None
+    normalized_end_before = _to_utc_datetime(end_before) if end_before else None
+    if normalized_start_at and normalized_end_before and normalized_start_at > normalized_end_before:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="start_at cannot be after end_before")
+
+    total, rows = await crud.list_calendar_events_for_user(
+        db,
+        user_id=user_id,
+        status=status_filter.value if status_filter else None,
+        start_at=normalized_start_at,
+        end_before=normalized_end_before,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.SelfEmployedCalendarEventListResponse(
+        total=total,
+        items=[_to_calendar_event(item) for item in rows],
+    )
+
+
+@app.patch(
+    "/self-employed/calendar/events/{event_id}",
+    response_model=schemas.SelfEmployedCalendarEvent,
+)
+async def update_self_employed_calendar_event(
+    event_id: uuid.UUID,
+    payload: schemas.SelfEmployedCalendarEventUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    event = await crud.get_calendar_event_by_id_for_user(
+        db,
+        event_id=str(event_id),
+        user_id=user_id,
+    )
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Calendar event not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "title" in updates:
+        if updates["title"] is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title cannot be null")
+        normalized_title = str(updates["title"]).strip()
+        if not normalized_title:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="title cannot be empty")
+        updates["title"] = normalized_title
+    if "description" in updates:
+        updates["description"] = str(updates["description"]).strip() if updates["description"] else None
+    if "category" in updates:
+        category_raw = str(updates["category"]).strip() if updates["category"] else ""
+        updates["category"] = category_raw or "general"
+    if "recipient_name" in updates:
+        updates["recipient_name"] = str(updates["recipient_name"]).strip() if updates["recipient_name"] else None
+    if "recipient_email" in updates:
+        updates["recipient_email"] = str(updates["recipient_email"]).strip() if updates["recipient_email"] else None
+    if "recipient_phone" in updates:
+        updates["recipient_phone"] = str(updates["recipient_phone"]).strip() if updates["recipient_phone"] else None
+    if "starts_at" in updates:
+        if updates["starts_at"] is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="starts_at cannot be null")
+        updates["starts_at"] = _to_utc_datetime(updates["starts_at"])
+    if "ends_at" in updates and updates["ends_at"] is not None:
+        updates["ends_at"] = _to_utc_datetime(updates["ends_at"])
+    if "notify_before_minutes" in updates and updates["notify_before_minutes"] is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="notify_before_minutes cannot be null")
+    if "status" in updates:
+        if updates["status"] is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="status cannot be null")
+        updates["status"] = updates["status"].value if hasattr(updates["status"], "value") else str(updates["status"])
+
+    effective_starts_at = updates.get("starts_at", _to_utc_datetime(event.starts_at))
+    effective_ends_at = updates.get("ends_at", _to_utc_datetime(event.ends_at) if event.ends_at else None)
+    if effective_ends_at and effective_ends_at < effective_starts_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="ends_at cannot be earlier than starts_at")
+
+    notify_in_app = bool(updates.get("notify_in_app", event.notify_in_app))
+    notify_email = bool(updates.get("notify_email", event.notify_email))
+    notify_sms = bool(updates.get("notify_sms", event.notify_sms))
+    recipient_email = updates.get("recipient_email", event.recipient_email)
+    recipient_phone = updates.get("recipient_phone", event.recipient_phone)
+    _validate_calendar_notification_channels(
+        notify_in_app=notify_in_app,
+        notify_email=notify_email,
+        notify_sms=notify_sms,
+        recipient_email=recipient_email,
+        recipient_phone=recipient_phone,
+    )
+
+    updated = await crud.update_calendar_event(
+        db,
+        event,
+        updates=updates,
+    )
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.calendar.event.updated",
+        details={
+            "event_id": str(event_id),
+            "updated_fields": sorted(list(updates.keys())),
+        },
+    )
+    return _to_calendar_event(updated)
+
+
+@app.delete(
+    "/self-employed/calendar/events/{event_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_self_employed_calendar_event(
+    event_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    event = await crud.get_calendar_event_by_id_for_user(
+        db,
+        event_id=str(event_id),
+        user_id=user_id,
+    )
+    if not event:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Calendar event not found")
+    await crud.delete_calendar_event(db, event)
+    await log_audit_event(
+        user_id=user_id,
+        action="self_employed.calendar.event.deleted",
+        details={"event_id": str(event_id), "title": event.title},
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post(
+    "/self-employed/calendar/reminders/run",
+    response_model=schemas.SelfEmployedCalendarReminderRunResponse,
+)
+async def run_self_employed_calendar_reminders(
+    horizon_hours: int = Query(default=48, ge=1, le=336),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    now = datetime.datetime.now(datetime.UTC)
+    horizon_end = now + datetime.timedelta(hours=horizon_hours)
+    rows = await crud.list_calendar_events_due_for_reminders(
+        db,
+        user_id=user_id,
+        horizon_end=horizon_end,
+        limit=500,
+    )
+    event_candidates = [
+        {
+            "id": str(item.id),
+            "title": str(item.title),
+            "starts_at": _to_utc_datetime(item.starts_at),
+            "notify_before_minutes": int(item.notify_before_minutes or 0),
+            "notify_in_app": bool(item.notify_in_app),
+            "notify_email": bool(item.notify_email),
+            "notify_sms": bool(item.notify_sms),
+            "recipient_email": item.recipient_email,
+            "recipient_phone": item.recipient_phone,
+            "reminder_last_sent_at": _to_utc_datetime(item.reminder_last_sent_at) if item.reminder_last_sent_at else None,
+        }
+        for item in rows
+    ]
+
+    reminders: list[schemas.SelfEmployedCalendarReminderEvent] = []
+    cooldown_seconds = SELF_EMPLOYED_CALENDAR_REMINDER_COOLDOWN_HOURS * 3600
+    for event_candidate in event_candidates:
+        starts_at = event_candidate["starts_at"]
+        reminder_window_start = starts_at - datetime.timedelta(minutes=max(event_candidate["notify_before_minutes"], 0))
+        if now < reminder_window_start:
+            continue
+        if event_candidate["reminder_last_sent_at"] and (
+            now - event_candidate["reminder_last_sent_at"]
+        ).total_seconds() < cooldown_seconds:
+            continue
+
+        reminder_type: Literal["upcoming", "overdue"] = "overdue" if starts_at < now else "upcoming"
+        minutes_delta = int(max((starts_at - now).total_seconds(), 0) // 60)
+        message = (
+            f"Calendar event '{event_candidate['title']}' was scheduled for {starts_at.isoformat()} and needs attention."
+            if reminder_type == "overdue"
+            else (
+                f"Calendar event '{event_candidate['title']}' starts at {starts_at.isoformat()} "
+                f"(in {minutes_delta} minute(s))."
+            )
+        )
+
+        sent_any = False
+        if event_candidate["notify_in_app"]:
+            in_app_event = await crud.create_calendar_reminder_event(
+                db,
+                event_id=event_candidate["id"],
+                user_id=user_id,
+                reminder_type=reminder_type,
+                channel="in_app",
+                status="sent",
+                message=message,
+                sent_at=now,
+            )
+            reminders.append(_to_calendar_reminder_event(in_app_event))
+            sent_any = True
+
+        if event_candidate["notify_email"]:
+            email_status, email_message = await _dispatch_calendar_reminder_email(
+                event_id=event_candidate["id"],
+                title=event_candidate["title"],
+                starts_at=starts_at,
+                reminder_type=reminder_type,
+                message=message,
+                recipient_email=event_candidate["recipient_email"],
+            )
+            email_event = await crud.create_calendar_reminder_event(
+                db,
+                event_id=event_candidate["id"],
+                user_id=user_id,
+                reminder_type=reminder_type,
+                channel="email",
+                status=email_status,
+                message=email_message,
+                sent_at=now if email_status == "sent" else None,
+            )
+            reminders.append(_to_calendar_reminder_event(email_event))
+            sent_any = sent_any or email_status == "sent"
+
+        if event_candidate["notify_sms"]:
+            sms_status, sms_message = await _dispatch_calendar_reminder_sms(
+                event_id=event_candidate["id"],
+                title=event_candidate["title"],
+                starts_at=starts_at,
+                reminder_type=reminder_type,
+                message=message,
+                recipient_phone=event_candidate["recipient_phone"],
+            )
+            sms_event = await crud.create_calendar_reminder_event(
+                db,
+                event_id=event_candidate["id"],
+                user_id=user_id,
+                reminder_type=reminder_type,
+                channel="sms",
+                status=sms_status,
+                message=sms_message,
+                sent_at=now if sms_status == "sent" else None,
+            )
+            reminders.append(_to_calendar_reminder_event(sms_event))
+            sent_any = sent_any or sms_status == "sent"
+
+        if sent_any:
+            event_to_update = await crud.get_calendar_event_by_id_for_user(
+                db,
+                event_id=event_candidate["id"],
+                user_id=user_id,
+            )
+            if event_to_update:
+                await crud.mark_calendar_event_reminder_sent(
+                    db,
+                    event_to_update,
+                    reminder_at=now,
+                )
+
+    if reminders:
+        sent_by_channel = {
+            "in_app": len([item for item in reminders if item.channel == "in_app" and item.status == "sent"]),
+            "email": len([item for item in reminders if item.channel == "email" and item.status == "sent"]),
+            "sms": len([item for item in reminders if item.channel == "sms" and item.status == "sent"]),
+        }
+        await log_audit_event(
+            user_id=user_id,
+            action="self_employed.calendar.reminders.sent",
+            details={
+                "count": len(reminders),
+                "horizon_hours": horizon_hours,
+                "sent_by_channel": sent_by_channel,
+            },
+        )
+    return schemas.SelfEmployedCalendarReminderRunResponse(
+        reminders_sent_count=len(reminders),
+        reminders=reminders,
+        note="Calendar reminders generated for events in window.",
+    )
+
+
+@app.get(
+    "/self-employed/calendar/reminders",
+    response_model=schemas.SelfEmployedCalendarReminderListResponse,
+)
+async def list_self_employed_calendar_reminders(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, rows = await crud.list_calendar_reminder_events_for_user(
+        db,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.SelfEmployedCalendarReminderListResponse(
+        total=total,
+        items=[_to_calendar_reminder_event(item) for item in rows],
     )
 
 

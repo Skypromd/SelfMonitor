@@ -238,6 +238,43 @@ type SelfEmployedReminderSmokeCheckResponse = {
   results: SelfEmployedReminderSmokeCheckChannelResult[];
 };
 
+type SelfEmployedCalendarEventStatus = 'scheduled' | 'completed' | 'cancelled';
+
+type SelfEmployedCalendarEvent = {
+  category: string;
+  created_at: string;
+  description?: string | null;
+  ends_at?: string | null;
+  id: string;
+  notify_before_minutes: number;
+  notify_email: boolean;
+  notify_in_app: boolean;
+  notify_sms: boolean;
+  recipient_email?: string | null;
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
+  reminder_last_sent_at?: string | null;
+  starts_at: string;
+  status: SelfEmployedCalendarEventStatus;
+  title: string;
+  updated_at: string;
+};
+
+type SelfEmployedCalendarEventListResponse = {
+  items: SelfEmployedCalendarEvent[];
+  total: number;
+};
+
+type SelfEmployedCalendarReminderRunResponse = {
+  note: string;
+  reminders: Array<{
+    channel: 'email' | 'sms' | 'in_app';
+    message: string;
+    status: 'queued' | 'sent' | 'failed';
+  }>;
+  reminders_sent_count: number;
+};
+
 type NPSMonthlyTrendPoint = {
   detractors_count: number;
   month: string;
@@ -1315,6 +1352,385 @@ function SelfEmployedInvoicingPanel({ token }: { token: string }) {
   );
 }
 
+function toLocalDateTimeInputValue(value: Date): string {
+  const pad = (item: number) => String(item).padStart(2, '0');
+  return (
+    `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}` +
+    `T${pad(value.getHours())}:${pad(value.getMinutes())}`
+  );
+}
+
+function ClientCalendarPanel({ token }: { token: string }) {
+  const [events, setEvents] = useState<SelfEmployedCalendarEvent[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | SelfEmployedCalendarEventStatus>('scheduled');
+  const [title, setTitle] = useState('');
+  const [startsAt, setStartsAt] = useState(() => toLocalDateTimeInputValue(new Date(Date.now() + 2 * 60 * 60 * 1000)));
+  const [endsAt, setEndsAt] = useState(() => toLocalDateTimeInputValue(new Date(Date.now() + 3 * 60 * 60 * 1000)));
+  const [category, setCategory] = useState('client_follow_up');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
+  const [notifyInApp, setNotifyInApp] = useState(true);
+  const [notifyEmail, setNotifyEmail] = useState(false);
+  const [notifySms, setNotifySms] = useState(false);
+  const [notifyBeforeMinutes, setNotifyBeforeMinutes] = useState(1440);
+  const [actionState, setActionState] = useState<{ error?: string; isLoading: boolean; message?: string }>({
+    isLoading: false,
+  });
+  const [updatingEventId, setUpdatingEventId] = useState<string | null>(null);
+
+  const loadEvents = useCallback(async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const query = new URLSearchParams({ limit: '30', offset: '0' });
+      if (statusFilter !== 'all') {
+        query.set('status', statusFilter);
+      }
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/calendar/events?${query.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json()) as SelfEmployedCalendarEventListResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to load calendar events');
+      }
+      setEvents((payload as SelfEmployedCalendarEventListResponse).items || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load calendar events');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [statusFilter, token]);
+
+  useEffect(() => {
+    void loadEvents();
+  }, [loadEvents]);
+
+  const createEvent = async (event: FormEvent) => {
+    event.preventDefault();
+    setActionState({ isLoading: true });
+    try {
+      const startsAtIso = new Date(startsAt).toISOString();
+      const endsAtIso = endsAt ? new Date(endsAt).toISOString() : undefined;
+      if (!title.trim()) {
+        throw new Error('Event title is required.');
+      }
+      if (!notifyInApp && !notifyEmail && !notifySms) {
+        throw new Error('Enable at least one notification channel.');
+      }
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/calendar/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          title: title.trim(),
+          starts_at: startsAtIso,
+          ends_at: endsAtIso || undefined,
+          category: category.trim() || 'general',
+          recipient_name: recipientName.trim() || undefined,
+          recipient_email: recipientEmail.trim() || undefined,
+          recipient_phone: recipientPhone.trim() || undefined,
+          notify_in_app: notifyInApp,
+          notify_email: notifyEmail,
+          notify_sms: notifySms,
+          notify_before_minutes: notifyBeforeMinutes,
+        }),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to create calendar event');
+      }
+      setActionState({ isLoading: false, message: 'Calendar event created.' });
+      setTitle('');
+      setRecipientName('');
+      setRecipientEmail('');
+      setRecipientPhone('');
+      setNotifyEmail(false);
+      setNotifySms(false);
+      setNotifyInApp(true);
+      setNotifyBeforeMinutes(1440);
+      void loadEvents();
+    } catch (err) {
+      setActionState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Calendar event creation failed',
+      });
+    }
+  };
+
+  const runCalendarReminders = async () => {
+    setActionState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/calendar/reminders/run?horizon_hours=48`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json()) as SelfEmployedCalendarReminderRunResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error((payload as { detail?: string }).detail || 'Failed to run calendar reminders');
+      }
+      const reminderPayload = payload as SelfEmployedCalendarReminderRunResponse;
+      setActionState({
+        isLoading: false,
+        message: `Calendar reminders generated: ${reminderPayload.reminders_sent_count}`,
+      });
+      void loadEvents();
+    } catch (err) {
+      setActionState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Calendar reminder run failed',
+      });
+    }
+  };
+
+  const updateEventStatus = async (eventId: string, status: SelfEmployedCalendarEventStatus) => {
+    setUpdatingEventId(eventId);
+    setActionState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/calendar/events/${eventId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status }),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to update calendar event');
+      }
+      setActionState({ isLoading: false, message: 'Calendar event updated.' });
+      void loadEvents();
+    } catch (err) {
+      setActionState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to update calendar event',
+      });
+    } finally {
+      setUpdatingEventId(null);
+    }
+  };
+
+  const deleteEvent = async (eventId: string) => {
+    setUpdatingEventId(eventId);
+    setActionState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/calendar/events/${eventId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const payload = (await response.json()) as { detail?: string };
+        throw new Error(payload.detail || 'Failed to delete calendar event');
+      }
+      setActionState({ isLoading: false, message: 'Calendar event deleted.' });
+      void loadEvents();
+    } catch (err) {
+      setActionState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to delete calendar event',
+      });
+    } finally {
+      setUpdatingEventId(null);
+    }
+  };
+
+  return (
+    <section className={styles.subContainer}>
+      <h2>Client Calendar & Notifications</h2>
+      <p>Plan client touchpoints and trigger reminders in-app, by email, or by SMS.</p>
+      <div className={styles.npsScoreRow}>
+        <select
+          className={styles.input}
+          onChange={(event) => setStatusFilter(event.target.value as 'all' | SelfEmployedCalendarEventStatus)}
+          value={statusFilter}
+        >
+          <option value="scheduled">Scheduled only</option>
+          <option value="completed">Completed only</option>
+          <option value="cancelled">Cancelled only</option>
+          <option value="all">All statuses</option>
+        </select>
+        <button className={styles.tableActionButton} onClick={loadEvents} type="button">
+          Refresh calendar
+        </button>
+        <button className={styles.tableActionButton} disabled={actionState.isLoading} onClick={runCalendarReminders} type="button">
+          {actionState.isLoading ? 'Running reminders...' : 'Run reminders now'}
+        </button>
+      </div>
+      <form onSubmit={createEvent}>
+        <div className={styles.dateInputs}>
+          <input
+            className={styles.input}
+            onChange={(event) => setTitle(event.target.value)}
+            placeholder="Event title"
+            required
+            type="text"
+            value={title}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setStartsAt(event.target.value)}
+            required
+            type="datetime-local"
+            value={startsAt}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setEndsAt(event.target.value)}
+            type="datetime-local"
+            value={endsAt}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setCategory(event.target.value)}
+            placeholder="Category"
+            type="text"
+            value={category}
+          />
+        </div>
+        <div className={styles.dateInputs}>
+          <input
+            className={styles.input}
+            onChange={(event) => setRecipientName(event.target.value)}
+            placeholder="Client name (optional)"
+            type="text"
+            value={recipientName}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setRecipientEmail(event.target.value)}
+            placeholder="Client email (optional)"
+            type="email"
+            value={recipientEmail}
+          />
+          <input
+            className={styles.input}
+            onChange={(event) => setRecipientPhone(event.target.value)}
+            placeholder="Client phone (optional)"
+            type="tel"
+            value={recipientPhone}
+          />
+          <input
+            className={styles.input}
+            min={0}
+            onChange={(event) => setNotifyBeforeMinutes(Number(event.target.value))}
+            step={15}
+            type="number"
+            value={notifyBeforeMinutes}
+          />
+        </div>
+        <div className={styles.npsScoreRow}>
+          <label style={{ alignItems: 'center', display: 'flex', gap: '6px' }}>
+            <input checked={notifyInApp} onChange={(event) => setNotifyInApp(event.target.checked)} type="checkbox" />
+            In-app
+          </label>
+          <label style={{ alignItems: 'center', display: 'flex', gap: '6px' }}>
+            <input checked={notifyEmail} onChange={(event) => setNotifyEmail(event.target.checked)} type="checkbox" />
+            Email
+          </label>
+          <label style={{ alignItems: 'center', display: 'flex', gap: '6px' }}>
+            <input checked={notifySms} onChange={(event) => setNotifySms(event.target.checked)} type="checkbox" />
+            SMS
+          </label>
+          <button className={styles.button} disabled={actionState.isLoading} type="submit">
+            {actionState.isLoading ? 'Saving...' : 'Create calendar event'}
+          </button>
+        </div>
+      </form>
+      {actionState.message && <p className={styles.message}>{actionState.message}</p>}
+      {actionState.error && <p className={styles.error}>{actionState.error}</p>}
+      {error && <p className={styles.error}>{error}</p>}
+      {isLoading ? (
+        <p>Loading calendar...</p>
+      ) : events.length === 0 ? (
+        <p className={styles.emptyState}>No calendar events for selected filter.</p>
+      ) : (
+        <table className={styles.table}>
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Starts</th>
+              <th>Status</th>
+              <th>Channels</th>
+              <th>Last reminder</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {events.map((calendarEvent) => (
+              <tr key={calendarEvent.id}>
+                <td>
+                  <strong>{calendarEvent.title}</strong>
+                  <br />
+                  <span>{calendarEvent.category}</span>
+                </td>
+                <td>{new Date(calendarEvent.starts_at).toLocaleString()}</td>
+                <td>{calendarEvent.status}</td>
+                <td>
+                  {[
+                    calendarEvent.notify_in_app ? 'in-app' : null,
+                    calendarEvent.notify_email ? 'email' : null,
+                    calendarEvent.notify_sms ? 'sms' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(', ')}
+                </td>
+                <td>{calendarEvent.reminder_last_sent_at ? new Date(calendarEvent.reminder_last_sent_at).toLocaleString() : '—'}</td>
+                <td>
+                  <div className={styles.npsScoreRow}>
+                    {calendarEvent.status !== 'completed' && (
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={updatingEventId === calendarEvent.id}
+                        onClick={() => updateEventStatus(calendarEvent.id, 'completed')}
+                        type="button"
+                      >
+                        Complete
+                      </button>
+                    )}
+                    {calendarEvent.status !== 'cancelled' && (
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={updatingEventId === calendarEvent.id}
+                        onClick={() => updateEventStatus(calendarEvent.id, 'cancelled')}
+                        type="button"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                    {calendarEvent.status !== 'scheduled' && (
+                      <button
+                        className={styles.tableActionButton}
+                        disabled={updatingEventId === calendarEvent.id}
+                        onClick={() => updateEventStatus(calendarEvent.id, 'scheduled')}
+                        type="button"
+                      >
+                        Re-open
+                      </button>
+                    )}
+                    <button
+                      className={styles.tableActionButton}
+                      disabled={updatingEventId === calendarEvent.id}
+                      onClick={() => deleteEvent(calendarEvent.id)}
+                      type="button"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
 function PMFSignalsPanel({ token }: { token: string }) {
   const [seedSnapshot, setSeedSnapshot] = useState<SeedReadinessResponse | null>(null);
   const [pmfEvidence, setPmfEvidence] = useState<PMFEvidenceResponse | null>(null);
@@ -2052,6 +2468,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <AICopilotPanel token={token} />
       <PMFSignalsPanel token={token} />
       <SelfEmployedInvoicingPanel token={token} />
+      <ClientCalendarPanel token={token} />
       <ActionCenter token={token} />
       <CashFlowPreview token={token} />
       <TaxCalculator token={token} />

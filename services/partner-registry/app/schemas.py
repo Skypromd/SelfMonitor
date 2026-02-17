@@ -3,7 +3,7 @@ import uuid
 from enum import Enum
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 class LeadStatus(str, Enum):
@@ -32,6 +32,12 @@ class SelfEmployedRecurringCadence(str, Enum):
     weekly = "weekly"
     monthly = "monthly"
     quarterly = "quarterly"
+
+
+class SelfEmployedCalendarEventStatus(str, Enum):
+    scheduled = "scheduled"
+    completed = "completed"
+    cancelled = "cancelled"
 
 
 class Partner(BaseModel):
@@ -567,4 +573,96 @@ class SelfEmployedReminderSmokeCheckResponse(BaseModel):
     perform_network_check: bool
     results: List[SelfEmployedReminderSmokeCheckChannelResult]
     passed: bool
+
+
+class SelfEmployedCalendarEventCreateRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=180)
+    starts_at: datetime.datetime
+    ends_at: Optional[datetime.datetime] = None
+    description: Optional[str] = Field(default=None, max_length=1000)
+    category: Optional[str] = Field(default="general", max_length=64)
+    recipient_name: Optional[str] = Field(default=None, max_length=180)
+    recipient_email: Optional[str] = Field(default=None, max_length=255)
+    recipient_phone: Optional[str] = Field(default=None, max_length=32)
+    notify_in_app: bool = True
+    notify_email: bool = False
+    notify_sms: bool = False
+    notify_before_minutes: int = Field(default=1440, ge=0, le=10080)
+
+    @model_validator(mode="after")
+    def validate_time_window(self) -> "SelfEmployedCalendarEventCreateRequest":
+        if self.ends_at and self.ends_at < self.starts_at:
+            raise ValueError("ends_at cannot be earlier than starts_at")
+        return self
+
+
+class SelfEmployedCalendarEventUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=2, max_length=180)
+    starts_at: Optional[datetime.datetime] = None
+    ends_at: Optional[datetime.datetime] = None
+    description: Optional[str] = Field(default=None, max_length=1000)
+    category: Optional[str] = Field(default=None, max_length=64)
+    recipient_name: Optional[str] = Field(default=None, max_length=180)
+    recipient_email: Optional[str] = Field(default=None, max_length=255)
+    recipient_phone: Optional[str] = Field(default=None, max_length=32)
+    notify_in_app: Optional[bool] = None
+    notify_email: Optional[bool] = None
+    notify_sms: Optional[bool] = None
+    notify_before_minutes: Optional[int] = Field(default=None, ge=0, le=10080)
+    status: Optional[SelfEmployedCalendarEventStatus] = None
+
+    @model_validator(mode="after")
+    def validate_time_window(self) -> "SelfEmployedCalendarEventUpdateRequest":
+        if self.starts_at and self.ends_at and self.ends_at < self.starts_at:
+            raise ValueError("ends_at cannot be earlier than starts_at")
+        return self
+
+
+class SelfEmployedCalendarEvent(BaseModel):
+    id: uuid.UUID
+    title: str
+    starts_at: datetime.datetime
+    ends_at: Optional[datetime.datetime] = None
+    description: Optional[str] = None
+    category: str
+    recipient_name: Optional[str] = None
+    recipient_email: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    notify_in_app: bool
+    notify_email: bool
+    notify_sms: bool
+    notify_before_minutes: int
+    reminder_last_sent_at: Optional[datetime.datetime] = None
+    status: SelfEmployedCalendarEventStatus
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SelfEmployedCalendarEventListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedCalendarEvent]
+
+
+class SelfEmployedCalendarReminderEvent(BaseModel):
+    id: uuid.UUID
+    event_id: uuid.UUID
+    reminder_type: Literal["upcoming", "overdue"]
+    channel: Literal["email", "sms", "in_app"]
+    status: Literal["queued", "sent", "failed"]
+    message: str
+    created_at: datetime.datetime
+    sent_at: Optional[datetime.datetime] = None
+
+
+class SelfEmployedCalendarReminderRunResponse(BaseModel):
+    reminders_sent_count: int
+    reminders: List[SelfEmployedCalendarReminderEvent]
+    note: str
+
+
+class SelfEmployedCalendarReminderListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedCalendarReminderEvent]
 

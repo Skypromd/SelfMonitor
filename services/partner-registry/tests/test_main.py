@@ -1394,3 +1394,113 @@ def test_self_employed_reminder_smoke_check_without_network_check(mocker):
     assert payload["results"][0]["delivery_status"] == "skipped"
     assert mock_dispatch.await_count == 0
 
+
+def test_self_employed_calendar_event_crud_flow(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    owner_headers = get_auth_headers("freelancer-calendar@example.com")
+    other_headers = get_auth_headers("freelancer-calendar-other@example.com")
+    now = datetime.datetime.now(datetime.UTC)
+
+    create_response = client.post(
+        "/self-employed/calendar/events",
+        headers=owner_headers,
+        json={
+            "title": "Client follow-up call",
+            "description": "Discuss Q2 package renewal",
+            "starts_at": (now + datetime.timedelta(hours=3)).isoformat(),
+            "ends_at": (now + datetime.timedelta(hours=4)).isoformat(),
+            "category": "client_success",
+            "recipient_name": "Alice",
+            "notify_in_app": True,
+            "notify_email": False,
+            "notify_sms": False,
+            "notify_before_minutes": 120,
+        },
+    )
+    assert create_response.status_code == 201
+    created = create_response.json()
+    event_id = created["id"]
+    assert created["title"] == "Client follow-up call"
+    assert created["status"] == "scheduled"
+
+    list_response = client.get("/self-employed/calendar/events?limit=20&offset=0", headers=owner_headers)
+    assert list_response.status_code == 200
+    payload = list_response.json()
+    assert payload["total"] == 1
+    assert payload["items"][0]["id"] == event_id
+
+    foreign_update = client.patch(
+        f"/self-employed/calendar/events/{event_id}",
+        headers=other_headers,
+        json={"title": "Intrusion attempt"},
+    )
+    assert foreign_update.status_code == 404
+
+    update_response = client.patch(
+        f"/self-employed/calendar/events/{event_id}",
+        headers=owner_headers,
+        json={"title": "Client follow-up call (done)", "status": "completed"},
+    )
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["title"] == "Client follow-up call (done)"
+    assert updated["status"] == "completed"
+
+    delete_response = client.delete(f"/self-employed/calendar/events/{event_id}", headers=owner_headers)
+    assert delete_response.status_code == 204
+
+    post_delete_list = client.get("/self-employed/calendar/events?limit=20&offset=0", headers=owner_headers)
+    assert post_delete_list.status_code == 200
+    assert post_delete_list.json()["total"] == 0
+
+
+def test_self_employed_calendar_reminders_run_dispatches_channels(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_ENABLED", True)
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER", "webhook")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_PROVIDER", "webhook")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL", "http://dispatch.local/calendar-email")
+    mocker.patch("app.main.SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL", "http://dispatch.local/calendar-sms")
+    mock_response = mocker.Mock()
+    mock_response.status_code = 200
+    mock_dispatch = mocker.patch("app.main._post_with_delivery_retry", new_callable=mocker.AsyncMock, return_value=mock_response)
+
+    owner_headers = get_auth_headers("freelancer-calendar-reminders@example.com")
+    now = datetime.datetime.now(datetime.UTC)
+    create_response = client.post(
+        "/self-employed/calendar/events",
+        headers=owner_headers,
+        json={
+            "title": "Invoice walkthrough meeting",
+            "starts_at": (now + datetime.timedelta(minutes=30)).isoformat(),
+            "category": "client_meeting",
+            "recipient_email": "client-calendar@example.com",
+            "recipient_phone": "+447700900444",
+            "notify_in_app": True,
+            "notify_email": True,
+            "notify_sms": True,
+            "notify_before_minutes": 180,
+        },
+    )
+    assert create_response.status_code == 201
+
+    run_response = client.post("/self-employed/calendar/reminders/run?horizon_hours=6", headers=owner_headers)
+    assert run_response.status_code == 200
+    run_payload = run_response.json()
+    assert run_payload["reminders_sent_count"] == 3
+    channels = {item["channel"] for item in run_payload["reminders"]}
+    assert channels == {"in_app", "email", "sms"}
+    assert mock_dispatch.await_count == 2
+    called_urls = {call.args[0] for call in mock_dispatch.await_args_list}
+    assert "http://dispatch.local/calendar-email" in called_urls
+    assert "http://dispatch.local/calendar-sms" in called_urls
+
+    second_run = client.post("/self-employed/calendar/reminders/run?horizon_hours=6", headers=owner_headers)
+    assert second_run.status_code == 200
+    assert second_run.json()["reminders_sent_count"] == 0
+
+    list_response = client.get("/self-employed/calendar/reminders?limit=20&offset=0", headers=owner_headers)
+    assert list_response.status_code == 200
+    assert list_response.json()["total"] >= 3
+

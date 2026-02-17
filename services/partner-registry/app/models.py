@@ -262,6 +262,92 @@ class SelfEmployedInvoiceReminder(Base):
     sent_at = Column(DateTime(timezone=True), nullable=True)
 
 
+class SelfEmployedCalendarEvent(Base):
+    __tablename__ = "self_employed_calendar_events"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('scheduled', 'completed', 'cancelled')",
+            name="ck_self_employed_calendar_events_status",
+        ),
+        CheckConstraint(
+            "notify_before_minutes >= 0 AND notify_before_minutes <= 10080",
+            name="ck_self_employed_calendar_events_notify_before_minutes",
+        ),
+        CheckConstraint("notify_in_app IN (0, 1)", name="ck_self_employed_calendar_events_notify_in_app"),
+        CheckConstraint("notify_email IN (0, 1)", name="ck_self_employed_calendar_events_notify_email"),
+        CheckConstraint("notify_sms IN (0, 1)", name="ck_self_employed_calendar_events_notify_sms"),
+        Index("ix_self_employed_calendar_events_user_starts_at", "user_id", "starts_at"),
+        Index("ix_self_employed_calendar_events_status", "status"),
+        Index("ix_self_employed_calendar_events_reminder_last_sent_at", "reminder_last_sent_at"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, nullable=False, index=True)
+    title = Column(String(length=180), nullable=False)
+    description = Column(String(length=1000), nullable=True)
+    starts_at = Column(DateTime(timezone=True), nullable=False, index=True)
+    ends_at = Column(DateTime(timezone=True), nullable=True)
+    category = Column(String(length=64), nullable=False, default="general")
+    recipient_name = Column(String(length=180), nullable=True)
+    recipient_email = Column(String(length=255), nullable=True)
+    recipient_phone = Column(String(length=32), nullable=True)
+    notify_in_app = Column(Integer, nullable=False, default=1)
+    notify_email = Column(Integer, nullable=False, default=0)
+    notify_sms = Column(Integer, nullable=False, default=0)
+    notify_before_minutes = Column(Integer, nullable=False, default=1440)
+    reminder_last_sent_at = Column(DateTime(timezone=True), nullable=True)
+    status = Column(String(length=16), nullable=False, default="scheduled")
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+        onupdate=lambda: datetime.datetime.now(datetime.UTC),
+    )
+
+
+class SelfEmployedCalendarReminder(Base):
+    __tablename__ = "self_employed_calendar_reminders"
+    __table_args__ = (
+        CheckConstraint(
+            "reminder_type IN ('upcoming', 'overdue')",
+            name="ck_self_employed_calendar_reminders_type",
+        ),
+        CheckConstraint(
+            "channel IN ('email', 'sms', 'in_app')",
+            name="ck_self_employed_calendar_reminders_channel",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'sent', 'failed')",
+            name="ck_self_employed_calendar_reminders_status",
+        ),
+        Index("ix_self_employed_calendar_reminders_event_id", "event_id"),
+        Index("ix_self_employed_calendar_reminders_user_id_created_at", "user_id", "created_at"),
+    )
+
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    event_id = Column(
+        String,
+        ForeignKey("self_employed_calendar_events.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id = Column(String, nullable=False, index=True)
+    reminder_type = Column(String(length=16), nullable=False)
+    channel = Column(String(length=16), nullable=False, default="in_app")
+    status = Column(String(length=16), nullable=False, default="sent")
+    message = Column(String(length=500), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.datetime.now(datetime.UTC),
+    )
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class NPSResponse(Base):
     __tablename__ = "nps_responses"
     __table_args__ = (
