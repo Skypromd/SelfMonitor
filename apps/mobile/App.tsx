@@ -963,7 +963,11 @@ export default function App(): React.JSX.Element {
               source: "mobile-calendar-local-reminder",
             },
           },
-          trigger: { seconds: triggerSeconds },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+            seconds: triggerSeconds,
+            repeats: false,
+          },
         });
         reminderIndex[event.id] = {
           notification_id: notificationId,
