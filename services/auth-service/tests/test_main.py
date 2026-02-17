@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+from unittest.mock import patch
 
 import pyotp
 from fastapi.testclient import TestClient
@@ -35,6 +36,8 @@ def setup_function() -> None:
     main.revoked_refresh_tokens.clear()
     main.security_events_by_user.clear()
     main.login_attempts_by_ip.clear()
+    main.security_alert_cooldowns_by_user.clear()
+    main.security_alert_dispatch_log.clear()
 
     main.MAX_FAILED_LOGIN_ATTEMPTS = 5
     main.ACCOUNT_LOCKOUT_MINUTES = 15
@@ -44,6 +47,14 @@ def setup_function() -> None:
     main.PASSWORD_MIN_LENGTH = 12
     main.STEP_UP_MAX_AGE_MINUTES = 10
     main.REQUIRE_ADMIN_2FA = False
+    main.AUTH_SECURITY_ALERTS_ENABLED = False
+    main.AUTH_SECURITY_ALERT_EMAIL_ENABLED = False
+    main.AUTH_SECURITY_ALERT_PUSH_ENABLED = False
+    main.AUTH_SECURITY_ALERT_EMAIL_PROVIDER = "webhook"
+    main.AUTH_SECURITY_ALERT_PUSH_PROVIDER = "webhook"
+    main.AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL = ""
+    main.AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL = ""
+    main.AUTH_SECURITY_ALERT_COOLDOWN_MINUTES = 30
 
     main.fake_users_db["admin@example.com"] = main._build_user_record(
         email="admin@example.com",
@@ -119,6 +130,36 @@ def test_login_lockout_after_repeated_failures() -> None:
 
     locked_response = client.post("/token", data={"username": email, "password": password})
     assert locked_response.status_code == 423
+
+
+def test_risk_alerts_dispatch_on_failed_login_spike() -> None:
+    email = "alerts-spike@example.com"
+    password = "averysecurepassword123!"
+    _register(email, password)
+    main.MAX_FAILED_LOGIN_ATTEMPTS = 4
+    main.AUTH_SECURITY_ALERTS_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_ENABLED = True
+    main.AUTH_SECURITY_ALERT_PUSH_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL = "https://alerts.local/email"
+    main.AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL = "https://alerts.local/push"
+
+    captured_calls: list[tuple[str, dict]] = []
+
+    def _capture_dispatch(url: str, payload: dict) -> tuple[str, str]:
+        captured_calls.append((url, payload))
+        return "sent", "ok"
+
+    with patch.object(main, "_post_json_with_retry", side_effect=_capture_dispatch):
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+
+    assert len(captured_calls) == 2
+    assert {item[0] for item in captured_calls} == {
+        "https://alerts.local/email",
+        "https://alerts.local/push",
+    }
+    assert len(main.security_alert_dispatch_log[email]) >= 1
 
 
 def test_refresh_token_rotation_rejects_reuse() -> None:
@@ -282,6 +323,40 @@ def test_emergency_security_lockdown_revokes_sessions_and_blocks_login() -> None
 
     blocked_login = client.post("/token", data={"username": email, "password": password})
     assert blocked_login.status_code == 423
+
+
+def test_risk_alerts_dispatch_on_emergency_lockdown() -> None:
+    email = "alerts-lockdown@example.com"
+    password = "fortresssecurepassword123!"
+    _register(email, password)
+    login_payload = _login(email, password)
+    main.AUTH_SECURITY_ALERTS_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_ENABLED = True
+    main.AUTH_SECURITY_ALERT_PUSH_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL = "https://alerts.local/email"
+    main.AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL = "https://alerts.local/push"
+
+    captured_calls: list[tuple[str, dict]] = []
+
+    def _capture_dispatch(url: str, payload: dict) -> tuple[str, str]:
+        captured_calls.append((url, payload))
+        return "sent", "ok"
+
+    with patch.object(main, "_post_json_with_retry", side_effect=_capture_dispatch):
+        lockdown_response = client.post(
+            "/security/lockdown",
+            headers={"Authorization": f"Bearer {login_payload['access_token']}"},
+            json={"lock_minutes": 30},
+        )
+        assert lockdown_response.status_code == 200
+
+    assert len(captured_calls) == 2
+    events = list(main.security_events_by_user[email])
+    lockdown_events = [event for event in events if event.event_type == "auth.account_lockdown_activated"]
+    assert lockdown_events
+    delivery = lockdown_events[-1].details.get("risk_alert_delivery")
+    assert isinstance(delivery, dict)
+    assert delivery.get("status") == "dispatched"
 
 
 def test_step_up_required_for_sensitive_action_with_stale_token() -> None:

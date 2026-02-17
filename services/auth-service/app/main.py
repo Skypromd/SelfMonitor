@@ -7,8 +7,10 @@ import hmac
 import io
 import os
 import secrets
+import time
 import uuid
 
+import httpx
 from fastapi import FastAPI, Depends, HTTPException, status, Response, Query, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
@@ -41,6 +43,17 @@ def _parse_bool_env(name: str, default: bool) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _parse_non_negative_float_env(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        parsed = float(raw_value)
+    except ValueError:
+        return default
+    return parsed if parsed >= 0 else default
+
+
 SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = _parse_positive_int_env("AUTH_ACCESS_TOKEN_EXPIRE_MINUTES", 30)
@@ -67,6 +80,31 @@ AUTH_EMERGENCY_LOCKDOWN_DEFAULT_MINUTES = _parse_positive_int_env(
 AUTH_EMERGENCY_LOCKDOWN_MAX_MINUTES = _parse_positive_int_env(
     "AUTH_EMERGENCY_LOCKDOWN_MAX_MINUTES",
     1440,
+)
+AUTH_SECURITY_ALERTS_ENABLED = _parse_bool_env("AUTH_SECURITY_ALERTS_ENABLED", False)
+AUTH_SECURITY_ALERT_EMAIL_ENABLED = _parse_bool_env("AUTH_SECURITY_ALERT_EMAIL_ENABLED", False)
+AUTH_SECURITY_ALERT_PUSH_ENABLED = _parse_bool_env("AUTH_SECURITY_ALERT_PUSH_ENABLED", False)
+AUTH_SECURITY_ALERT_EMAIL_PROVIDER = os.getenv("AUTH_SECURITY_ALERT_EMAIL_PROVIDER", "webhook").strip().lower()
+AUTH_SECURITY_ALERT_PUSH_PROVIDER = os.getenv("AUTH_SECURITY_ALERT_PUSH_PROVIDER", "webhook").strip().lower()
+AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL = os.getenv("AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL", "").strip()
+AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL = os.getenv("AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL", "").strip()
+AUTH_SECURITY_ALERT_EMAIL_FROM = os.getenv("AUTH_SECURITY_ALERT_EMAIL_FROM", "security@selfmonitor.app").strip()
+AUTH_SECURITY_ALERT_PUSH_TITLE_PREFIX = os.getenv(
+    "AUTH_SECURITY_ALERT_PUSH_TITLE_PREFIX",
+    "SelfMonitor Security",
+).strip()
+AUTH_SECURITY_ALERT_COOLDOWN_MINUTES = _parse_positive_int_env("AUTH_SECURITY_ALERT_COOLDOWN_MINUTES", 30)
+AUTH_SECURITY_ALERT_DELIVERY_RETRY_ATTEMPTS = _parse_positive_int_env(
+    "AUTH_SECURITY_ALERT_DELIVERY_RETRY_ATTEMPTS",
+    2,
+)
+AUTH_SECURITY_ALERT_DELIVERY_RETRY_BASE_DELAY_SECONDS = max(
+    _parse_non_negative_float_env("AUTH_SECURITY_ALERT_DELIVERY_RETRY_BASE_DELAY_SECONDS", 0.3),
+    0.05,
+)
+AUTH_SECURITY_ALERT_DISPATCH_TIMEOUT_SECONDS = max(
+    _parse_non_negative_float_env("AUTH_SECURITY_ALERT_DISPATCH_TIMEOUT_SECONDS", 5.0),
+    0.1,
 )
 
 app = FastAPI(
@@ -304,6 +342,8 @@ refresh_tokens_by_user: Dict[str, set[str]] = defaultdict(set)
 revoked_refresh_tokens: set[str] = set()
 security_events_by_user: Dict[str, deque[SecurityEvent]] = defaultdict(lambda: deque(maxlen=200))
 login_attempts_by_ip: Dict[str, deque[datetime.datetime]] = defaultdict(deque)
+security_alert_cooldowns_by_user: Dict[str, Dict[str, datetime.datetime]] = defaultdict(dict)
+security_alert_dispatch_log: Dict[str, deque[Dict[str, Any]]] = defaultdict(lambda: deque(maxlen=100))
 
 
 def get_user_record(email: str) -> Optional[Dict[str, Any]]:
@@ -315,6 +355,211 @@ def get_user(email: str) -> Optional[User]:
     if not user_record:
         return None
     return User(**user_record["user_data"])
+
+
+def _truncate_text(value: str, limit: int = 280) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: max(limit - 3, 0)]}..."
+
+
+def _build_security_alert_signal(email: str, event: SecurityEvent) -> Optional[Dict[str, str]]:
+    event_type = event.event_type
+    if event_type == "auth.account_lockdown_activated":
+        return {
+            "key": "account_lockdown_activated",
+            "severity": "critical",
+            "title": "Emergency lockdown activated",
+            "message": "Emergency lock mode was activated for your account. Review account activity immediately.",
+        }
+    if event_type == "auth.login_blocked_locked":
+        return {
+            "key": "login_blocked_locked",
+            "severity": "critical",
+            "title": "Login blocked due to lockout",
+            "message": "A login attempt was blocked because your account is currently locked.",
+        }
+    if event_type == "auth.login_failed":
+        raw_attempts = event.details.get("failed_attempts", 0)
+        try:
+            failed_attempts = int(raw_attempts)
+        except (TypeError, ValueError):
+            failed_attempts = 0
+        if failed_attempts >= MAX_FAILED_LOGIN_ATTEMPTS:
+            return {
+                "key": "failed_login_lock_threshold",
+                "severity": "critical",
+                "title": "Failed login threshold reached",
+                "message": (
+                    f"{failed_attempts} failed logins were detected and account lockout policy has been triggered."
+                ),
+            }
+        if failed_attempts >= max(3, MAX_FAILED_LOGIN_ATTEMPTS - 1):
+            return {
+                "key": "failed_login_spike",
+                "severity": "attention",
+                "title": "Failed login spike detected",
+                "message": f"{failed_attempts} failed logins were detected in a short period.",
+            }
+        return None
+    if event_type == "auth.login_succeeded":
+        now_utc = datetime.datetime.now(datetime.UTC)
+        cutoff = now_utc - datetime.timedelta(minutes=60)
+        recent_success = [
+            item
+            for item in security_events_by_user.get(email, deque())
+            if item.event_type == "auth.login_succeeded" and item.occurred_at >= cutoff
+        ]
+        distinct_ips = {item.ip for item in recent_success if item.ip}
+        distinct_agents = {item.user_agent for item in recent_success if item.user_agent}
+        if len(distinct_ips) > 1:
+            return {
+                "key": "multiple_login_ips_60m",
+                "severity": "attention",
+                "title": "New login IP detected",
+                "message": f"{len(distinct_ips)} different IP addresses were used for logins in the last hour.",
+            }
+        if len(distinct_agents) > 1:
+            return {
+                "key": "multiple_login_devices_60m",
+                "severity": "attention",
+                "title": "New device fingerprint detected",
+                "message": (
+                    f"{len(distinct_agents)} different device fingerprints were used for logins in the last hour."
+                ),
+            }
+        return None
+    return None
+
+
+def _is_alert_in_cooldown(email: str, alert_key: str, now_utc: datetime.datetime) -> bool:
+    user_cooldowns = security_alert_cooldowns_by_user[email]
+    cutoff = now_utc - datetime.timedelta(minutes=AUTH_SECURITY_ALERT_COOLDOWN_MINUTES)
+    for key, timestamp in list(user_cooldowns.items()):
+        if timestamp < cutoff:
+            user_cooldowns.pop(key, None)
+    previous = user_cooldowns.get(alert_key)
+    if previous and previous >= cutoff:
+        return True
+    user_cooldowns[alert_key] = now_utc
+    return False
+
+
+def _post_json_with_retry(url: str, payload: Dict[str, Any]) -> tuple[str, str]:
+    attempts = max(AUTH_SECURITY_ALERT_DELIVERY_RETRY_ATTEMPTS, 1)
+    last_detail = "Dispatch failed."
+    for attempt in range(attempts):
+        try:
+            response = httpx.post(
+                url,
+                json=payload,
+                timeout=AUTH_SECURITY_ALERT_DISPATCH_TIMEOUT_SECONDS,
+            )
+            if 200 <= response.status_code < 300:
+                return "sent", f"HTTP {response.status_code}"
+            last_detail = f"HTTP {response.status_code}"
+        except Exception as exc:  # pragma: no cover - network error branch
+            last_detail = _truncate_text(str(exc))
+        if attempt < attempts - 1:
+            backoff_seconds = AUTH_SECURITY_ALERT_DELIVERY_RETRY_BASE_DELAY_SECONDS * (2 ** attempt)
+            time.sleep(backoff_seconds)
+    return "failed", last_detail
+
+
+def _dispatch_security_alert_email(
+    *,
+    email: str,
+    event: SecurityEvent,
+    signal: Dict[str, str],
+) -> Dict[str, str]:
+    if not AUTH_SECURITY_ALERT_EMAIL_ENABLED:
+        return {"status": "skipped", "detail": "Email alerts disabled."}
+    if AUTH_SECURITY_ALERT_EMAIL_PROVIDER != "webhook":
+        return {"status": "failed", "detail": "Unsupported email alert provider."}
+    if not AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL:
+        return {"status": "failed", "detail": "Email alert dispatch URL not configured."}
+    subject = f"[{signal['severity'].upper()}] {signal['title']}"
+    payload = {
+        "to": email,
+        "from": AUTH_SECURITY_ALERT_EMAIL_FROM,
+        "subject": subject,
+        "message": signal["message"],
+        "event": {
+            "event_id": str(event.event_id),
+            "event_type": event.event_type,
+            "occurred_at": event.occurred_at.isoformat(),
+            "ip": event.ip,
+            "user_agent": event.user_agent,
+        },
+        "severity": signal["severity"],
+    }
+    status_text, detail = _post_json_with_retry(AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL, payload)
+    return {"status": status_text, "detail": detail}
+
+
+def _dispatch_security_alert_push(
+    *,
+    email: str,
+    event: SecurityEvent,
+    signal: Dict[str, str],
+) -> Dict[str, str]:
+    if not AUTH_SECURITY_ALERT_PUSH_ENABLED:
+        return {"status": "skipped", "detail": "Push alerts disabled."}
+    if AUTH_SECURITY_ALERT_PUSH_PROVIDER != "webhook":
+        return {"status": "failed", "detail": "Unsupported push alert provider."}
+    if not AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL:
+        return {"status": "failed", "detail": "Push alert dispatch URL not configured."}
+    title_prefix = AUTH_SECURITY_ALERT_PUSH_TITLE_PREFIX or "SelfMonitor Security"
+    payload = {
+        "recipient_email": email,
+        "title": f"{title_prefix}: {signal['title']}",
+        "body": signal["message"],
+        "severity": signal["severity"],
+        "route": "/security",
+        "data": {
+            "event_id": str(event.event_id),
+            "event_type": event.event_type,
+            "occurred_at": event.occurred_at.isoformat(),
+        },
+    }
+    status_text, detail = _post_json_with_retry(AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL, payload)
+    return {"status": status_text, "detail": detail}
+
+
+def _dispatch_security_alerts_for_event(email: str, event: SecurityEvent) -> Optional[Dict[str, Any]]:
+    if not AUTH_SECURITY_ALERTS_ENABLED:
+        return None
+    signal = _build_security_alert_signal(email, event)
+    if not signal:
+        return None
+    now_utc = datetime.datetime.now(datetime.UTC)
+    alert_key = signal["key"]
+    if _is_alert_in_cooldown(email, alert_key, now_utc):
+        delivery = {
+            "alert_key": alert_key,
+            "severity": signal["severity"],
+            "status": "throttled",
+            "reason": "Cooldown is active for this risk signal.",
+            "occurred_at": now_utc.isoformat(),
+        }
+        security_alert_dispatch_log[email].append(delivery)
+        return delivery
+
+    email_delivery = _dispatch_security_alert_email(email=email, event=event, signal=signal)
+    push_delivery = _dispatch_security_alert_push(email=email, event=event, signal=signal)
+    delivery = {
+        "alert_key": alert_key,
+        "severity": signal["severity"],
+        "title": signal["title"],
+        "status": "dispatched",
+        "channels": {
+            "email": email_delivery,
+            "push": push_delivery,
+        },
+        "occurred_at": now_utc.isoformat(),
+    }
+    security_alert_dispatch_log[email].append(delivery)
+    return delivery
 
 
 def _append_security_event(
@@ -335,6 +580,12 @@ def _append_security_event(
         details=details or {},
     )
     security_events_by_user[normalized_email].append(event)
+    try:
+        alert_delivery = _dispatch_security_alerts_for_event(normalized_email, event)
+        if alert_delivery:
+            event.details["risk_alert_delivery"] = alert_delivery
+    except Exception as exc:  # pragma: no cover - defensive guard
+        event.details["risk_alert_delivery_error"] = _truncate_text(str(exc))
 
 
 def _validate_password_policy(password: str, email: str) -> None:

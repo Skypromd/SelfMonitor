@@ -84,6 +84,10 @@ Before enabling production traffic, validate these auth controls:
    - sensitive actions reject stale access tokens (step-up required).
 5. Audit visibility:
    - `GET /auth/security/events` returns recent auth events for test user.
+6. Risk alert delivery:
+   - `AUTH_SECURITY_ALERTS_ENABLED=true` in production.
+   - at least one test alert is delivered over both configured channels (`email`/`push`).
+   - cooldown (`AUTH_SECURITY_ALERT_COOLDOWN_MINUTES`) is set to prevent alert floods.
 
 ## 7. Exit and handover
 
