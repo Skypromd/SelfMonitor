@@ -1,211 +1,658 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: Auth Service
   description: Handles user authentication, registration, and token management.
   version: 1.0.0
 paths:
+  /metrics:
+    get:
+      summary: Metrics
+      description: Endpoint that serves Prometheus metrics.
+      operationId: metrics_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
   /register:
     post:
-      summary: Register a new user
-      tags:
-        - Authentication
+      summary: Register
+      operationId: register_register_post
       requestBody:
-        required: true
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              properties:
-                username:
-                  type: string
-                  format: email
-                  description: The user's email address.
-                password:
-                  type: string
-                  format: password
-                  description: The user's password.
-              required:
-                - username
-                - password
+              $ref: '#/components/schemas/Body_register_register_post'
+        required: true
       responses:
         '201':
-          description: User created successfully
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-        '400':
-          description: Invalid input
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /token:
     post:
-      summary: Get JWT token for user
-      tags:
-        - Authentication
+      summary: Login For Access Token
+      operationId: login_for_access_token_token_post
       requestBody:
-        required: true
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              properties:
-                username:
-                  type: string
-                password:
-                  type: string
-                scope:
-                  type: string
-                  description: "Optional. Used for 2FA. Format: 'totp:123456'"
-              required:
-                - username
-                - password
+              $ref: '#/components/schemas/Body_login_for_access_token_token_post'
+        required: true
       responses:
         '200':
-          description: Successful authentication
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Token'
-        '401':
-          description: Unauthorized
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /token/refresh:
+    post:
+      summary: Refresh Access Token
+      operationId: refresh_access_token_token_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /token/revoke:
+    post:
+      summary: Revoke Refresh Token
+      operationId: revoke_refresh_token_token_revoke_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /password/change:
+    post:
+      summary: Change Password
+      operationId: change_password_password_change_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /verify-email/request:
+    post:
+      summary: Request Email Verification
+      operationId: request_email_verification_verify_email_request_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationChallengeResponse'
+      security:
+      - OAuth2PasswordBearer: []
+  /verify-email/confirm:
+    post:
+      summary: Confirm Email Verification
+      operationId: confirm_email_verification_verify_email_confirm_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationConfirmRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationConfirmResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /security/events:
+    get:
+      summary: List Security Events
+      operationId: list_security_events_security_events_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEventsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/state:
+    get:
+      summary: Get Security State
+      operationId: get_security_state_security_state_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityStateResponse'
+      security:
+      - OAuth2PasswordBearer: []
   /2fa/setup:
     get:
-      summary: Setup 2FA
-      description: Generates a secret and returns a QR code for setting up TOTP-based 2FA.
-      tags:
-        - 2FA
-      security:
-        - bearerAuth: []
+      summary: Setup Two Factor Auth
+      operationId: setup_two_factor_auth_2fa_setup_get
       responses:
         '200':
-          description: A PNG image of the QR code to be scanned by an authenticator app.
+          description: Successful Response
           content:
-            image/png:
-              schema:
-                type: string
-                format: binary
-        '400':
-          description: 2FA is already enabled for this user.
+            application/json:
+              schema: {}
+      security:
+      - OAuth2PasswordBearer: []
   /2fa/verify:
     post:
-      summary: Verify and Enable 2FA
-      description: Verifies the provided TOTP code and enables 2FA for the user.
-      tags:
-        - 2FA
+      summary: Verify Two Factor Auth
+      operationId: verify_two_factor_auth_2fa_verify_post
       security:
-        - bearerAuth: []
-      requestBody:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: totp_code
+        in: query
         required: true
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              properties:
-                totp_code:
-                  type: string
-                  description: The 6-digit code from the authenticator app.
-              required:
-                - totp_code
+        schema:
+          type: string
+          description: The 6-digit code from the authenticator app.
+          title: Totp Code
+        description: The 6-digit code from the authenticator app.
       responses:
         '200':
-          description: 2FA enabled successfully.
-        '400':
-          description: Invalid code or 2FA setup not initiated.
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /2fa/disable:
     delete:
-      summary: Disable 2FA
-      description: Disables TOTP-based 2FA for the currently authenticated user.
-      tags:
-        - 2FA
+      summary: Disable Two Factor Auth
+      operationId: disable_two_factor_auth_2fa_disable_delete
       security:
-        - bearerAuth: []
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: totp_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Current TOTP code to disable 2FA.
+          title: Totp Code
+        description: Current TOTP code to disable 2FA.
       responses:
         '204':
-          description: 2FA disabled successfully.
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /me:
     get:
-      summary: Get current user info
-      tags:
-        - Users
-      security:
-        - bearerAuth: []
+      summary: Read Users Me
+      operationId: read_users_me_me_get
       responses:
         '200':
-          description: Successful response
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-        '401':
-          description: Unauthorized
+      security:
+      - OAuth2PasswordBearer: []
   /users/{user_email}/deactivate:
     post:
-      summary: Deactivate a user (Admin only)
-      tags:
-        - Users
+      summary: Deactivate User
+      operationId: deactivate_user_users__user_email__deactivate_post
       security:
-        - bearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: user_email
-          in: path
-          required: true
-          schema:
-            type: string
-            format: email
+      - name: user_email
+        in: path
+        required: true
+        schema:
+          type: string
+          format: email
+          title: User Email
       responses:
         '200':
-          description: User deactivated successfully.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-        '403':
-          description: Forbidden - Admin access required.
-        '404':
-          description: User not found.
-
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
-    UserCreate:
-      type: object
+    Body_login_for_access_token_token_post:
       properties:
-        email:
+        grant_type:
+          anyOf:
+          - type: string
+            pattern: ^password$
+          - type: 'null'
+          title: Grant Type
+        username:
           type: string
-          format: email
+          title: Username
         password:
           type: string
-          minLength: 8
-      required:
-        - email
-        - password
-    User:
+          format: password
+          title: Password
+        scope:
+          type: string
+          title: Scope
+          default: ''
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          format: password
+          title: Client Secret
       type: object
+      required:
+      - username
+      - password
+      title: Body_login_for_access_token_token_post
+    Body_register_register_post:
+      properties:
+        grant_type:
+          anyOf:
+          - type: string
+            pattern: ^password$
+          - type: 'null'
+          title: Grant Type
+        username:
+          type: string
+          title: Username
+        password:
+          type: string
+          format: password
+          title: Password
+        scope:
+          type: string
+          title: Scope
+          default: ''
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          format: password
+          title: Client Secret
+      type: object
+      required:
+      - username
+      - password
+      title: Body_register_register_post
+    EmailVerificationChallengeResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        code_sent:
+          type: boolean
+          title: Code Sent
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        debug_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Debug Code
+      type: object
+      required:
+      - message
+      - code_sent
+      - expires_at
+      title: EmailVerificationChallengeResponse
+    EmailVerificationConfirmRequest:
+      properties:
+        code:
+          type: string
+          maxLength: 12
+          minLength: 4
+          title: Code
+      type: object
+      required:
+      - code
+      title: EmailVerificationConfirmRequest
+    EmailVerificationConfirmResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        email_verified:
+          type: boolean
+          title: Email Verified
+      type: object
+      required:
+      - message
+      - email_verified
+      title: EmailVerificationConfirmResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    PasswordChangeRequest:
+      properties:
+        current_password:
+          type: string
+          minLength: 1
+          title: Current Password
+        new_password:
+          type: string
+          minLength: 1
+          title: New Password
+      type: object
+      required:
+      - current_password
+      - new_password
+      title: PasswordChangeRequest
+    RefreshTokenRequest:
+      properties:
+        refresh_token:
+          type: string
+          minLength: 20
+          title: Refresh Token
+      type: object
+      required:
+      - refresh_token
+      title: RefreshTokenRequest
+    SecurityEvent:
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          title: Event Id
+        event_type:
+          type: string
+          title: Event Type
+        occurred_at:
+          type: string
+          format: date-time
+          title: Occurred At
+        ip:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ip
+        user_agent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Agent
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+      type: object
+      required:
+      - event_type
+      - occurred_at
+      title: SecurityEvent
+    SecurityEventsResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SecurityEvent'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SecurityEventsResponse
+    SecurityStateResponse:
       properties:
         email:
           type: string
           format: email
-        is_active:
+          title: Email
+        email_verified:
           type: boolean
-          default: true
-        is_admin:
-          type: boolean
-          default: false
+          title: Email Verified
         is_two_factor_enabled:
           type: boolean
-          default: false
-      required:
-        - email
-    Token:
+          title: Is Two Factor Enabled
+        failed_login_attempts:
+          type: integer
+          title: Failed Login Attempts
+        max_failed_login_attempts:
+          type: integer
+          title: Max Failed Login Attempts
+        locked_until:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Locked Until
+        last_login_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Login At
+        password_changed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Password Changed At
       type: object
+      required:
+      - email
+      - email_verified
+      - is_two_factor_enabled
+      - failed_login_attempts
+      - max_failed_login_attempts
+      - locked_until
+      - last_login_at
+      - password_changed_at
+      title: SecurityStateResponse
+    Token:
       properties:
         access_token:
           type: string
+          title: Access Token
         token_type:
           type: string
+          title: Token Type
+          default: bearer
+        expires_in_seconds:
+          type: integer
+          title: Expires In Seconds
+        refresh_token:
+          type: string
+          title: Refresh Token
+      type: object
       required:
-        - access_token
-        - token_type
+      - access_token
+      - expires_in_seconds
+      - refresh_token
+      title: Token
+    User:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        is_active:
+          type: boolean
+          title: Is Active
+          default: true
+        is_admin:
+          type: boolean
+          title: Is Admin
+          default: false
+        is_two_factor_enabled:
+          type: boolean
+          title: Is Two Factor Enabled
+          default: false
+        email_verified:
+          type: boolean
+          title: Email Verified
+          default: false
+        locked_until:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Locked Until
+        last_login_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Login At
+      type: object
+      required:
+      - email
+      title: User
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: token
