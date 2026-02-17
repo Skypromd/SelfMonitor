@@ -226,7 +226,7 @@ def test_security_state_and_events_endpoints() -> None:
 
 def test_security_sessions_management_endpoints() -> None:
     email = "sessions@example.com"
-    password = "sessionsecurepassword123!"
+    password = "walletshieldpassword123!"
     _register(email, password)
     login_one = _login(email, password)
     login_two = _login(email, password)
@@ -257,8 +257,8 @@ def test_security_sessions_management_endpoints() -> None:
 
 def test_step_up_required_for_sensitive_action_with_stale_token() -> None:
     email = "stepup@example.com"
-    password = "stepupsecurepassword123!"
-    new_password = "newstepupsecurepassword123!"
+    password = "guardianpassword123!"
+    new_password = "freshguardianpassword123!"
     _register(email, password)
 
     token_version = int(main.fake_users_db[email]["user_data"]["token_version"])
@@ -289,7 +289,7 @@ def test_step_up_required_for_sensitive_action_with_stale_token() -> None:
 def test_admin_endpoint_can_require_2fa() -> None:
     main.REQUIRE_ADMIN_2FA = True
     target_email = "target@example.com"
-    _register(target_email, "targetsecurepassword123!")
+    _register(target_email, "vaultsecurepassword123!")
 
     admin_login = _login("admin@example.com", "admin_password")
     admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
