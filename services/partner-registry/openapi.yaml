@@ -852,6 +852,251 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/events:
+    post:
+      summary: Create Self Employed Calendar Event
+      operationId: create_self_employed_calendar_event_self_employed_calendar_events_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedCalendarEventCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarEvent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Self Employed Calendar Events
+      operationId: list_self_employed_calendar_events_self_employed_calendar_events_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/SelfEmployedCalendarEventStatus'
+          - type: 'null'
+          title: Status
+      - name: start_at
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start At
+      - name: end_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Before
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarEventListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/events/{event_id}:
+    patch:
+      summary: Update Self Employed Calendar Event
+      operationId: update_self_employed_calendar_event_self_employed_calendar_events__event_id__patch
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Event Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedCalendarEventUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarEvent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Self Employed Calendar Event
+      operationId: delete_self_employed_calendar_event_self_employed_calendar_events__event_id__delete
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Event Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/reminders/run:
+    post:
+      summary: Run Self Employed Calendar Reminders
+      operationId: run_self_employed_calendar_reminders_self_employed_calendar_reminders_run_post
+      parameters:
+      - name: horizon_hours
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 336
+          minimum: 1
+          default: 48
+          title: Horizon Hours
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarReminderRunResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/reminders:
+    get:
+      summary: List Self Employed Calendar Reminders
+      operationId: list_self_employed_calendar_reminders_self_employed_calendar_reminders_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarReminderListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /billing/invoices/generate:
     post:
       summary: Generate Billing Invoice
@@ -2940,6 +3185,349 @@ components:
       - next_actions
       - monthly_mrr_series
       title: SeedReadinessResponse
+    SelfEmployedCalendarEvent:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        title:
+          type: string
+          title: Title
+        starts_at:
+          type: string
+          format: date-time
+          title: Starts At
+        ends_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ends At
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        category:
+          type: string
+          title: Category
+        recipient_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Name
+        recipient_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Email
+        recipient_phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Phone
+        notify_in_app:
+          type: boolean
+          title: Notify In App
+        notify_email:
+          type: boolean
+          title: Notify Email
+        notify_sms:
+          type: boolean
+          title: Notify Sms
+        notify_before_minutes:
+          type: integer
+          title: Notify Before Minutes
+        reminder_last_sent_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reminder Last Sent At
+        status:
+          $ref: '#/components/schemas/SelfEmployedCalendarEventStatus'
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - title
+      - starts_at
+      - category
+      - notify_in_app
+      - notify_email
+      - notify_sms
+      - notify_before_minutes
+      - status
+      - created_at
+      - updated_at
+      title: SelfEmployedCalendarEvent
+    SelfEmployedCalendarEventCreateRequest:
+      properties:
+        title:
+          type: string
+          maxLength: 180
+          minLength: 2
+          title: Title
+        starts_at:
+          type: string
+          format: date-time
+          title: Starts At
+        ends_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ends At
+        description:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Description
+        category:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Category
+          default: general
+        recipient_name:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Recipient Name
+        recipient_email:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Recipient Email
+        recipient_phone:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Recipient Phone
+        notify_in_app:
+          type: boolean
+          title: Notify In App
+          default: true
+        notify_email:
+          type: boolean
+          title: Notify Email
+          default: false
+        notify_sms:
+          type: boolean
+          title: Notify Sms
+          default: false
+        notify_before_minutes:
+          type: integer
+          maximum: 10080.0
+          minimum: 0.0
+          title: Notify Before Minutes
+          default: 1440
+      type: object
+      required:
+      - title
+      - starts_at
+      title: SelfEmployedCalendarEventCreateRequest
+    SelfEmployedCalendarEventListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SelfEmployedCalendarEvent'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SelfEmployedCalendarEventListResponse
+    SelfEmployedCalendarEventStatus:
+      type: string
+      enum:
+      - scheduled
+      - completed
+      - cancelled
+      title: SelfEmployedCalendarEventStatus
+    SelfEmployedCalendarEventUpdateRequest:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 180
+            minLength: 2
+          - type: 'null'
+          title: Title
+        starts_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starts At
+        ends_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ends At
+        description:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Description
+        category:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Category
+        recipient_name:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Recipient Name
+        recipient_email:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Recipient Email
+        recipient_phone:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Recipient Phone
+        notify_in_app:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Notify In App
+        notify_email:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Notify Email
+        notify_sms:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Notify Sms
+        notify_before_minutes:
+          anyOf:
+          - type: integer
+            maximum: 10080.0
+            minimum: 0.0
+          - type: 'null'
+          title: Notify Before Minutes
+        status:
+          anyOf:
+          - $ref: '#/components/schemas/SelfEmployedCalendarEventStatus'
+          - type: 'null'
+      type: object
+      title: SelfEmployedCalendarEventUpdateRequest
+    SelfEmployedCalendarReminderEvent:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        event_id:
+          type: string
+          format: uuid
+          title: Event Id
+        reminder_type:
+          type: string
+          enum:
+          - upcoming
+          - overdue
+          title: Reminder Type
+        channel:
+          type: string
+          enum:
+          - email
+          - sms
+          - in_app
+          title: Channel
+        status:
+          type: string
+          enum:
+          - queued
+          - sent
+          - failed
+          title: Status
+        message:
+          type: string
+          title: Message
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        sent_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Sent At
+      type: object
+      required:
+      - id
+      - event_id
+      - reminder_type
+      - channel
+      - status
+      - message
+      - created_at
+      title: SelfEmployedCalendarReminderEvent
+    SelfEmployedCalendarReminderListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SelfEmployedCalendarReminderEvent'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SelfEmployedCalendarReminderListResponse
+    SelfEmployedCalendarReminderRunResponse:
+      properties:
+        reminders_sent_count:
+          type: integer
+          title: Reminders Sent Count
+        reminders:
+          items:
+            $ref: '#/components/schemas/SelfEmployedCalendarReminderEvent'
+          type: array
+          title: Reminders
+        note:
+          type: string
+          title: Note
+      type: object
+      required:
+      - reminders_sent_count
+      - reminders
+      - note
+      title: SelfEmployedCalendarReminderRunResponse
     SelfEmployedInvoiceBrandProfileResponse:
       properties:
         business_name:
