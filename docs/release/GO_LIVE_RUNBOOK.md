@@ -73,6 +73,8 @@ Before enabling production traffic, validate these auth controls:
      - `GET /auth/security/sessions`
      - `DELETE /auth/security/sessions/{session_id}`
      - `POST /auth/security/sessions/revoke-all`
+   - emergency lockdown endpoint is reachable:
+     - `POST /auth/security/lockdown`
 3. Verification/MFA protection:
    - email verification flow works:
      - `POST /auth/verify-email/request`

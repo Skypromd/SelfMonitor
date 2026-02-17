@@ -287,6 +287,31 @@ paths:
                 $ref: '#/components/schemas/RevokeSessionsResponse'
       security:
       - OAuth2PasswordBearer: []
+  /security/lockdown:
+    post:
+      summary: Activate Security Lockdown
+      operationId: activate_security_lockdown_security_lockdown_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityLockdownRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityLockdownResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
   /2fa/setup:
     get:
       summary: Setup Two Factor Auth
@@ -605,6 +630,37 @@ components:
       - total
       - items
       title: SecurityEventsResponse
+    SecurityLockdownRequest:
+      properties:
+        lock_minutes:
+          type: integer
+          minimum: 5.0
+          title: Lock Minutes
+          default: 30
+      type: object
+      title: SecurityLockdownRequest
+    SecurityLockdownResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        locked_until:
+          type: string
+          format: date-time
+          title: Locked Until
+        lock_minutes:
+          type: integer
+          title: Lock Minutes
+        revoked_sessions:
+          type: integer
+          title: Revoked Sessions
+      type: object
+      required:
+      - message
+      - locked_until
+      - lock_minutes
+      - revoked_sessions
+      title: SecurityLockdownResponse
     SecuritySessionItem:
       properties:
         session_id:

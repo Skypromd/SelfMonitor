@@ -76,6 +76,7 @@ Implemented in this iteration:
 - mini-mode action in calendar widget: mark event completed without opening dashboard;
 - security center quick action in mobile dock + native security posture badge sync;
 - security mini-widget in home command-card (open security center + refresh auth session);
+- one-tap emergency lock mode in security mini-widget (locks account + revokes sessions);
 - secure calendar reminder sync from partner-registry with local push scheduling and auto-reschedule;
 - quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.

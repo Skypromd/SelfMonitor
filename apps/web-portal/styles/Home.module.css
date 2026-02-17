@@ -180,6 +180,14 @@
   box-shadow: none;
 }
 
+.dangerButton {
+  background: linear-gradient(135deg, #b72849 0%, #d14361 100%);
+}
+
+.dangerButton:hover {
+  background: linear-gradient(135deg, #9f1f3f 0%, #b72849 100%);
+}
+
 .button:disabled {
   cursor: not-allowed;
   opacity: 0.6;

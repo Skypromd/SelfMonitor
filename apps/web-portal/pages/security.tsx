@@ -73,6 +73,13 @@ type RiskBadge = {
   severity: 'healthy' | 'attention' | 'critical';
 };
 
+type RealtimeAlert = {
+  hint: string;
+  id: string;
+  label: string;
+  severity: 'attention' | 'critical';
+};
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return '—';
@@ -471,6 +478,33 @@ export default function SecurityPage({
     }
   }, [fetchSecurityEvents, fetchSecuritySessions, onAuthSessionUpdated, token]);
 
+  const handleEmergencyLockdown = useCallback(async () => {
+    clearNotices();
+    const confirmed = window.confirm(
+      'Activate emergency lockdown for 30 minutes? This revokes active sessions and signs you out.'
+    );
+    if (!confirmed) {
+      return;
+    }
+    try {
+      const response = await fetch(`${AUTH_SERVICE_BASE_URL}/security/lockdown`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ lock_minutes: 30 }),
+      });
+      if (!response.ok) {
+        throw new Error(await getErrorDetail(response, 'Failed to activate emergency lockdown.'));
+      }
+      setMessage('Emergency lockdown activated. Signing out...');
+      onLogout?.();
+    } catch (lockdownError) {
+      setError(lockdownError instanceof Error ? lockdownError.message : 'Failed to activate emergency lockdown.');
+    }
+  }, [onLogout, token]);
+
   const stateMetrics = useMemo(
     () => [
       {
@@ -601,6 +635,80 @@ export default function SecurityPage({
     return badges;
   }, [events, securityState, sessionSummary.active]);
 
+  const realtimeAlerts = useMemo<RealtimeAlert[]>(() => {
+    const alerts: RealtimeAlert[] = [];
+    const nowMs = Date.now();
+    const recentEvents = events.filter((event) => {
+      const timestamp = new Date(event.occurred_at).getTime();
+      return Number.isFinite(timestamp) && nowMs - timestamp <= 60 * 60 * 1000;
+    });
+    const failedLoginsLastHour = recentEvents.filter((event) => event.event_type === 'auth.login_failed').length;
+    const recentLoginIpSet = new Set(
+      recentEvents
+        .filter((event) => event.event_type === 'auth.login_succeeded' && typeof event.ip === 'string' && event.ip)
+        .map((event) => event.ip as string)
+    );
+    const recentLoginDeviceSet = new Set(
+      recentEvents
+        .filter(
+          (event) =>
+            event.event_type === 'auth.login_succeeded' &&
+            typeof event.user_agent === 'string' &&
+            event.user_agent.trim().length > 0
+        )
+        .map((event) => (event.user_agent as string).slice(0, 80))
+    );
+
+    if (securityState?.locked_until) {
+      alerts.push({
+        id: 'lockout_active',
+        label: 'Account lockout is active',
+        severity: 'critical',
+        hint: `Locked until ${formatDateTime(securityState.locked_until)}.`,
+      });
+    }
+    if (failedLoginsLastHour >= 3) {
+      alerts.push({
+        id: 'failed_logins_critical',
+        label: 'Failed login spike in the last hour',
+        severity: 'critical',
+        hint: `${failedLoginsLastHour} failed login attempts detected in the last 60 minutes.`,
+      });
+    } else if (failedLoginsLastHour > 0) {
+      alerts.push({
+        id: 'failed_logins_attention',
+        label: 'Failed logins in the last hour',
+        severity: 'attention',
+        hint: `${failedLoginsLastHour} failed login attempt(s) detected in the last 60 minutes.`,
+      });
+    }
+    if (recentLoginIpSet.size > 1) {
+      alerts.push({
+        id: 'new_ip_last_hour',
+        label: 'Multiple login IPs in the last hour',
+        severity: 'attention',
+        hint: `${recentLoginIpSet.size} distinct IPs seen in recent successful logins.`,
+      });
+    }
+    if (recentLoginDeviceSet.size > 1) {
+      alerts.push({
+        id: 'new_device_last_hour',
+        label: 'Multiple device fingerprints in the last hour',
+        severity: 'attention',
+        hint: `${recentLoginDeviceSet.size} user-agent fingerprints seen in recent successful logins.`,
+      });
+    }
+    if (sessionSummary.active > 5) {
+      alerts.push({
+        id: 'active_sessions_critical',
+        label: 'High active session count',
+        severity: 'critical',
+        hint: `${sessionSummary.active} active sessions currently exist.`,
+      });
+    }
+    return alerts;
+  }, [events, securityState, sessionSummary.active]);
+
   return (
     <div className={styles.dashboard}>
       <header className={styles.pageHeader}>
@@ -614,6 +722,27 @@ export default function SecurityPage({
 
       {message ? <p className={styles.message}>{message}</p> : null}
       {error ? <p className={styles.error}>{error}</p> : null}
+
+      <section className={styles.subContainer}>
+        <h2>Realtime alerts (last 60 minutes)</h2>
+        {realtimeAlerts.length === 0 ? (
+          <p className={styles.emptyState}>No active high-priority alerts in the last hour.</p>
+        ) : (
+          <div className={styles.riskBadgeRow}>
+            {realtimeAlerts.map((alert) => (
+              <article
+                className={`${styles.riskBadge} ${
+                  alert.severity === 'critical' ? styles.riskBadgeCritical : styles.riskBadgeAttention
+                }`}
+                key={alert.id}
+              >
+                <strong>{alert.label}</strong>
+                <p>{alert.hint}</p>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
 
       <section className={styles.subContainer}>
         <h2>Security posture</h2>
@@ -665,6 +794,9 @@ export default function SecurityPage({
             type="button"
           >
             Revoke current refresh token
+          </button>
+          <button className={`${styles.button} ${styles.dangerButton}`} onClick={() => void handleEmergencyLockdown()} type="button">
+            Emergency lock account (30m)
           </button>
         </div>
       </section>

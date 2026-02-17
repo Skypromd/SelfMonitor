@@ -60,6 +60,14 @@ EMAIL_VERIFICATION_DEBUG_RETURN_CODE = _parse_bool_env("AUTH_EMAIL_VERIFICATION_
 TOTP_VALID_WINDOW_STEPS = _parse_positive_int_env("AUTH_TOTP_VALID_WINDOW_STEPS", 1)
 STEP_UP_MAX_AGE_MINUTES = _parse_positive_int_env("AUTH_STEP_UP_MAX_AGE_MINUTES", 10)
 REQUIRE_ADMIN_2FA = _parse_bool_env("AUTH_REQUIRE_ADMIN_2FA", True)
+AUTH_EMERGENCY_LOCKDOWN_DEFAULT_MINUTES = _parse_positive_int_env(
+    "AUTH_EMERGENCY_LOCKDOWN_DEFAULT_MINUTES",
+    30,
+)
+AUTH_EMERGENCY_LOCKDOWN_MAX_MINUTES = _parse_positive_int_env(
+    "AUTH_EMERGENCY_LOCKDOWN_MAX_MINUTES",
+    1440,
+)
 
 app = FastAPI(
     title="Auth Service",
@@ -244,6 +252,17 @@ class SecuritySessionsResponse(BaseModel):
 
 class RevokeSessionsResponse(BaseModel):
     message: str
+    revoked_sessions: int
+
+
+class SecurityLockdownRequest(BaseModel):
+    lock_minutes: int = Field(default=AUTH_EMERGENCY_LOCKDOWN_DEFAULT_MINUTES, ge=5)
+
+
+class SecurityLockdownResponse(BaseModel):
+    message: str
+    locked_until: datetime.datetime
+    lock_minutes: int
     revoked_sessions: int
 
 
@@ -1050,6 +1069,63 @@ async def revoke_all_security_sessions(
         details={"revoked_sessions": revoked_count},
     )
     return RevokeSessionsResponse(message="All sessions revoked.", revoked_sessions=revoked_count)
+
+
+@app.post("/security/lockdown", response_model=SecurityLockdownResponse)
+async def activate_security_lockdown(
+    payload: SecurityLockdownRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
+):
+    normalized_email = _normalize_email(current_user.email)
+    user_record = get_user_record(normalized_email)
+    if not user_record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    lock_minutes = int(payload.lock_minutes)
+    if lock_minutes > AUTH_EMERGENCY_LOCKDOWN_MAX_MINUTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "lock_minutes exceeds maximum allowed "
+                f"({AUTH_EMERGENCY_LOCKDOWN_MAX_MINUTES})."
+            ),
+        )
+
+    now_utc = datetime.datetime.now(datetime.UTC)
+    locked_until = now_utc + datetime.timedelta(minutes=lock_minutes)
+    active_session_ids = list(refresh_tokens_by_user.get(normalized_email, set()))
+    revoked_count = 0
+    for jti in active_session_ids:
+        session = refresh_token_sessions.get(jti)
+        if session and session.get("revoked_at") is None:
+            revoked_count += 1
+        _revoke_refresh_token_jti(jti, reason="user_lockdown")
+
+    user_record["user_data"]["locked_until"] = locked_until
+    user_record["user_data"]["failed_login_attempts"] = max(
+        int(user_record["user_data"].get("failed_login_attempts", 0)),
+        MAX_FAILED_LOGIN_ATTEMPTS,
+    )
+    user_record["user_data"]["token_version"] = int(user_record["user_data"].get("token_version", 0)) + 1
+
+    _append_security_event(
+        email=normalized_email,
+        event_type="auth.account_lockdown_activated",
+        request=request,
+        details={
+            "lock_minutes": lock_minutes,
+            "locked_until": locked_until.isoformat(),
+            "revoked_sessions": revoked_count,
+        },
+    )
+    return SecurityLockdownResponse(
+        message="Emergency security lockdown activated.",
+        locked_until=locked_until,
+        lock_minutes=lock_minutes,
+        revoked_sessions=revoked_count,
+    )
 
 
 # --- 2FA Endpoints ---

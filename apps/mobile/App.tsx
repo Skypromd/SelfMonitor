@@ -53,6 +53,7 @@ const DEFAULT_AUTH_SERVICE_URL =
     default: "http://localhost:8000",
   }) ?? "http://localhost:8000";
 const AUTH_SERVICE_URL = process.env.EXPO_PUBLIC_AUTH_SERVICE_URL?.trim() || DEFAULT_AUTH_SERVICE_URL;
+const MOBILE_EMERGENCY_LOCKDOWN_MINUTES = 30;
 
 const APP_USER_AGENT_SUFFIX = "SelfMonitorMobile/0.1";
 const AUTH_TOKEN_KEY = "authToken";
@@ -444,6 +445,7 @@ export default function App(): React.JSX.Element {
   const [nextCalendarEvent, setNextCalendarEvent] = useState<MobileCalendarWidgetEvent | null>(null);
   const [isCompletingCalendarWidgetEvent, setIsCompletingCalendarWidgetEvent] = useState(false);
   const [isRefreshingAuthSession, setIsRefreshingAuthSession] = useState(false);
+  const [isLockingAccountNow, setIsLockingAccountNow] = useState(false);
   const [mobileSecurityState, setMobileSecurityState] = useState<MobileSecurityState | null>(null);
   const analyticsTrackedRef = useRef<Set<string>>(new Set());
   const pulseAnim = useRef(new Animated.Value(0)).current;
@@ -1247,6 +1249,92 @@ export default function App(): React.JSX.Element {
     setSecureAuthState,
     syncAuthStateToWeb,
     syncMobileSecurityState,
+    trackAnalyticsEvent,
+  ]);
+
+  const activateEmergencyLockdown = useCallback(async () => {
+    if (isLockingAccountNow) {
+      return;
+    }
+    if (!AUTH_SERVICE_URL || !isConnected) {
+      notifyAction("Нет сети для активации lock mode.");
+      return;
+    }
+    setIsLockingAccountNow(true);
+    try {
+      const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
+      if (!authToken) {
+        notifyAction("Нет активной сессии для lock mode.");
+        await runHaptic("medium");
+        return;
+      }
+      const response = await fetch(`${AUTH_SERVICE_URL}/security/lockdown`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          lock_minutes: MOBILE_EMERGENCY_LOCKDOWN_MINUTES,
+        }),
+      });
+      if (!response.ok) {
+        let reason = `HTTP ${response.status}`;
+        try {
+          const payload = (await response.json()) as { detail?: unknown };
+          if (typeof payload.detail === "string" && payload.detail.trim()) {
+            reason = payload.detail.trim();
+          }
+        } catch {
+          // Keep fallback reason.
+        }
+        notifyAction(`Lock mode failed: ${reason}`);
+        void trackAnalyticsEvent("mobile.security.lockdown_failed", {
+          reason,
+          status_code: response.status,
+        });
+        await runHaptic("medium");
+        return;
+      }
+
+      await setSecureAuthState(null, null, null);
+      syncAuthStateToWeb({
+        token: null,
+        refreshToken: null,
+        email: null,
+      });
+      setMobileSecurityState(null);
+      notifyAction("Emergency lock mode activated. Session closed.");
+      void trackAnalyticsEvent("mobile.security.lockdown_activated", {
+        lock_minutes: MOBILE_EMERGENCY_LOCKDOWN_MINUTES,
+      });
+      webRef.current?.injectJavaScript(
+        `
+          (function() {
+            window.location.assign(${JSON.stringify(`${WEB_PORTAL_URL.replace(/\/+$/, "")}/`)});
+          })();
+          true;
+        `
+      );
+      await runHaptic("heavy");
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown";
+      notifyAction(`Lock mode error: ${reason}`);
+      void trackAnalyticsEvent("mobile.security.lockdown_failed", {
+        reason,
+      });
+      await runHaptic("medium");
+    } finally {
+      setIsLockingAccountNow(false);
+    }
+  }, [
+    isConnected,
+    isLockingAccountNow,
+    notifyAction,
+    runHaptic,
+    setSecureAuthState,
+    syncAuthStateToWeb,
     trackAnalyticsEvent,
   ]);
 
@@ -2095,6 +2183,26 @@ export default function App(): React.JSX.Element {
                     </Text>
                   </Pressable>
                 </View>
+                <View style={styles.securityWidgetDangerRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isLockingAccountNow}
+                    onPress={() => {
+                      void activateEmergencyLockdown();
+                    }}
+                    style={[
+                      styles.securityWidgetDangerButton,
+                      isLockingAccountNow && styles.securityWidgetActionButtonDisabled,
+                    ]}
+                  >
+                    <Ionicons color="#fecdd3" name="warning-outline" size={13} />
+                    <Text style={styles.securityWidgetDangerButtonText}>
+                      {isLockingAccountNow
+                        ? "Activating lock..."
+                        : `Emergency lock (${MOBILE_EMERGENCY_LOCKDOWN_MINUTES}m)`}
+                    </Text>
+                  </Pressable>
+                </View>
               </View>
             </LinearGradient>
           </View>
@@ -2609,6 +2717,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 2,
   },
+  securityWidgetDangerRow: {
+    marginTop: 6,
+  },
   securityWidgetActionButton: {
     alignItems: "center",
     backgroundColor: "rgba(34,197,94,0.2)",
@@ -2631,6 +2742,23 @@ const styles = StyleSheet.create({
   },
   securityWidgetActionButtonText: {
     color: "#dbeafe",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  securityWidgetDangerButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(127,29,29,0.32)",
+    borderColor: "rgba(253,164,175,0.58)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 5,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  securityWidgetDangerButtonText: {
+    color: "#fecdd3",
     fontSize: 11,
     fontWeight: "700",
   },

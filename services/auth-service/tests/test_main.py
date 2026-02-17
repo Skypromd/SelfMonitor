@@ -255,6 +255,35 @@ def test_security_sessions_management_endpoints() -> None:
     assert refresh_after_revoke_all.status_code == 401
 
 
+def test_emergency_security_lockdown_revokes_sessions_and_blocks_login() -> None:
+    email = "panic-lock@example.com"
+    password = "fortresssecurepassword123!"
+    _register(email, password)
+    login_payload = _login(email, password)
+    access_token = login_payload["access_token"]
+    refresh_token = login_payload["refresh_token"]
+
+    lockdown_response = client.post(
+        "/security/lockdown",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"lock_minutes": 30},
+    )
+    assert lockdown_response.status_code == 200
+    payload = lockdown_response.json()
+    assert payload["lock_minutes"] == 30
+    assert payload["revoked_sessions"] >= 1
+    assert payload["locked_until"]
+
+    old_refresh = client.post("/token/refresh", json={"refresh_token": refresh_token})
+    assert old_refresh.status_code == 401
+
+    old_access = client.get("/security/state", headers={"Authorization": f"Bearer {access_token}"})
+    assert old_access.status_code == 401
+
+    blocked_login = client.post("/token", data={"username": email, "password": password})
+    assert blocked_login.status_code == 423
+
+
 def test_step_up_required_for_sensitive_action_with_stale_token() -> None:
     email = "stepup@example.com"
     password = "guardianpassword123!"
