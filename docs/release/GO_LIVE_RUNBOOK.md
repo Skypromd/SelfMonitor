@@ -59,6 +59,30 @@ Use admin console and/or API checks to verify:
 - No auth or RBAC regression for protected monetization endpoints.
 - Finance operations can generate at least one invoice and download both CSV mappings.
 
+## 6.1 Auth security gate (mandatory)
+
+Before enabling production traffic, validate these auth controls:
+
+1. Password and account protection:
+   - `AUTH_PASSWORD_MIN_LENGTH` is at least `12`.
+   - `AUTH_MAX_FAILED_LOGIN_ATTEMPTS` and `AUTH_ACCOUNT_LOCKOUT_MINUTES` are configured.
+2. Session/token protection:
+   - refresh rotation works (`POST /auth/token/refresh`).
+   - revoke endpoints are reachable:
+     - `POST /auth/token/revoke`
+     - `GET /auth/security/sessions`
+     - `DELETE /auth/security/sessions/{session_id}`
+     - `POST /auth/security/sessions/revoke-all`
+3. Verification/MFA protection:
+   - email verification flow works:
+     - `POST /auth/verify-email/request`
+     - `POST /auth/verify-email/confirm`
+   - admin posture is hardened (`AUTH_REQUIRE_ADMIN_2FA=true` in production).
+4. Step-up protection:
+   - sensitive actions reject stale access tokens (step-up required).
+5. Audit visibility:
+   - `GET /auth/security/events` returns recent auth events for test user.
+
 ## 7. Exit and handover
 
 - Announce release completion with validation summary.
