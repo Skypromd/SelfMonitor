@@ -7,6 +7,7 @@ import '../styles/globals.css';
 
 const LOCALIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || 'http://localhost:8012';
 const AUTH_TOKEN_KEY = 'authToken';
+const AUTH_REFRESH_TOKEN_KEY = 'authRefreshToken';
 const AUTH_EMAIL_KEY = 'authUserEmail';
 const THEME_KEY = 'appTheme';
 type ThemeMode = 'light' | 'dark';
@@ -48,6 +49,7 @@ function postMessageToNativeApp(message: NativeBridgeMessage): void {
 
 function AppContent({ Component, pageProps }: AppProps) {
   const [token, setToken] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [theme, setTheme] = useState<ThemeMode>('light');
   const [authHydrated, setAuthHydrated] = useState(false);
@@ -84,9 +86,13 @@ function AppContent({ Component, pageProps }: AppProps) {
 
   useEffect(() => {
     const storedToken = localStorage.getItem(AUTH_TOKEN_KEY);
+    const storedRefreshToken = localStorage.getItem(AUTH_REFRESH_TOKEN_KEY);
     const storedEmail = localStorage.getItem(AUTH_EMAIL_KEY);
     if (storedToken) {
       setToken(storedToken);
+      if (storedRefreshToken) {
+        setRefreshToken(storedRefreshToken);
+      }
       if (storedEmail) {
         setUserEmail(storedEmail);
       }
@@ -135,9 +141,13 @@ function AppContent({ Component, pageProps }: AppProps) {
     });
   }, [theme]);
 
-  const handleLoginSuccess = (newToken: string, email?: string) => {
+  const handleLoginSuccess = (newToken: string, email?: string, newRefreshToken?: string) => {
     localStorage.setItem(AUTH_TOKEN_KEY, newToken);
     setToken(newToken);
+    if (newRefreshToken) {
+      localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, newRefreshToken);
+      setRefreshToken(newRefreshToken);
+    }
     if (email) {
       localStorage.setItem(AUTH_EMAIL_KEY, email);
       setUserEmail(email);
@@ -145,10 +155,26 @@ function AppContent({ Component, pageProps }: AppProps) {
     router.push('/dashboard');
   };
 
+  const handleAuthSessionUpdated = (nextAccessToken: string, nextRefreshToken?: string | null) => {
+    localStorage.setItem(AUTH_TOKEN_KEY, nextAccessToken);
+    setToken(nextAccessToken);
+    if (nextRefreshToken === null) {
+      localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
+      setRefreshToken(null);
+      return;
+    }
+    if (typeof nextRefreshToken === 'string' && nextRefreshToken.length > 0) {
+      localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, nextRefreshToken);
+      setRefreshToken(nextRefreshToken);
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
     localStorage.removeItem(AUTH_EMAIL_KEY);
     setToken(null);
+    setRefreshToken(null);
     setUserEmail(null);
     router.push('/');
   };
@@ -173,7 +199,14 @@ function AppContent({ Component, pageProps }: AppProps) {
       onToggleTheme={toggleTheme}
       userEmail={userEmail ?? undefined}
     >
-      <PageComponent {...pageProps} token={token} userEmail={userEmail} />
+      <PageComponent
+        {...pageProps}
+        onAuthSessionUpdated={handleAuthSessionUpdated}
+        onLogout={handleLogout}
+        refreshToken={refreshToken}
+        token={token}
+        userEmail={userEmail}
+      />
     </Layout>
   );
 }

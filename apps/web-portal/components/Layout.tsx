@@ -30,6 +30,7 @@ export default function Layout({ children, isDarkMode, onLogout, onToggleTheme, 
     { href: '/reports', label: t('nav.reports') },
     { href: '/marketplace', label: t('nav.marketplace') },
     { href: '/submission', label: t('nav.submission') },
+    { href: '/security', label: 'Security' },
     { href: '/profile', label: t('nav.profile') },
   ];
 

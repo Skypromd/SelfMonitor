@@ -21,6 +21,7 @@ npm run start
 ## Environment
 
 - `EXPO_PUBLIC_WEB_PORTAL_URL`: URL of deployed web portal or local dev instance.
+- `EXPO_PUBLIC_AUTH_SERVICE_URL`: auth-service API URL for native security posture sync.
 - `EXPO_PUBLIC_PARTNER_REGISTRY_URL`: partner-registry API URL for mobile calendar reminder sync.
 - `EXPO_PUBLIC_EAS_PROJECT_ID`: Expo project ID for stable push token issuance in EAS builds.
 - `EXPO_PUBLIC_MOBILE_REMOTE_CONFIG_URL`: optional remote config endpoint for onboarding A/B variants and branded splash content.
@@ -73,6 +74,7 @@ Implemented in this iteration:
 - push-notification permission and token registration shortcut;
 - home command-card widget for nearest client calendar event with one-tap deep-link;
 - mini-mode action in calendar widget: mark event completed without opening dashboard;
+- security center quick action in mobile dock + native security posture badge sync;
 - secure calendar reminder sync from partner-registry with local push scheduling and auto-reschedule;
 - quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.

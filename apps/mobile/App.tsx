@@ -46,6 +46,13 @@ const DEFAULT_PARTNER_REGISTRY_URL =
   }) ?? "http://localhost:8009";
 const PARTNER_REGISTRY_URL =
   process.env.EXPO_PUBLIC_PARTNER_REGISTRY_URL?.trim() || DEFAULT_PARTNER_REGISTRY_URL;
+const DEFAULT_AUTH_SERVICE_URL =
+  Platform.select({
+    android: "http://10.0.2.2:8000",
+    ios: "http://localhost:8000",
+    default: "http://localhost:8000",
+  }) ?? "http://localhost:8000";
+const AUTH_SERVICE_URL = process.env.EXPO_PUBLIC_AUTH_SERVICE_URL?.trim() || DEFAULT_AUTH_SERVICE_URL;
 
 const APP_USER_AGENT_SUFFIX = "SelfMonitorMobile/0.1";
 const AUTH_TOKEN_KEY = "authToken";
@@ -66,6 +73,7 @@ const PUSH_ROUTE_MAP: Record<string, string> = {
   documents: "/documents",
   invoices: "/dashboard?section=invoices",
   reports: "/reports",
+  security: "/security",
   submission: "/submission",
   transactions: "/transactions",
 };
@@ -91,7 +99,7 @@ type BridgeMessage = {
 
 type DockAction = {
   icon: keyof typeof Ionicons.glyphMap;
-  id: "dashboard" | "documents" | "scan" | "push";
+  id: "dashboard" | "documents" | "scan" | "push" | "security";
   isPrimary?: boolean;
   label: string;
   onPress: () => void;
@@ -166,6 +174,15 @@ type MobileCalendarWidgetEvent = {
   id: string;
   starts_at: string;
   title: string;
+};
+
+type MobileSecurityState = {
+  email: string;
+  email_verified: boolean;
+  failed_login_attempts: number;
+  is_two_factor_enabled: boolean;
+  locked_until: string | null;
+  max_failed_login_attempts: number;
 };
 
 type LocalCalendarReminderIndex = Record<
@@ -422,6 +439,7 @@ export default function App(): React.JSX.Element {
   const [clock, setClock] = useState(() => new Date());
   const [nextCalendarEvent, setNextCalendarEvent] = useState<MobileCalendarWidgetEvent | null>(null);
   const [isCompletingCalendarWidgetEvent, setIsCompletingCalendarWidgetEvent] = useState(false);
+  const [mobileSecurityState, setMobileSecurityState] = useState<MobileSecurityState | null>(null);
   const analyticsTrackedRef = useRef<Set<string>>(new Set());
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const dockFloatAnim = useRef(new Animated.Value(0)).current;
@@ -1050,6 +1068,54 @@ export default function App(): React.JSX.Element {
     }
   }, [isConnected, trackAnalyticsEvent, trackAnalyticsOnce]);
 
+  const syncMobileSecurityState = useCallback(async () => {
+    if (!AUTH_SERVICE_URL || !isConnected) {
+      return;
+    }
+    try {
+      const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
+      if (!authToken) {
+        setMobileSecurityState(null);
+        return;
+      }
+      const response = await fetch(`${AUTH_SERVICE_URL}/security/state`, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setMobileSecurityState(null);
+          return;
+        }
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const payload = (await response.json()) as MobileSecurityState;
+      if (!payload || typeof payload.email !== "string") {
+        setMobileSecurityState(null);
+        return;
+      }
+      setMobileSecurityState({
+        email: payload.email,
+        email_verified: Boolean(payload.email_verified),
+        failed_login_attempts: Number(payload.failed_login_attempts || 0),
+        is_two_factor_enabled: Boolean(payload.is_two_factor_enabled),
+        locked_until:
+          typeof payload.locked_until === "string" && payload.locked_until.trim()
+            ? payload.locked_until
+            : null,
+        max_failed_login_attempts: Number(payload.max_failed_login_attempts || 0),
+      });
+    } catch (error) {
+      setMobileSecurityState(null);
+      void trackAnalyticsEvent("mobile.security.state_sync_failed", {
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }, [isConnected, trackAnalyticsEvent]);
+
   const normalizePortalPath = useCallback((path: string) => {
     const base = WEB_PORTAL_URL.replace(/\/+$/, "");
     const normalized = path.startsWith("/") ? path : `/${path}`;
@@ -1087,6 +1153,13 @@ export default function App(): React.JSX.Element {
     });
     void navigateInsidePortal("/dashboard?section=calendar", "system");
   }, [navigateInsidePortal, nextCalendarEvent, trackAnalyticsEvent]);
+
+  const openSecurityCenter = useCallback(() => {
+    void trackAnalyticsEvent("mobile.security.center_opened", {
+      source: "native_action",
+    });
+    void navigateInsidePortal("/security", "system");
+  }, [navigateInsidePortal, trackAnalyticsEvent]);
 
   const markCalendarWidgetEventCompleted = useCallback(async () => {
     if (!nextCalendarEvent || isCompletingCalendarWidgetEvent) {
@@ -1339,12 +1412,15 @@ export default function App(): React.JSX.Element {
       return;
     }
     void syncCalendarLocalReminders();
+    void syncMobileSecurityState();
     const interval = setInterval(() => {
       void syncCalendarLocalReminders();
+      void syncMobileSecurityState();
     }, 15 * 60 * 1000);
     const appStateSubscription = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
         void syncCalendarLocalReminders();
+        void syncMobileSecurityState();
       }
     });
     return () => {
@@ -1358,6 +1434,7 @@ export default function App(): React.JSX.Element {
     isOnboardingDone,
     showBrandedSplash,
     syncCalendarLocalReminders,
+    syncMobileSecurityState,
   ]);
 
   useEffect(() => {
@@ -1419,6 +1496,21 @@ export default function App(): React.JSX.Element {
 
   const connectionLabel = isConnected ? "Online" : "Offline";
   const sessionLabel = storedPushToken ? "Secure + Push ready" : "Secure session";
+  const securityLabel = useMemo(() => {
+    if (!mobileSecurityState) {
+      return "Security: basic";
+    }
+    if (mobileSecurityState.locked_until) {
+      return "Security: locked";
+    }
+    if (mobileSecurityState.email_verified && mobileSecurityState.is_two_factor_enabled) {
+      return "Security: verified + 2FA";
+    }
+    if (mobileSecurityState.email_verified) {
+      return "Security: verify 2FA";
+    }
+    return "Security: verify email";
+  }, [mobileSecurityState]);
   const splashTitle = remoteConfig?.splash?.title?.trim() || DEFAULT_SPLASH_TITLE;
   const splashTagline = remoteConfig?.splash?.subtitle?.trim() || DEFAULT_SPLASH_TAGLINE;
   const splashGradient = normalizeGradientTriplet(remoteConfig?.splash?.gradient);
@@ -1504,8 +1596,16 @@ export default function App(): React.JSX.Element {
           void registerPushNotifications();
         },
       },
+      {
+        id: "security",
+        label: "Security",
+        icon: "shield-checkmark-outline",
+        onPress: () => {
+          openSecurityCenter();
+        },
+      },
     ],
-    [navigateInsidePortal, openReceiptCapture, registerPushNotifications]
+    [navigateInsidePortal, openReceiptCapture, openSecurityCenter, registerPushNotifications]
   );
 
   return (
@@ -1687,6 +1787,14 @@ export default function App(): React.JSX.Element {
                   <Ionicons color="#bfdbfe" name="shield-checkmark-outline" size={14} />
                   <Text style={styles.metricPillText}>{sessionLabel}</Text>
                 </View>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={openSecurityCenter}
+                  style={styles.metricPill}
+                >
+                  <Ionicons color="#bfdbfe" name="lock-closed-outline" size={14} />
+                  <Text style={styles.metricPillText}>{securityLabel}</Text>
+                </Pressable>
                 {canGoBack ? (
                   <Pressable
                     accessibilityRole="button"
@@ -1812,6 +1920,8 @@ export default function App(): React.JSX.Element {
                     ? isRouteActive("/dashboard")
                     : action.id === "documents" || action.id === "scan"
                       ? isRouteActive("/documents")
+                      : action.id === "security"
+                        ? isRouteActive("/security")
                       : false;
                 return (
                   <Pressable

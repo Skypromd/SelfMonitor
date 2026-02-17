@@ -4,7 +4,7 @@ import styles from '../styles/Home.module.css';
 const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
 
 type LoginPageProps = {
-  onLoginSuccess?: (token: string, email?: string) => void;
+  onLoginSuccess?: (token: string, email?: string, refreshToken?: string) => void;
 };
 
 export default function HomePage({ onLoginSuccess }: LoginPageProps) {
@@ -68,7 +68,7 @@ export default function HomePage({ onLoginSuccess }: LoginPageProps) {
       }
 
       if (onLoginSuccess) {
-        onLoginSuccess(data.access_token, email);
+        onLoginSuccess(data.access_token, email, data.refresh_token);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
