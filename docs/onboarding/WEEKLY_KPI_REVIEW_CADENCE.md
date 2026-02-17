@@ -31,6 +31,7 @@ This checklist standardizes weekly KPI governance for seed-readiness and 10/10 e
   - `POST /mobile/analytics/weekly-snapshot?days=7`
   - `GET /mobile/analytics/weekly-snapshots?limit=12`
   - `GET /mobile/analytics/weekly-cadence?days=7`
+  - `GET /mobile/analytics/go-live-gate?days=7`
   - `GET /mobile/config`
 
 ## 3) Weekly agenda
@@ -53,6 +54,7 @@ This checklist standardizes weekly KPI governance for seed-readiness and 10/10 e
 - [ ] Mobile owner confirms weekly snapshot was captured (`POST /mobile/analytics/weekly-snapshot`).
 - [ ] Mobile KPI export attached (`/mobile/analytics/funnel/export?format=csv`).
 - [ ] A/B onboarding variant summary reviewed (`/mobile/analytics/weekly-cadence`).
+- [ ] Go-live gate reviewed (`/mobile/analytics/go-live-gate`) with explicit decision log.
 
 ## 5) Exit criteria for the weekly review
 

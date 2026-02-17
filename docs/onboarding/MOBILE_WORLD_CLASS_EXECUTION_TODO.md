@@ -36,12 +36,12 @@ Goal: finish "store-polish 10/10" and move mobile channel to measurable growth m
   - [x] onboarding completion >= 65%
   - [x] biometric success >= 80%
   - [x] push opt-in >= 45%
-- [ ] Define rollback toggle for onboarding experiment variants
+- [x] Define rollback toggle for onboarding experiment variants
 
 ## 4. Store readiness (priority P1)
 
 - [ ] Prepare branded screenshots + app preview video
 - [ ] Finalize privacy/deletion wording for app submission metadata
 - [ ] Validate TestFlight + Google Internal test scripts
-- [ ] Define go-live gate based on 7-day crash-free and funnel thresholds
+- [x] Define go-live gate based on 7-day crash-free and funnel thresholds
 

@@ -127,8 +127,12 @@ type ResolvedOnboardingVariant = {
 
 type MobileRemoteConfig = {
   onboardingExperiment?: {
+    controlVariantId?: string;
+    enabled?: boolean;
     experimentId?: string;
     forceVariantId?: string;
+    rollbackToControl?: boolean;
+    rolloutPercent?: number;
     variants?: RemoteOnboardingVariant[];
   };
   splash?: {
@@ -302,6 +306,20 @@ function resolveOnboardingVariant(
           weight: 1,
         }));
 
+  const controlVariantId = experiment?.controlVariantId?.trim();
+  const controlVariant =
+    normalizedVariants.find((variant) => variant.id === controlVariantId) ??
+    normalizedVariants[0];
+  const experimentEnabled = experiment?.enabled !== false;
+  const rollbackToControl = experiment?.rollbackToControl === true;
+  const rolloutPercentRaw = typeof experiment?.rolloutPercent === "number" ? Math.trunc(experiment.rolloutPercent) : 100;
+  const rolloutPercent = Math.max(0, Math.min(100, rolloutPercentRaw));
+  const bucket = stableBucket(`${experimentId}:${installationId}`);
+
+  if (!experimentEnabled || rollbackToControl) {
+    return controlVariant;
+  }
+
   const forcedVariantId = experiment?.forceVariantId?.trim();
   if (forcedVariantId) {
     const forced = normalizedVariants.find((variant) => variant.id === forcedVariantId);
@@ -310,8 +328,11 @@ function resolveOnboardingVariant(
     }
   }
 
+  if (rolloutPercent <= 0 || bucket >= rolloutPercent) {
+    return controlVariant;
+  }
+
   const totalWeight = normalizedVariants.reduce((sum, variant) => sum + variant.weight, 0);
-  const bucket = stableBucket(`${experimentId}:${installationId}`);
   const point = (bucket / 100) * totalWeight;
   let running = 0;
   for (const variant of normalizedVariants) {
@@ -528,6 +549,10 @@ export default function App(): React.JSX.Element {
           used_remote_config: Boolean(fetchedRemoteConfig),
           selected_variant: resolvedVariant.id,
           selected_experiment: resolvedVariant.experimentId,
+          experiment_enabled: fetchedRemoteConfig?.onboardingExperiment?.enabled ?? true,
+          rollback_to_control: fetchedRemoteConfig?.onboardingExperiment?.rollbackToControl ?? false,
+          rollout_percent: fetchedRemoteConfig?.onboardingExperiment?.rolloutPercent ?? 100,
+          control_variant_id: fetchedRemoteConfig?.onboardingExperiment?.controlVariantId ?? null,
         });
       } catch (error) {
         if (isMounted) {

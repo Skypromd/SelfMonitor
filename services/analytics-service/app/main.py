@@ -56,12 +56,49 @@ def _parse_positive_int_env(name: str, default: int) -> int:
     return parsed_value if parsed_value > 0 else default
 
 
+def _parse_non_negative_float_env(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        parsed_value = float(raw_value)
+    except ValueError:
+        return default
+    return parsed_value if parsed_value >= 0 else default
+
+
+def _parse_bool_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_percentage_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return max(0, min(100, default))
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        return max(0, min(100, default))
+    return max(0, min(100, parsed_value))
+
+
+def _parse_csv_set_env(name: str, default: str) -> set[str]:
+    raw_value = os.getenv(name, default)
+    return {item.strip() for item in raw_value.split(",") if item.strip()}
+
+
 DOCUMENTS_SERVICE_URL = os.getenv("DOCUMENTS_SERVICE_URL", "http://documents-service/documents")
 USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://user-profile-service/profiles/me")
 MOBILE_ANALYTICS_INGEST_API_KEY = os.getenv("MOBILE_ANALYTICS_INGEST_API_KEY", "").strip()
 MOBILE_ANALYTICS_MAX_EVENTS = max(100, _parse_positive_int_env("MOBILE_ANALYTICS_MAX_EVENTS", 5000))
 MOBILE_ONBOARDING_EXPERIMENT_ID = os.getenv("MOBILE_ONBOARDING_EXPERIMENT_ID", "mobile-onboarding-v1")
 MOBILE_ONBOARDING_FORCE_VARIANT_ID = os.getenv("MOBILE_ONBOARDING_FORCE_VARIANT_ID", "").strip() or None
+MOBILE_ONBOARDING_EXPERIMENT_ENABLED = _parse_bool_env("MOBILE_ONBOARDING_EXPERIMENT_ENABLED", True)
+MOBILE_ONBOARDING_ROLLBACK_TO_CONTROL = _parse_bool_env("MOBILE_ONBOARDING_ROLLBACK_TO_CONTROL", False)
+MOBILE_ONBOARDING_ROLLOUT_PERCENT = _parse_percentage_int_env("MOBILE_ONBOARDING_ROLLOUT_PERCENT", 100)
 MOBILE_SPLASH_TITLE = os.getenv("MOBILE_SPLASH_TITLE", "SelfMonitor")
 MOBILE_SPLASH_SUBTITLE = os.getenv(
     "MOBILE_SPLASH_SUBTITLE",
@@ -70,6 +107,30 @@ MOBILE_SPLASH_SUBTITLE = os.getenv(
 MOBILE_SPLASH_GRADIENT = os.getenv(
     "MOBILE_SPLASH_GRADIENT",
     "#0b1120,#1e3a8a,#3b82f6",
+)
+MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT",
+    99.5,
+)
+MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT",
+    65.0,
+)
+MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT",
+    80.0,
+)
+MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT",
+    45.0,
+)
+MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS = _parse_positive_int_env(
+    "MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS",
+    20,
+)
+MOBILE_GO_LIVE_CRASH_EVENT_NAMES = _parse_csv_set_env(
+    "MOBILE_GO_LIVE_CRASH_EVENT_NAMES",
+    "mobile.app.crash,mobile.runtime.fatal,mobile.runtime.crash",
 )
 
 # --- Models ---
@@ -165,6 +226,10 @@ class MobileOnboardingVariantConfig(BaseModel):
 
 class MobileOnboardingExperimentConfig(BaseModel):
     experimentId: str
+    enabled: bool = True
+    rollbackToControl: bool = False
+    rolloutPercent: int = Field(default=100, ge=0, le=100)
+    controlVariantId: Optional[str] = None
     forceVariantId: Optional[str] = None
     variants: list[MobileOnboardingVariantConfig]
 
@@ -240,6 +305,32 @@ class MobileAnalyticsWeeklyCadenceResponse(BaseModel):
     checklist: list[MobileWeeklyKpiChecklistItem]
 
 
+class MobileGoLiveGateResponse(BaseModel):
+    generated_at: datetime.datetime
+    window_days: int
+    unique_active_installations: int
+    crashing_installations: int
+    crash_events: int
+    crash_free_rate_percent: Optional[float] = None
+    required_crash_free_rate_percent: float
+    onboarding_completion_rate_percent: Optional[float] = None
+    required_onboarding_completion_rate_percent: float
+    biometric_success_rate_percent: Optional[float] = None
+    required_biometric_success_rate_percent: float
+    push_opt_in_rate_percent: Optional[float] = None
+    required_push_opt_in_rate_percent: float
+    onboarding_impressions: int
+    minimum_onboarding_impressions: int
+    sample_size_passed: bool
+    crash_free_passed: bool
+    onboarding_passed: bool
+    biometric_passed: bool
+    push_opt_in_passed: bool
+    gate_passed: bool
+    blockers: list[str]
+    recommended_actions: list[str]
+
+
 def _normalize_gradient_triplet(raw_gradient: str) -> list[str]:
     colors = [item.strip() for item in raw_gradient.split(",") if item.strip()]
     if len(colors) < 3:
@@ -260,6 +351,7 @@ def _build_mobile_remote_config_payload() -> MobileRemoteConfigResponse:
         )
         for item in DEFAULT_MOBILE_ONBOARDING_VARIANTS
     ]
+    control_variant_id = variants[0].id if variants else None
     return MobileRemoteConfigResponse(
         generated_at=datetime.datetime.now(datetime.UTC),
         splash=MobileSplashConfig(
@@ -269,6 +361,10 @@ def _build_mobile_remote_config_payload() -> MobileRemoteConfigResponse:
         ),
         onboardingExperiment=MobileOnboardingExperimentConfig(
             experimentId=MOBILE_ONBOARDING_EXPERIMENT_ID,
+            enabled=MOBILE_ONBOARDING_EXPERIMENT_ENABLED,
+            rollbackToControl=MOBILE_ONBOARDING_ROLLBACK_TO_CONTROL,
+            rolloutPercent=MOBILE_ONBOARDING_ROLLOUT_PERCENT,
+            controlVariantId=control_variant_id,
             forceVariantId=MOBILE_ONBOARDING_FORCE_VARIANT_ID,
             variants=variants,
         ),
@@ -291,6 +387,13 @@ def _safe_percent(numerator: int, denominator: int) -> Optional[float]:
 
 def _extract_variant_id(metadata: Dict[str, Any]) -> Optional[str]:
     candidate = metadata.get("onboarding_variant")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate.strip()
+    return None
+
+
+def _extract_installation_id(metadata: Dict[str, Any]) -> Optional[str]:
+    candidate = metadata.get("installation_id")
     if isinstance(candidate, str) and candidate.strip():
         return candidate.strip()
     return None
@@ -376,6 +479,134 @@ def _build_mobile_funnel_response(
         biometric_success_rate_percent=_safe_percent(biometric_successes, biometric_gate_shown),
         push_opt_in_rate_percent=_safe_percent(push_permission_granted, push_permission_prompted),
         variants=variant_points,
+    )
+
+
+def _build_mobile_go_live_gate_response(
+    *,
+    days: int,
+    now_utc: Optional[datetime.datetime] = None,
+) -> MobileGoLiveGateResponse:
+    generated_at, window_events = _collect_mobile_window_events(days=days, now_utc=now_utc)
+    funnel = _build_mobile_funnel_response(days=days, now_utc=generated_at)
+
+    active_installations: set[str] = set()
+    crashing_installations: set[str] = set()
+    crash_events = 0
+    for item in window_events:
+        installation_id = _extract_installation_id(item.metadata)
+        if installation_id:
+            active_installations.add(installation_id)
+        if item.event in MOBILE_GO_LIVE_CRASH_EVENT_NAMES:
+            crash_events += 1
+            if installation_id:
+                crashing_installations.add(installation_id)
+
+    unique_active_installations = len(active_installations)
+    if unique_active_installations > 0:
+        crash_installations_count = len(crashing_installations)
+        if crash_installations_count == 0 and crash_events > 0:
+            crash_installations_count = min(crash_events, unique_active_installations)
+        crash_free_rate_percent = round(
+            max(0.0, 100.0 - ((crash_installations_count / unique_active_installations) * 100.0)),
+            2,
+        )
+    else:
+        crash_installations_count = 0
+        crash_free_rate_percent = None
+
+    onboarding_completion = funnel.onboarding_completion_rate_percent
+    biometric_success = funnel.biometric_success_rate_percent
+    push_opt_in = funnel.push_opt_in_rate_percent
+
+    sample_size_passed = funnel.onboarding_impressions >= MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS
+    crash_free_passed = (
+        crash_free_rate_percent is not None
+        and crash_free_rate_percent >= MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT
+    )
+    onboarding_passed = (
+        onboarding_completion is not None
+        and onboarding_completion >= MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT
+    )
+    biometric_passed = (
+        biometric_success is not None
+        and biometric_success >= MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT
+    )
+    push_opt_in_passed = (
+        push_opt_in is not None
+        and push_opt_in >= MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT
+    )
+
+    blockers: list[str] = []
+    if not sample_size_passed:
+        blockers.append(
+            "Insufficient onboarding sample size for go-live decision "
+            f"({funnel.onboarding_impressions}/{MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS})."
+        )
+    if not crash_free_passed:
+        if crash_free_rate_percent is None:
+            blockers.append("No installation baseline found to evaluate crash-free rate.")
+        else:
+            blockers.append(
+                f"Crash-free rate below threshold ({crash_free_rate_percent:.2f}%/"
+                f"{MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT:.2f}%)."
+            )
+    if not onboarding_passed:
+        blockers.append(
+            "Onboarding completion rate below threshold "
+            f"({onboarding_completion if onboarding_completion is not None else 'n/a'}%/"
+            f"{MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT:.2f}%)."
+        )
+    if not biometric_passed:
+        blockers.append(
+            "Biometric success rate below threshold "
+            f"({biometric_success if biometric_success is not None else 'n/a'}%/"
+            f"{MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT:.2f}%)."
+        )
+    if not push_opt_in_passed:
+        blockers.append(
+            "Push opt-in rate below threshold "
+            f"({push_opt_in if push_opt_in is not None else 'n/a'}%/"
+            f"{MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT:.2f}%)."
+        )
+
+    gate_passed = all(
+        [
+            sample_size_passed,
+            crash_free_passed,
+            onboarding_passed,
+            biometric_passed,
+            push_opt_in_passed,
+        ]
+    )
+    recommended_actions = _build_mobile_weekly_recommended_actions(funnel)
+    if not gate_passed:
+        recommended_actions = [*blockers, *recommended_actions]
+
+    return MobileGoLiveGateResponse(
+        generated_at=generated_at,
+        window_days=days,
+        unique_active_installations=unique_active_installations,
+        crashing_installations=crash_installations_count,
+        crash_events=crash_events,
+        crash_free_rate_percent=crash_free_rate_percent,
+        required_crash_free_rate_percent=MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT,
+        onboarding_completion_rate_percent=onboarding_completion,
+        required_onboarding_completion_rate_percent=MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT,
+        biometric_success_rate_percent=biometric_success,
+        required_biometric_success_rate_percent=MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT,
+        push_opt_in_rate_percent=push_opt_in,
+        required_push_opt_in_rate_percent=MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT,
+        onboarding_impressions=funnel.onboarding_impressions,
+        minimum_onboarding_impressions=MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS,
+        sample_size_passed=sample_size_passed,
+        crash_free_passed=crash_free_passed,
+        onboarding_passed=onboarding_passed,
+        biometric_passed=biometric_passed,
+        push_opt_in_passed=push_opt_in_passed,
+        gate_passed=gate_passed,
+        blockers=blockers,
+        recommended_actions=recommended_actions,
     )
 
 
@@ -639,6 +870,17 @@ async def get_mobile_weekly_cadence_snapshot(
         recommended_actions=_build_mobile_weekly_recommended_actions(funnel),
         checklist=_build_mobile_weekly_checklist(funnel),
     )
+
+
+@app.get("/mobile/analytics/go-live-gate", response_model=MobileGoLiveGateResponse)
+async def get_mobile_go_live_gate(
+    days: int = Query(default=7, ge=7, le=30),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Evaluates 7-day (or configured window) go-live gate readiness for mobile launch.
+    """
+    return _build_mobile_go_live_gate_response(days=days)
 
 # --- Models for Forecasting ---
 class ForecastRequest(BaseModel):

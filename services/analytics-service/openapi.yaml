@@ -309,6 +309,43 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/analytics/go-live-gate:
+    get:
+      summary: Get Mobile Go Live Gate
+      description: Evaluates 7-day (or configured window) go-live gate readiness for
+        mobile launch.
+      operationId: get_mobile_go_live_gate_mobile_analytics_go_live_gate_get
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 30
+          minimum: 7
+          default: 7
+          title: Days
+      - name: X-Api-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileGoLiveGateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /forecast/cash-flow:
     post:
       summary: Get Cash Flow Forecast
@@ -944,11 +981,136 @@ components:
       - total_snapshots
       - items
       title: MobileAnalyticsWeeklySnapshotListResponse
+    MobileGoLiveGateResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        window_days:
+          type: integer
+          title: Window Days
+        unique_active_installations:
+          type: integer
+          title: Unique Active Installations
+        crashing_installations:
+          type: integer
+          title: Crashing Installations
+        crash_events:
+          type: integer
+          title: Crash Events
+        crash_free_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Crash Free Rate Percent
+        required_crash_free_rate_percent:
+          type: number
+          title: Required Crash Free Rate Percent
+        onboarding_completion_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Onboarding Completion Rate Percent
+        required_onboarding_completion_rate_percent:
+          type: number
+          title: Required Onboarding Completion Rate Percent
+        biometric_success_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Biometric Success Rate Percent
+        required_biometric_success_rate_percent:
+          type: number
+          title: Required Biometric Success Rate Percent
+        push_opt_in_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Push Opt In Rate Percent
+        required_push_opt_in_rate_percent:
+          type: number
+          title: Required Push Opt In Rate Percent
+        onboarding_impressions:
+          type: integer
+          title: Onboarding Impressions
+        minimum_onboarding_impressions:
+          type: integer
+          title: Minimum Onboarding Impressions
+        sample_size_passed:
+          type: boolean
+          title: Sample Size Passed
+        crash_free_passed:
+          type: boolean
+          title: Crash Free Passed
+        onboarding_passed:
+          type: boolean
+          title: Onboarding Passed
+        biometric_passed:
+          type: boolean
+          title: Biometric Passed
+        push_opt_in_passed:
+          type: boolean
+          title: Push Opt In Passed
+        gate_passed:
+          type: boolean
+          title: Gate Passed
+        blockers:
+          items:
+            type: string
+          type: array
+          title: Blockers
+        recommended_actions:
+          items:
+            type: string
+          type: array
+          title: Recommended Actions
+      type: object
+      required:
+      - generated_at
+      - window_days
+      - unique_active_installations
+      - crashing_installations
+      - crash_events
+      - required_crash_free_rate_percent
+      - required_onboarding_completion_rate_percent
+      - required_biometric_success_rate_percent
+      - required_push_opt_in_rate_percent
+      - onboarding_impressions
+      - minimum_onboarding_impressions
+      - sample_size_passed
+      - crash_free_passed
+      - onboarding_passed
+      - biometric_passed
+      - push_opt_in_passed
+      - gate_passed
+      - blockers
+      - recommended_actions
+      title: MobileGoLiveGateResponse
     MobileOnboardingExperimentConfig:
       properties:
         experimentId:
           type: string
           title: Experimentid
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+        rollbackToControl:
+          type: boolean
+          title: Rollbacktocontrol
+          default: false
+        rolloutPercent:
+          type: integer
+          maximum: 100.0
+          minimum: 0.0
+          title: Rolloutpercent
+          default: 100
+        controlVariantId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Controlvariantid
         forceVariantId:
           anyOf:
           - type: string
