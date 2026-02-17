@@ -16,6 +16,7 @@ type NativeBridgeMessage =
       type: 'WEB_AUTH_STATE';
       payload: {
         email: string | null;
+        refreshToken: string | null;
         token: string | null;
       };
     }
@@ -30,6 +31,12 @@ type ReactNativeBridgeWindow = Window & {
   ReactNativeWebView?: {
     postMessage: (message: string) => void;
   };
+};
+
+type NativeAuthStateEventDetail = {
+  email?: string | null;
+  refreshToken?: string | null;
+  token?: string | null;
 };
 
 function postMessageToNativeApp(message: NativeBridgeMessage): void {
@@ -128,9 +135,57 @@ function AppContent({ Component, pageProps }: AppProps) {
       payload: {
         token,
         email: userEmail,
+        refreshToken,
       },
     });
-  }, [authHydrated, token, userEmail]);
+  }, [authHydrated, refreshToken, token, userEmail]);
+
+  useEffect(() => {
+    const applyNativeAuthState = (detail: NativeAuthStateEventDetail) => {
+      if (typeof detail.token !== 'undefined') {
+        if (detail.token) {
+          localStorage.setItem(AUTH_TOKEN_KEY, detail.token);
+          setToken(detail.token);
+        } else {
+          localStorage.removeItem(AUTH_TOKEN_KEY);
+          setToken(null);
+        }
+      }
+      if (typeof detail.refreshToken !== 'undefined') {
+        if (detail.refreshToken) {
+          localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, detail.refreshToken);
+          setRefreshToken(detail.refreshToken);
+        } else {
+          localStorage.removeItem(AUTH_REFRESH_TOKEN_KEY);
+          setRefreshToken(null);
+        }
+      }
+      if (typeof detail.email !== 'undefined') {
+        if (detail.email) {
+          localStorage.setItem(AUTH_EMAIL_KEY, detail.email);
+          setUserEmail(detail.email);
+        } else {
+          localStorage.removeItem(AUTH_EMAIL_KEY);
+          setUserEmail(null);
+        }
+      }
+    };
+
+    const handleNativeBootstrap = (event: Event) => {
+      const customEvent = event as CustomEvent<NativeAuthStateEventDetail>;
+      if (!customEvent.detail || typeof customEvent.detail !== 'object') {
+        return;
+      }
+      applyNativeAuthState(customEvent.detail);
+    };
+
+    window.addEventListener('selfmonitor-mobile-auth-state', handleNativeBootstrap as EventListener);
+    window.addEventListener('selfmonitor-native-bootstrap', handleNativeBootstrap as EventListener);
+    return () => {
+      window.removeEventListener('selfmonitor-mobile-auth-state', handleNativeBootstrap as EventListener);
+      window.removeEventListener('selfmonitor-native-bootstrap', handleNativeBootstrap as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     postMessageToNativeApp({

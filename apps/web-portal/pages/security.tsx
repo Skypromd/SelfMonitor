@@ -66,6 +66,13 @@ type TokenPairResponse = {
   token_type: string;
 };
 
+type RiskBadge = {
+  hint: string;
+  id: string;
+  label: string;
+  severity: 'healthy' | 'attention' | 'critical';
+};
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return '—';
@@ -195,6 +202,17 @@ export default function SecurityPage({
   useEffect(() => {
     void reloadSecurityCenter();
   }, [reloadSecurityCenter]);
+
+  useEffect(() => {
+    const syncSessionsView = async () => {
+      try {
+        await fetchSecuritySessions();
+      } catch (sessionError) {
+        setError(sessionError instanceof Error ? sessionError.message : 'Failed to refresh sessions view.');
+      }
+    };
+    void syncSessionsView();
+  }, [fetchSecuritySessions]);
 
   const handleRefreshSession = useCallback(async () => {
     clearNotices();
@@ -478,6 +496,111 @@ export default function SecurityPage({
     [securityState, sessionSummary.active, sessionSummary.total]
   );
 
+  const riskBadges = useMemo<RiskBadge[]>(() => {
+    const badges: RiskBadge[] = [];
+    const nowMs = Date.now();
+    const recentEvents = events.filter((event) => {
+      const timestamp = new Date(event.occurred_at).getTime();
+      return Number.isFinite(timestamp) && nowMs - timestamp <= 24 * 60 * 60 * 1000;
+    });
+    const recentFailedLogins = recentEvents.filter((event) => event.event_type === 'auth.login_failed').length;
+    const recentLoginIpSet = new Set(
+      recentEvents
+        .filter((event) => event.event_type === 'auth.login_succeeded' && typeof event.ip === 'string' && event.ip)
+        .map((event) => event.ip as string)
+    );
+    const recentDeviceSet = new Set(
+      recentEvents
+        .filter(
+          (event) =>
+            event.event_type === 'auth.login_succeeded' &&
+            typeof event.user_agent === 'string' &&
+            event.user_agent.trim().length > 0
+        )
+        .map((event) => (event.user_agent as string).slice(0, 80))
+    );
+
+    if (!securityState?.email_verified) {
+      badges.push({
+        id: 'email_verification',
+        label: 'Email not verified',
+        severity: 'attention',
+        hint: 'Complete email verification to strengthen account recovery and sensitive operations.',
+      });
+    }
+    if (!securityState?.is_two_factor_enabled) {
+      badges.push({
+        id: 'two_factor',
+        label: '2FA disabled',
+        severity: 'attention',
+        hint: 'Enable TOTP 2FA to reduce account takeover risk.',
+      });
+    }
+    if (securityState?.locked_until) {
+      badges.push({
+        id: 'lockout',
+        label: 'Account lockout active',
+        severity: 'critical',
+        hint: `Account is currently locked until ${formatDateTime(securityState.locked_until)}.`,
+      });
+    }
+    if (recentFailedLogins >= 3) {
+      badges.push({
+        id: 'failed_login_spike',
+        label: 'Failed login spike',
+        severity: 'critical',
+        hint: `${recentFailedLogins} failed login attempts detected in the last 24h.`,
+      });
+    } else if (recentFailedLogins > 0) {
+      badges.push({
+        id: 'failed_login_activity',
+        label: 'Failed login activity',
+        severity: 'attention',
+        hint: `${recentFailedLogins} failed login attempt(s) detected in the last 24h.`,
+      });
+    }
+    if (recentLoginIpSet.size > 1) {
+      badges.push({
+        id: 'new_ip',
+        label: 'Multiple recent login IPs',
+        severity: 'attention',
+        hint: `${recentLoginIpSet.size} distinct IPs were used for recent successful logins.`,
+      });
+    }
+    if (recentDeviceSet.size > 1) {
+      badges.push({
+        id: 'new_device',
+        label: 'Multiple recent device fingerprints',
+        severity: 'attention',
+        hint: `${recentDeviceSet.size} different user-agent fingerprints were detected recently.`,
+      });
+    }
+    if (sessionSummary.active > 5) {
+      badges.push({
+        id: 'sessions_high',
+        label: 'High active session count',
+        severity: 'critical',
+        hint: `${sessionSummary.active} active sessions detected. Revoke unknown devices.`,
+      });
+    } else if (sessionSummary.active > 2) {
+      badges.push({
+        id: 'sessions_moderate',
+        label: 'Multiple active sessions',
+        severity: 'attention',
+        hint: `${sessionSummary.active} active sessions detected. Review session list.`,
+      });
+    }
+    if (badges.length === 0) {
+      badges.push({
+        id: 'healthy',
+        label: 'No critical risk signals',
+        severity: 'healthy',
+        hint: 'Current telemetry does not indicate elevated account risk.',
+      });
+    }
+    return badges;
+  }, [events, securityState, sessionSummary.active]);
+
   return (
     <div className={styles.dashboard}>
       <header className={styles.pageHeader}>
@@ -507,6 +630,23 @@ export default function SecurityPage({
           {formatDateTime(securityState?.password_changed_at ?? null)} • Locked until:{' '}
           {formatDateTime(securityState?.locked_until ?? null)}
         </p>
+        <div className={styles.riskBadgeRow}>
+          {riskBadges.map((risk) => (
+            <article
+              className={`${styles.riskBadge} ${
+                risk.severity === 'critical'
+                  ? styles.riskBadgeCritical
+                  : risk.severity === 'attention'
+                    ? styles.riskBadgeAttention
+                    : styles.riskBadgeHealthy
+              }`}
+              key={risk.id}
+            >
+              <strong>{risk.label}</strong>
+              <p>{risk.hint}</p>
+            </article>
+          ))}
+        </div>
         <div className={styles.adminActionsRow}>
           <button className={styles.button} disabled={isLoading} onClick={() => void reloadSecurityCenter()} type="button">
             {isLoading ? 'Refreshing...' : 'Refresh security data'}

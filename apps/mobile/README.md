@@ -75,6 +75,7 @@ Implemented in this iteration:
 - home command-card widget for nearest client calendar event with one-tap deep-link;
 - mini-mode action in calendar widget: mark event completed without opening dashboard;
 - security center quick action in mobile dock + native security posture badge sync;
+- security mini-widget in home command-card (open security center + refresh auth session);
 - secure calendar reminder sync from partner-registry with local push scheduling and auto-reschedule;
 - quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.

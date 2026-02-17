@@ -56,11 +56,13 @@ const AUTH_SERVICE_URL = process.env.EXPO_PUBLIC_AUTH_SERVICE_URL?.trim() || DEF
 
 const APP_USER_AGENT_SUFFIX = "SelfMonitorMobile/0.1";
 const AUTH_TOKEN_KEY = "authToken";
+const AUTH_REFRESH_TOKEN_KEY = "authRefreshToken";
 const AUTH_EMAIL_KEY = "authUserEmail";
 const THEME_KEY = "appTheme";
 const MOBILE_PUSH_TOKEN_KEY = "mobilePushToken";
 
 const SECURE_AUTH_TOKEN_KEY = "selfmonitor.authToken";
+const SECURE_AUTH_REFRESH_TOKEN_KEY = "selfmonitor.authRefreshToken";
 const SECURE_AUTH_EMAIL_KEY = "selfmonitor.authUserEmail";
 const SECURE_THEME_KEY = "selfmonitor.theme";
 const SECURE_PUSH_TOKEN_KEY = "selfmonitor.pushToken";
@@ -245,6 +247,7 @@ function toStorageStatement(key: string, value: string | null): string {
 function buildBootstrapScript(payload: {
   email: string | null;
   pushToken: string | null;
+  refreshToken: string | null;
   theme: string | null;
   token: string | null;
 }): string {
@@ -252,6 +255,7 @@ function buildBootstrapScript(payload: {
     (function() {
       try {
         ${toStorageStatement(AUTH_TOKEN_KEY, payload.token)}
+        ${toStorageStatement(AUTH_REFRESH_TOKEN_KEY, payload.refreshToken)}
         ${toStorageStatement(AUTH_EMAIL_KEY, payload.email)}
         ${toStorageStatement(THEME_KEY, payload.theme)}
         ${toStorageStatement(MOBILE_PUSH_TOKEN_KEY, payload.pushToken)}
@@ -439,6 +443,7 @@ export default function App(): React.JSX.Element {
   const [clock, setClock] = useState(() => new Date());
   const [nextCalendarEvent, setNextCalendarEvent] = useState<MobileCalendarWidgetEvent | null>(null);
   const [isCompletingCalendarWidgetEvent, setIsCompletingCalendarWidgetEvent] = useState(false);
+  const [isRefreshingAuthSession, setIsRefreshingAuthSession] = useState(false);
   const [mobileSecurityState, setMobileSecurityState] = useState<MobileSecurityState | null>(null);
   const analyticsTrackedRef = useRef<Set<string>>(new Set());
   const pulseAnim = useRef(new Animated.Value(0)).current;
@@ -503,9 +508,10 @@ export default function App(): React.JSX.Element {
     let isMounted = true;
     const hydrateSecureSession = async () => {
       try {
-        const [token, email, theme, pushToken, onboardingFlag, existingInstallationId, fetchedRemoteConfig] =
+        const [token, refreshToken, email, theme, pushToken, onboardingFlag, existingInstallationId, fetchedRemoteConfig] =
           await Promise.all([
           SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY),
+          SecureStore.getItemAsync(SECURE_AUTH_REFRESH_TOKEN_KEY),
           SecureStore.getItemAsync(SECURE_AUTH_EMAIL_KEY),
           SecureStore.getItemAsync(SECURE_THEME_KEY),
           SecureStore.getItemAsync(SECURE_PUSH_TOKEN_KEY),
@@ -558,6 +564,7 @@ export default function App(): React.JSX.Element {
         setBootstrapScript(
           buildBootstrapScript({
             token: token ?? null,
+            refreshToken: refreshToken ?? null,
             email: email ?? null,
             theme: theme ?? null,
             pushToken: pushToken ?? null,
@@ -817,18 +824,49 @@ export default function App(): React.JSX.Element {
     );
   }, []);
 
-  const setSecureAuthState = useCallback(async (token: string | null, email: string | null) => {
-    if (token) {
-      await SecureStore.setItemAsync(SECURE_AUTH_TOKEN_KEY, token);
-    } else {
-      await SecureStore.deleteItemAsync(SECURE_AUTH_TOKEN_KEY);
-    }
-    if (email) {
-      await SecureStore.setItemAsync(SECURE_AUTH_EMAIL_KEY, email);
-    } else {
-      await SecureStore.deleteItemAsync(SECURE_AUTH_EMAIL_KEY);
-    }
-  }, []);
+  const syncAuthStateToWeb = useCallback(
+    (payload: { token: string | null; refreshToken: string | null; email: string | null }) => {
+      webRef.current?.injectJavaScript(
+        `
+          (function() {
+            try {
+              ${toStorageStatement(AUTH_TOKEN_KEY, payload.token)}
+              ${toStorageStatement(AUTH_REFRESH_TOKEN_KEY, payload.refreshToken)}
+              ${toStorageStatement(AUTH_EMAIL_KEY, payload.email)}
+              window.dispatchEvent(new CustomEvent("selfmonitor-mobile-auth-state", {
+                detail: ${JSON.stringify(payload)}
+              }));
+            } catch (error) {
+              console.error("selfmonitor-mobile-auth-state-sync-failed", error);
+            }
+          })();
+          true;
+        `
+      );
+    },
+    []
+  );
+
+  const setSecureAuthState = useCallback(
+    async (token: string | null, email: string | null, refreshToken: string | null) => {
+      if (token) {
+        await SecureStore.setItemAsync(SECURE_AUTH_TOKEN_KEY, token);
+      } else {
+        await SecureStore.deleteItemAsync(SECURE_AUTH_TOKEN_KEY);
+      }
+      if (refreshToken) {
+        await SecureStore.setItemAsync(SECURE_AUTH_REFRESH_TOKEN_KEY, refreshToken);
+      } else {
+        await SecureStore.deleteItemAsync(SECURE_AUTH_REFRESH_TOKEN_KEY);
+      }
+      if (email) {
+        await SecureStore.setItemAsync(SECURE_AUTH_EMAIL_KEY, email);
+      } else {
+        await SecureStore.deleteItemAsync(SECURE_AUTH_EMAIL_KEY);
+      }
+    },
+    []
+  );
 
   const handleWebMessage = useCallback(
     async (rawData: string) => {
@@ -845,8 +883,9 @@ export default function App(): React.JSX.Element {
       if (parsed.type === "WEB_AUTH_STATE") {
         const token = parsed.payload?.token ?? null;
         const email = parsed.payload?.email ?? null;
+        const refreshToken = parsed.payload?.refreshToken ?? null;
         try {
-          await setSecureAuthState(token ?? null, email ?? null);
+          await setSecureAuthState(token ?? null, email ?? null, refreshToken ?? null);
           if (!token) {
             setBiometricRequired(false);
             setBiometricUnlocked(true);
@@ -1115,6 +1154,101 @@ export default function App(): React.JSX.Element {
       });
     }
   }, [isConnected, trackAnalyticsEvent]);
+
+  const refreshMobileAuthSession = useCallback(async () => {
+    if (isRefreshingAuthSession) {
+      return;
+    }
+    if (!AUTH_SERVICE_URL || !isConnected) {
+      notifyAction("Нет сети для обновления сессии.");
+      return;
+    }
+    setIsRefreshingAuthSession(true);
+    try {
+      const [storedRefreshToken, storedEmail] = await Promise.all([
+        SecureStore.getItemAsync(SECURE_AUTH_REFRESH_TOKEN_KEY),
+        SecureStore.getItemAsync(SECURE_AUTH_EMAIL_KEY),
+      ]);
+      if (!storedRefreshToken) {
+        notifyAction("Refresh token не найден. Выполните повторный вход.");
+        void trackAnalyticsEvent("mobile.security.session_refresh_skipped", {
+          reason: "missing_refresh_token",
+        });
+        await runHaptic("medium");
+        return;
+      }
+      const response = await fetch(`${AUTH_SERVICE_URL}/token/refresh`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          refresh_token: storedRefreshToken,
+        }),
+      });
+      if (!response.ok) {
+        let reason = `HTTP ${response.status}`;
+        try {
+          const payload = (await response.json()) as { detail?: unknown };
+          if (typeof payload.detail === "string" && payload.detail.trim()) {
+            reason = payload.detail.trim();
+          }
+        } catch {
+          // Fallback reason already set.
+        }
+        notifyAction(`Не удалось обновить сессию: ${reason}`);
+        void trackAnalyticsEvent("mobile.security.session_refresh_failed", {
+          reason,
+          status_code: response.status,
+        });
+        await runHaptic("medium");
+        return;
+      }
+
+      const refreshedPayload = (await response.json()) as {
+        access_token: string;
+        refresh_token: string;
+      };
+      const nextAccessToken = typeof refreshedPayload.access_token === "string" ? refreshedPayload.access_token : "";
+      const nextRefreshToken =
+        typeof refreshedPayload.refresh_token === "string" ? refreshedPayload.refresh_token : "";
+      if (!nextAccessToken || !nextRefreshToken) {
+        throw new Error("Auth refresh payload is missing tokens");
+      }
+
+      await setSecureAuthState(nextAccessToken, storedEmail ?? null, nextRefreshToken);
+      syncAuthStateToWeb({
+        token: nextAccessToken,
+        refreshToken: nextRefreshToken,
+        email: storedEmail ?? null,
+      });
+      await syncMobileSecurityState();
+      notifyAction("Сессия безопасности обновлена.");
+      void trackAnalyticsEvent("mobile.security.session_refreshed", {
+        has_email: Boolean(storedEmail),
+      });
+      await runHaptic("heavy");
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown";
+      notifyAction(`Ошибка обновления сессии: ${reason}`);
+      void trackAnalyticsEvent("mobile.security.session_refresh_failed", {
+        reason,
+      });
+      await runHaptic("medium");
+    } finally {
+      setIsRefreshingAuthSession(false);
+    }
+  }, [
+    isConnected,
+    isRefreshingAuthSession,
+    notifyAction,
+    runHaptic,
+    setSecureAuthState,
+    syncAuthStateToWeb,
+    syncMobileSecurityState,
+    trackAnalyticsEvent,
+  ]);
 
   const normalizePortalPath = useCallback((path: string) => {
     const base = WEB_PORTAL_URL.replace(/\/+$/, "");
@@ -1511,6 +1645,66 @@ export default function App(): React.JSX.Element {
     }
     return "Security: verify email";
   }, [mobileSecurityState]);
+  const securityWidgetSeverity = useMemo<"healthy" | "attention" | "critical" | "neutral">(() => {
+    if (!mobileSecurityState) {
+      return "neutral";
+    }
+    if (mobileSecurityState.locked_until) {
+      return "critical";
+    }
+    if (!mobileSecurityState.email_verified || !mobileSecurityState.is_two_factor_enabled) {
+      return "attention";
+    }
+    if (mobileSecurityState.failed_login_attempts > 0) {
+      return "attention";
+    }
+    return "healthy";
+  }, [mobileSecurityState]);
+  const securityWidgetTitle = useMemo(() => {
+    if (!mobileSecurityState) {
+      return "Security center not synced";
+    }
+    if (mobileSecurityState.locked_until) {
+      return "Account temporarily locked";
+    }
+    if (!mobileSecurityState.email_verified) {
+      return "Verify your email";
+    }
+    if (!mobileSecurityState.is_two_factor_enabled) {
+      return "Enable 2FA protection";
+    }
+    return "Security posture is healthy";
+  }, [mobileSecurityState]);
+  const securityWidgetMeta = useMemo(() => {
+    if (!mobileSecurityState) {
+      return "Open Security Center to complete verification and 2FA setup.";
+    }
+    if (mobileSecurityState.locked_until) {
+      return `Locked until ${new Date(mobileSecurityState.locked_until).toLocaleString()}`;
+    }
+    if (mobileSecurityState.failed_login_attempts > 0) {
+      return `Failed attempts: ${mobileSecurityState.failed_login_attempts}/${mobileSecurityState.max_failed_login_attempts}`;
+    }
+    if (!mobileSecurityState.email_verified || !mobileSecurityState.is_two_factor_enabled) {
+      return "Finish verification steps to unlock strong protection.";
+    }
+    return "Email verified, 2FA enabled, and no active lockout.";
+  }, [mobileSecurityState]);
+  useEffect(() => {
+    if (!mobileSecurityState) {
+      return;
+    }
+    trackAnalyticsOnce(
+      `mobile.security.widget.impression.${securityWidgetSeverity}.${mobileSecurityState.email_verified}.${mobileSecurityState.is_two_factor_enabled}.${mobileSecurityState.failed_login_attempts}`,
+      "mobile.security.widget_impression",
+      {
+        email_verified: mobileSecurityState.email_verified,
+        is_two_factor_enabled: mobileSecurityState.is_two_factor_enabled,
+        failed_login_attempts: mobileSecurityState.failed_login_attempts,
+        severity: securityWidgetSeverity,
+      }
+    );
+  }, [mobileSecurityState, securityWidgetSeverity, trackAnalyticsOnce]);
   const splashTitle = remoteConfig?.splash?.title?.trim() || DEFAULT_SPLASH_TITLE;
   const splashTagline = remoteConfig?.splash?.subtitle?.trim() || DEFAULT_SPLASH_TAGLINE;
   const splashGradient = normalizeGradientTriplet(remoteConfig?.splash?.gradient);
@@ -1851,6 +2045,57 @@ export default function App(): React.JSX.Element {
                   </View>
                 </View>
               ) : null}
+              <View style={styles.securityWidgetCard}>
+                <View style={styles.securityWidgetHeaderRow}>
+                  <View
+                    style={[
+                      styles.securityWidgetSeverityPill,
+                      securityWidgetSeverity === "healthy"
+                        ? styles.securityWidgetSeverityPillHealthy
+                        : securityWidgetSeverity === "attention"
+                          ? styles.securityWidgetSeverityPillAttention
+                          : securityWidgetSeverity === "critical"
+                            ? styles.securityWidgetSeverityPillCritical
+                            : styles.securityWidgetSeverityPillNeutral,
+                    ]}
+                  >
+                    <Text style={styles.securityWidgetSeverityText}>{securityLabel}</Text>
+                  </View>
+                  <Ionicons color="#bfdbfe" name="shield-outline" size={15} />
+                </View>
+                <Text numberOfLines={1} style={styles.securityWidgetTitle}>
+                  {securityWidgetTitle}
+                </Text>
+                <Text numberOfLines={2} style={styles.securityWidgetMeta}>
+                  {securityWidgetMeta}
+                </Text>
+                <View style={styles.securityWidgetActionRow}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={openSecurityCenter}
+                    style={[styles.securityWidgetActionButton, styles.securityWidgetActionButtonSecondary]}
+                  >
+                    <Ionicons color="#dbeafe" name="open-outline" size={13} />
+                    <Text style={styles.securityWidgetActionButtonText}>Open</Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={isRefreshingAuthSession}
+                    onPress={() => {
+                      void refreshMobileAuthSession();
+                    }}
+                    style={[
+                      styles.securityWidgetActionButton,
+                      isRefreshingAuthSession && styles.securityWidgetActionButtonDisabled,
+                    ]}
+                  >
+                    <Ionicons color="#dcfce7" name="refresh-outline" size={13} />
+                    <Text style={styles.securityWidgetActionButtonText}>
+                      {isRefreshingAuthSession ? "Refreshing..." : "Refresh session"}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
             </LinearGradient>
           </View>
 
@@ -2302,6 +2547,90 @@ const styles = StyleSheet.create({
   },
   calendarWidgetCompleteButtonText: {
     color: "#dcfce7",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  securityWidgetCard: {
+    backgroundColor: "rgba(15,23,42,0.48)",
+    borderColor: "rgba(148,163,184,0.45)",
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 5,
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  securityWidgetHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  securityWidgetSeverityPill: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  securityWidgetSeverityPillHealthy: {
+    backgroundColor: "rgba(34,197,94,0.2)",
+    borderColor: "rgba(134,239,172,0.6)",
+  },
+  securityWidgetSeverityPillAttention: {
+    backgroundColor: "rgba(245,158,11,0.2)",
+    borderColor: "rgba(253,230,138,0.6)",
+  },
+  securityWidgetSeverityPillCritical: {
+    backgroundColor: "rgba(239,68,68,0.2)",
+    borderColor: "rgba(252,165,165,0.6)",
+  },
+  securityWidgetSeverityPillNeutral: {
+    backgroundColor: "rgba(148,163,184,0.2)",
+    borderColor: "rgba(203,213,225,0.5)",
+  },
+  securityWidgetSeverityText: {
+    color: "#e2e8f0",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
+  securityWidgetTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  securityWidgetMeta: {
+    color: "#cbd5e1",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  securityWidgetActionRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+  },
+  securityWidgetActionButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(34,197,94,0.2)",
+    borderColor: "rgba(134,239,172,0.55)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: 4,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  securityWidgetActionButtonSecondary: {
+    backgroundColor: "rgba(30,64,175,0.25)",
+    borderColor: "rgba(147,197,253,0.6)",
+  },
+  securityWidgetActionButtonDisabled: {
+    opacity: 0.72,
+  },
+  securityWidgetActionButtonText: {
+    color: "#dbeafe",
     fontSize: 11,
     fontWeight: "700",
   },
