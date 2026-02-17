@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import Image from 'next/image';
 import styles from '../styles/Home.module.css';
 
 const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
@@ -883,7 +884,14 @@ export default function SecurityPage({
             </div>
             {twoFactorQrUrl ? (
               <div className={styles.resultsContainer}>
-                <img alt="2FA setup QR" src={twoFactorQrUrl} style={{ maxWidth: 220, width: '100%' }} />
+                <Image
+                  alt="2FA setup QR"
+                  height={220}
+                  src={twoFactorQrUrl}
+                  style={{ height: 'auto', maxWidth: 220, width: '100%' }}
+                  unoptimized
+                  width={220}
+                />
               </div>
             ) : null}
             <form onSubmit={handleVerifyTwoFactor}>
