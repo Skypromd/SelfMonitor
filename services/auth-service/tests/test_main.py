@@ -1,6 +1,9 @@
 import os
 import sys
 import datetime
+import hashlib
+import hmac
+import json
 from unittest.mock import patch
 
 import pyotp
@@ -38,6 +41,8 @@ def setup_function() -> None:
     main.login_attempts_by_ip.clear()
     main.security_alert_cooldowns_by_user.clear()
     main.security_alert_dispatch_log.clear()
+    main.security_alert_deliveries_by_id.clear()
+    main.security_push_tokens_by_user.clear()
 
     main.MAX_FAILED_LOGIN_ATTEMPTS = 5
     main.ACCOUNT_LOCKOUT_MINUTES = 15
@@ -54,7 +59,16 @@ def setup_function() -> None:
     main.AUTH_SECURITY_ALERT_PUSH_PROVIDER = "webhook"
     main.AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL = ""
     main.AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL = ""
+    main.AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET = ""
+    main.AUTH_SECURITY_ALERT_WEBHOOK_SIGNATURE_TTL_SECONDS = 300
+    main.AUTH_SECURITY_ALERT_SENDGRID_API_URL = "https://api.sendgrid.com/v3/mail/send"
+    main.AUTH_SECURITY_ALERT_SENDGRID_API_KEY = ""
+    main.AUTH_SECURITY_ALERT_EXPO_PUSH_API_URL = "https://exp.host/--/api/v2/push/send"
+    main.AUTH_SECURITY_ALERT_FCM_API_URL = "https://fcm.googleapis.com/fcm/send"
+    main.AUTH_SECURITY_ALERT_FCM_SERVER_KEY = ""
     main.AUTH_SECURITY_ALERT_COOLDOWN_MINUTES = 30
+    main.AUTH_SECURITY_ALERT_RECEIPTS_ENABLED = False
+    main.AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET = ""
 
     main.fake_users_db["admin@example.com"] = main._build_user_record(
         email="admin@example.com",
@@ -160,6 +174,181 @@ def test_risk_alerts_dispatch_on_failed_login_spike() -> None:
         "https://alerts.local/push",
     }
     assert len(main.security_alert_dispatch_log[email]) >= 1
+
+
+def test_risk_alert_webhook_dispatch_can_be_signed() -> None:
+    email = "alerts-signed-webhook@example.com"
+    password = "averysecurepassword123!"
+    _register(email, password)
+    main.MAX_FAILED_LOGIN_ATTEMPTS = 4
+    main.AUTH_SECURITY_ALERTS_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_ENABLED = True
+    main.AUTH_SECURITY_ALERT_PUSH_ENABLED = False
+    main.AUTH_SECURITY_ALERT_EMAIL_PROVIDER = "webhook"
+    main.AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL = "https://alerts.local/email"
+    main.AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET = "outbound-signing-secret"
+
+    captured_calls: list[tuple[str, dict, dict | None]] = []
+
+    def _capture_dispatch(url: str, payload: dict, headers: dict | None = None) -> tuple[str, str, dict]:
+        captured_calls.append((url, payload, headers))
+        return "sent", "ok", {"ack": True}
+
+    with patch.object(main, "_post_json_with_retry_extended", side_effect=_capture_dispatch):
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+
+    assert len(captured_calls) == 1
+    _, payload, headers = captured_calls[0]
+    assert headers
+    timestamp = headers["X-SelfMonitor-Signature-Timestamp"]
+    signature = headers["X-SelfMonitor-Signature"]
+    canonical_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    expected = hmac.new(
+        main.AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET.encode("utf-8"),
+        f"{timestamp}.{canonical_payload}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    assert signature == expected
+
+
+def test_risk_alert_sendgrid_provider_dispatches_payload() -> None:
+    email = "alerts-sendgrid@example.com"
+    password = "averysecurepassword123!"
+    _register(email, password)
+    main.MAX_FAILED_LOGIN_ATTEMPTS = 4
+    main.AUTH_SECURITY_ALERTS_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_ENABLED = True
+    main.AUTH_SECURITY_ALERT_PUSH_ENABLED = False
+    main.AUTH_SECURITY_ALERT_EMAIL_PROVIDER = "sendgrid"
+    main.AUTH_SECURITY_ALERT_SENDGRID_API_KEY = "sendgrid-test-key"
+
+    captured_calls: list[tuple[str, dict, dict | None]] = []
+
+    def _capture_dispatch(url: str, payload: dict, headers: dict | None = None) -> tuple[str, str, None]:
+        captured_calls.append((url, payload, headers))
+        return "sent", "ok", None
+
+    with patch.object(main, "_post_json_with_retry_extended", side_effect=_capture_dispatch):
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+
+    assert len(captured_calls) == 1
+    url, payload, headers = captured_calls[0]
+    assert url == main.AUTH_SECURITY_ALERT_SENDGRID_API_URL
+    assert headers and headers["Authorization"] == f"Bearer {main.AUTH_SECURITY_ALERT_SENDGRID_API_KEY}"
+    assert "personalizations" in payload
+    custom_args = payload["personalizations"][0]["custom_args"]
+    dispatch_id = custom_args["dispatch_id"]
+    latest_delivery = main.security_alert_dispatch_log[email][-1]
+    assert latest_delivery["dispatch_id"] == dispatch_id
+
+
+def test_security_push_token_registration_and_expo_push_dispatch() -> None:
+    email = "alerts-expo@example.com"
+    password = "averysecurepassword123!"
+    _register(email, password)
+    login_payload = _login(email, password)
+    auth_headers = {"Authorization": f"Bearer {login_payload['access_token']}"}
+
+    register_response = client.post(
+        "/security/push-tokens",
+        headers=auth_headers,
+        json={"push_token": "ExponentPushToken[testTokenValue]", "provider": "expo"},
+    )
+    assert register_response.status_code == 200
+    assert register_response.json()["total_active_tokens"] == 1
+
+    main.MAX_FAILED_LOGIN_ATTEMPTS = 4
+    main.AUTH_SECURITY_ALERTS_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_ENABLED = False
+    main.AUTH_SECURITY_ALERT_PUSH_ENABLED = True
+    main.AUTH_SECURITY_ALERT_PUSH_PROVIDER = "expo"
+
+    captured_calls: list[tuple[str, dict | list, dict | None]] = []
+
+    def _capture_dispatch(
+        url: str, payload: dict | list, headers: dict | None = None
+    ) -> tuple[str, str, dict]:
+        captured_calls.append((url, payload, headers))
+        return "sent", "ok", {"data": [{"status": "ok", "id": "expo-ticket-1"}]}
+
+    with patch.object(main, "_post_json_with_retry_extended", side_effect=_capture_dispatch):
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+
+    assert len(captured_calls) == 1
+    url, payload, _headers = captured_calls[0]
+    assert url == main.AUTH_SECURITY_ALERT_EXPO_PUSH_API_URL
+    payload_item = payload[0] if isinstance(payload, list) else payload
+    assert payload_item["to"] == "ExponentPushToken[testTokenValue]"
+    latest_delivery = main.security_alert_dispatch_log[email][-1]
+    assert latest_delivery["channels"]["push"]["provider_message_id"] == "expo-ticket-1"
+
+    tokens_response = client.get("/security/push-tokens", headers=auth_headers)
+    assert tokens_response.status_code == 200
+    tokens_payload = tokens_response.json()
+    assert tokens_payload["total_tokens"] == 1
+    assert tokens_payload["items"][0]["last_used_at"] is not None
+
+
+def test_security_alert_delivery_receipt_endpoint_updates_delivery_status() -> None:
+    email = "alerts-receipt@example.com"
+    password = "averysecurepassword123!"
+    _register(email, password)
+    login_payload = _login(email, password)
+    auth_headers = {"Authorization": f"Bearer {login_payload['access_token']}"}
+    main.MAX_FAILED_LOGIN_ATTEMPTS = 4
+    main.AUTH_SECURITY_ALERTS_ENABLED = True
+    main.AUTH_SECURITY_ALERT_EMAIL_ENABLED = True
+    main.AUTH_SECURITY_ALERT_PUSH_ENABLED = False
+    main.AUTH_SECURITY_ALERT_EMAIL_PROVIDER = "webhook"
+    main.AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL = "https://alerts.local/email"
+
+    with patch.object(main, "_post_json_with_retry", return_value=("sent", "ok")):
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+        assert client.post("/token", data={"username": email, "password": "wrong-pass"}).status_code == 401
+
+    dispatch_id = main.security_alert_dispatch_log[email][-1]["dispatch_id"]
+    main.AUTH_SECURITY_ALERT_RECEIPTS_ENABLED = True
+    main.AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET = "receipt-ingress-secret"
+
+    receipt_payload = {
+        "dispatch_id": dispatch_id,
+        "channel": "email",
+        "status": "delivered",
+        "provider_message_id": "msg-123",
+    }
+    raw_body = json.dumps(receipt_payload)
+    timestamp = str(int(datetime.datetime.now(datetime.UTC).timestamp()))
+    signature = hmac.new(
+        main.AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET.encode("utf-8"),
+        f"{timestamp}.{raw_body}".encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    receipt_response = client.post(
+        "/security/alerts/delivery-receipts",
+        data=raw_body,
+        headers={
+            "Content-Type": "application/json",
+            "X-SelfMonitor-Signature-Timestamp": timestamp,
+            "X-SelfMonitor-Signature": signature,
+        },
+    )
+    assert receipt_response.status_code == 200
+    assert receipt_response.json()["updated"] is True
+
+    delivery_item = main.security_alert_deliveries_by_id[dispatch_id]
+    assert delivery_item["channels"]["email"]["receipt_status"] == "delivered"
+    assert delivery_item["status"] in {"delivered", "partial_delivery"}
+
+    deliveries_response = client.get("/security/alerts/deliveries?limit=5", headers=auth_headers)
+    assert deliveries_response.status_code == 200
+    assert any(item["dispatch_id"] == dispatch_id for item in deliveries_response.json()["items"])
 
 
 def test_refresh_token_rotation_rejects_reuse() -> None:

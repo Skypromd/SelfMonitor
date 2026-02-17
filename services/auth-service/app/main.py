@@ -5,6 +5,7 @@ import datetime
 import hashlib
 import hmac
 import io
+import json
 import os
 import secrets
 import time
@@ -15,7 +16,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Response, Query, Re
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ValidationError
 import pyotp
 import qrcode
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -93,6 +94,25 @@ AUTH_SECURITY_ALERT_PUSH_TITLE_PREFIX = os.getenv(
     "AUTH_SECURITY_ALERT_PUSH_TITLE_PREFIX",
     "SelfMonitor Security",
 ).strip()
+AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET = os.getenv("AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET", "").strip()
+AUTH_SECURITY_ALERT_WEBHOOK_SIGNATURE_TTL_SECONDS = _parse_positive_int_env(
+    "AUTH_SECURITY_ALERT_WEBHOOK_SIGNATURE_TTL_SECONDS",
+    300,
+)
+AUTH_SECURITY_ALERT_SENDGRID_API_URL = os.getenv(
+    "AUTH_SECURITY_ALERT_SENDGRID_API_URL",
+    "https://api.sendgrid.com/v3/mail/send",
+).strip()
+AUTH_SECURITY_ALERT_SENDGRID_API_KEY = os.getenv("AUTH_SECURITY_ALERT_SENDGRID_API_KEY", "").strip()
+AUTH_SECURITY_ALERT_EXPO_PUSH_API_URL = os.getenv(
+    "AUTH_SECURITY_ALERT_EXPO_PUSH_API_URL",
+    "https://exp.host/--/api/v2/push/send",
+).strip()
+AUTH_SECURITY_ALERT_FCM_API_URL = os.getenv(
+    "AUTH_SECURITY_ALERT_FCM_API_URL",
+    "https://fcm.googleapis.com/fcm/send",
+).strip()
+AUTH_SECURITY_ALERT_FCM_SERVER_KEY = os.getenv("AUTH_SECURITY_ALERT_FCM_SERVER_KEY", "").strip()
 AUTH_SECURITY_ALERT_COOLDOWN_MINUTES = _parse_positive_int_env("AUTH_SECURITY_ALERT_COOLDOWN_MINUTES", 30)
 AUTH_SECURITY_ALERT_DELIVERY_RETRY_ATTEMPTS = _parse_positive_int_env(
     "AUTH_SECURITY_ALERT_DELIVERY_RETRY_ATTEMPTS",
@@ -106,6 +126,8 @@ AUTH_SECURITY_ALERT_DISPATCH_TIMEOUT_SECONDS = max(
     _parse_non_negative_float_env("AUTH_SECURITY_ALERT_DISPATCH_TIMEOUT_SECONDS", 5.0),
     0.1,
 )
+AUTH_SECURITY_ALERT_RECEIPTS_ENABLED = _parse_bool_env("AUTH_SECURITY_ALERT_RECEIPTS_ENABLED", False)
+AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET = os.getenv("AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET", "").strip()
 
 app = FastAPI(
     title="Auth Service",
@@ -304,6 +326,54 @@ class SecurityLockdownResponse(BaseModel):
     revoked_sessions: int
 
 
+class SecurityPushTokenRegisterRequest(BaseModel):
+    push_token: str = Field(min_length=8, max_length=512)
+    provider: str = Field(default="expo", pattern="^(expo|fcm)$")
+
+
+class SecurityPushTokenItem(BaseModel):
+    push_token: str
+    provider: str
+    registered_at: datetime.datetime
+    last_used_at: Optional[datetime.datetime] = None
+    revoked_at: Optional[datetime.datetime] = None
+
+
+class SecurityPushTokensResponse(BaseModel):
+    total_tokens: int
+    items: list[SecurityPushTokenItem]
+
+
+class SecurityPushTokenRegisterResponse(BaseModel):
+    message: str
+    total_active_tokens: int
+
+
+class SecurityPushTokenRevokeResponse(BaseModel):
+    message: str
+    revoked_tokens: int
+
+
+class SecurityAlertDeliveryReceiptRequest(BaseModel):
+    dispatch_id: str = Field(min_length=8, max_length=128)
+    channel: str = Field(pattern="^(email|push)$")
+    status: str = Field(pattern="^(delivered|failed|bounced|deferred|opened|clicked)$")
+    provider_message_id: Optional[str] = Field(default=None, max_length=256)
+    reason: Optional[str] = Field(default=None, max_length=500)
+    occurred_at: Optional[datetime.datetime] = None
+
+
+class SecurityAlertDeliveryReceiptResponse(BaseModel):
+    message: str
+    dispatch_id: str
+    updated: bool
+
+
+class SecurityAlertDeliveriesResponse(BaseModel):
+    total: int
+    items: list[Dict[str, Any]]
+
+
 # --- "Database" ---
 
 def _build_user_record(*, email: str, hashed_password: str, is_admin: bool, email_verified: bool) -> Dict[str, Any]:
@@ -344,6 +414,8 @@ security_events_by_user: Dict[str, deque[SecurityEvent]] = defaultdict(lambda: d
 login_attempts_by_ip: Dict[str, deque[datetime.datetime]] = defaultdict(deque)
 security_alert_cooldowns_by_user: Dict[str, Dict[str, datetime.datetime]] = defaultdict(dict)
 security_alert_dispatch_log: Dict[str, deque[Dict[str, Any]]] = defaultdict(lambda: deque(maxlen=100))
+security_alert_deliveries_by_id: Dict[str, Dict[str, Any]] = {}
+security_push_tokens_by_user: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
 
 
 def get_user_record(email: str) -> Optional[Dict[str, Any]]:
@@ -361,6 +433,69 @@ def _truncate_text(value: str, limit: int = 280) -> str:
     if len(value) <= limit:
         return value
     return f"{value[: max(limit - 3, 0)]}..."
+
+
+def _normalize_push_provider(value: str) -> str:
+    candidate = value.strip().lower()
+    return candidate if candidate in {"expo", "fcm"} else "expo"
+
+
+def _build_webhook_signature_headers(payload: Dict[str, Any], secret: str) -> Dict[str, str]:
+    if not secret:
+        return {}
+    timestamp = str(int(datetime.datetime.now(datetime.UTC).timestamp()))
+    canonical_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    signing_value = f"{timestamp}.{canonical_payload}".encode("utf-8")
+    signature = hmac.new(secret.encode("utf-8"), signing_value, hashlib.sha256).hexdigest()
+    return {
+        "X-SelfMonitor-Signature-Timestamp": timestamp,
+        "X-SelfMonitor-Signature": signature,
+    }
+
+
+def _verify_webhook_signature(request: Request, raw_body: bytes, secret: str) -> None:
+    timestamp = request.headers.get("x-selfmonitor-signature-timestamp", "").strip()
+    signature = request.headers.get("x-selfmonitor-signature", "").strip()
+    if not timestamp or not signature:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing webhook signature headers.")
+    try:
+        timestamp_value = int(timestamp)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature timestamp.") from exc
+    now_ts = int(datetime.datetime.now(datetime.UTC).timestamp())
+    if abs(now_ts - timestamp_value) > AUTH_SECURITY_ALERT_WEBHOOK_SIGNATURE_TTL_SECONDS:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook signature timestamp is expired.")
+    signing_payload = f"{timestamp}.{raw_body.decode('utf-8')}".encode("utf-8")
+    expected_signature = hmac.new(secret.encode("utf-8"), signing_payload, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_signature, signature):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid webhook signature.")
+
+
+def _serialize_delivery_item(value: Dict[str, Any]) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {}
+    for key, item in value.items():
+        if isinstance(item, datetime.datetime):
+            payload[key] = item.isoformat()
+        elif isinstance(item, dict):
+            payload[key] = _serialize_delivery_item(item)
+        elif isinstance(item, list):
+            payload[key] = [
+                _serialize_delivery_item(list_item) if isinstance(list_item, dict) else list_item
+                for list_item in item
+            ]
+        else:
+            payload[key] = item
+    return payload
+
+
+def _to_security_push_token_item(push_token: str, record: Dict[str, Any]) -> SecurityPushTokenItem:
+    return SecurityPushTokenItem(
+        push_token=push_token,
+        provider=_normalize_push_provider(str(record.get("provider", "expo"))),
+        registered_at=_to_utc_datetime(record.get("registered_at")) or datetime.datetime.now(datetime.UTC),
+        last_used_at=_to_utc_datetime(record.get("last_used_at")),
+        revoked_at=_to_utc_datetime(record.get("revoked_at")),
+    )
 
 
 def _build_security_alert_signal(email: str, event: SecurityEvent) -> Optional[Dict[str, str]]:
@@ -445,25 +580,89 @@ def _is_alert_in_cooldown(email: str, alert_key: str, now_utc: datetime.datetime
     return False
 
 
-def _post_json_with_retry(url: str, payload: Dict[str, Any]) -> tuple[str, str]:
+def _post_json_with_retry_extended(
+    url: str,
+    payload: Any,
+    *,
+    headers: Optional[Dict[str, str]] = None,
+) -> tuple[str, str, Optional[Any]]:
     attempts = max(AUTH_SECURITY_ALERT_DELIVERY_RETRY_ATTEMPTS, 1)
     last_detail = "Dispatch failed."
+    response_payload: Optional[Any] = None
     for attempt in range(attempts):
         try:
             response = httpx.post(
                 url,
                 json=payload,
+                headers=headers,
                 timeout=AUTH_SECURITY_ALERT_DISPATCH_TIMEOUT_SECONDS,
             )
             if 200 <= response.status_code < 300:
-                return "sent", f"HTTP {response.status_code}"
+                try:
+                    response_payload = response.json()
+                except Exception:
+                    response_payload = None
+                return "sent", f"HTTP {response.status_code}", response_payload
             last_detail = f"HTTP {response.status_code}"
         except Exception as exc:  # pragma: no cover - network error branch
             last_detail = _truncate_text(str(exc))
         if attempt < attempts - 1:
             backoff_seconds = AUTH_SECURITY_ALERT_DELIVERY_RETRY_BASE_DELAY_SECONDS * (2 ** attempt)
             time.sleep(backoff_seconds)
-    return "failed", last_detail
+    return "failed", last_detail, response_payload
+
+
+def _post_json_with_retry(url: str, payload: Any) -> tuple[str, str]:
+    status_text, detail, _response_payload = _post_json_with_retry_extended(url, payload)
+    return status_text, detail
+
+
+def _collect_active_push_tokens(email: str, provider: str) -> list[str]:
+    normalized_email = _normalize_email(email)
+    normalized_provider = _normalize_push_provider(provider)
+    records = security_push_tokens_by_user.get(normalized_email, {})
+    tokens: list[str] = []
+    for token_value, record in records.items():
+        if _normalize_push_provider(str(record.get("provider", "expo"))) != normalized_provider:
+            continue
+        if record.get("revoked_at"):
+            continue
+        if token_value:
+            tokens.append(token_value)
+    return tokens
+
+
+def _touch_push_tokens(email: str, provider: str, token_values: list[str]) -> None:
+    if not token_values:
+        return
+    normalized_email = _normalize_email(email)
+    normalized_provider = _normalize_push_provider(provider)
+    now_utc = datetime.datetime.now(datetime.UTC)
+    user_tokens = security_push_tokens_by_user.get(normalized_email, {})
+    for token_value in token_values:
+        record = user_tokens.get(token_value)
+        if not record:
+            continue
+        if _normalize_push_provider(str(record.get("provider", "expo"))) != normalized_provider:
+            continue
+        if record.get("revoked_at"):
+            continue
+        record["last_used_at"] = now_utc
+
+
+def _dispatch_security_alert_via_webhook(
+    *,
+    url: str,
+    payload: Dict[str, Any],
+) -> Dict[str, str]:
+    if not url:
+        return {"status": "failed", "detail": "Webhook dispatch URL is not configured."}
+    headers = _build_webhook_signature_headers(payload, AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET)
+    if headers:
+        status_text, detail, _response_payload = _post_json_with_retry_extended(url, payload, headers=headers)
+        return {"status": status_text, "detail": detail}
+    status_text, detail = _post_json_with_retry(url, payload)
+    return {"status": status_text, "detail": detail}
 
 
 def _dispatch_security_alert_email(
@@ -471,19 +670,18 @@ def _dispatch_security_alert_email(
     email: str,
     event: SecurityEvent,
     signal: Dict[str, str],
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     if not AUTH_SECURITY_ALERT_EMAIL_ENABLED:
         return {"status": "skipped", "detail": "Email alerts disabled."}
-    if AUTH_SECURITY_ALERT_EMAIL_PROVIDER != "webhook":
-        return {"status": "failed", "detail": "Unsupported email alert provider."}
-    if not AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL:
-        return {"status": "failed", "detail": "Email alert dispatch URL not configured."}
+    provider = AUTH_SECURITY_ALERT_EMAIL_PROVIDER
     subject = f"[{signal['severity'].upper()}] {signal['title']}"
-    payload = {
+    dispatch_id = str(signal.get("dispatch_id", ""))
+    base_payload = {
         "to": email,
         "from": AUTH_SECURITY_ALERT_EMAIL_FROM,
         "subject": subject,
         "message": signal["message"],
+        "dispatch_id": dispatch_id,
         "event": {
             "event_id": str(event.event_id),
             "event_type": event.event_type,
@@ -493,8 +691,40 @@ def _dispatch_security_alert_email(
         },
         "severity": signal["severity"],
     }
-    status_text, detail = _post_json_with_retry(AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL, payload)
-    return {"status": status_text, "detail": detail}
+    if provider == "webhook":
+        return _dispatch_security_alert_via_webhook(
+            url=AUTH_SECURITY_ALERT_EMAIL_DISPATCH_URL,
+            payload=base_payload,
+        )
+    if provider == "sendgrid":
+        if not AUTH_SECURITY_ALERT_SENDGRID_API_KEY:
+            return {"status": "failed", "detail": "SendGrid API key is not configured."}
+        sendgrid_payload = {
+            "personalizations": [
+                {
+                    "to": [{"email": email}],
+                    "subject": subject,
+                    "custom_args": {
+                        "dispatch_id": dispatch_id,
+                        "alert_key": signal["key"],
+                        "event_type": event.event_type,
+                    },
+                }
+            ],
+            "from": {"email": AUTH_SECURITY_ALERT_EMAIL_FROM},
+            "content": [{"type": "text/plain", "value": signal["message"]}],
+        }
+        headers = {
+            "Authorization": f"Bearer {AUTH_SECURITY_ALERT_SENDGRID_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        status_text, detail, _response_payload = _post_json_with_retry_extended(
+            AUTH_SECURITY_ALERT_SENDGRID_API_URL,
+            sendgrid_payload,
+            headers=headers,
+        )
+        return {"status": status_text, "detail": detail}
+    return {"status": "failed", "detail": "Unsupported email alert provider."}
 
 
 def _dispatch_security_alert_push(
@@ -502,28 +732,126 @@ def _dispatch_security_alert_push(
     email: str,
     event: SecurityEvent,
     signal: Dict[str, str],
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     if not AUTH_SECURITY_ALERT_PUSH_ENABLED:
         return {"status": "skipped", "detail": "Push alerts disabled."}
-    if AUTH_SECURITY_ALERT_PUSH_PROVIDER != "webhook":
-        return {"status": "failed", "detail": "Unsupported push alert provider."}
-    if not AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL:
-        return {"status": "failed", "detail": "Push alert dispatch URL not configured."}
+    provider = AUTH_SECURITY_ALERT_PUSH_PROVIDER
     title_prefix = AUTH_SECURITY_ALERT_PUSH_TITLE_PREFIX or "SelfMonitor Security"
-    payload = {
+    dispatch_id = str(signal.get("dispatch_id", ""))
+    base_payload = {
         "recipient_email": email,
         "title": f"{title_prefix}: {signal['title']}",
         "body": signal["message"],
         "severity": signal["severity"],
+        "dispatch_id": dispatch_id,
         "route": "/security",
         "data": {
+            "dispatch_id": dispatch_id,
             "event_id": str(event.event_id),
             "event_type": event.event_type,
             "occurred_at": event.occurred_at.isoformat(),
         },
     }
-    status_text, detail = _post_json_with_retry(AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL, payload)
-    return {"status": status_text, "detail": detail}
+    if provider == "webhook":
+        return _dispatch_security_alert_via_webhook(
+            url=AUTH_SECURITY_ALERT_PUSH_DISPATCH_URL,
+            payload=base_payload,
+        )
+    if provider == "expo":
+        expo_tokens = _collect_active_push_tokens(email, "expo")
+        if not expo_tokens:
+            return {"status": "failed", "detail": "No active Expo push tokens registered."}
+        messages = [
+            {
+                "to": token_value,
+                "title": base_payload["title"],
+                "body": base_payload["body"],
+                "sound": "default",
+                "data": base_payload["data"],
+            }
+            for token_value in expo_tokens
+        ]
+        headers = {
+            "Accept": "application/json",
+            "Accept-encoding": "gzip, deflate",
+            "Content-Type": "application/json",
+        }
+        request_payload: Dict[str, Any] | list[Dict[str, Any]]
+        if len(messages) == 1:
+            request_payload = messages[0]
+        else:
+            request_payload = messages
+        status_text, detail, response_payload = _post_json_with_retry_extended(
+            AUTH_SECURITY_ALERT_EXPO_PUSH_API_URL,
+            request_payload,
+            headers=headers,
+        )
+        provider_message_id = None
+        if isinstance(response_payload, dict):
+            items = response_payload.get("data")
+            if isinstance(items, list):
+                ticket_ids = [
+                    str(item.get("id"))
+                    for item in items
+                    if isinstance(item, dict) and item.get("status") == "ok" and item.get("id")
+                ]
+                if ticket_ids:
+                    provider_message_id = ",".join(ticket_ids[:5])
+            elif isinstance(items, dict) and items.get("status") == "ok" and items.get("id"):
+                provider_message_id = str(items.get("id"))
+        response_payload = {
+            "status": status_text,
+            "detail": detail,
+        }
+        if provider_message_id:
+            response_payload["provider_message_id"] = provider_message_id
+        if status_text == "sent":
+            _touch_push_tokens(email, "expo", expo_tokens)
+        return response_payload
+    if provider == "fcm":
+        fcm_tokens = _collect_active_push_tokens(email, "fcm")
+        if not fcm_tokens:
+            return {"status": "failed", "detail": "No active FCM push tokens registered."}
+        if not AUTH_SECURITY_ALERT_FCM_SERVER_KEY:
+            return {"status": "failed", "detail": "FCM server key is not configured."}
+        fcm_payload = {
+            "registration_ids": fcm_tokens,
+            "notification": {
+                "title": base_payload["title"],
+                "body": base_payload["body"],
+            },
+            "data": base_payload["data"],
+        }
+        headers = {
+            "Authorization": f"key={AUTH_SECURITY_ALERT_FCM_SERVER_KEY}",
+            "Content-Type": "application/json",
+        }
+        status_text, detail, response_payload = _post_json_with_retry_extended(
+            AUTH_SECURITY_ALERT_FCM_API_URL,
+            fcm_payload,
+            headers=headers,
+        )
+        provider_message_id = None
+        if isinstance(response_payload, dict):
+            results = response_payload.get("results")
+            if isinstance(results, list):
+                message_ids = [
+                    str(item.get("message_id"))
+                    for item in results
+                    if isinstance(item, dict) and item.get("message_id")
+                ]
+                if message_ids:
+                    provider_message_id = ",".join(message_ids[:5])
+        response_payload = {
+            "status": status_text,
+            "detail": detail,
+        }
+        if provider_message_id:
+            response_payload["provider_message_id"] = provider_message_id
+        if status_text == "sent":
+            _touch_push_tokens(email, "fcm", fcm_tokens)
+        return response_payload
+    return {"status": "failed", "detail": "Unsupported push alert provider."}
 
 
 def _dispatch_security_alerts_for_event(email: str, event: SecurityEvent) -> Optional[Dict[str, Any]]:
@@ -533,9 +861,12 @@ def _dispatch_security_alerts_for_event(email: str, event: SecurityEvent) -> Opt
     if not signal:
         return None
     now_utc = datetime.datetime.now(datetime.UTC)
+    dispatch_id = str(uuid.uuid4())
+    signal["dispatch_id"] = dispatch_id
     alert_key = signal["key"]
     if _is_alert_in_cooldown(email, alert_key, now_utc):
         delivery = {
+            "dispatch_id": dispatch_id,
             "alert_key": alert_key,
             "severity": signal["severity"],
             "status": "throttled",
@@ -543,15 +874,24 @@ def _dispatch_security_alerts_for_event(email: str, event: SecurityEvent) -> Opt
             "occurred_at": now_utc.isoformat(),
         }
         security_alert_dispatch_log[email].append(delivery)
+        security_alert_deliveries_by_id[dispatch_id] = delivery
         return delivery
 
     email_delivery = _dispatch_security_alert_email(email=email, event=event, signal=signal)
     push_delivery = _dispatch_security_alert_push(email=email, event=event, signal=signal)
+    delivery_status = "dispatched"
+    if (
+        email_delivery.get("status") not in {"sent", "skipped"}
+        and push_delivery.get("status") not in {"sent", "skipped"}
+    ):
+        delivery_status = "failed"
     delivery = {
+        "dispatch_id": dispatch_id,
+        "email": email,
         "alert_key": alert_key,
         "severity": signal["severity"],
         "title": signal["title"],
-        "status": "dispatched",
+        "status": delivery_status,
         "channels": {
             "email": email_delivery,
             "push": push_delivery,
@@ -559,6 +899,7 @@ def _dispatch_security_alerts_for_event(email: str, event: SecurityEvent) -> Opt
         "occurred_at": now_utc.isoformat(),
     }
     security_alert_dispatch_log[email].append(delivery)
+    security_alert_deliveries_by_id[dispatch_id] = delivery
     return delivery
 
 
@@ -1198,6 +1539,169 @@ async def list_security_events(
     items = events[-limit:]
     items.reverse()
     return SecurityEventsResponse(total=len(events), items=items)
+
+
+@app.get("/security/alerts/deliveries", response_model=SecurityAlertDeliveriesResponse)
+async def list_security_alert_deliveries(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    normalized_email = _normalize_email(current_user.email)
+    deliveries = list(security_alert_dispatch_log.get(normalized_email, deque()))
+    items = deliveries[-limit:]
+    items.reverse()
+    sanitized_items: list[Dict[str, Any]] = []
+    for item in items:
+        serialized = _serialize_delivery_item(item)
+        serialized.pop("email", None)
+        sanitized_items.append(serialized)
+    return SecurityAlertDeliveriesResponse(total=len(deliveries), items=sanitized_items)
+
+
+@app.post("/security/push-tokens", response_model=SecurityPushTokenRegisterResponse)
+async def register_security_push_token(
+    payload: SecurityPushTokenRegisterRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    normalized_email = _normalize_email(current_user.email)
+    provider = _normalize_push_provider(payload.provider)
+    token_value = payload.push_token.strip()
+    if not token_value:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="push_token cannot be blank.")
+    user_tokens = security_push_tokens_by_user[normalized_email]
+    previous_record = user_tokens.get(token_value, {})
+    user_tokens[token_value] = {
+        "provider": provider,
+        "registered_at": _to_utc_datetime(previous_record.get("registered_at")) or datetime.datetime.now(datetime.UTC),
+        "last_used_at": _to_utc_datetime(previous_record.get("last_used_at")),
+        "revoked_at": None,
+    }
+    active_count = len([item for item in user_tokens.values() if item.get("revoked_at") is None])
+    _append_security_event(
+        email=normalized_email,
+        event_type="auth.push_token_registered",
+        request=request,
+        details={
+            "provider": provider,
+            "token_fingerprint": hashlib.sha256(token_value.encode("utf-8")).hexdigest()[:16],
+        },
+    )
+    return SecurityPushTokenRegisterResponse(
+        message="Push token registered.",
+        total_active_tokens=active_count,
+    )
+
+
+@app.get("/security/push-tokens", response_model=SecurityPushTokensResponse)
+async def list_security_push_tokens(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    include_revoked: bool = Query(default=False),
+):
+    normalized_email = _normalize_email(current_user.email)
+    user_tokens = security_push_tokens_by_user.get(normalized_email, {})
+    items: list[SecurityPushTokenItem] = []
+    for token_value, record in user_tokens.items():
+        if not include_revoked and record.get("revoked_at"):
+            continue
+        items.append(_to_security_push_token_item(token_value, record))
+    items.sort(key=lambda item: item.registered_at, reverse=True)
+    return SecurityPushTokensResponse(total_tokens=len(items), items=items)
+
+
+@app.delete("/security/push-tokens/{push_token}", response_model=SecurityPushTokenRevokeResponse)
+async def revoke_security_push_token(
+    push_token: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    normalized_email = _normalize_email(current_user.email)
+    user_tokens = security_push_tokens_by_user.get(normalized_email, {})
+    token_value = push_token.strip()
+    token_record = user_tokens.get(token_value)
+    if not token_record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Push token not found.")
+    if token_record.get("revoked_at"):
+        return SecurityPushTokenRevokeResponse(message="Push token already revoked.", revoked_tokens=0)
+    token_record["revoked_at"] = datetime.datetime.now(datetime.UTC)
+    _append_security_event(
+        email=normalized_email,
+        event_type="auth.push_token_revoked",
+        request=request,
+        details={
+            "provider": _normalize_push_provider(str(token_record.get("provider", "expo"))),
+            "token_fingerprint": hashlib.sha256(token_value.encode("utf-8")).hexdigest()[:16],
+        },
+    )
+    return SecurityPushTokenRevokeResponse(message="Push token revoked.", revoked_tokens=1)
+
+
+@app.post("/security/alerts/delivery-receipts", response_model=SecurityAlertDeliveryReceiptResponse)
+async def ingest_security_alert_delivery_receipt(request: Request):
+    if not AUTH_SECURITY_ALERT_RECEIPTS_ENABLED:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Alert receipts are disabled.")
+    if not AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Alert receipt webhook secret is not configured.",
+        )
+    raw_body = await request.body()
+    _verify_webhook_signature(request, raw_body, AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET)
+    try:
+        payload = SecurityAlertDeliveryReceiptRequest.model_validate_json(raw_body)
+    except ValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
+
+    delivery = security_alert_deliveries_by_id.get(payload.dispatch_id)
+    if not isinstance(delivery, dict):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dispatch id not found.")
+    channels = delivery.get("channels")
+    if not isinstance(channels, dict) or payload.channel not in channels:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown delivery channel.")
+    channel_entry = channels.get(payload.channel)
+    if not isinstance(channel_entry, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid delivery channel payload.")
+
+    now_utc = datetime.datetime.now(datetime.UTC)
+    receipt_time = _to_utc_datetime(payload.occurred_at) or now_utc
+    channel_entry["receipt_status"] = payload.status
+    channel_entry["receipt_at"] = receipt_time.isoformat()
+    if payload.provider_message_id:
+        channel_entry["provider_message_id"] = payload.provider_message_id
+    if payload.reason:
+        channel_entry["receipt_reason"] = payload.reason
+    channel_entry["status"] = "sent" if payload.status in {"delivered", "opened", "clicked"} else "failed"
+
+    channel_statuses = [
+        str(item.get("status", "failed"))
+        for item in channels.values()
+        if isinstance(item, dict)
+    ]
+    if channel_statuses and all(status_item in {"sent", "skipped"} for status_item in channel_statuses):
+        delivery["status"] = "delivered"
+    elif channel_statuses and all(status_item == "failed" for status_item in channel_statuses):
+        delivery["status"] = "failed"
+    elif any(status_item == "sent" for status_item in channel_statuses):
+        delivery["status"] = "partial_delivery"
+    delivery["last_receipt_at"] = receipt_time.isoformat()
+
+    owner_email = _normalize_email(str(delivery.get("email", "")))
+    if owner_email in fake_users_db:
+        _append_security_event(
+            email=owner_email,
+            event_type="auth.security_alert_receipt_updated",
+            request=None,
+            details={
+                "dispatch_id": payload.dispatch_id,
+                "channel": payload.channel,
+                "status": payload.status,
+            },
+        )
+    return SecurityAlertDeliveryReceiptResponse(
+        message="Delivery receipt processed.",
+        dispatch_id=payload.dispatch_id,
+        updated=True,
+    )
 
 
 @app.get("/security/state", response_model=SecurityStateResponse)

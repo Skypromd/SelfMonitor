@@ -199,6 +199,123 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /security/alerts/deliveries:
+    get:
+      summary: List Security Alert Deliveries
+      operationId: list_security_alert_deliveries_security_alerts_deliveries_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityAlertDeliveriesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/push-tokens:
+    post:
+      summary: Register Security Push Token
+      operationId: register_security_push_token_security_push_tokens_post
+      security:
+      - OAuth2PasswordBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityPushTokenRegisterRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRegisterResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Security Push Tokens
+      operationId: list_security_push_tokens_security_push_tokens_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: include_revoked
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Revoked
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokensResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/push-tokens/{push_token}:
+    delete:
+      summary: Revoke Security Push Token
+      operationId: revoke_security_push_token_security_push_tokens__push_token__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: push_token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Push Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRevokeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/alerts/delivery-receipts:
+    post:
+      summary: Ingest Security Alert Delivery Receipt
+      operationId: ingest_security_alert_delivery_receipt_security_alerts_delivery_receipts_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityAlertDeliveryReceiptResponse'
   /security/state:
     get:
       summary: Get Security State
@@ -583,6 +700,39 @@ components:
       - message
       - revoked_sessions
       title: RevokeSessionsResponse
+    SecurityAlertDeliveriesResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SecurityAlertDeliveriesResponse
+    SecurityAlertDeliveryReceiptResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        dispatch_id:
+          type: string
+          title: Dispatch Id
+        updated:
+          type: boolean
+          title: Updated
+      type: object
+      required:
+      - message
+      - dispatch_id
+      - updated
+      title: SecurityAlertDeliveryReceiptResponse
     SecurityEvent:
       properties:
         event_id:
@@ -661,6 +811,93 @@ components:
       - lock_minutes
       - revoked_sessions
       title: SecurityLockdownResponse
+    SecurityPushTokenItem:
+      properties:
+        push_token:
+          type: string
+          title: Push Token
+        provider:
+          type: string
+          title: Provider
+        registered_at:
+          type: string
+          format: date-time
+          title: Registered At
+        last_used_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Used At
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+      type: object
+      required:
+      - push_token
+      - provider
+      - registered_at
+      title: SecurityPushTokenItem
+    SecurityPushTokenRegisterRequest:
+      properties:
+        push_token:
+          type: string
+          maxLength: 512
+          minLength: 8
+          title: Push Token
+        provider:
+          type: string
+          pattern: ^(expo|fcm)$
+          title: Provider
+          default: expo
+      type: object
+      required:
+      - push_token
+      title: SecurityPushTokenRegisterRequest
+    SecurityPushTokenRegisterResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        total_active_tokens:
+          type: integer
+          title: Total Active Tokens
+      type: object
+      required:
+      - message
+      - total_active_tokens
+      title: SecurityPushTokenRegisterResponse
+    SecurityPushTokenRevokeResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        revoked_tokens:
+          type: integer
+          title: Revoked Tokens
+      type: object
+      required:
+      - message
+      - revoked_tokens
+      title: SecurityPushTokenRevokeResponse
+    SecurityPushTokensResponse:
+      properties:
+        total_tokens:
+          type: integer
+          title: Total Tokens
+        items:
+          items:
+            $ref: '#/components/schemas/SecurityPushTokenItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total_tokens
+      - items
+      title: SecurityPushTokensResponse
     SecuritySessionItem:
       properties:
         session_id:

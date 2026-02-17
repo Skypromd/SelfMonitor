@@ -87,6 +87,13 @@ Before enabling production traffic, validate these auth controls:
 6. Risk alert delivery:
    - `AUTH_SECURITY_ALERTS_ENABLED=true` in production.
    - at least one test alert is delivered over both configured channels (`email`/`push`).
+   - provider setup validated:
+     - email: `webhook` or `sendgrid`
+     - push: `webhook`, `expo`, or `fcm`
+   - webhook channels use request signing (`AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET`).
+   - receipt ingestion is enabled for provider callbacks:
+     - `AUTH_SECURITY_ALERT_RECEIPTS_ENABLED=true`
+     - `POST /auth/security/alerts/delivery-receipts` accepts signed receipts.
    - cooldown (`AUTH_SECURITY_ALERT_COOLDOWN_MINUTES`) is set to prevent alert floods.
 
 ## 6.2 Threat-model and pentest gate (mandatory)

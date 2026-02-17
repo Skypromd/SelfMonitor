@@ -953,6 +953,46 @@ export default function App(): React.JSX.Element {
       await SecureStore.setItemAsync(SECURE_PUSH_TOKEN_KEY, tokenResponse.data);
       setStoredPushToken(tokenResponse.data);
       syncPushTokenToWeb(tokenResponse.data);
+      if (AUTH_SERVICE_URL) {
+        const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
+        if (authToken) {
+          try {
+            const registerResponse = await fetch(`${AUTH_SERVICE_URL}/security/push-tokens`, {
+              method: "POST",
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify({
+                push_token: tokenResponse.data,
+                provider: "expo",
+              }),
+            });
+            if (!registerResponse.ok) {
+              let reason = `HTTP ${registerResponse.status}`;
+              try {
+                const registerPayload = (await registerResponse.json()) as { detail?: unknown };
+                if (typeof registerPayload.detail === "string" && registerPayload.detail.trim()) {
+                  reason = registerPayload.detail.trim();
+                }
+              } catch {
+                // Keep fallback reason.
+              }
+              void trackAnalyticsEvent("mobile.push.backend_registration_failed", {
+                reason,
+                status_code: registerResponse.status,
+              });
+            } else {
+              void trackAnalyticsEvent("mobile.push.backend_registration_success");
+            }
+          } catch (error) {
+            void trackAnalyticsEvent("mobile.push.backend_registration_failed", {
+              reason: error instanceof Error ? error.message : "unknown",
+            });
+          }
+        }
+      }
       notifyAction("Push token успешно подключен.");
       void trackAnalyticsEvent("mobile.push.permission_granted", {
         token_preview: tokenResponse.data.slice(0, 12),

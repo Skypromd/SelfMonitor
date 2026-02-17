@@ -72,6 +72,7 @@ Implemented in this iteration:
 - secure session bootstrap from native secure storage;
 - web/native auth bridge (session state sync);
 - push-notification permission and token registration shortcut;
+- auth-service push token registration for security alerts (`/security/push-tokens`);
 - home command-card widget for nearest client calendar event with one-tap deep-link;
 - mini-mode action in calendar widget: mark event completed without opening dashboard;
 - security center quick action in mobile dock + native security posture badge sync;
