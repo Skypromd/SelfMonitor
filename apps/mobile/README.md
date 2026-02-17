@@ -71,6 +71,7 @@ Implemented in this iteration:
 - secure session bootstrap from native secure storage;
 - web/native auth bridge (session state sync);
 - push-notification permission and token registration shortcut;
+- home command-card widget for nearest client calendar event with one-tap deep-link;
 - secure calendar reminder sync from partner-registry with local push scheduling and auto-reschedule;
 - quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.

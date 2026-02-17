@@ -158,6 +158,12 @@ type MobileCalendarEventListResponse = {
   total: number;
 };
 
+type MobileCalendarWidgetEvent = {
+  id: string;
+  starts_at: string;
+  title: string;
+};
+
 type LocalCalendarReminderIndex = Record<
   string,
   {
@@ -393,6 +399,7 @@ export default function App(): React.JSX.Element {
   );
   const [showBrandedSplash, setShowBrandedSplash] = useState(true);
   const [clock, setClock] = useState(() => new Date());
+  const [nextCalendarEvent, setNextCalendarEvent] = useState<MobileCalendarWidgetEvent | null>(null);
   const analyticsTrackedRef = useRef<Set<string>>(new Set());
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const dockFloatAnim = useRef(new Animated.Value(0)).current;
@@ -886,15 +893,7 @@ export default function App(): React.JSX.Element {
     try {
       const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
       if (!authToken) {
-        return;
-      }
-      const permission = await Notifications.getPermissionsAsync();
-      if (permission.status !== "granted") {
-        trackAnalyticsOnce(
-          "mobile.calendar.local_push.permission_missing",
-          "mobile.calendar.local_push_skipped",
-          { reason: "permission_not_granted", status: permission.status }
-        );
+        setNextCalendarEvent(null);
         return;
       }
 
@@ -913,18 +912,45 @@ export default function App(): React.JSX.Element {
       }
       const payload = (await response.json()) as MobileCalendarEventListResponse;
       const events = Array.isArray(payload.items) ? payload.items : [];
+      const nowMs = Date.now();
+      const upcomingEvents = events
+        .filter((event) => event.status === "scheduled")
+        .map((event) => {
+          const startMs = new Date(event.starts_at).getTime();
+          return {
+            event,
+            startMs,
+          };
+        })
+        .filter((item) => Number.isFinite(item.startMs) && item.startMs >= nowMs)
+        .sort((left, right) => left.startMs - right.startMs)
+        .map((item) => item.event);
+
+      const widgetEvent = upcomingEvents[0] ?? null;
+      setNextCalendarEvent(
+        widgetEvent
+          ? {
+              id: widgetEvent.id,
+              title: widgetEvent.title,
+              starts_at: widgetEvent.starts_at,
+            }
+          : null
+      );
+
+      const permission = await Notifications.getPermissionsAsync();
+      if (permission.status !== "granted") {
+        trackAnalyticsOnce(
+          "mobile.calendar.local_push.permission_missing",
+          "mobile.calendar.local_push_skipped",
+          { reason: "permission_not_granted", status: permission.status }
+        );
+        return;
+      }
 
       const reminderIndex = parseLocalCalendarReminderIndex(storedIndexRaw);
-      const nowMs = Date.now();
       const horizonMs = 24 * 60 * 60 * 1000;
-      const windowEligibleEvents = events.filter((event) => {
-        if (event.status !== "scheduled") {
-          return false;
-        }
+      const windowEligibleEvents = upcomingEvents.filter((event) => {
         const startMs = new Date(event.starts_at).getTime();
-        if (!Number.isFinite(startMs)) {
-          return false;
-        }
         return startMs > nowMs + 60_000 && startMs <= nowMs + horizonMs;
       });
       const windowEligibleById = new Map(windowEligibleEvents.map((event) => [event.id, event]));
@@ -991,6 +1017,7 @@ export default function App(): React.JSX.Element {
         });
       }
     } catch (error) {
+      setNextCalendarEvent(null);
       void trackAnalyticsEvent("mobile.calendar.local_push_error", {
         message: error instanceof Error ? error.message : "unknown",
       });
@@ -1023,6 +1050,17 @@ export default function App(): React.JSX.Element {
     },
     [normalizePortalPath, notifyAction, runHaptic, trackAnalyticsEvent]
   );
+
+  const openCalendarWidget = useCallback(() => {
+    if (!nextCalendarEvent) {
+      return;
+    }
+    void trackAnalyticsEvent("mobile.calendar.widget_opened", {
+      event_id: nextCalendarEvent.id,
+      starts_at: nextCalendarEvent.starts_at,
+    });
+    void navigateInsidePortal("/dashboard?section=calendar", "system");
+  }, [navigateInsidePortal, nextCalendarEvent, trackAnalyticsEvent]);
 
   const openReceiptCapture = useCallback(async () => {
     await runHaptic("medium");
@@ -1217,6 +1255,20 @@ export default function App(): React.JSX.Element {
     syncCalendarLocalReminders,
   ]);
 
+  useEffect(() => {
+    if (!nextCalendarEvent) {
+      return;
+    }
+    trackAnalyticsOnce(
+      `mobile.calendar.widget.impression.${nextCalendarEvent.id}.${nextCalendarEvent.starts_at}`,
+      "mobile.calendar.widget_impression",
+      {
+        event_id: nextCalendarEvent.id,
+        starts_at: nextCalendarEvent.starts_at,
+      }
+    );
+  }, [nextCalendarEvent, trackAnalyticsOnce]);
+
   const isRouteActive = useCallback(
     (route: string) => activePath === route || activePath.startsWith(`${route}/`),
     [activePath]
@@ -1265,6 +1317,47 @@ export default function App(): React.JSX.Element {
   const splashTitle = remoteConfig?.splash?.title?.trim() || DEFAULT_SPLASH_TITLE;
   const splashTagline = remoteConfig?.splash?.subtitle?.trim() || DEFAULT_SPLASH_TAGLINE;
   const splashGradient = normalizeGradientTriplet(remoteConfig?.splash?.gradient);
+  const nextCalendarEventDate = useMemo(() => {
+    if (!nextCalendarEvent) {
+      return null;
+    }
+    const parsed = new Date(nextCalendarEvent.starts_at);
+    if (!Number.isFinite(parsed.getTime())) {
+      return null;
+    }
+    return parsed;
+  }, [nextCalendarEvent]);
+  const calendarWidgetDayLabel = useMemo(() => {
+    if (!nextCalendarEventDate) {
+      return null;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const eventDate = new Date(nextCalendarEventDate);
+    eventDate.setHours(0, 0, 0, 0);
+    const diffDays = Math.round((eventDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+    if (diffDays <= 0) {
+      return "Сегодня";
+    }
+    if (diffDays === 1) {
+      return "Завтра";
+    }
+    return nextCalendarEventDate.toLocaleDateString([], { day: "2-digit", month: "short" });
+  }, [nextCalendarEventDate]);
+  const calendarWidgetTimeLabel = nextCalendarEventDate
+    ? nextCalendarEventDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : null;
+  const calendarWidgetRelativeLabel = useMemo(() => {
+    if (!nextCalendarEventDate) {
+      return null;
+    }
+    const deltaMinutes = Math.max(Math.round((nextCalendarEventDate.getTime() - Date.now()) / 60000), 0);
+    if (deltaMinutes < 60) {
+      return `через ${deltaMinutes} мин`;
+    }
+    const deltaHours = Math.floor(deltaMinutes / 60);
+    return `через ${deltaHours} ч`;
+  }, [clock, nextCalendarEventDate]);
 
   const onboardingFeatureIcons = useMemo<Array<keyof typeof Ionicons.glyphMap>>(
     () => ["flash-outline", "shield-checkmark-outline", "notifications-outline"],
@@ -1503,6 +1596,28 @@ export default function App(): React.JSX.Element {
                   </Pressable>
                 ) : null}
               </View>
+              {nextCalendarEvent && nextCalendarEventDate && calendarWidgetDayLabel && calendarWidgetTimeLabel ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={openCalendarWidget}
+                  style={styles.calendarWidgetCard}
+                >
+                  <View style={styles.calendarWidgetHeaderRow}>
+                    <View style={styles.calendarWidgetLabelPill}>
+                      <Ionicons color="#bfdbfe" name="calendar-clear-outline" size={14} />
+                      <Text style={styles.calendarWidgetLabelText}>{calendarWidgetDayLabel}</Text>
+                    </View>
+                    <Ionicons color="#bfdbfe" name="chevron-forward-outline" size={16} />
+                  </View>
+                  <Text numberOfLines={1} style={styles.calendarWidgetTitle}>
+                    {nextCalendarEvent.title}
+                  </Text>
+                  <Text style={styles.calendarWidgetMeta}>
+                    {calendarWidgetTimeLabel}
+                    {calendarWidgetRelativeLabel ? ` • ${calendarWidgetRelativeLabel}` : ""}
+                  </Text>
+                </Pressable>
+              ) : null}
             </LinearGradient>
           </View>
 
@@ -1891,6 +2006,43 @@ const styles = StyleSheet.create({
     color: "#e2e8f0",
     fontSize: 12,
     fontWeight: "600",
+  },
+  calendarWidgetCard: {
+    backgroundColor: "rgba(15,23,42,0.48)",
+    borderColor: "rgba(147,197,253,0.45)",
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 4,
+    marginTop: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  calendarWidgetHeaderRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  calendarWidgetLabelPill: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  calendarWidgetLabelText: {
+    color: "#bfdbfe",
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+  },
+  calendarWidgetTitle: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  calendarWidgetMeta: {
+    color: "#cbd5e1",
+    fontSize: 12,
+    fontWeight: "500",
   },
   webViewWrapper: {
     flex: 1,
