@@ -1,4 +1,4 @@
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Dict, Any, List
 import uuid
@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 import httpx
-from collections import defaultdict
+from collections import defaultdict, deque
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
 import io
@@ -43,8 +43,33 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        return default
+    return parsed_value if parsed_value > 0 else default
+
+
 DOCUMENTS_SERVICE_URL = os.getenv("DOCUMENTS_SERVICE_URL", "http://documents-service/documents")
 USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://user-profile-service/profiles/me")
+MOBILE_ANALYTICS_INGEST_API_KEY = os.getenv("MOBILE_ANALYTICS_INGEST_API_KEY", "").strip()
+MOBILE_ANALYTICS_MAX_EVENTS = max(100, _parse_positive_int_env("MOBILE_ANALYTICS_MAX_EVENTS", 5000))
+MOBILE_ONBOARDING_EXPERIMENT_ID = os.getenv("MOBILE_ONBOARDING_EXPERIMENT_ID", "mobile-onboarding-v1")
+MOBILE_ONBOARDING_FORCE_VARIANT_ID = os.getenv("MOBILE_ONBOARDING_FORCE_VARIANT_ID", "").strip() or None
+MOBILE_SPLASH_TITLE = os.getenv("MOBILE_SPLASH_TITLE", "SelfMonitor")
+MOBILE_SPLASH_SUBTITLE = os.getenv(
+    "MOBILE_SPLASH_SUBTITLE",
+    "World-class finance copilot for UK self-employed.",
+)
+MOBILE_SPLASH_GRADIENT = os.getenv(
+    "MOBILE_SPLASH_GRADIENT",
+    "#0b1120,#1e3a8a,#3b82f6",
+)
 
 # --- Models ---
 
@@ -60,9 +85,190 @@ class JobStatus(BaseModel):
     finished_at: Optional[datetime.datetime] = None
     result: Optional[Dict[str, Any]] = None
 
+
+DEFAULT_MOBILE_ONBOARDING_VARIANTS: list[dict[str, Any]] = [
+    {
+        "id": "velocity",
+        "title": "Start in minutes",
+        "subtitle": "Connect finances, scan receipts, and stay ahead of tax/reporting deadlines.",
+        "ctaLabel": "Start now",
+        "features": [
+            "Fast receipt scan and smart categorisation",
+            "HMRC and invoice reminder push alerts",
+            "Mobile-first control center for your business",
+        ],
+        "gradient": ["#1d4ed8", "#312e81", "#020617"],
+        "weight": 1,
+    },
+    {
+        "id": "security",
+        "title": "Fintech-grade security",
+        "subtitle": "Secure sessions and biometric unlock by default for account protection.",
+        "ctaLabel": "Enable protection",
+        "features": [
+            "Face/Touch/Fingerprint unlock support",
+            "Secure session storage on device",
+            "Controlled push deep-link routing",
+        ],
+        "gradient": ["#0f172a", "#1e3a8a", "#1d4ed8"],
+        "weight": 1,
+    },
+    {
+        "id": "investor",
+        "title": "Clarity for growth",
+        "subtitle": "Track billing, costs, and readiness metrics in one premium mobile experience.",
+        "ctaLabel": "Open dashboard",
+        "features": [
+            "Recurring invoices and reminder operations",
+            "Mortgage/readiness document workflows",
+            "KPI-focused operating cadence",
+        ],
+        "gradient": ["#1e3a8a", "#1d4ed8", "#0f172a"],
+        "weight": 1,
+    },
+]
+
+
+class MobileAnalyticsEventIngestRequest(BaseModel):
+    event: str = Field(min_length=1, max_length=120)
+    source: str = Field(default="mobile-app", min_length=1, max_length=40)
+    platform: str = Field(default="unknown", min_length=2, max_length=32)
+    occurred_at: Optional[datetime.datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileAnalyticsEventRecord(BaseModel):
+    event_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    event: str
+    source: str
+    platform: str
+    occurred_at: datetime.datetime
+    received_at: datetime.datetime
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileAnalyticsIngestResponse(BaseModel):
+    accepted: bool
+    stored_events: int
+
+
+class MobileOnboardingVariantConfig(BaseModel):
+    id: str
+    title: str
+    subtitle: str
+    ctaLabel: str
+    features: list[str]
+    gradient: list[str]
+    weight: int = 1
+
+
+class MobileOnboardingExperimentConfig(BaseModel):
+    experimentId: str
+    forceVariantId: Optional[str] = None
+    variants: list[MobileOnboardingVariantConfig]
+
+
+class MobileSplashConfig(BaseModel):
+    title: str
+    subtitle: str
+    gradient: list[str]
+
+
+class MobileRemoteConfigResponse(BaseModel):
+    generated_at: datetime.datetime
+    splash: MobileSplashConfig
+    onboardingExperiment: MobileOnboardingExperimentConfig
+
+
+class MobileVariantFunnelPoint(BaseModel):
+    variant_id: str
+    impressions: int
+    cta_taps: int
+    completions: int
+    completion_rate_percent: Optional[float] = None
+
+
+class MobileAnalyticsFunnelResponse(BaseModel):
+    window_days: int
+    generated_at: datetime.datetime
+    total_events: int
+    splash_impressions: int
+    splash_dismissed: int
+    onboarding_impressions: int
+    onboarding_cta_taps: int
+    onboarding_completions: int
+    biometric_gate_shown: int
+    biometric_successes: int
+    push_permission_prompted: int
+    push_permission_granted: int
+    push_deep_link_opened: int
+    splash_to_onboarding_rate_percent: Optional[float] = None
+    onboarding_completion_rate_percent: Optional[float] = None
+    cta_to_completion_rate_percent: Optional[float] = None
+    biometric_success_rate_percent: Optional[float] = None
+    push_opt_in_rate_percent: Optional[float] = None
+    variants: list[MobileVariantFunnelPoint] = Field(default_factory=list)
+
+
+def _normalize_gradient_triplet(raw_gradient: str) -> list[str]:
+    colors = [item.strip() for item in raw_gradient.split(",") if item.strip()]
+    if len(colors) < 3:
+        return ["#0b1120", "#1e3a8a", "#3b82f6"]
+    return colors[:3]
+
+
+def _build_mobile_remote_config_payload() -> MobileRemoteConfigResponse:
+    variants = [
+        MobileOnboardingVariantConfig(
+            id=str(item["id"]),
+            title=str(item["title"]),
+            subtitle=str(item["subtitle"]),
+            ctaLabel=str(item["ctaLabel"]),
+            features=[str(feature) for feature in item.get("features", [])],
+            gradient=[str(color) for color in item.get("gradient", [])][:3],
+            weight=int(item.get("weight", 1)),
+        )
+        for item in DEFAULT_MOBILE_ONBOARDING_VARIANTS
+    ]
+    return MobileRemoteConfigResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        splash=MobileSplashConfig(
+            title=MOBILE_SPLASH_TITLE,
+            subtitle=MOBILE_SPLASH_SUBTITLE,
+            gradient=_normalize_gradient_triplet(MOBILE_SPLASH_GRADIENT),
+        ),
+        onboardingExperiment=MobileOnboardingExperimentConfig(
+            experimentId=MOBILE_ONBOARDING_EXPERIMENT_ID,
+            forceVariantId=MOBILE_ONBOARDING_FORCE_VARIANT_ID,
+            variants=variants,
+        ),
+    )
+
+
+def _require_mobile_analytics_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> None:
+    if MOBILE_ANALYTICS_INGEST_API_KEY and x_api_key != MOBILE_ANALYTICS_INGEST_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid analytics API key",
+        )
+
+
+def _safe_percent(numerator: int, denominator: int) -> Optional[float]:
+    if denominator <= 0:
+        return None
+    return round((numerator / denominator) * 100, 2)
+
+
+def _extract_variant_id(metadata: Dict[str, Any]) -> Optional[str]:
+    candidate = metadata.get("onboarding_variant")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate.strip()
+    return None
+
 # --- "Database" for jobs ---
 
 fake_jobs_db = {}
+mobile_analytics_events: deque[MobileAnalyticsEventRecord] = deque(maxlen=MOBILE_ANALYTICS_MAX_EVENTS)
 
 def simulate_job_execution(job_id: uuid.UUID):
     """
@@ -111,6 +317,119 @@ async def get_job_status(job_id: uuid.UUID, _user_id: str = Depends(get_current_
         simulate_job_execution(job.job_id)
 
     return job
+
+
+@app.get("/mobile/config", response_model=MobileRemoteConfigResponse)
+async def get_mobile_remote_config():
+    """
+    Returns remote configuration payload for branded splash and onboarding experiments.
+    """
+    return _build_mobile_remote_config_payload()
+
+
+@app.post("/mobile/analytics/events", response_model=MobileAnalyticsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_mobile_analytics_event(
+    request: MobileAnalyticsEventIngestRequest,
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Accepts a mobile analytics event for funnel analysis.
+    """
+    occurred_at = request.occurred_at or datetime.datetime.now(datetime.UTC)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=datetime.UTC)
+    else:
+        occurred_at = occurred_at.astimezone(datetime.UTC)
+
+    mobile_analytics_events.append(
+        MobileAnalyticsEventRecord(
+            event=request.event.strip(),
+            source=request.source.strip(),
+            platform=request.platform.strip().lower(),
+            occurred_at=occurred_at,
+            received_at=datetime.datetime.now(datetime.UTC),
+            metadata=request.metadata,
+        )
+    )
+    return MobileAnalyticsIngestResponse(accepted=True, stored_events=len(mobile_analytics_events))
+
+
+@app.get("/mobile/analytics/funnel", response_model=MobileAnalyticsFunnelResponse)
+async def get_mobile_analytics_funnel(
+    days: int = Query(default=14, ge=1, le=90),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Returns aggregate onboarding/security funnel metrics for the selected lookback window.
+    """
+    now_utc = datetime.datetime.now(datetime.UTC)
+    cutoff = now_utc - datetime.timedelta(days=days)
+    window_events = [event for event in mobile_analytics_events if event.occurred_at >= cutoff]
+
+    def count(event_name: str) -> int:
+        return sum(1 for item in window_events if item.event == event_name)
+
+    splash_impressions = count("mobile.splash.impression")
+    splash_dismissed = count("mobile.splash.dismissed")
+    onboarding_impressions = count("mobile.onboarding.impression")
+    onboarding_cta_taps = count("mobile.onboarding.cta_tapped")
+    onboarding_completions = count("mobile.onboarding.completed")
+    biometric_gate_shown = count("mobile.biometric.gate_shown")
+    biometric_successes = count("mobile.biometric.challenge_succeeded")
+    push_permission_prompted = count("mobile.push.permission_prompted")
+    push_permission_granted = count("mobile.push.permission_granted")
+    push_deep_link_opened = count("mobile.push.deep_link_opened") + count("mobile.push.deep_link_cold_start")
+
+    variant_buckets: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"impressions": 0, "cta_taps": 0, "completions": 0}
+    )
+    for item in window_events:
+        variant_id = _extract_variant_id(item.metadata)
+        if not variant_id:
+            continue
+        if item.event == "mobile.onboarding.impression":
+            variant_buckets[variant_id]["impressions"] += 1
+        elif item.event == "mobile.onboarding.cta_tapped":
+            variant_buckets[variant_id]["cta_taps"] += 1
+        elif item.event == "mobile.onboarding.completed":
+            variant_buckets[variant_id]["completions"] += 1
+
+    variant_points = [
+        MobileVariantFunnelPoint(
+            variant_id=variant_id,
+            impressions=bucket["impressions"],
+            cta_taps=bucket["cta_taps"],
+            completions=bucket["completions"],
+            completion_rate_percent=_safe_percent(bucket["completions"], bucket["impressions"]),
+        )
+        for variant_id, bucket in sorted(
+            variant_buckets.items(),
+            key=lambda item: item[1]["impressions"],
+            reverse=True,
+        )
+    ]
+
+    return MobileAnalyticsFunnelResponse(
+        window_days=days,
+        generated_at=now_utc,
+        total_events=len(window_events),
+        splash_impressions=splash_impressions,
+        splash_dismissed=splash_dismissed,
+        onboarding_impressions=onboarding_impressions,
+        onboarding_cta_taps=onboarding_cta_taps,
+        onboarding_completions=onboarding_completions,
+        biometric_gate_shown=biometric_gate_shown,
+        biometric_successes=biometric_successes,
+        push_permission_prompted=push_permission_prompted,
+        push_permission_granted=push_permission_granted,
+        push_deep_link_opened=push_deep_link_opened,
+        splash_to_onboarding_rate_percent=_safe_percent(onboarding_impressions, splash_impressions),
+        onboarding_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_impressions),
+        cta_to_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_cta_taps),
+        biometric_success_rate_percent=_safe_percent(biometric_successes, biometric_gate_shown),
+        push_opt_in_rate_percent=_safe_percent(push_permission_granted, push_permission_prompted),
+        variants=variant_points,
+    )
 
 # --- Models for Forecasting ---
 class ForecastRequest(BaseModel):
