@@ -267,7 +267,7 @@ def test_two_factor_flow_requires_code_on_login_and_disable() -> None:
 
 def test_deactivate_user_revokes_old_tokens() -> None:
     user_email = "user@example.com"
-    user_pass = "verysecureuserpassword123!"
+    user_pass = "verysecurefintechpassword123!"
     _register(user_email, user_pass)
     user_login_response = _login(user_email, user_pass)
     user_access_token = user_login_response["access_token"]
@@ -318,7 +318,7 @@ def test_admin_token_contains_billing_claims() -> None:
 
 def test_regular_user_token_has_no_billing_scope() -> None:
     email = "regular@example.com"
-    password = "regularsecurepassword123!"
+    password = "strongfinancepassword123!"
     _register(email, password)
 
     login_response = client.post("/token", data={"username": email, "password": password})
