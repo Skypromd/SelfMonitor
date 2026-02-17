@@ -212,6 +212,81 @@ paths:
                 $ref: '#/components/schemas/SecurityStateResponse'
       security:
       - OAuth2PasswordBearer: []
+  /security/sessions:
+    get:
+      summary: List Security Sessions
+      operationId: list_security_sessions_security_sessions_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: include_revoked
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Revoked
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecuritySessionsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/sessions/{session_id}:
+    delete:
+      summary: Revoke Security Session
+      operationId: revoke_security_session_security_sessions__session_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeSessionsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/sessions/revoke-all:
+    post:
+      summary: Revoke All Security Sessions
+      operationId: revoke_all_security_sessions_security_sessions_revoke_all_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeSessionsResponse'
+      security:
+      - OAuth2PasswordBearer: []
   /2fa/setup:
     get:
       summary: Setup Two Factor Auth
@@ -470,6 +545,19 @@ components:
       required:
       - refresh_token
       title: RefreshTokenRequest
+    RevokeSessionsResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        revoked_sessions:
+          type: integer
+          title: Revoked Sessions
+      type: object
+      required:
+      - message
+      - revoked_sessions
+      title: RevokeSessionsResponse
     SecurityEvent:
       properties:
         event_id:
@@ -517,6 +605,65 @@ components:
       - total
       - items
       title: SecurityEventsResponse
+    SecuritySessionItem:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        issued_at:
+          type: string
+          format: date-time
+          title: Issued At
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        ip:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ip
+        user_agent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Agent
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+        revocation_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Revocation Reason
+      type: object
+      required:
+      - session_id
+      - issued_at
+      - expires_at
+      title: SecuritySessionItem
+    SecuritySessionsResponse:
+      properties:
+        total_sessions:
+          type: integer
+          title: Total Sessions
+        active_sessions:
+          type: integer
+          title: Active Sessions
+        items:
+          items:
+            $ref: '#/components/schemas/SecuritySessionItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total_sessions
+      - active_sessions
+      - items
+      title: SecuritySessionsResponse
     SecurityStateResponse:
       properties:
         email:

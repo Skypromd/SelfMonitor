@@ -58,6 +58,8 @@ EMAIL_VERIFICATION_MAX_ATTEMPTS = _parse_positive_int_env("AUTH_EMAIL_VERIFICATI
 REQUIRE_VERIFIED_EMAIL_FOR_LOGIN = _parse_bool_env("AUTH_REQUIRE_VERIFIED_EMAIL_FOR_LOGIN", False)
 EMAIL_VERIFICATION_DEBUG_RETURN_CODE = _parse_bool_env("AUTH_EMAIL_VERIFICATION_DEBUG_RETURN_CODE", False)
 TOTP_VALID_WINDOW_STEPS = _parse_positive_int_env("AUTH_TOTP_VALID_WINDOW_STEPS", 1)
+STEP_UP_MAX_AGE_MINUTES = _parse_positive_int_env("AUTH_STEP_UP_MAX_AGE_MINUTES", 10)
+REQUIRE_ADMIN_2FA = _parse_bool_env("AUTH_REQUIRE_ADMIN_2FA", True)
 
 app = FastAPI(
     title="Auth Service",
@@ -222,6 +224,27 @@ class SecurityStateResponse(BaseModel):
     locked_until: Optional[datetime.datetime]
     last_login_at: Optional[datetime.datetime]
     password_changed_at: Optional[datetime.datetime]
+
+
+class SecuritySessionItem(BaseModel):
+    session_id: str
+    issued_at: datetime.datetime
+    expires_at: datetime.datetime
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    revoked_at: Optional[datetime.datetime] = None
+    revocation_reason: Optional[str] = None
+
+
+class SecuritySessionsResponse(BaseModel):
+    total_sessions: int
+    active_sessions: int
+    items: list[SecuritySessionItem]
+
+
+class RevokeSessionsResponse(BaseModel):
+    message: str
+    revoked_sessions: int
 
 
 # --- "Database" ---
@@ -458,6 +481,17 @@ def _decode_jwt_payload(token: str) -> Dict[str, Any]:
         ) from exc
 
 
+def _parse_jwt_time_claim(value: Any) -> Optional[datetime.datetime]:
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.datetime.fromtimestamp(float(value), tz=datetime.UTC)
+        except (ValueError, OSError):
+            return None
+    if isinstance(value, datetime.datetime):
+        return _to_utc_datetime(value)
+    return None
+
+
 # --- Dependencies ---
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
@@ -517,7 +551,28 @@ async def get_current_active_user(current_user: Annotated[User, Depends(get_curr
 async def require_admin(current_user: Annotated[User, Depends(get_current_active_user)]):
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    if REQUIRE_ADMIN_2FA and not current_user.is_two_factor_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin action requires 2FA to be enabled.",
+        )
     return current_user
+
+
+async def require_recent_auth(token: Annotated[str, Depends(oauth2_scheme)]) -> None:
+    payload = _decode_jwt_payload(token)
+    issued_at = _parse_jwt_time_claim(payload.get("iat"))
+    if not issued_at:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Step-up authentication required.",
+        )
+    age_minutes = (datetime.datetime.now(datetime.UTC) - issued_at).total_seconds() / 60
+    if age_minutes > STEP_UP_MAX_AGE_MINUTES:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Step-up authentication required.",
+        )
 
 # --- Endpoints ---
 
@@ -715,8 +770,9 @@ async def refresh_access_token(payload: RefreshTokenRequest, request: Request):
 @app.post("/token/revoke")
 async def revoke_refresh_token(
     payload: RefreshTokenRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
     request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
 ):
     refresh_payload = _decode_refresh_token_payload(payload.refresh_token)
     normalized_email = _normalize_email(str(refresh_payload.get("sub", "")))
@@ -735,8 +791,9 @@ async def revoke_refresh_token(
 @app.post("/password/change")
 async def change_password(
     payload: PasswordChangeRequest,
-    current_user: Annotated[User, Depends(get_current_active_user)],
     request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
 ):
     normalized_email = _normalize_email(current_user.email)
     user_record = get_user_record(normalized_email)
@@ -892,6 +949,109 @@ async def get_security_state(current_user: Annotated[User, Depends(get_current_a
     )
 
 
+@app.get("/security/sessions", response_model=SecuritySessionsResponse)
+async def list_security_sessions(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    include_revoked: bool = Query(default=False),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    normalized_email = _normalize_email(current_user.email)
+    if include_revoked:
+        candidate_ids = [
+            jti
+            for jti, session in refresh_token_sessions.items()
+            if _normalize_email(str(session.get("email", ""))) == normalized_email
+        ]
+    else:
+        candidate_ids = list(refresh_tokens_by_user.get(normalized_email, set()))
+
+    items: list[SecuritySessionItem] = []
+    for jti in candidate_ids:
+        session = refresh_token_sessions.get(jti)
+        if not session:
+            continue
+        if not include_revoked and session.get("revoked_at") is not None:
+            continue
+        issued_at = _to_utc_datetime(session.get("issued_at"))
+        expires_at = _to_utc_datetime(session.get("expires_at"))
+        if not issued_at or not expires_at:
+            continue
+        items.append(
+            SecuritySessionItem(
+                session_id=jti,
+                issued_at=issued_at,
+                expires_at=expires_at,
+                ip=str(session.get("ip")) if session.get("ip") else None,
+                user_agent=str(session.get("user_agent")) if session.get("user_agent") else None,
+                revoked_at=_to_utc_datetime(session.get("revoked_at")),
+                revocation_reason=str(session.get("revocation_reason"))
+                if session.get("revocation_reason")
+                else None,
+            )
+        )
+
+    items.sort(key=lambda item: item.issued_at, reverse=True)
+    limited_items = items[:limit]
+    active_sessions = len([item for item in items if item.revoked_at is None])
+    return SecuritySessionsResponse(
+        total_sessions=len(items),
+        active_sessions=active_sessions,
+        items=limited_items,
+    )
+
+
+@app.delete("/security/sessions/{session_id}", response_model=RevokeSessionsResponse)
+async def revoke_security_session(
+    session_id: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
+):
+    normalized_email = _normalize_email(current_user.email)
+    session = refresh_token_sessions.get(session_id)
+    if not session:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    session_email = _normalize_email(str(session.get("email", "")))
+    if session_email != normalized_email:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot revoke another user session")
+
+    already_revoked = session.get("revoked_at") is not None or session_id in revoked_refresh_tokens
+    if already_revoked:
+        return RevokeSessionsResponse(message="Session already revoked.", revoked_sessions=0)
+
+    _revoke_refresh_token_jti(session_id, reason="manual_session_revoke")
+    _append_security_event(
+        email=normalized_email,
+        event_type="auth.session_revoked",
+        request=request,
+        details={"session_id": session_id},
+    )
+    return RevokeSessionsResponse(message="Session revoked.", revoked_sessions=1)
+
+
+@app.post("/security/sessions/revoke-all", response_model=RevokeSessionsResponse)
+async def revoke_all_security_sessions(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
+):
+    normalized_email = _normalize_email(current_user.email)
+    active_session_ids = list(refresh_tokens_by_user.get(normalized_email, set()))
+    revoked_count = 0
+    for jti in active_session_ids:
+        session = refresh_token_sessions.get(jti)
+        if session and session.get("revoked_at") is None:
+            revoked_count += 1
+        _revoke_refresh_token_jti(jti, reason="manual_revoke_all")
+    _append_security_event(
+        email=normalized_email,
+        event_type="auth.sessions_revoked_all",
+        request=request,
+        details={"revoked_sessions": revoked_count},
+    )
+    return RevokeSessionsResponse(message="All sessions revoked.", revoked_sessions=revoked_count)
+
+
 # --- 2FA Endpoints ---
 
 @app.get("/2fa/setup")
@@ -960,8 +1120,9 @@ async def verify_two_factor_auth(
 
 @app.delete("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
 async def disable_two_factor_auth(
-    current_user: Annotated[User, Depends(get_current_active_user)],
     request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
     totp_code: Optional[str] = Query(default=None, description="Current TOTP code to disable 2FA."),
 ):
     normalized_email = _normalize_email(current_user.email)
@@ -1003,6 +1164,7 @@ async def deactivate_user(
     user_email: EmailStr,
     request: Request,
     admin_user: Annotated[User, Depends(require_admin)],
+    _fresh_auth: None = Depends(require_recent_auth),
 ):
     normalized_email = _normalize_email(str(user_email))
     user_record = get_user_record(normalized_email)

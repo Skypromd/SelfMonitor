@@ -1,5 +1,6 @@
 import os
 import sys
+import datetime
 
 import pyotp
 from fastapi.testclient import TestClient
@@ -41,6 +42,8 @@ def setup_function() -> None:
     main.EMAIL_VERIFICATION_DEBUG_RETURN_CODE = True
     main.EMAIL_VERIFICATION_MAX_ATTEMPTS = 5
     main.PASSWORD_MIN_LENGTH = 12
+    main.STEP_UP_MAX_AGE_MINUTES = 10
+    main.REQUIRE_ADMIN_2FA = False
 
     main.fake_users_db["admin@example.com"] = main._build_user_record(
         email="admin@example.com",
@@ -219,6 +222,96 @@ def test_security_state_and_events_endpoints() -> None:
     events_payload = events_response.json()
     assert events_payload["total"] >= 1
     assert any(item["event_type"] == "auth.login_succeeded" for item in events_payload["items"])
+
+
+def test_security_sessions_management_endpoints() -> None:
+    email = "sessions@example.com"
+    password = "sessionsecurepassword123!"
+    _register(email, password)
+    login_one = _login(email, password)
+    login_two = _login(email, password)
+    auth_headers = {"Authorization": f"Bearer {login_two['access_token']}"}
+
+    sessions_response = client.get("/security/sessions", headers=auth_headers)
+    assert sessions_response.status_code == 200
+    sessions_payload = sessions_response.json()
+    assert sessions_payload["active_sessions"] >= 2
+    assert sessions_payload["total_sessions"] >= 2
+
+    refresh_1_payload = jwt.decode(login_one["refresh_token"], main.SECRET_KEY, algorithms=[main.ALGORITHM])
+    session_id = refresh_1_payload["jti"]
+    revoke_one = client.delete(f"/security/sessions/{session_id}", headers=auth_headers)
+    assert revoke_one.status_code == 200
+    assert revoke_one.json()["revoked_sessions"] == 1
+
+    refresh_with_revoked = client.post("/token/refresh", json={"refresh_token": login_one["refresh_token"]})
+    assert refresh_with_revoked.status_code == 401
+
+    revoke_all = client.post("/security/sessions/revoke-all", headers=auth_headers)
+    assert revoke_all.status_code == 200
+    assert revoke_all.json()["revoked_sessions"] >= 1
+
+    refresh_after_revoke_all = client.post("/token/refresh", json={"refresh_token": login_two["refresh_token"]})
+    assert refresh_after_revoke_all.status_code == 401
+
+
+def test_step_up_required_for_sensitive_action_with_stale_token() -> None:
+    email = "stepup@example.com"
+    password = "stepupsecurepassword123!"
+    new_password = "newstepupsecurepassword123!"
+    _register(email, password)
+
+    token_version = int(main.fake_users_db[email]["user_data"]["token_version"])
+    stale_iat = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=main.STEP_UP_MAX_AGE_MINUTES + 5)
+    stale_token = jwt.encode(
+        {
+            "sub": email,
+            "roles": ["user"],
+            "scopes": [],
+            "is_admin": False,
+            "tv": token_version,
+            "typ": "access",
+            "iat": stale_iat,
+            "exp": datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=20),
+        },
+        main.SECRET_KEY,
+        algorithm=main.ALGORITHM,
+    )
+    response = client.post(
+        "/password/change",
+        headers={"Authorization": f"Bearer {stale_token}"},
+        json={"current_password": password, "new_password": new_password},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Step-up authentication required."
+
+
+def test_admin_endpoint_can_require_2fa() -> None:
+    main.REQUIRE_ADMIN_2FA = True
+    target_email = "target@example.com"
+    _register(target_email, "targetsecurepassword123!")
+
+    admin_login = _login("admin@example.com", "admin_password")
+    admin_headers = {"Authorization": f"Bearer {admin_login['access_token']}"}
+    blocked = client.post(f"/users/{target_email}/deactivate", headers=admin_headers)
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Admin action requires 2FA to be enabled."
+
+    setup_response = client.get("/2fa/setup", headers=admin_headers)
+    assert setup_response.status_code == 200
+    admin_secret = main.fake_users_db["admin@example.com"]["user_data"]["two_factor_secret"]
+    admin_totp = pyotp.TOTP(admin_secret)
+    verify_response = client.post(f"/2fa/verify?totp_code={admin_totp.now()}", headers=admin_headers)
+    assert verify_response.status_code == 200
+
+    admin_login_with_2fa = _login(
+        "admin@example.com",
+        "admin_password",
+        scope=f"totp:{admin_totp.now()}",
+    )
+    admin_headers_with_2fa = {"Authorization": f"Bearer {admin_login_with_2fa['access_token']}"}
+    allowed = client.post(f"/users/{target_email}/deactivate", headers=admin_headers_with_2fa)
+    assert allowed.status_code == 200
 
 
 def test_two_factor_flow_requires_code_on_login_and_disable() -> None:
