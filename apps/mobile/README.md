@@ -21,6 +21,7 @@ npm run start
 ## Environment
 
 - `EXPO_PUBLIC_WEB_PORTAL_URL`: URL of deployed web portal or local dev instance.
+- `EXPO_PUBLIC_PARTNER_REGISTRY_URL`: partner-registry API URL for mobile calendar reminder sync.
 - `EXPO_PUBLIC_EAS_PROJECT_ID`: Expo project ID for stable push token issuance in EAS builds.
 - `EXPO_PUBLIC_MOBILE_REMOTE_CONFIG_URL`: optional remote config endpoint for onboarding A/B variants and branded splash content.
 - `EXPO_PUBLIC_MOBILE_ANALYTICS_URL`: optional endpoint to receive mobile funnel analytics events.
@@ -70,6 +71,7 @@ Implemented in this iteration:
 - secure session bootstrap from native secure storage;
 - web/native auth bridge (session state sync);
 - push-notification permission and token registration shortcut;
+- secure calendar reminder sync from partner-registry with local push scheduling and auto-reschedule;
 - quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.
 

@@ -10,6 +10,7 @@ import { StatusBar } from "expo-status-bar";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  AppState,
   Animated,
   BackHandler,
   Easing,
@@ -37,6 +38,14 @@ const WEB_PORTAL_URL =
 const MOBILE_REMOTE_CONFIG_URL = process.env.EXPO_PUBLIC_MOBILE_REMOTE_CONFIG_URL?.trim() || "";
 const MOBILE_ANALYTICS_URL = process.env.EXPO_PUBLIC_MOBILE_ANALYTICS_URL?.trim() || "";
 const MOBILE_ANALYTICS_API_KEY = process.env.EXPO_PUBLIC_MOBILE_ANALYTICS_API_KEY?.trim() || "";
+const DEFAULT_PARTNER_REGISTRY_URL =
+  Platform.select({
+    android: "http://10.0.2.2:8009",
+    ios: "http://localhost:8009",
+    default: "http://localhost:8009",
+  }) ?? "http://localhost:8009";
+const PARTNER_REGISTRY_URL =
+  process.env.EXPO_PUBLIC_PARTNER_REGISTRY_URL?.trim() || DEFAULT_PARTNER_REGISTRY_URL;
 
 const APP_USER_AGENT_SUFFIX = "SelfMonitorMobile/0.1";
 const AUTH_TOKEN_KEY = "authToken";
@@ -50,6 +59,7 @@ const SECURE_THEME_KEY = "selfmonitor.theme";
 const SECURE_PUSH_TOKEN_KEY = "selfmonitor.pushToken";
 const SECURE_ONBOARDING_DONE_KEY = "selfmonitor.onboardingDone";
 const SECURE_INSTALLATION_ID_KEY = "selfmonitor.installationId";
+const SECURE_CALENDAR_LOCAL_REMINDERS_KEY = "selfmonitor.calendarLocalReminders";
 
 const PUSH_ROUTE_MAP: Record<string, string> = {
   dashboard: "/dashboard",
@@ -135,6 +145,26 @@ type MobileAnalyticsEvent = {
   platform: string;
   source: "mobile-app";
 };
+
+type MobileCalendarEvent = {
+  id: string;
+  starts_at: string;
+  status: "scheduled" | "completed" | "cancelled";
+  title: string;
+};
+
+type MobileCalendarEventListResponse = {
+  items: MobileCalendarEvent[];
+  total: number;
+};
+
+type LocalCalendarReminderIndex = Record<
+  string,
+  {
+    notification_id: string;
+    starts_at: string;
+  }
+>;
 
 const FALLBACK_ONBOARDING_VARIANTS: ResolvedOnboardingVariant[] = [
   {
@@ -310,6 +340,33 @@ async function fetchRemoteConfigWithTimeout(): Promise<MobileRemoteConfig | null
     return null;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+function parseLocalCalendarReminderIndex(raw: string | null): LocalCalendarReminderIndex {
+  if (!raw) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(raw) as Record<string, { notification_id?: unknown; starts_at?: unknown }>;
+    const index: LocalCalendarReminderIndex = {};
+    Object.entries(parsed).forEach(([eventId, item]) => {
+      if (
+        item &&
+        typeof item.notification_id === "string" &&
+        item.notification_id &&
+        typeof item.starts_at === "string" &&
+        item.starts_at
+      ) {
+        index[eventId] = {
+          notification_id: item.notification_id,
+          starts_at: item.starts_at,
+        };
+      }
+    });
+    return index;
+  } catch {
+    return {};
   }
 }
 
@@ -822,6 +879,120 @@ export default function App(): React.JSX.Element {
     }
   }, [notifyAction, runHaptic, syncPushTokenToWeb, trackAnalyticsEvent]);
 
+  const syncCalendarLocalReminders = useCallback(async () => {
+    if (!PARTNER_REGISTRY_URL || !isConnected) {
+      return;
+    }
+    try {
+      const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
+      if (!authToken) {
+        return;
+      }
+      const permission = await Notifications.getPermissionsAsync();
+      if (permission.status !== "granted") {
+        trackAnalyticsOnce(
+          "mobile.calendar.local_push.permission_missing",
+          "mobile.calendar.local_push_skipped",
+          { reason: "permission_not_granted", status: permission.status }
+        );
+        return;
+      }
+
+      const [storedIndexRaw, response] = await Promise.all([
+        SecureStore.getItemAsync(SECURE_CALENDAR_LOCAL_REMINDERS_KEY),
+        fetch(`${PARTNER_REGISTRY_URL}/self-employed/calendar/events?status=scheduled&limit=50&offset=0`, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+        }),
+      ]);
+      if (!response.ok) {
+        return;
+      }
+      const payload = (await response.json()) as MobileCalendarEventListResponse;
+      const events = Array.isArray(payload.items) ? payload.items : [];
+
+      const reminderIndex = parseLocalCalendarReminderIndex(storedIndexRaw);
+      const nowMs = Date.now();
+      const horizonMs = 24 * 60 * 60 * 1000;
+      const windowEligibleEvents = events.filter((event) => {
+        if (event.status !== "scheduled") {
+          return false;
+        }
+        const startMs = new Date(event.starts_at).getTime();
+        if (!Number.isFinite(startMs)) {
+          return false;
+        }
+        return startMs > nowMs + 60_000 && startMs <= nowMs + horizonMs;
+      });
+      const windowEligibleById = new Map(windowEligibleEvents.map((event) => [event.id, event]));
+
+      let scheduledCount = 0;
+      let canceledCount = 0;
+      let didMutateIndex = false;
+
+      for (const [eventId, reminderState] of Object.entries(reminderIndex)) {
+        const event = windowEligibleById.get(eventId);
+        if (!event || event.starts_at !== reminderState.starts_at) {
+          try {
+            await Notifications.cancelScheduledNotificationAsync(reminderState.notification_id);
+          } catch {
+            // Best-effort cleanup.
+          }
+          delete reminderIndex[eventId];
+          canceledCount += 1;
+          didMutateIndex = true;
+        }
+      }
+
+      for (const event of windowEligibleEvents) {
+        if (reminderIndex[event.id]?.starts_at === event.starts_at) {
+          continue;
+        }
+        const startsAtMs = new Date(event.starts_at).getTime();
+        const triggerSeconds = Math.max(Math.floor((startsAtMs - nowMs) / 1000), 5);
+        const notificationId = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Client calendar reminder",
+            body: `${event.title} starts soon.`,
+            data: {
+              path: "/dashboard?section=calendar",
+              route: "dashboard",
+              source: "mobile-calendar-local-reminder",
+            },
+          },
+          trigger: { seconds: triggerSeconds },
+        });
+        reminderIndex[event.id] = {
+          notification_id: notificationId,
+          starts_at: event.starts_at,
+        };
+        scheduledCount += 1;
+        didMutateIndex = true;
+      }
+
+      if (didMutateIndex) {
+        await SecureStore.setItemAsync(
+          SECURE_CALENDAR_LOCAL_REMINDERS_KEY,
+          JSON.stringify(reminderIndex)
+        );
+      }
+      if (scheduledCount > 0 || canceledCount > 0) {
+        void trackAnalyticsEvent("mobile.calendar.local_push_synced", {
+          scheduled_count: scheduledCount,
+          canceled_count: canceledCount,
+          tracked_events_count: Object.keys(reminderIndex).length,
+        });
+      }
+    } catch (error) {
+      void trackAnalyticsEvent("mobile.calendar.local_push_error", {
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }, [isConnected, trackAnalyticsEvent, trackAnalyticsOnce]);
+
   const normalizePortalPath = useCallback((path: string) => {
     const base = WEB_PORTAL_URL.replace(/\/+$/, "");
     const normalized = path.startsWith("/") ? path : `/${path}`;
@@ -1015,6 +1186,32 @@ export default function App(): React.JSX.Element {
       responseSubscription.remove();
     };
   }, [navigateInsidePortal, notifyAction, resolveNotificationPath, trackAnalyticsEvent]);
+
+  useEffect(() => {
+    if (isHydrating || showBrandedSplash || !isOnboardingDone || (biometricRequired && !biometricUnlocked)) {
+      return;
+    }
+    void syncCalendarLocalReminders();
+    const interval = setInterval(() => {
+      void syncCalendarLocalReminders();
+    }, 15 * 60 * 1000);
+    const appStateSubscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        void syncCalendarLocalReminders();
+      }
+    });
+    return () => {
+      clearInterval(interval);
+      appStateSubscription.remove();
+    };
+  }, [
+    biometricRequired,
+    biometricUnlocked,
+    isHydrating,
+    isOnboardingDone,
+    showBrandedSplash,
+    syncCalendarLocalReminders,
+  ]);
 
   const isRouteActive = useCallback(
     (route: string) => activePath === route || activePath.startsWith(`${route}/`),

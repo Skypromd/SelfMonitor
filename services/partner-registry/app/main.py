@@ -7,7 +7,7 @@ import os
 import sys
 import uuid
 from collections import defaultdict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
@@ -129,6 +129,19 @@ SELF_EMPLOYED_CALENDAR_REMINDER_COOLDOWN_HOURS = _parse_positive_int_env(
     "SELF_EMPLOYED_CALENDAR_REMINDER_COOLDOWN_HOURS",
     12,
 )
+SELF_EMPLOYED_CALENDAR_AUTORUN_ENABLED = _parse_bool_env("SELF_EMPLOYED_CALENDAR_AUTORUN_ENABLED", False)
+SELF_EMPLOYED_CALENDAR_AUTORUN_INTERVAL_SECONDS = _parse_positive_int_env(
+    "SELF_EMPLOYED_CALENDAR_AUTORUN_INTERVAL_SECONDS",
+    300,
+)
+SELF_EMPLOYED_CALENDAR_AUTORUN_HORIZON_HOURS = _parse_positive_int_env(
+    "SELF_EMPLOYED_CALENDAR_AUTORUN_HORIZON_HOURS",
+    24,
+)
+SELF_EMPLOYED_CALENDAR_AUTORUN_USER_BATCH = _parse_positive_int_env(
+    "SELF_EMPLOYED_CALENDAR_AUTORUN_USER_BATCH",
+    500,
+)
 LEAD_STATUS_TRANSITIONS = {
     schemas.LeadStatus.initiated.value: {schemas.LeadStatus.qualified.value, schemas.LeadStatus.rejected.value},
     schemas.LeadStatus.qualified.value: {schemas.LeadStatus.converted.value, schemas.LeadStatus.rejected.value},
@@ -235,6 +248,7 @@ def require_billing_report_access(token: str = Depends(get_bearer_token)) -> str
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    background_task: asyncio.Task[None] | None = None
     if AUTO_CREATE_SCHEMA:
         async with engine.begin() as connection:
             await connection.run_sync(Base.metadata.create_all)
@@ -248,7 +262,15 @@ async def lifespan(_app: FastAPI):
                     "Run `alembic upgrade head` or set AUTO_CREATE_SCHEMA=true for local bootstrapping."
                 ) from exc
         await crud.seed_partners_if_empty(db)
-    yield
+    if SELF_EMPLOYED_CALENDAR_AUTORUN_ENABLED:
+        background_task = asyncio.create_task(_calendar_autoreminders_loop())
+    try:
+        yield
+    finally:
+        if background_task:
+            background_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await background_task
 
 
 app = FastAPI(
@@ -270,6 +292,38 @@ async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]) ->
     except httpx.HTTPError as exc:
         print(f"Error: Could not log audit event to compliance service: {exc}")
         return None
+
+
+async def _run_calendar_autoreminders_pass() -> None:
+    async with AsyncSessionLocal() as db:
+        user_ids = await crud.list_calendar_users_with_scheduled_events(
+            db,
+            limit=SELF_EMPLOYED_CALENDAR_AUTORUN_USER_BATCH,
+        )
+    for user_id in user_ids:
+        try:
+            async with AsyncSessionLocal() as db:
+                await _run_calendar_reminders_for_user(
+                    db,
+                    user_id=user_id,
+                    horizon_hours=SELF_EMPLOYED_CALENDAR_AUTORUN_HORIZON_HOURS,
+                    source="scheduler",
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive runtime guard
+            print(f"Calendar auto-reminder pass failed for user {user_id}: {exc}")
+
+
+async def _calendar_autoreminders_loop() -> None:
+    while True:
+        try:
+            await _run_calendar_autoreminders_pass()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # pragma: no cover - defensive runtime guard
+            print(f"Calendar auto-reminder loop failed: {exc}")
+        await asyncio.sleep(SELF_EMPLOYED_CALENDAR_AUTORUN_INTERVAL_SECONDS)
 
 
 def _build_report_window(
@@ -3839,15 +3893,13 @@ async def delete_self_employed_calendar_event(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.post(
-    "/self-employed/calendar/reminders/run",
-    response_model=schemas.SelfEmployedCalendarReminderRunResponse,
-)
-async def run_self_employed_calendar_reminders(
-    horizon_hours: int = Query(default=48, ge=1, le=336),
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
+async def _run_calendar_reminders_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    horizon_hours: int,
+    source: Literal["manual", "scheduler"] = "manual",
+) -> schemas.SelfEmployedCalendarReminderRunResponse:
     now = datetime.datetime.now(datetime.UTC)
     horizon_end = now + datetime.timedelta(hours=horizon_hours)
     rows = await crud.list_calendar_events_due_for_reminders(
@@ -3980,12 +4032,31 @@ async def run_self_employed_calendar_reminders(
                 "count": len(reminders),
                 "horizon_hours": horizon_hours,
                 "sent_by_channel": sent_by_channel,
+                "source": source,
             },
         )
+    note = "No calendar reminders due." if not reminders else "Calendar reminders generated for events in window."
     return schemas.SelfEmployedCalendarReminderRunResponse(
         reminders_sent_count=len(reminders),
         reminders=reminders,
-        note="Calendar reminders generated for events in window.",
+        note=note,
+    )
+
+
+@app.post(
+    "/self-employed/calendar/reminders/run",
+    response_model=schemas.SelfEmployedCalendarReminderRunResponse,
+)
+async def run_self_employed_calendar_reminders(
+    horizon_hours: int = Query(default=48, ge=1, le=336),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _run_calendar_reminders_for_user(
+        db,
+        user_id=user_id,
+        horizon_hours=horizon_hours,
+        source="manual",
     )
 
 

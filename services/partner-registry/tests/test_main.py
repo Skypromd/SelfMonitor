@@ -1454,6 +1454,40 @@ def test_self_employed_calendar_event_crud_flow(mocker):
     assert post_delete_list.json()["total"] == 0
 
 
+def test_self_employed_calendar_event_validates_notification_channels(mocker):
+    mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
+    owner_headers = get_auth_headers("freelancer-calendar-validation@example.com")
+    now = datetime.datetime.now(datetime.UTC)
+
+    no_channel_response = client.post(
+        "/self-employed/calendar/events",
+        headers=owner_headers,
+        json={
+            "title": "No channel event",
+            "starts_at": (now + datetime.timedelta(hours=5)).isoformat(),
+            "notify_in_app": False,
+            "notify_email": False,
+            "notify_sms": False,
+        },
+    )
+    assert no_channel_response.status_code == 400
+    assert "At least one notification channel must be enabled" in no_channel_response.json()["detail"]
+
+    missing_email_response = client.post(
+        "/self-employed/calendar/events",
+        headers=owner_headers,
+        json={
+            "title": "Missing email",
+            "starts_at": (now + datetime.timedelta(hours=5)).isoformat(),
+            "notify_in_app": False,
+            "notify_email": True,
+            "notify_sms": False,
+        },
+    )
+    assert missing_email_response.status_code == 400
+    assert "recipient_email is required" in missing_email_response.json()["detail"]
+
+
 def test_self_employed_calendar_reminders_run_dispatches_channels(mocker):
     mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock, return_value="audit-1")
     mocker.patch("app.main.SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", True)

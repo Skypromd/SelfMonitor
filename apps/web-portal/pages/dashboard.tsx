@@ -1380,6 +1380,7 @@ function ClientCalendarPanel({ token }: { token: string }) {
     isLoading: false,
   });
   const [updatingEventId, setUpdatingEventId] = useState<string | null>(null);
+  const [draggedEventId, setDraggedEventId] = useState<string | null>(null);
 
   const loadEvents = useCallback(async () => {
     setIsLoading(true);
@@ -1539,6 +1540,73 @@ function ClientCalendarPanel({ token }: { token: string }) {
     }
   };
 
+  const toDateKey = (value: Date) => {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const scheduledEvents = events.filter((item) => item.status === 'scheduled');
+  const weekColumns = Array.from({ length: 7 }, (_, index) => {
+    const day = new Date();
+    day.setHours(0, 0, 0, 0);
+    day.setDate(day.getDate() + index);
+    const key = toDateKey(day);
+    const title = day.toLocaleDateString([], { day: 'numeric', month: 'short', weekday: 'short' });
+    const items = scheduledEvents.filter((item) => toDateKey(new Date(item.starts_at)) === key);
+    return { day, items, key, title };
+  });
+
+  const rescheduleEventToDay = async (eventId: string, targetDay: Date) => {
+    const currentEvent = events.find((item) => item.id === eventId);
+    if (!currentEvent) {
+      return;
+    }
+    const currentStart = new Date(currentEvent.starts_at);
+    const nextStart = new Date(currentStart);
+    nextStart.setFullYear(targetDay.getFullYear(), targetDay.getMonth(), targetDay.getDate());
+    let nextEndIso: string | undefined;
+    if (currentEvent.ends_at) {
+      const currentEnd = new Date(currentEvent.ends_at);
+      const durationMs = Math.max(currentEnd.getTime() - currentStart.getTime(), 0);
+      nextEndIso = new Date(nextStart.getTime() + durationMs).toISOString();
+    }
+
+    setUpdatingEventId(eventId);
+    setActionState({ isLoading: true });
+    try {
+      const response = await fetch(`${PARTNER_REGISTRY_URL}/self-employed/calendar/events/${eventId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          starts_at: nextStart.toISOString(),
+          ends_at: nextEndIso,
+        }),
+      });
+      const payload = (await response.json()) as { detail?: string };
+      if (!response.ok) {
+        throw new Error(payload.detail || 'Failed to reschedule calendar event');
+      }
+      setActionState({
+        isLoading: false,
+        message: `Event moved to ${targetDay.toLocaleDateString()}.`,
+      });
+      void loadEvents();
+    } catch (err) {
+      setActionState({
+        isLoading: false,
+        error: err instanceof Error ? err.message : 'Failed to reschedule calendar event',
+      });
+    } finally {
+      setUpdatingEventId(null);
+      setDraggedEventId(null);
+    }
+  };
+
   return (
     <section className={styles.subContainer}>
       <h2>Client Calendar & Notifications</h2>
@@ -1643,6 +1711,68 @@ function ClientCalendarPanel({ token }: { token: string }) {
       </form>
       {actionState.message && <p className={styles.message}>{actionState.message}</p>}
       {actionState.error && <p className={styles.error}>{actionState.error}</p>}
+      {weekColumns.length > 0 && (
+        <div className={styles.copilotWhyBlock} style={{ marginBottom: '14px' }}>
+          <p>
+            <strong>Drag & drop weekly planner:</strong> move scheduled events between days.
+          </p>
+          <div
+            style={{
+              display: 'grid',
+              gap: '8px',
+              gridTemplateColumns: 'repeat(7, minmax(140px, 1fr))',
+              marginTop: '10px',
+            }}
+          >
+            {weekColumns.map((column) => (
+              <div
+                key={column.key}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  if (draggedEventId) {
+                    void rescheduleEventToDay(draggedEventId, column.day);
+                  }
+                }}
+                style={{
+                  background: 'rgba(148,163,184,0.08)',
+                  border: '1px solid rgba(148,163,184,0.28)',
+                  borderRadius: '10px',
+                  minHeight: '120px',
+                  padding: '8px',
+                }}
+              >
+                <p style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>{column.title}</p>
+                {column.items.length === 0 ? (
+                  <p style={{ color: '#64748b', fontSize: '12px', margin: 0 }}>Drop here</p>
+                ) : (
+                  column.items.map((calendarEvent) => (
+                    <div
+                      draggable
+                      key={`drag-${calendarEvent.id}`}
+                      onDragEnd={() => setDraggedEventId(null)}
+                      onDragStart={() => setDraggedEventId(calendarEvent.id)}
+                      style={{
+                        background: '#ffffff',
+                        border: `1px solid ${draggedEventId === calendarEvent.id ? '#2563eb' : 'rgba(148,163,184,0.4)'}`,
+                        borderRadius: '8px',
+                        cursor: 'grab',
+                        marginBottom: '6px',
+                        padding: '6px',
+                      }}
+                    >
+                      <p style={{ fontSize: '12px', fontWeight: 600, margin: 0 }}>{calendarEvent.title}</p>
+                      <p style={{ color: '#64748b', fontSize: '11px', margin: 0 }}>
+                        {new Date(calendarEvent.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {error && <p className={styles.error}>{error}</p>}
       {isLoading ? (
         <p>Loading calendar...</p>

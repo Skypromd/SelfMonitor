@@ -1099,6 +1099,21 @@ async def list_calendar_events_due_for_reminders(
     return list(rows)
 
 
+async def list_calendar_users_with_scheduled_events(
+    db: AsyncSession,
+    *,
+    limit: int = 500,
+) -> list[str]:
+    query = (
+        select(distinct(models.SelfEmployedCalendarEvent.user_id))
+        .filter(models.SelfEmployedCalendarEvent.status == "scheduled")
+        .order_by(models.SelfEmployedCalendarEvent.user_id.asc())
+        .limit(limit)
+    )
+    rows = (await db.execute(query)).scalars().all()
+    return [str(item) for item in rows if item]
+
+
 async def mark_calendar_event_reminder_sent(
     db: AsyncSession,
     event: models.SelfEmployedCalendarEvent,
