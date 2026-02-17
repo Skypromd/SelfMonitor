@@ -5,6 +5,7 @@ import uuid
 import datetime
 import os
 import sys
+import csv
 from pathlib import Path
 import httpx
 from collections import defaultdict, deque
@@ -210,6 +211,35 @@ class MobileAnalyticsFunnelResponse(BaseModel):
     variants: list[MobileVariantFunnelPoint] = Field(default_factory=list)
 
 
+class MobileWeeklyKpiChecklistItem(BaseModel):
+    id: str
+    description: str
+    status: Literal["healthy", "attention_needed"]
+    owner: str
+
+
+class MobileAnalyticsWeeklySnapshot(BaseModel):
+    snapshot_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    generated_at: datetime.datetime
+    window_days: int
+    funnel: MobileAnalyticsFunnelResponse
+    recommended_actions: list[str]
+    checklist: list[MobileWeeklyKpiChecklistItem]
+
+
+class MobileAnalyticsWeeklySnapshotListResponse(BaseModel):
+    total_snapshots: int
+    items: list[MobileAnalyticsWeeklySnapshot]
+
+
+class MobileAnalyticsWeeklyCadenceResponse(BaseModel):
+    generated_at: datetime.datetime
+    window_days: int
+    funnel: MobileAnalyticsFunnelResponse
+    recommended_actions: list[str]
+    checklist: list[MobileWeeklyKpiChecklistItem]
+
+
 def _normalize_gradient_triplet(raw_gradient: str) -> list[str]:
     colors = [item.strip() for item in raw_gradient.split(",") if item.strip()]
     if len(colors) < 3:
@@ -265,10 +295,179 @@ def _extract_variant_id(metadata: Dict[str, Any]) -> Optional[str]:
         return candidate.strip()
     return None
 
+
+def _collect_mobile_window_events(
+    *,
+    days: int,
+    now_utc: Optional[datetime.datetime] = None,
+) -> tuple[datetime.datetime, list[MobileAnalyticsEventRecord]]:
+    reference_now = now_utc or datetime.datetime.now(datetime.UTC)
+    cutoff = reference_now - datetime.timedelta(days=days)
+    return reference_now, [event for event in mobile_analytics_events if event.occurred_at >= cutoff]
+
+
+def _build_mobile_funnel_response(
+    *,
+    days: int,
+    now_utc: Optional[datetime.datetime] = None,
+) -> MobileAnalyticsFunnelResponse:
+    generated_at, window_events = _collect_mobile_window_events(days=days, now_utc=now_utc)
+
+    def count(event_name: str) -> int:
+        return sum(1 for item in window_events if item.event == event_name)
+
+    splash_impressions = count("mobile.splash.impression")
+    splash_dismissed = count("mobile.splash.dismissed")
+    onboarding_impressions = count("mobile.onboarding.impression")
+    onboarding_cta_taps = count("mobile.onboarding.cta_tapped")
+    onboarding_completions = count("mobile.onboarding.completed")
+    biometric_gate_shown = count("mobile.biometric.gate_shown")
+    biometric_successes = count("mobile.biometric.challenge_succeeded")
+    push_permission_prompted = count("mobile.push.permission_prompted")
+    push_permission_granted = count("mobile.push.permission_granted")
+    push_deep_link_opened = count("mobile.push.deep_link_opened") + count("mobile.push.deep_link_cold_start")
+
+    variant_buckets: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"impressions": 0, "cta_taps": 0, "completions": 0}
+    )
+    for item in window_events:
+        variant_id = _extract_variant_id(item.metadata)
+        if not variant_id:
+            continue
+        if item.event == "mobile.onboarding.impression":
+            variant_buckets[variant_id]["impressions"] += 1
+        elif item.event == "mobile.onboarding.cta_tapped":
+            variant_buckets[variant_id]["cta_taps"] += 1
+        elif item.event == "mobile.onboarding.completed":
+            variant_buckets[variant_id]["completions"] += 1
+
+    variant_points = [
+        MobileVariantFunnelPoint(
+            variant_id=variant_id,
+            impressions=bucket["impressions"],
+            cta_taps=bucket["cta_taps"],
+            completions=bucket["completions"],
+            completion_rate_percent=_safe_percent(bucket["completions"], bucket["impressions"]),
+        )
+        for variant_id, bucket in sorted(
+            variant_buckets.items(),
+            key=lambda item: item[1]["impressions"],
+            reverse=True,
+        )
+    ]
+
+    return MobileAnalyticsFunnelResponse(
+        window_days=days,
+        generated_at=generated_at,
+        total_events=len(window_events),
+        splash_impressions=splash_impressions,
+        splash_dismissed=splash_dismissed,
+        onboarding_impressions=onboarding_impressions,
+        onboarding_cta_taps=onboarding_cta_taps,
+        onboarding_completions=onboarding_completions,
+        biometric_gate_shown=biometric_gate_shown,
+        biometric_successes=biometric_successes,
+        push_permission_prompted=push_permission_prompted,
+        push_permission_granted=push_permission_granted,
+        push_deep_link_opened=push_deep_link_opened,
+        splash_to_onboarding_rate_percent=_safe_percent(onboarding_impressions, splash_impressions),
+        onboarding_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_impressions),
+        cta_to_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_cta_taps),
+        biometric_success_rate_percent=_safe_percent(biometric_successes, biometric_gate_shown),
+        push_opt_in_rate_percent=_safe_percent(push_permission_granted, push_permission_prompted),
+        variants=variant_points,
+    )
+
+
+def _build_mobile_weekly_recommended_actions(funnel: MobileAnalyticsFunnelResponse) -> list[str]:
+    actions: list[str] = []
+    onboarding_completion = funnel.onboarding_completion_rate_percent
+    biometric_success = funnel.biometric_success_rate_percent
+    push_opt_in = funnel.push_opt_in_rate_percent
+    if onboarding_completion is None or onboarding_completion < 65:
+        actions.append(
+            "Onboarding completion below target (65%): review splash -> onboarding transition and CTA clarity."
+        )
+    if biometric_success is None or biometric_success < 80:
+        actions.append(
+            "Biometric success below target (80%): analyze device compatibility/errors and simplify unlock guidance."
+        )
+    if push_opt_in is None or push_opt_in < 45:
+        actions.append(
+            "Push opt-in below target (45%): tune permission timing and value messaging before prompt."
+        )
+    if not actions:
+        actions.append("Mobile funnel KPI targets are currently healthy for this window.")
+    return actions
+
+
+def _build_mobile_weekly_checklist(funnel: MobileAnalyticsFunnelResponse) -> list[MobileWeeklyKpiChecklistItem]:
+    onboarding_completion = funnel.onboarding_completion_rate_percent
+    biometric_success = funnel.biometric_success_rate_percent
+    push_opt_in = funnel.push_opt_in_rate_percent
+    return [
+        MobileWeeklyKpiChecklistItem(
+            id="onboarding_completion",
+            description="Onboarding completion rate >= 65%",
+            status="healthy" if onboarding_completion is not None and onboarding_completion >= 65 else "attention_needed",
+            owner="Product lead",
+        ),
+        MobileWeeklyKpiChecklistItem(
+            id="biometric_success",
+            description="Biometric challenge success rate >= 80%",
+            status="healthy" if biometric_success is not None and biometric_success >= 80 else "attention_needed",
+            owner="Security/Engineering owner",
+        ),
+        MobileWeeklyKpiChecklistItem(
+            id="push_opt_in",
+            description="Push permission opt-in rate >= 45%",
+            status="healthy" if push_opt_in is not None and push_opt_in >= 45 else "attention_needed",
+            owner="Growth owner",
+        ),
+    ]
+
+
+def _build_mobile_funnel_csv_payload(funnel: MobileAnalyticsFunnelResponse) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["metric", "value"])
+    writer.writerow(["window_days", funnel.window_days])
+    writer.writerow(["generated_at", funnel.generated_at.isoformat()])
+    writer.writerow(["total_events", funnel.total_events])
+    writer.writerow(["splash_impressions", funnel.splash_impressions])
+    writer.writerow(["splash_dismissed", funnel.splash_dismissed])
+    writer.writerow(["onboarding_impressions", funnel.onboarding_impressions])
+    writer.writerow(["onboarding_cta_taps", funnel.onboarding_cta_taps])
+    writer.writerow(["onboarding_completions", funnel.onboarding_completions])
+    writer.writerow(["biometric_gate_shown", funnel.biometric_gate_shown])
+    writer.writerow(["biometric_successes", funnel.biometric_successes])
+    writer.writerow(["push_permission_prompted", funnel.push_permission_prompted])
+    writer.writerow(["push_permission_granted", funnel.push_permission_granted])
+    writer.writerow(["push_deep_link_opened", funnel.push_deep_link_opened])
+    writer.writerow(["splash_to_onboarding_rate_percent", funnel.splash_to_onboarding_rate_percent])
+    writer.writerow(["onboarding_completion_rate_percent", funnel.onboarding_completion_rate_percent])
+    writer.writerow(["cta_to_completion_rate_percent", funnel.cta_to_completion_rate_percent])
+    writer.writerow(["biometric_success_rate_percent", funnel.biometric_success_rate_percent])
+    writer.writerow(["push_opt_in_rate_percent", funnel.push_opt_in_rate_percent])
+    writer.writerow([])
+    writer.writerow(["variant_id", "impressions", "cta_taps", "completions", "completion_rate_percent"])
+    for variant in funnel.variants:
+        writer.writerow(
+            [
+                variant.variant_id,
+                variant.impressions,
+                variant.cta_taps,
+                variant.completions,
+                variant.completion_rate_percent,
+            ]
+        )
+    return output.getvalue()
+
 # --- "Database" for jobs ---
 
 fake_jobs_db = {}
 mobile_analytics_events: deque[MobileAnalyticsEventRecord] = deque(maxlen=MOBILE_ANALYTICS_MAX_EVENTS)
+mobile_weekly_snapshots: deque[MobileAnalyticsWeeklySnapshot] = deque(maxlen=104)
 
 def simulate_job_execution(job_id: uuid.UUID):
     """
@@ -362,73 +561,83 @@ async def get_mobile_analytics_funnel(
     """
     Returns aggregate onboarding/security funnel metrics for the selected lookback window.
     """
-    now_utc = datetime.datetime.now(datetime.UTC)
-    cutoff = now_utc - datetime.timedelta(days=days)
-    window_events = [event for event in mobile_analytics_events if event.occurred_at >= cutoff]
+    return _build_mobile_funnel_response(days=days)
 
-    def count(event_name: str) -> int:
-        return sum(1 for item in window_events if item.event == event_name)
 
-    splash_impressions = count("mobile.splash.impression")
-    splash_dismissed = count("mobile.splash.dismissed")
-    onboarding_impressions = count("mobile.onboarding.impression")
-    onboarding_cta_taps = count("mobile.onboarding.cta_tapped")
-    onboarding_completions = count("mobile.onboarding.completed")
-    biometric_gate_shown = count("mobile.biometric.gate_shown")
-    biometric_successes = count("mobile.biometric.challenge_succeeded")
-    push_permission_prompted = count("mobile.push.permission_prompted")
-    push_permission_granted = count("mobile.push.permission_granted")
-    push_deep_link_opened = count("mobile.push.deep_link_opened") + count("mobile.push.deep_link_cold_start")
-
-    variant_buckets: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"impressions": 0, "cta_taps": 0, "completions": 0}
+@app.get("/mobile/analytics/funnel/export")
+async def export_mobile_analytics_funnel(
+    days: int = Query(default=14, ge=1, le=90),
+    format: Literal["json", "csv"] = Query(default="json"),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Exports mobile funnel metrics for BI tooling (JSON or CSV).
+    """
+    funnel = _build_mobile_funnel_response(days=days)
+    if format == "json":
+        return funnel
+    csv_payload = _build_mobile_funnel_csv_payload(funnel)
+    filename = f"mobile_funnel_{funnel.generated_at.date().isoformat()}.csv"
+    return StreamingResponse(
+        io.BytesIO(csv_payload.encode("utf-8")),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+        },
     )
-    for item in window_events:
-        variant_id = _extract_variant_id(item.metadata)
-        if not variant_id:
-            continue
-        if item.event == "mobile.onboarding.impression":
-            variant_buckets[variant_id]["impressions"] += 1
-        elif item.event == "mobile.onboarding.cta_tapped":
-            variant_buckets[variant_id]["cta_taps"] += 1
-        elif item.event == "mobile.onboarding.completed":
-            variant_buckets[variant_id]["completions"] += 1
 
-    variant_points = [
-        MobileVariantFunnelPoint(
-            variant_id=variant_id,
-            impressions=bucket["impressions"],
-            cta_taps=bucket["cta_taps"],
-            completions=bucket["completions"],
-            completion_rate_percent=_safe_percent(bucket["completions"], bucket["impressions"]),
-        )
-        for variant_id, bucket in sorted(
-            variant_buckets.items(),
-            key=lambda item: item[1]["impressions"],
-            reverse=True,
-        )
-    ]
 
-    return MobileAnalyticsFunnelResponse(
+@app.post("/mobile/analytics/weekly-snapshot", response_model=MobileAnalyticsWeeklySnapshot)
+async def create_mobile_weekly_snapshot(
+    days: int = Query(default=7, ge=7, le=90),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Captures a weekly mobile funnel snapshot and stores it for operating cadence review.
+    """
+    funnel = _build_mobile_funnel_response(days=days)
+    snapshot = MobileAnalyticsWeeklySnapshot(
+        generated_at=datetime.datetime.now(datetime.UTC),
         window_days=days,
-        generated_at=now_utc,
-        total_events=len(window_events),
-        splash_impressions=splash_impressions,
-        splash_dismissed=splash_dismissed,
-        onboarding_impressions=onboarding_impressions,
-        onboarding_cta_taps=onboarding_cta_taps,
-        onboarding_completions=onboarding_completions,
-        biometric_gate_shown=biometric_gate_shown,
-        biometric_successes=biometric_successes,
-        push_permission_prompted=push_permission_prompted,
-        push_permission_granted=push_permission_granted,
-        push_deep_link_opened=push_deep_link_opened,
-        splash_to_onboarding_rate_percent=_safe_percent(onboarding_impressions, splash_impressions),
-        onboarding_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_impressions),
-        cta_to_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_cta_taps),
-        biometric_success_rate_percent=_safe_percent(biometric_successes, biometric_gate_shown),
-        push_opt_in_rate_percent=_safe_percent(push_permission_granted, push_permission_prompted),
-        variants=variant_points,
+        funnel=funnel,
+        recommended_actions=_build_mobile_weekly_recommended_actions(funnel),
+        checklist=_build_mobile_weekly_checklist(funnel),
+    )
+    mobile_weekly_snapshots.append(snapshot)
+    return snapshot
+
+
+@app.get("/mobile/analytics/weekly-snapshots", response_model=MobileAnalyticsWeeklySnapshotListResponse)
+async def list_mobile_weekly_snapshots(
+    limit: int = Query(default=12, ge=1, le=52),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Returns the most recent weekly mobile KPI snapshots.
+    """
+    items = list(mobile_weekly_snapshots)[-limit:]
+    items.reverse()
+    return MobileAnalyticsWeeklySnapshotListResponse(
+        total_snapshots=len(mobile_weekly_snapshots),
+        items=items,
+    )
+
+
+@app.get("/mobile/analytics/weekly-cadence", response_model=MobileAnalyticsWeeklyCadenceResponse)
+async def get_mobile_weekly_cadence_snapshot(
+    days: int = Query(default=7, ge=7, le=90),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Returns current-week mobile KPI cadence payload without persisting a snapshot.
+    """
+    funnel = _build_mobile_funnel_response(days=days)
+    return MobileAnalyticsWeeklyCadenceResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        window_days=days,
+        funnel=funnel,
+        recommended_actions=_build_mobile_weekly_recommended_actions(funnel),
+        checklist=_build_mobile_weekly_checklist(funnel),
     )
 
 # --- Models for Forecasting ---

@@ -27,6 +27,7 @@ def _event_payload(event_name: str, *, variant: str | None = None) -> dict[str, 
 
 def setup_function():
     main.mobile_analytics_events.clear()
+    main.mobile_weekly_snapshots.clear()
     main.MOBILE_ANALYTICS_INGEST_API_KEY = ""
 
 
@@ -101,3 +102,52 @@ def test_mobile_analytics_api_key_guard():
 
     authorized_funnel = client.get("/mobile/analytics/funnel", headers={"X-Api-Key": "secret-key"})
     assert authorized_funnel.status_code == 200
+
+
+def test_mobile_analytics_export_supports_csv_and_json():
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.splash.impression"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.onboarding.impression", variant="velocity"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.onboarding.completed", variant="velocity"))
+
+    json_export = client.get("/mobile/analytics/funnel/export?days=14&format=json")
+    assert json_export.status_code == 200
+    assert json_export.json()["total_events"] == 3
+
+    csv_export = client.get("/mobile/analytics/funnel/export?days=14&format=csv")
+    assert csv_export.status_code == 200
+    assert csv_export.headers["content-type"].startswith("text/csv")
+    text = csv_export.text
+    assert "metric,value" in text
+    assert "onboarding_completions,1" in text
+    assert "variant_id,impressions,cta_taps,completions,completion_rate_percent" in text
+
+
+def test_mobile_weekly_snapshot_and_cadence_endpoints():
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.splash.impression"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.onboarding.impression", variant="velocity"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.onboarding.cta_tapped", variant="velocity"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.onboarding.completed", variant="velocity"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.biometric.gate_shown"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.biometric.challenge_succeeded"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.push.permission_prompted"))
+    client.post("/mobile/analytics/events", json=_event_payload("mobile.push.permission_granted"))
+
+    snapshot_response = client.post("/mobile/analytics/weekly-snapshot?days=7")
+    assert snapshot_response.status_code == 200
+    snapshot_payload = snapshot_response.json()
+    assert snapshot_payload["window_days"] == 7
+    assert snapshot_payload["funnel"]["total_events"] == 8
+    assert len(snapshot_payload["recommended_actions"]) >= 1
+    assert len(snapshot_payload["checklist"]) == 3
+
+    list_response = client.get("/mobile/analytics/weekly-snapshots?limit=5")
+    assert list_response.status_code == 200
+    list_payload = list_response.json()
+    assert list_payload["total_snapshots"] == 1
+    assert len(list_payload["items"]) == 1
+
+    cadence_response = client.get("/mobile/analytics/weekly-cadence?days=7")
+    assert cadence_response.status_code == 200
+    cadence_payload = cadence_response.json()
+    assert cadence_payload["window_days"] == 7
+    assert cadence_payload["funnel"]["total_events"] == 8

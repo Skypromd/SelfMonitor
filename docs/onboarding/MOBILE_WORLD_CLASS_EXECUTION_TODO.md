@@ -8,34 +8,34 @@ Goal: finish "store-polish 10/10" and move mobile channel to measurable growth m
 - [x] Premium shell UX (wow visuals, haptics, neo dock)
 - [x] Lottie onboarding + biometric unlock + push deep-links
 - [x] Branded splash + client-side A/B + client analytics emitters
-- [ ] Backend ingestion for mobile analytics funnel
-- [ ] Remote-config endpoint hardening and rollout policy
-- [ ] Funnel dashboard + weekly operating cadence
+- [x] Backend ingestion for mobile analytics funnel
+- [x] Remote-config endpoint hardening and rollout policy
+- [x] Funnel dashboard + weekly operating cadence
 
 ## 1. Backend + data (priority P0)
 
-- [ ] Add `POST /mobile/analytics/events` endpoint for ingesting mobile events
-- [ ] Add `GET /mobile/analytics/funnel` endpoint for KPI/funnel snapshot
-- [ ] Add `GET /mobile/config` endpoint for splash/onboarding remote config payload
-- [ ] Add API key guard for analytics ingestion/read (`X-Api-Key`)
-- [ ] Add tests for ingest/funnel/config behavior
+- [x] Add `POST /mobile/analytics/events` endpoint for ingesting mobile events
+- [x] Add `GET /mobile/analytics/funnel` endpoint for KPI/funnel snapshot
+- [x] Add `GET /mobile/config` endpoint for splash/onboarding remote config payload
+- [x] Add API key guard for analytics ingestion/read (`X-Api-Key`)
+- [x] Add tests for ingest/funnel/config behavior
 
 ## 2. Product analytics (priority P0)
 
-- [ ] Track splash impression/dismiss conversion
-- [ ] Track onboarding impression/CTA/completion conversion
-- [ ] Track biometric gate shown/success/failure ratio
-- [ ] Track push prompt/grant ratio
-- [ ] Track push deep-link open and cold-start open rate
+- [x] Track splash impression/dismiss conversion
+- [x] Track onboarding impression/CTA/completion conversion
+- [x] Track biometric gate shown/success/failure ratio
+- [x] Track push prompt/grant ratio
+- [x] Track push deep-link open and cold-start open rate
 
 ## 3. Release + operations (priority P1)
 
-- [ ] Add basic dashboard export endpoint for mobile funnel (JSON)
-- [ ] Add weekly KPI review checklist entry for mobile conversion
+- [x] Add basic dashboard export endpoint for mobile funnel (JSON)
+- [x] Add weekly KPI review checklist entry for mobile conversion
 - [ ] Set target thresholds:
-  - [ ] onboarding completion >= 65%
-  - [ ] biometric success >= 80%
-  - [ ] push opt-in >= 45%
+  - [x] onboarding completion >= 65%
+  - [x] biometric success >= 80%
+  - [x] push opt-in >= 45%
 - [ ] Define rollback toggle for onboarding experiment variants
 
 ## 4. Store readiness (priority P1)

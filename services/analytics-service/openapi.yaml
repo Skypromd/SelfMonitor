@@ -1,16 +1,23 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: Analytics Service
-  description: >-
-    Handles background analytical tasks, such as running ETL jobs and training
-    ML models.
+  description: Handles background analytical tasks and data analysis.
   version: 1.0.0
 paths:
   /jobs:
     post:
-      summary: Trigger an analytics job
-      tags:
-        - Jobs
+      summary: Trigger Job
+      description: Accepts a new job request and puts it into a 'pending' state.
+      operationId: trigger_job_jobs_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -19,39 +26,302 @@ paths:
               $ref: '#/components/schemas/JobRequest'
       responses:
         '202':
-          description: Job has been accepted for processing.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobStatus'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /jobs/{job_id}:
     get:
-      summary: Get the status of an analytics job
-      tags:
-        - Jobs
+      summary: Get Job Status
+      description: Retrieves the status of a specific job.
+      operationId: get_job_status_jobs__job_id__get
       parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Job Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
-          description: The status of the job.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobStatus'
-        '404':
-          description: Job not found.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/config:
+    get:
+      summary: Get Mobile Remote Config
+      description: Returns remote configuration payload for branded splash and onboarding
+        experiments.
+      operationId: get_mobile_remote_config_mobile_config_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileRemoteConfigResponse'
+  /mobile/analytics/events:
+    post:
+      summary: Ingest Mobile Analytics Event
+      description: Accepts a mobile analytics event for funnel analysis.
+      operationId: ingest_mobile_analytics_event_mobile_analytics_events_post
+      parameters:
+      - name: X-Api-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileAnalyticsEventIngestRequest'
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileAnalyticsIngestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/analytics/funnel:
+    get:
+      summary: Get Mobile Analytics Funnel
+      description: Returns aggregate onboarding/security funnel metrics for the selected
+        lookback window.
+      operationId: get_mobile_analytics_funnel_mobile_analytics_funnel_get
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 90
+          minimum: 1
+          default: 14
+          title: Days
+      - name: X-Api-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileAnalyticsFunnelResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/analytics/funnel/export:
+    get:
+      summary: Export Mobile Analytics Funnel
+      description: Exports mobile funnel metrics for BI tooling (JSON or CSV).
+      operationId: export_mobile_analytics_funnel_mobile_analytics_funnel_export_get
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 90
+          minimum: 1
+          default: 14
+          title: Days
+      - name: format
+        in: query
+        required: false
+        schema:
+          enum:
+          - json
+          - csv
+          type: string
+          default: json
+          title: Format
+      - name: X-Api-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/analytics/weekly-snapshot:
+    post:
+      summary: Create Mobile Weekly Snapshot
+      description: Captures a weekly mobile funnel snapshot and stores it for operating
+        cadence review.
+      operationId: create_mobile_weekly_snapshot_mobile_analytics_weekly_snapshot_post
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 90
+          minimum: 7
+          default: 7
+          title: Days
+      - name: X-Api-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileAnalyticsWeeklySnapshot'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/analytics/weekly-snapshots:
+    get:
+      summary: List Mobile Weekly Snapshots
+      description: Returns the most recent weekly mobile KPI snapshots.
+      operationId: list_mobile_weekly_snapshots_mobile_analytics_weekly_snapshots_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 52
+          minimum: 1
+          default: 12
+          title: Limit
+      - name: X-Api-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileAnalyticsWeeklySnapshotListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/analytics/weekly-cadence:
+    get:
+      summary: Get Mobile Weekly Cadence Snapshot
+      description: Returns current-week mobile KPI cadence payload without persisting
+        a snapshot.
+      operationId: get_mobile_weekly_cadence_snapshot_mobile_analytics_weekly_cadence_get
+      parameters:
+      - name: days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 90
+          minimum: 7
+          default: 7
+          title: Days
+      - name: X-Api-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileAnalyticsWeeklyCadenceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /forecast/cash-flow:
     post:
-      summary: Generate a cash flow forecast
-      tags:
-        - Analytics
-      security:
-        - bearerAuth: []
+      summary: Get Cash Flow Forecast
+      operationId: get_cash_flow_forecast_forecast_cash_flow_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -60,52 +330,89 @@ paths:
               $ref: '#/components/schemas/ForecastRequest'
       responses:
         '200':
-          description: A list of daily projected balances.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CashFlowResponse'
-        '502':
-          description: Error communicating with a downstream service.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /mortgage/types:
     get:
-      summary: List supported mortgage types for England checklist generation
-      tags:
-        - Mortgage
-      security:
-        - bearerAuth: []
+      summary: List Supported Mortgage Types
+      operationId: list_supported_mortgage_types_mortgage_types_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
-          description: Supported mortgage type catalog.
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/MortgageTypeSummary'
+                title: Response List Supported Mortgage Types Mortgage Types Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /mortgage/lender-profiles:
     get:
-      summary: List supported lender profile presets
-      tags:
-        - Mortgage
-      security:
-        - bearerAuth: []
+      summary: List Supported Lender Profiles
+      operationId: list_supported_lender_profiles_mortgage_lender_profiles_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
-          description: Supported lender profile presets.
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/LenderProfileSummary'
+                title: Response List Supported Lender Profiles Mortgage Lender Profiles
+                  Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /mortgage/checklist:
     post:
-      summary: Generate mortgage document checklist for selected mortgage type
-      tags:
-        - Mortgage
-      security:
-        - bearerAuth: []
+      summary: Generate Mortgage Document Checklist
+      operationId: generate_mortgage_document_checklist_mortgage_checklist_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -114,20 +421,30 @@ paths:
               $ref: '#/components/schemas/MortgageChecklistRequest'
       responses:
         '200':
-          description: Mortgage checklist and next steps.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MortgageChecklistResponse'
-        '400':
-          description: Unsupported mortgage type, lender profile, or employment profile.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /mortgage/readiness:
     post:
-      summary: Evaluate mortgage pack readiness from uploaded user documents
-      tags:
-        - Mortgage
-      security:
-        - bearerAuth: []
+      summary: Evaluate Mortgage Readiness
+      operationId: evaluate_mortgage_readiness_mortgage_readiness_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -136,22 +453,30 @@ paths:
               $ref: '#/components/schemas/MortgageReadinessRequest'
       responses:
         '200':
-          description: Mortgage readiness assessment with missing document gaps.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MortgageReadinessResponse'
-        '400':
-          description: Unsupported mortgage type, lender profile, or employment profile.
-        '502':
-          description: Documents service unavailable.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /mortgage/readiness-matrix:
     post:
-      summary: Evaluate readiness coverage across all supported mortgage types
-      tags:
-        - Mortgage
-      security:
-        - bearerAuth: []
+      summary: Evaluate Mortgage Readiness Matrix
+      operationId: evaluate_mortgage_readiness_matrix_mortgage_readiness_matrix_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -160,22 +485,62 @@ paths:
               $ref: '#/components/schemas/MortgageReadinessMatrixRequest'
       responses:
         '200':
-          description: Readiness matrix for all mortgage types.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MortgageReadinessMatrixResponse'
-        '400':
-          description: Unsupported lender profile or employment profile.
-        '502':
-          description: Documents service unavailable.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mortgage/lender-fit:
+    post:
+      summary: Evaluate Mortgage Lender Fit
+      operationId: evaluate_mortgage_lender_fit_mortgage_lender_fit_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MortgageLenderFitRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MortgageLenderFitResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /mortgage/pack-index:
     post:
-      summary: Build mortgage pack index manifest with document evidence mapping
-      tags:
-        - Mortgage
-      security:
-        - bearerAuth: []
+      summary: Generate Mortgage Pack Index
+      operationId: generate_mortgage_pack_index_mortgage_pack_index_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -184,22 +549,30 @@ paths:
               $ref: '#/components/schemas/MortgagePackIndexRequest'
       responses:
         '200':
-          description: Mortgage pack manifest as JSON.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MortgagePackIndexResponse'
-        '400':
-          description: Unsupported mortgage type, lender profile, or employment profile.
-        '502':
-          description: Documents service unavailable.
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /mortgage/pack-index.pdf:
     post:
-      summary: Export mortgage pack index PDF with evidence map
-      tags:
-        - Mortgage
-      security:
-        - bearerAuth: []
+      summary: Generate Mortgage Pack Index Pdf
+      operationId: generate_mortgage_pack_index_pdf_mortgage_pack_index_pdf_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       requestBody:
         required: true
         content:
@@ -208,745 +581,1446 @@ paths:
               $ref: '#/components/schemas/MortgagePackIndexRequest'
       responses:
         '200':
-          description: PDF export of mortgage pack index.
+          description: Successful Response
           content:
-            application/pdf:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
               schema:
-                type: string
-                format: binary
-        '400':
-          description: Unsupported mortgage type, lender profile, or employment profile.
-        '502':
-          description: Documents service unavailable.
+                $ref: '#/components/schemas/HTTPValidationError'
   /reports/mortgage-readiness:
     get:
-      summary: Generate a Mortgage Readiness PDF Report
-      tags:
-        - Reports
-      security:
-        - bearerAuth: []
+      summary: Get Mortgage Readiness Report
+      operationId: get_mortgage_readiness_report_reports_mortgage_readiness_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
       responses:
         '200':
-          description: A PDF report summarizing income stability.
+          description: Successful Response
+        '422':
+          description: Validation Error
           content:
-            application/pdf:
+            application/json:
               schema:
-                type: string
-                format: binary
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
-    ForecastRequest:
-      type: object
+    CashFlowResponse:
       properties:
-        days_to_forecast:
-          type: integer
-          default: 30
-          description: The number of days into the future to forecast.
-    DataPoint:
+        forecast:
+          items:
+            $ref: '#/components/schemas/DataPoint'
+          type: array
+          title: Forecast
       type: object
+      required:
+      - forecast
+      title: CashFlowResponse
+    DataPoint:
       properties:
         date:
           type: string
           format: date
+          title: Date
         balance:
           type: number
-          format: float
-    CashFlowResponse:
+          title: Balance
       type: object
-      properties:
-        forecast:
-          type: array
-          items:
-            $ref: '#/components/schemas/DataPoint'
-    MortgageTypeSummary:
-      type: object
-      properties:
-        code:
-          type: string
-          example: buy_to_let
-        label:
-          type: string
-          example: Buy-to-let mortgage
-        description:
-          type: string
-          example: Purchase or refinance of rental investment property.
       required:
-        - code
-        - label
-        - description
+      - date
+      - balance
+      title: DataPoint
+    ForecastRequest:
+      properties:
+        days_to_forecast:
+          type: integer
+          title: Days To Forecast
+          default: 30
+      type: object
+      title: ForecastRequest
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    JobRequest:
+      properties:
+        job_type:
+          type: string
+          enum:
+          - run_etl_transactions
+          - train_categorization_model
+          title: Job Type
+        parameters:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Parameters
+      type: object
+      required:
+      - job_type
+      title: JobRequest
+    JobStatus:
+      properties:
+        job_id:
+          type: string
+          format: uuid
+          title: Job Id
+        job_type:
+          type: string
+          enum:
+          - run_etl_transactions
+          - train_categorization_model
+          title: Job Type
+        status:
+          type: string
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          title: Status
+          default: pending
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        finished_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Finished At
+        result:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Result
+      type: object
+      required:
+      - job_type
+      title: JobStatus
     LenderProfileSummary:
-      type: object
       properties:
         code:
           type: string
-          example: high_street_mainstream
+          title: Code
         label:
           type: string
-          example: High-street mainstream lender
+          title: Label
         description:
           type: string
-          example: Typical policy set used by major UK high-street banks.
-      required:
-        - code
-        - label
-        - description
-    MortgageChecklistRequest:
+          title: Description
       type: object
+      required:
+      - code
+      - label
+      - description
+      title: LenderProfileSummary
+    MobileAnalyticsEventIngestRequest:
       properties:
-        mortgage_type:
+        event:
           type: string
-          example: first_time_buyer
-        lender_profile:
+          maxLength: 120
+          minLength: 1
+          title: Event
+        source:
           type: string
-          example: high_street_mainstream
-          default: high_street_mainstream
-        employment_profile:
+          maxLength: 40
+          minLength: 1
+          title: Source
+          default: mobile-app
+        platform:
           type: string
-          example: sole_trader
-          default: sole_trader
-        include_adverse_credit_pack:
+          maxLength: 32
+          minLength: 2
+          title: Platform
+          default: unknown
+        occurred_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Occurred At
+        metadata:
+          additionalProperties: true
+          type: object
+          title: Metadata
+      type: object
+      required:
+      - event
+      title: MobileAnalyticsEventIngestRequest
+    MobileAnalyticsFunnelResponse:
+      properties:
+        window_days:
+          type: integer
+          title: Window Days
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        total_events:
+          type: integer
+          title: Total Events
+        splash_impressions:
+          type: integer
+          title: Splash Impressions
+        splash_dismissed:
+          type: integer
+          title: Splash Dismissed
+        onboarding_impressions:
+          type: integer
+          title: Onboarding Impressions
+        onboarding_cta_taps:
+          type: integer
+          title: Onboarding Cta Taps
+        onboarding_completions:
+          type: integer
+          title: Onboarding Completions
+        biometric_gate_shown:
+          type: integer
+          title: Biometric Gate Shown
+        biometric_successes:
+          type: integer
+          title: Biometric Successes
+        push_permission_prompted:
+          type: integer
+          title: Push Permission Prompted
+        push_permission_granted:
+          type: integer
+          title: Push Permission Granted
+        push_deep_link_opened:
+          type: integer
+          title: Push Deep Link Opened
+        splash_to_onboarding_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Splash To Onboarding Rate Percent
+        onboarding_completion_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Onboarding Completion Rate Percent
+        cta_to_completion_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Cta To Completion Rate Percent
+        biometric_success_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Biometric Success Rate Percent
+        push_opt_in_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Push Opt In Rate Percent
+        variants:
+          items:
+            $ref: '#/components/schemas/MobileVariantFunnelPoint'
+          type: array
+          title: Variants
+      type: object
+      required:
+      - window_days
+      - generated_at
+      - total_events
+      - splash_impressions
+      - splash_dismissed
+      - onboarding_impressions
+      - onboarding_cta_taps
+      - onboarding_completions
+      - biometric_gate_shown
+      - biometric_successes
+      - push_permission_prompted
+      - push_permission_granted
+      - push_deep_link_opened
+      title: MobileAnalyticsFunnelResponse
+    MobileAnalyticsIngestResponse:
+      properties:
+        accepted:
           type: boolean
-          default: false
+          title: Accepted
+        stored_events:
+          type: integer
+          title: Stored Events
+      type: object
       required:
-        - mortgage_type
-    MortgageDocumentItem:
-      type: object
+      - accepted
+      - stored_events
+      title: MobileAnalyticsIngestResponse
+    MobileAnalyticsWeeklyCadenceResponse:
       properties:
-        code:
+        generated_at:
           type: string
-        title:
-          type: string
-        reason:
-          type: string
+          format: date-time
+          title: Generated At
+        window_days:
+          type: integer
+          title: Window Days
+        funnel:
+          $ref: '#/components/schemas/MobileAnalyticsFunnelResponse'
+        recommended_actions:
+          items:
+            type: string
+          type: array
+          title: Recommended Actions
+        checklist:
+          items:
+            $ref: '#/components/schemas/MobileWeeklyKpiChecklistItem'
+          type: array
+          title: Checklist
+      type: object
       required:
-        - code
-        - title
-        - reason
-    MortgageChecklistResponse:
-      type: object
+      - generated_at
+      - window_days
+      - funnel
+      - recommended_actions
+      - checklist
+      title: MobileAnalyticsWeeklyCadenceResponse
+    MobileAnalyticsWeeklySnapshot:
       properties:
-        jurisdiction:
+        snapshot_id:
           type: string
-          example: England
-        mortgage_type:
+          format: uuid
+          title: Snapshot Id
+        generated_at:
           type: string
-          example: buy_to_let
-        mortgage_label:
-          type: string
-        mortgage_description:
-          type: string
-        lender_profile:
-          type: string
-        lender_profile_label:
-          type: string
-        employment_profile:
-          type: string
-        required_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        conditional_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        lender_notes:
-          type: array
+          format: date-time
+          title: Generated At
+        window_days:
+          type: integer
+          title: Window Days
+        funnel:
+          $ref: '#/components/schemas/MobileAnalyticsFunnelResponse'
+        recommended_actions:
           items:
             type: string
-        next_steps:
           type: array
+          title: Recommended Actions
+        checklist:
           items:
-            type: string
+            $ref: '#/components/schemas/MobileWeeklyKpiChecklistItem'
+          type: array
+          title: Checklist
+      type: object
       required:
-        - jurisdiction
-        - mortgage_type
-        - mortgage_label
-        - mortgage_description
-        - lender_profile
-        - lender_profile_label
-        - employment_profile
-        - required_documents
-        - conditional_documents
-        - lender_notes
-        - next_steps
-    MortgageReadinessRequest:
-      type: object
+      - generated_at
+      - window_days
+      - funnel
+      - recommended_actions
+      - checklist
+      title: MobileAnalyticsWeeklySnapshot
+    MobileAnalyticsWeeklySnapshotListResponse:
       properties:
-        mortgage_type:
-          type: string
-          example: first_time_buyer
-        lender_profile:
-          type: string
-          example: high_street_mainstream
-          default: high_street_mainstream
-        employment_profile:
-          type: string
-          example: sole_trader
-          default: sole_trader
-        include_adverse_credit_pack:
-          type: boolean
-          default: false
-        max_documents_scan:
+        total_snapshots:
           type: integer
-          default: 300
-          minimum: 10
-          maximum: 2000
-        advisor_review_confirmed:
-          type: boolean
-          default: false
-      required:
-        - mortgage_type
-    MortgageReadinessResponse:
-      type: object
-      properties:
-        jurisdiction:
-          type: string
-          example: England
-        mortgage_type:
-          type: string
-        mortgage_label:
-          type: string
-        mortgage_description:
-          type: string
-        lender_profile:
-          type: string
-        lender_profile_label:
-          type: string
-        employment_profile:
-          type: string
-        required_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        conditional_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        lender_notes:
-          type: array
-          items:
-            type: string
-        next_steps:
-          type: array
-          items:
-            type: string
-        next_actions:
-          type: array
-          items:
-            type: string
-        uploaded_document_count:
-          type: integer
-          example: 12
-        detected_document_codes:
-          type: array
-          items:
-            type: string
-        matched_required_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        missing_required_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        missing_conditional_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        required_completion_percent:
-          type: number
-          format: float
-          example: 62.5
-        overall_completion_percent:
-          type: number
-          format: float
-          example: 48.3
-        readiness_status:
-          type: string
-          enum: [not_ready, almost_ready, ready_for_broker_review]
-        readiness_summary:
-          type: string
-        evidence_quality_summary:
-          $ref: '#/components/schemas/MortgageEvidenceQualitySummary'
-        evidence_quality_issues:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
-        refresh_reminder_summary:
-          $ref: '#/components/schemas/MortgageRefreshReminderSummary'
-        refresh_reminders:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageRefreshReminder'
-        submission_gate:
-          $ref: '#/components/schemas/MortgageSubmissionGate'
-      required:
-        - jurisdiction
-        - mortgage_type
-        - mortgage_label
-        - mortgage_description
-        - lender_profile
-        - lender_profile_label
-        - employment_profile
-        - required_documents
-        - conditional_documents
-        - lender_notes
-        - next_steps
-        - next_actions
-        - uploaded_document_count
-        - detected_document_codes
-        - matched_required_documents
-        - missing_required_documents
-        - missing_conditional_documents
-        - required_completion_percent
-        - overall_completion_percent
-        - readiness_status
-        - readiness_summary
-        - evidence_quality_summary
-        - evidence_quality_issues
-        - refresh_reminder_summary
-        - refresh_reminders
-        - submission_gate
-    MortgageReadinessMatrixRequest:
-      type: object
-      properties:
-        employment_profile:
-          type: string
-          example: sole_trader
-          default: sole_trader
-        include_adverse_credit_pack:
-          type: boolean
-          default: false
-        lender_profile:
-          type: string
-          example: high_street_mainstream
-          default: high_street_mainstream
-        max_documents_scan:
-          type: integer
-          default: 300
-          minimum: 10
-          maximum: 2000
-    MortgageReadinessMatrixItem:
-      type: object
-      properties:
-        mortgage_type:
-          type: string
-        mortgage_label:
-          type: string
-        required_completion_percent:
-          type: number
-          format: float
-        overall_completion_percent:
-          type: number
-          format: float
-        readiness_status:
-          type: string
-          enum: [not_ready, almost_ready, ready_for_broker_review]
-        missing_required_count:
-          type: integer
-        missing_required_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        next_actions:
-          type: array
-          items:
-            type: string
-      required:
-        - mortgage_type
-        - mortgage_label
-        - required_completion_percent
-        - overall_completion_percent
-        - readiness_status
-        - missing_required_count
-        - missing_required_documents
-        - next_actions
-    MortgageReadinessMatrixResponse:
-      type: object
-      properties:
-        jurisdiction:
-          type: string
-        employment_profile:
-          type: string
-        lender_profile:
-          type: string
-        lender_profile_label:
-          type: string
-        include_adverse_credit_pack:
-          type: boolean
-        uploaded_document_count:
-          type: integer
-        total_mortgage_types:
-          type: integer
-        ready_for_broker_review_count:
-          type: integer
-        almost_ready_count:
-          type: integer
-        not_ready_count:
-          type: integer
-        average_required_completion_percent:
-          type: number
-          format: float
-        average_overall_completion_percent:
-          type: number
-          format: float
-        overall_status:
-          type: string
-          enum: [not_ready, almost_ready, ready_for_broker_review]
+          title: Total Snapshots
         items:
-          type: array
           items:
-            $ref: '#/components/schemas/MortgageReadinessMatrixItem'
-      required:
-        - jurisdiction
-        - employment_profile
-        - lender_profile
-        - lender_profile_label
-        - include_adverse_credit_pack
-        - uploaded_document_count
-        - total_mortgage_types
-        - ready_for_broker_review_count
-        - almost_ready_count
-        - not_ready_count
-        - average_required_completion_percent
-        - average_overall_completion_percent
-        - overall_status
-        - items
-    MortgagePackIndexRequest:
+            $ref: '#/components/schemas/MobileAnalyticsWeeklySnapshot'
+          type: array
+          title: Items
       type: object
+      required:
+      - total_snapshots
+      - items
+      title: MobileAnalyticsWeeklySnapshotListResponse
+    MobileOnboardingExperimentConfig:
+      properties:
+        experimentId:
+          type: string
+          title: Experimentid
+        forceVariantId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Forcevariantid
+        variants:
+          items:
+            $ref: '#/components/schemas/MobileOnboardingVariantConfig'
+          type: array
+          title: Variants
+      type: object
+      required:
+      - experimentId
+      - variants
+      title: MobileOnboardingExperimentConfig
+    MobileOnboardingVariantConfig:
+      properties:
+        id:
+          type: string
+          title: Id
+        title:
+          type: string
+          title: Title
+        subtitle:
+          type: string
+          title: Subtitle
+        ctaLabel:
+          type: string
+          title: Ctalabel
+        features:
+          items:
+            type: string
+          type: array
+          title: Features
+        gradient:
+          items:
+            type: string
+          type: array
+          title: Gradient
+        weight:
+          type: integer
+          title: Weight
+          default: 1
+      type: object
+      required:
+      - id
+      - title
+      - subtitle
+      - ctaLabel
+      - features
+      - gradient
+      title: MobileOnboardingVariantConfig
+    MobileRemoteConfigResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        splash:
+          $ref: '#/components/schemas/MobileSplashConfig'
+        onboardingExperiment:
+          $ref: '#/components/schemas/MobileOnboardingExperimentConfig'
+      type: object
+      required:
+      - generated_at
+      - splash
+      - onboardingExperiment
+      title: MobileRemoteConfigResponse
+    MobileSplashConfig:
+      properties:
+        title:
+          type: string
+          title: Title
+        subtitle:
+          type: string
+          title: Subtitle
+        gradient:
+          items:
+            type: string
+          type: array
+          title: Gradient
+      type: object
+      required:
+      - title
+      - subtitle
+      - gradient
+      title: MobileSplashConfig
+    MobileVariantFunnelPoint:
+      properties:
+        variant_id:
+          type: string
+          title: Variant Id
+        impressions:
+          type: integer
+          title: Impressions
+        cta_taps:
+          type: integer
+          title: Cta Taps
+        completions:
+          type: integer
+          title: Completions
+        completion_rate_percent:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Completion Rate Percent
+      type: object
+      required:
+      - variant_id
+      - impressions
+      - cta_taps
+      - completions
+      title: MobileVariantFunnelPoint
+    MobileWeeklyKpiChecklistItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        description:
+          type: string
+          title: Description
+        status:
+          type: string
+          enum:
+          - healthy
+          - attention_needed
+          title: Status
+        owner:
+          type: string
+          title: Owner
+      type: object
+      required:
+      - id
+      - description
+      - status
+      - owner
+      title: MobileWeeklyKpiChecklistItem
+    MortgageChecklistRequest:
       properties:
         mortgage_type:
           type: string
-          example: remortgage
-        lender_profile:
-          type: string
-          example: high_street_mainstream
-          default: high_street_mainstream
+          title: Mortgage Type
         employment_profile:
           type: string
-          example: sole_trader
+          title: Employment Profile
           default: sole_trader
         include_adverse_credit_pack:
           type: boolean
+          title: Include Adverse Credit Pack
           default: false
-        max_documents_scan:
-          type: integer
-          default: 300
-          minimum: 10
-          maximum: 2000
-        advisor_review_confirmed:
-          type: boolean
-          default: false
-      required:
-        - mortgage_type
-    MortgageDocumentEvidenceItem:
+        lender_profile:
+          type: string
+          title: Lender Profile
+          default: high_street_mainstream
       type: object
+      required:
+      - mortgage_type
+      title: MortgageChecklistRequest
+    MortgageChecklistResponse:
+      properties:
+        jurisdiction:
+          type: string
+          title: Jurisdiction
+        mortgage_type:
+          type: string
+          title: Mortgage Type
+        mortgage_label:
+          type: string
+          title: Mortgage Label
+        mortgage_description:
+          type: string
+          title: Mortgage Description
+        lender_profile:
+          type: string
+          title: Lender Profile
+        lender_profile_label:
+          type: string
+          title: Lender Profile Label
+        employment_profile:
+          type: string
+          title: Employment Profile
+        required_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Required Documents
+        conditional_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Conditional Documents
+        lender_notes:
+          items:
+            type: string
+          type: array
+          title: Lender Notes
+        next_steps:
+          items:
+            type: string
+          type: array
+          title: Next Steps
+      type: object
+      required:
+      - jurisdiction
+      - mortgage_type
+      - mortgage_label
+      - mortgage_description
+      - lender_profile
+      - lender_profile_label
+      - employment_profile
+      - required_documents
+      - conditional_documents
+      - lender_notes
+      - next_steps
+      title: MortgageChecklistResponse
+    MortgageDocumentEvidenceItem:
       properties:
         code:
           type: string
+          title: Code
         title:
           type: string
+          title: Title
         reason:
           type: string
+          title: Reason
         match_status:
           type: string
-          enum: [matched, missing]
+          enum:
+          - matched
+          - missing
+          title: Match Status
         matched_filenames:
-          type: array
           items:
             type: string
-      required:
-        - code
-        - title
-        - reason
-        - match_status
-        - matched_filenames
-    MortgageEvidenceQualityIssue:
+          type: array
+          title: Matched Filenames
       type: object
+      required:
+      - code
+      - title
+      - reason
+      - match_status
+      - matched_filenames
+      title: MortgageDocumentEvidenceItem
+    MortgageDocumentItem:
+      properties:
+        code:
+          type: string
+          title: Code
+        title:
+          type: string
+          title: Title
+        reason:
+          type: string
+          title: Reason
+      type: object
+      required:
+      - code
+      - title
+      - reason
+      title: MortgageDocumentItem
+    MortgageEvidenceQualityIssue:
       properties:
         check_type:
           type: string
-          enum: [staleness, name_mismatch, period_mismatch, unreadable_ocr]
+          enum:
+          - staleness
+          - name_mismatch
+          - period_mismatch
+          - unreadable_ocr
+          title: Check Type
         severity:
           type: string
-          enum: [critical, warning, info]
+          enum:
+          - critical
+          - warning
+          - info
+          title: Severity
         document_filename:
           type: string
+          title: Document Filename
         document_code:
-          type: string
-          nullable: true
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Document Code
         message:
           type: string
+          title: Message
         suggested_action:
           type: string
-      required:
-        - check_type
-        - severity
-        - document_filename
-        - message
-        - suggested_action
-    MortgageEvidenceQualitySummary:
+          title: Suggested Action
       type: object
+      required:
+      - check_type
+      - severity
+      - document_filename
+      - message
+      - suggested_action
+      title: MortgageEvidenceQualityIssue
+    MortgageEvidenceQualitySummary:
       properties:
         total_issues:
           type: integer
+          title: Total Issues
         critical_count:
           type: integer
+          title: Critical Count
         warning_count:
           type: integer
+          title: Warning Count
         info_count:
           type: integer
+          title: Info Count
         has_blockers:
           type: boolean
-      required:
-        - total_issues
-        - critical_count
-        - warning_count
-        - info_count
-        - has_blockers
-    MortgageSubmissionGate:
+          title: Has Blockers
       type: object
+      required:
+      - total_issues
+      - critical_count
+      - warning_count
+      - info_count
+      - has_blockers
+      title: MortgageEvidenceQualitySummary
+    MortgageLenderFitItem:
       properties:
-        compliance_disclaimer:
+        lender_profile:
           type: string
-        advisor_review_required:
-          type: boolean
-        advisor_review_confirmed:
-          type: boolean
-        broker_submission_allowed:
-          type: boolean
-        broker_submission_blockers:
-          type: array
+          title: Lender Profile
+        lender_profile_label:
+          type: string
+          title: Lender Profile Label
+        required_completion_percent:
+          type: number
+          title: Required Completion Percent
+        overall_completion_percent:
+          type: number
+          title: Overall Completion Percent
+        readiness_status:
+          type: string
+          enum:
+          - not_ready
+          - almost_ready
+          - ready_for_broker_review
+          title: Readiness Status
+        missing_required_count:
+          type: integer
+          title: Missing Required Count
+        top_missing_required_titles:
           items:
             type: string
-      required:
-        - compliance_disclaimer
-        - advisor_review_required
-        - advisor_review_confirmed
-        - broker_submission_allowed
-        - broker_submission_blockers
-    MortgageRefreshReminderSummary:
+          type: array
+          title: Top Missing Required Titles
+        lender_notes:
+          items:
+            type: string
+          type: array
+          title: Lender Notes
+        next_actions:
+          items:
+            type: string
+          type: array
+          title: Next Actions
       type: object
+      required:
+      - lender_profile
+      - lender_profile_label
+      - required_completion_percent
+      - overall_completion_percent
+      - readiness_status
+      - missing_required_count
+      - top_missing_required_titles
+      - lender_notes
+      - next_actions
+      title: MortgageLenderFitItem
+    MortgageLenderFitRequest:
       properties:
-        total_reminders:
-          type: integer
-        due_now_count:
-          type: integer
-        upcoming_count:
-          type: integer
-        has_due_now:
+        mortgage_type:
+          type: string
+          title: Mortgage Type
+        employment_profile:
+          type: string
+          title: Employment Profile
+          default: sole_trader
+        include_adverse_credit_pack:
           type: boolean
-        next_due_date:
-          type: string
-          format: date
-          nullable: true
-      required:
-        - total_reminders
-        - due_now_count
-        - upcoming_count
-        - has_due_now
-    MortgageRefreshReminder:
-      type: object
-      properties:
-        reminder_type:
-          type: string
-          enum: [statement_refresh, id_validity_check]
-        document_code:
-          type: string
-        title:
-          type: string
-        cadence_days:
+          title: Include Adverse Credit Pack
+          default: false
+        max_documents_scan:
           type: integer
-        due_date:
-          type: string
-          format: date
-        status:
-          type: string
-          enum: [due_now, upcoming]
-        document_filename:
-          type: string
-        message:
-          type: string
-        suggested_action:
-          type: string
-      required:
-        - reminder_type
-        - document_code
-        - title
-        - cadence_days
-        - due_date
-        - status
-        - document_filename
-        - message
-        - suggested_action
-    MortgagePackIndexResponse:
+          maximum: 2000.0
+          minimum: 10.0
+          title: Max Documents Scan
+          default: 300
       type: object
+      required:
+      - mortgage_type
+      title: MortgageLenderFitRequest
+    MortgageLenderFitResponse:
       properties:
         jurisdiction:
           type: string
+          title: Jurisdiction
         mortgage_type:
           type: string
+          title: Mortgage Type
         mortgage_label:
           type: string
-        mortgage_description:
-          type: string
-        lender_profile:
-          type: string
-        lender_profile_label:
-          type: string
+          title: Mortgage Label
         employment_profile:
           type: string
-        required_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        conditional_documents:
-          type: array
-          items:
-            $ref: '#/components/schemas/MortgageDocumentItem'
-        lender_notes:
-          type: array
-          items:
-            type: string
-        next_steps:
-          type: array
-          items:
-            type: string
+          title: Employment Profile
+        include_adverse_credit_pack:
+          type: boolean
+          title: Include Adverse Credit Pack
         uploaded_document_count:
           type: integer
-        detected_document_codes:
+          title: Uploaded Document Count
+        total_lender_profiles:
+          type: integer
+          title: Total Lender Profiles
+        recommended_lender_profile:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recommended Lender Profile
+        recommended_lender_profile_label:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recommended Lender Profile Label
+        recommendation_reason:
+          type: string
+          title: Recommendation Reason
+        items:
+          items:
+            $ref: '#/components/schemas/MortgageLenderFitItem'
           type: array
+          title: Items
+      type: object
+      required:
+      - jurisdiction
+      - mortgage_type
+      - mortgage_label
+      - employment_profile
+      - include_adverse_credit_pack
+      - uploaded_document_count
+      - total_lender_profiles
+      - recommendation_reason
+      - items
+      title: MortgageLenderFitResponse
+    MortgagePackIndexRequest:
+      properties:
+        mortgage_type:
+          type: string
+          title: Mortgage Type
+        employment_profile:
+          type: string
+          title: Employment Profile
+          default: sole_trader
+        include_adverse_credit_pack:
+          type: boolean
+          title: Include Adverse Credit Pack
+          default: false
+        lender_profile:
+          type: string
+          title: Lender Profile
+          default: high_street_mainstream
+        max_documents_scan:
+          type: integer
+          maximum: 2000.0
+          minimum: 10.0
+          title: Max Documents Scan
+          default: 300
+        advisor_review_confirmed:
+          type: boolean
+          title: Advisor Review Confirmed
+          default: false
+      type: object
+      required:
+      - mortgage_type
+      title: MortgagePackIndexRequest
+    MortgagePackIndexResponse:
+      properties:
+        jurisdiction:
+          type: string
+          title: Jurisdiction
+        mortgage_type:
+          type: string
+          title: Mortgage Type
+        mortgage_label:
+          type: string
+          title: Mortgage Label
+        mortgage_description:
+          type: string
+          title: Mortgage Description
+        lender_profile:
+          type: string
+          title: Lender Profile
+        lender_profile_label:
+          type: string
+          title: Lender Profile Label
+        employment_profile:
+          type: string
+          title: Employment Profile
+        required_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Required Documents
+        conditional_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Conditional Documents
+        lender_notes:
           items:
             type: string
+          type: array
+          title: Lender Notes
+        next_steps:
+          items:
+            type: string
+          type: array
+          title: Next Steps
+        uploaded_document_count:
+          type: integer
+          title: Uploaded Document Count
+        detected_document_codes:
+          items:
+            type: string
+          type: array
+          title: Detected Document Codes
         readiness_status:
           type: string
-          enum: [not_ready, almost_ready, ready_for_broker_review]
+          enum:
+          - not_ready
+          - almost_ready
+          - ready_for_broker_review
+          title: Readiness Status
         required_completion_percent:
           type: number
-          format: float
+          title: Required Completion Percent
         overall_completion_percent:
           type: number
-          format: float
+          title: Overall Completion Percent
         readiness_summary:
           type: string
+          title: Readiness Summary
         next_actions:
-          type: array
           items:
             type: string
+          type: array
+          title: Next Actions
         matched_required_documents:
-          type: array
           items:
             $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Matched Required Documents
         missing_required_documents:
-          type: array
           items:
             $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Missing Required Documents
         missing_conditional_documents:
-          type: array
           items:
             $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Missing Conditional Documents
         required_document_evidence:
-          type: array
           items:
             $ref: '#/components/schemas/MortgageDocumentEvidenceItem'
+          type: array
+          title: Required Document Evidence
         conditional_document_evidence:
-          type: array
           items:
             $ref: '#/components/schemas/MortgageDocumentEvidenceItem'
+          type: array
+          title: Conditional Document Evidence
         evidence_quality_summary:
           $ref: '#/components/schemas/MortgageEvidenceQualitySummary'
         evidence_quality_issues:
-          type: array
           items:
             $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
+          type: array
+          title: Evidence Quality Issues
         refresh_reminder_summary:
           $ref: '#/components/schemas/MortgageRefreshReminderSummary'
         refresh_reminders:
-          type: array
           items:
             $ref: '#/components/schemas/MortgageRefreshReminder'
+          type: array
+          title: Refresh Reminders
         submission_gate:
           $ref: '#/components/schemas/MortgageSubmissionGate'
         generated_at:
           type: string
           format: date-time
-      required:
-        - jurisdiction
-        - mortgage_type
-        - mortgage_label
-        - mortgage_description
-        - lender_profile
-        - lender_profile_label
-        - employment_profile
-        - required_documents
-        - conditional_documents
-        - lender_notes
-        - next_steps
-        - uploaded_document_count
-        - detected_document_codes
-        - readiness_status
-        - required_completion_percent
-        - overall_completion_percent
-        - readiness_summary
-        - next_actions
-        - matched_required_documents
-        - missing_required_documents
-        - missing_conditional_documents
-        - required_document_evidence
-        - conditional_document_evidence
-        - evidence_quality_summary
-        - evidence_quality_issues
-        - refresh_reminder_summary
-        - refresh_reminders
-        - submission_gate
-        - generated_at
-    JobRequest:
+          title: Generated At
       type: object
-      properties:
-        job_type:
-          type: string
-          enum: [run_etl_transactions, train_categorization_model]
-          description: The type of job to run.
-        parameters:
-          type: object
-          description: Job-specific parameters.
-          example:
-            start_date: '2023-01-01'
-            end_date: '2023-12-31'
       required:
-        - job_type
-    JobStatus:
-      type: object
+      - jurisdiction
+      - mortgage_type
+      - mortgage_label
+      - mortgage_description
+      - lender_profile
+      - lender_profile_label
+      - employment_profile
+      - required_documents
+      - conditional_documents
+      - lender_notes
+      - next_steps
+      - uploaded_document_count
+      - detected_document_codes
+      - readiness_status
+      - required_completion_percent
+      - overall_completion_percent
+      - readiness_summary
+      - next_actions
+      - matched_required_documents
+      - missing_required_documents
+      - missing_conditional_documents
+      - required_document_evidence
+      - conditional_document_evidence
+      - evidence_quality_summary
+      - evidence_quality_issues
+      - refresh_reminder_summary
+      - refresh_reminders
+      - submission_gate
+      - generated_at
+      title: MortgagePackIndexResponse
+    MortgageReadinessMatrixItem:
       properties:
-        job_id:
+        mortgage_type:
           type: string
-          format: uuid
-        job_type:
+          title: Mortgage Type
+        mortgage_label:
           type: string
-          enum: [run_etl_transactions, train_categorization_model]
+          title: Mortgage Label
+        required_completion_percent:
+          type: number
+          title: Required Completion Percent
+        overall_completion_percent:
+          type: number
+          title: Overall Completion Percent
+        readiness_status:
+          type: string
+          enum:
+          - not_ready
+          - almost_ready
+          - ready_for_broker_review
+          title: Readiness Status
+        missing_required_count:
+          type: integer
+          title: Missing Required Count
+        missing_required_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Missing Required Documents
+        next_actions:
+          items:
+            type: string
+          type: array
+          title: Next Actions
+      type: object
+      required:
+      - mortgage_type
+      - mortgage_label
+      - required_completion_percent
+      - overall_completion_percent
+      - readiness_status
+      - missing_required_count
+      - missing_required_documents
+      - next_actions
+      title: MortgageReadinessMatrixItem
+    MortgageReadinessMatrixRequest:
+      properties:
+        employment_profile:
+          type: string
+          title: Employment Profile
+          default: sole_trader
+        include_adverse_credit_pack:
+          type: boolean
+          title: Include Adverse Credit Pack
+          default: false
+        lender_profile:
+          type: string
+          title: Lender Profile
+          default: high_street_mainstream
+        max_documents_scan:
+          type: integer
+          maximum: 2000.0
+          minimum: 10.0
+          title: Max Documents Scan
+          default: 300
+      type: object
+      title: MortgageReadinessMatrixRequest
+    MortgageReadinessMatrixResponse:
+      properties:
+        jurisdiction:
+          type: string
+          title: Jurisdiction
+        employment_profile:
+          type: string
+          title: Employment Profile
+        lender_profile:
+          type: string
+          title: Lender Profile
+        lender_profile_label:
+          type: string
+          title: Lender Profile Label
+        include_adverse_credit_pack:
+          type: boolean
+          title: Include Adverse Credit Pack
+        uploaded_document_count:
+          type: integer
+          title: Uploaded Document Count
+        total_mortgage_types:
+          type: integer
+          title: Total Mortgage Types
+        ready_for_broker_review_count:
+          type: integer
+          title: Ready For Broker Review Count
+        almost_ready_count:
+          type: integer
+          title: Almost Ready Count
+        not_ready_count:
+          type: integer
+          title: Not Ready Count
+        average_required_completion_percent:
+          type: number
+          title: Average Required Completion Percent
+        average_overall_completion_percent:
+          type: number
+          title: Average Overall Completion Percent
+        overall_status:
+          type: string
+          enum:
+          - not_ready
+          - almost_ready
+          - ready_for_broker_review
+          title: Overall Status
+        items:
+          items:
+            $ref: '#/components/schemas/MortgageReadinessMatrixItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - jurisdiction
+      - employment_profile
+      - lender_profile
+      - lender_profile_label
+      - include_adverse_credit_pack
+      - uploaded_document_count
+      - total_mortgage_types
+      - ready_for_broker_review_count
+      - almost_ready_count
+      - not_ready_count
+      - average_required_completion_percent
+      - average_overall_completion_percent
+      - overall_status
+      - items
+      title: MortgageReadinessMatrixResponse
+    MortgageReadinessRequest:
+      properties:
+        mortgage_type:
+          type: string
+          title: Mortgage Type
+        employment_profile:
+          type: string
+          title: Employment Profile
+          default: sole_trader
+        include_adverse_credit_pack:
+          type: boolean
+          title: Include Adverse Credit Pack
+          default: false
+        lender_profile:
+          type: string
+          title: Lender Profile
+          default: high_street_mainstream
+        max_documents_scan:
+          type: integer
+          maximum: 2000.0
+          minimum: 10.0
+          title: Max Documents Scan
+          default: 300
+        advisor_review_confirmed:
+          type: boolean
+          title: Advisor Review Confirmed
+          default: false
+      type: object
+      required:
+      - mortgage_type
+      title: MortgageReadinessRequest
+    MortgageReadinessResponse:
+      properties:
+        jurisdiction:
+          type: string
+          title: Jurisdiction
+        mortgage_type:
+          type: string
+          title: Mortgage Type
+        mortgage_label:
+          type: string
+          title: Mortgage Label
+        mortgage_description:
+          type: string
+          title: Mortgage Description
+        lender_profile:
+          type: string
+          title: Lender Profile
+        lender_profile_label:
+          type: string
+          title: Lender Profile Label
+        employment_profile:
+          type: string
+          title: Employment Profile
+        required_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Required Documents
+        conditional_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Conditional Documents
+        lender_notes:
+          items:
+            type: string
+          type: array
+          title: Lender Notes
+        next_steps:
+          items:
+            type: string
+          type: array
+          title: Next Steps
+        next_actions:
+          items:
+            type: string
+          type: array
+          title: Next Actions
+        uploaded_document_count:
+          type: integer
+          title: Uploaded Document Count
+        detected_document_codes:
+          items:
+            type: string
+          type: array
+          title: Detected Document Codes
+        matched_required_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Matched Required Documents
+        missing_required_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Missing Required Documents
+        missing_conditional_documents:
+          items:
+            $ref: '#/components/schemas/MortgageDocumentItem'
+          type: array
+          title: Missing Conditional Documents
+        required_completion_percent:
+          type: number
+          title: Required Completion Percent
+        overall_completion_percent:
+          type: number
+          title: Overall Completion Percent
+        readiness_status:
+          type: string
+          enum:
+          - not_ready
+          - almost_ready
+          - ready_for_broker_review
+          title: Readiness Status
+        readiness_summary:
+          type: string
+          title: Readiness Summary
+        evidence_quality_summary:
+          $ref: '#/components/schemas/MortgageEvidenceQualitySummary'
+        evidence_quality_issues:
+          items:
+            $ref: '#/components/schemas/MortgageEvidenceQualityIssue'
+          type: array
+          title: Evidence Quality Issues
+        refresh_reminder_summary:
+          $ref: '#/components/schemas/MortgageRefreshReminderSummary'
+        refresh_reminders:
+          items:
+            $ref: '#/components/schemas/MortgageRefreshReminder'
+          type: array
+          title: Refresh Reminders
+        submission_gate:
+          $ref: '#/components/schemas/MortgageSubmissionGate'
+      type: object
+      required:
+      - jurisdiction
+      - mortgage_type
+      - mortgage_label
+      - mortgage_description
+      - lender_profile
+      - lender_profile_label
+      - employment_profile
+      - required_documents
+      - conditional_documents
+      - lender_notes
+      - next_steps
+      - next_actions
+      - uploaded_document_count
+      - detected_document_codes
+      - matched_required_documents
+      - missing_required_documents
+      - missing_conditional_documents
+      - required_completion_percent
+      - overall_completion_percent
+      - readiness_status
+      - readiness_summary
+      - evidence_quality_summary
+      - evidence_quality_issues
+      - refresh_reminder_summary
+      - refresh_reminders
+      - submission_gate
+      title: MortgageReadinessResponse
+    MortgageRefreshReminder:
+      properties:
+        reminder_type:
+          type: string
+          enum:
+          - statement_refresh
+          - id_validity_check
+          title: Reminder Type
+        document_code:
+          type: string
+          title: Document Code
+        title:
+          type: string
+          title: Title
+        cadence_days:
+          type: integer
+          title: Cadence Days
+        due_date:
+          type: string
+          format: date
+          title: Due Date
         status:
           type: string
-          enum: [pending, running, completed, failed]
-        created_at:
+          enum:
+          - due_now
+          - upcoming
+          title: Status
+        document_filename:
           type: string
-          format: date-time
-        finished_at:
+          title: Document Filename
+        message:
           type: string
-          format: date-time
-          nullable: true
-        result:
-          type: object
-          nullable: true
-          example:
-            message: 'ETL completed successfully.'
-            rows_processed: 15000
+          title: Message
+        suggested_action:
+          type: string
+          title: Suggested Action
+      type: object
       required:
-        - job_id
-        - job_type
-        - status
-        - created_at
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+      - reminder_type
+      - document_code
+      - title
+      - cadence_days
+      - due_date
+      - status
+      - document_filename
+      - message
+      - suggested_action
+      title: MortgageRefreshReminder
+    MortgageRefreshReminderSummary:
+      properties:
+        total_reminders:
+          type: integer
+          title: Total Reminders
+        due_now_count:
+          type: integer
+          title: Due Now Count
+        upcoming_count:
+          type: integer
+          title: Upcoming Count
+        has_due_now:
+          type: boolean
+          title: Has Due Now
+        next_due_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Next Due Date
+      type: object
+      required:
+      - total_reminders
+      - due_now_count
+      - upcoming_count
+      - has_due_now
+      title: MortgageRefreshReminderSummary
+    MortgageSubmissionGate:
+      properties:
+        compliance_disclaimer:
+          type: string
+          title: Compliance Disclaimer
+        advisor_review_required:
+          type: boolean
+          title: Advisor Review Required
+        advisor_review_confirmed:
+          type: boolean
+          title: Advisor Review Confirmed
+        broker_submission_allowed:
+          type: boolean
+          title: Broker Submission Allowed
+        broker_submission_blockers:
+          items:
+            type: string
+          type: array
+          title: Broker Submission Blockers
+      type: object
+      required:
+      - compliance_disclaimer
+      - advisor_review_required
+      - advisor_review_confirmed
+      - broker_submission_allowed
+      - broker_submission_blockers
+      title: MortgageSubmissionGate
+    MortgageTypeSummary:
+      properties:
+        code:
+          type: string
+          title: Code
+        label:
+          type: string
+          title: Label
+        description:
+          type: string
+          title: Description
+      type: object
+      required:
+      - code
+      - label
+      - description
+      title: MortgageTypeSummary
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
