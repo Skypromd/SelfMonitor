@@ -72,6 +72,7 @@ Implemented in this iteration:
 - web/native auth bridge (session state sync);
 - push-notification permission and token registration shortcut;
 - home command-card widget for nearest client calendar event with one-tap deep-link;
+- mini-mode action in calendar widget: mark event completed without opening dashboard;
 - secure calendar reminder sync from partner-registry with local push scheduling and auto-reschedule;
 - quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.

@@ -421,6 +421,7 @@ export default function App(): React.JSX.Element {
   const [showBrandedSplash, setShowBrandedSplash] = useState(true);
   const [clock, setClock] = useState(() => new Date());
   const [nextCalendarEvent, setNextCalendarEvent] = useState<MobileCalendarWidgetEvent | null>(null);
+  const [isCompletingCalendarWidgetEvent, setIsCompletingCalendarWidgetEvent] = useState(false);
   const analyticsTrackedRef = useRef<Set<string>>(new Set());
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const dockFloatAnim = useRef(new Animated.Value(0)).current;
@@ -1087,6 +1088,85 @@ export default function App(): React.JSX.Element {
     void navigateInsidePortal("/dashboard?section=calendar", "system");
   }, [navigateInsidePortal, nextCalendarEvent, trackAnalyticsEvent]);
 
+  const markCalendarWidgetEventCompleted = useCallback(async () => {
+    if (!nextCalendarEvent || isCompletingCalendarWidgetEvent) {
+      return;
+    }
+    if (!PARTNER_REGISTRY_URL || !isConnected) {
+      notifyAction("Нет соединения для обновления статуса события.");
+      return;
+    }
+
+    setIsCompletingCalendarWidgetEvent(true);
+    try {
+      const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
+      if (!authToken) {
+        notifyAction("Требуется авторизация для обновления события.");
+        return;
+      }
+      const response = await fetch(
+        `${PARTNER_REGISTRY_URL}/self-employed/calendar/events/${encodeURIComponent(nextCalendarEvent.id)}`,
+        {
+          method: "PATCH",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({
+            status: "completed",
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        let reason = `HTTP ${response.status}`;
+        try {
+          const failurePayload = (await response.json()) as { detail?: unknown };
+          if (typeof failurePayload?.detail === "string" && failurePayload.detail.trim()) {
+            reason = failurePayload.detail.trim();
+          }
+        } catch {
+          // Keep fallback reason.
+        }
+        notifyAction(`Не удалось отметить событие: ${reason}`);
+        void trackAnalyticsEvent("mobile.calendar.widget_mark_completed_failed", {
+          event_id: nextCalendarEvent.id,
+          reason,
+        });
+        await runHaptic("medium");
+        return;
+      }
+
+      setNextCalendarEvent(null);
+      notifyAction("Событие отмечено как выполненное.");
+      void trackAnalyticsEvent("mobile.calendar.widget_mark_completed", {
+        event_id: nextCalendarEvent.id,
+        starts_at: nextCalendarEvent.starts_at,
+      });
+      await runHaptic("heavy");
+      await syncCalendarLocalReminders();
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "unknown";
+      notifyAction(`Ошибка обновления события: ${reason}`);
+      void trackAnalyticsEvent("mobile.calendar.widget_mark_completed_failed", {
+        event_id: nextCalendarEvent.id,
+        reason,
+      });
+      await runHaptic("medium");
+    } finally {
+      setIsCompletingCalendarWidgetEvent(false);
+    }
+  }, [
+    isCompletingCalendarWidgetEvent,
+    isConnected,
+    nextCalendarEvent,
+    notifyAction,
+    runHaptic,
+    syncCalendarLocalReminders,
+    trackAnalyticsEvent,
+  ]);
+
   const openReceiptCapture = useCallback(async () => {
     await runHaptic("medium");
     const captureUrl = normalizePortalPath("/documents?mobile_capture=1");
@@ -1622,26 +1702,46 @@ export default function App(): React.JSX.Element {
                 ) : null}
               </View>
               {nextCalendarEvent && nextCalendarEventDate && calendarWidgetDayLabel && calendarWidgetTimeLabel ? (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={openCalendarWidget}
-                  style={styles.calendarWidgetCard}
-                >
-                  <View style={styles.calendarWidgetHeaderRow}>
-                    <View style={styles.calendarWidgetLabelPill}>
-                      <Ionicons color="#bfdbfe" name="calendar-outline" size={14} />
-                      <Text style={styles.calendarWidgetLabelText}>{calendarWidgetDayLabel}</Text>
+                <View style={styles.calendarWidgetCard}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={openCalendarWidget}
+                    style={styles.calendarWidgetMainTapArea}
+                  >
+                    <View style={styles.calendarWidgetHeaderRow}>
+                      <View style={styles.calendarWidgetLabelPill}>
+                        <Ionicons color="#bfdbfe" name="calendar-outline" size={14} />
+                        <Text style={styles.calendarWidgetLabelText}>{calendarWidgetDayLabel}</Text>
+                      </View>
+                      <Ionicons color="#bfdbfe" name="chevron-forward-outline" size={16} />
                     </View>
-                    <Ionicons color="#bfdbfe" name="chevron-forward-outline" size={16} />
+                    <Text numberOfLines={1} style={styles.calendarWidgetTitle}>
+                      {nextCalendarEvent.title}
+                    </Text>
+                    <Text style={styles.calendarWidgetMeta}>
+                      {calendarWidgetTimeLabel}
+                      {calendarWidgetRelativeLabel ? ` • ${calendarWidgetRelativeLabel}` : ""}
+                    </Text>
+                  </Pressable>
+                  <View style={styles.calendarWidgetFooterRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={isCompletingCalendarWidgetEvent}
+                      onPress={() => {
+                        void markCalendarWidgetEventCompleted();
+                      }}
+                      style={[
+                        styles.calendarWidgetCompleteButton,
+                        isCompletingCalendarWidgetEvent && styles.calendarWidgetCompleteButtonDisabled,
+                      ]}
+                    >
+                      <Ionicons color="#dcfce7" name="checkmark-circle-outline" size={14} />
+                      <Text style={styles.calendarWidgetCompleteButtonText}>
+                        {isCompletingCalendarWidgetEvent ? "Saving..." : "Mark completed"}
+                      </Text>
+                    </Pressable>
                   </View>
-                  <Text numberOfLines={1} style={styles.calendarWidgetTitle}>
-                    {nextCalendarEvent.title}
-                  </Text>
-                  <Text style={styles.calendarWidgetMeta}>
-                    {calendarWidgetTimeLabel}
-                    {calendarWidgetRelativeLabel ? ` • ${calendarWidgetRelativeLabel}` : ""}
-                  </Text>
-                </Pressable>
+                </View>
               ) : null}
             </LinearGradient>
           </View>
@@ -2042,6 +2142,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 9,
   },
+  calendarWidgetMainTapArea: {
+    gap: 4,
+  },
   calendarWidgetHeaderRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -2068,6 +2171,29 @@ const styles = StyleSheet.create({
     color: "#cbd5e1",
     fontSize: 12,
     fontWeight: "500",
+  },
+  calendarWidgetFooterRow: {
+    alignItems: "flex-end",
+    marginTop: 2,
+  },
+  calendarWidgetCompleteButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(34,197,94,0.22)",
+    borderColor: "rgba(134,239,172,0.55)",
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  calendarWidgetCompleteButtonDisabled: {
+    opacity: 0.7,
+  },
+  calendarWidgetCompleteButtonText: {
+    color: "#dcfce7",
+    fontSize: 11,
+    fontWeight: "700",
   },
   webViewWrapper: {
     flex: 1,
