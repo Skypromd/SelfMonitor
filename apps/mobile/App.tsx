@@ -1604,7 +1604,7 @@ export default function App(): React.JSX.Element {
                 >
                   <View style={styles.calendarWidgetHeaderRow}>
                     <View style={styles.calendarWidgetLabelPill}>
-                      <Ionicons color="#bfdbfe" name="calendar-clear-outline" size={14} />
+                      <Ionicons color="#bfdbfe" name="calendar-outline" size={14} />
                       <Text style={styles.calendarWidgetLabelText}>{calendarWidgetDayLabel}</Text>
                     </View>
                     <Ionicons color="#bfdbfe" name="chevron-forward-outline" size={16} />
