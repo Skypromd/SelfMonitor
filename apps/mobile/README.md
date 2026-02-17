@@ -77,6 +77,7 @@ Implemented in this iteration:
 - security center quick action in mobile dock + native security posture badge sync;
 - security mini-widget in home command-card (open security center + refresh auth session);
 - one-tap emergency lock mode in security mini-widget (locks account + revokes sessions);
+- dependencies upgraded to Expo SDK 54 baseline with zero moderate/high production audit findings;
 - secure calendar reminder sync from partner-registry with local push scheduling and auto-reschedule;
 - quick mobile action bar (dashboard/documents/receipt capture/push setup);
 - configurable URL via environment variable.

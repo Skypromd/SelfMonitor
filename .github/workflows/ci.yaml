@@ -201,7 +201,7 @@ jobs:
         run: npm ci
 
       - name: Audit production dependencies
-        run: npm audit --omit=dev
+        run: npm audit --audit-level=moderate --omit=dev
 
       - name: Type check
         run: npx next typegen && npx tsc --noEmit
@@ -232,6 +232,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --audit-level=moderate --omit=dev
 
       - name: Type check
         run: npm run typecheck

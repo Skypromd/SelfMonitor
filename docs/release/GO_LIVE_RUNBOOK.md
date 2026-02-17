@@ -89,6 +89,17 @@ Before enabling production traffic, validate these auth controls:
    - at least one test alert is delivered over both configured channels (`email`/`push`).
    - cooldown (`AUTH_SECURITY_ALERT_COOLDOWN_MINUTES`) is set to prevent alert floods.
 
+## 6.2 Threat-model and pentest gate (mandatory)
+
+Before scaling traffic beyond pilot:
+
+1. Threat model is up to date for current release:
+   - `docs/security/THREAT_MODEL_REVIEW_2026_Q1.md`
+2. External pentest package is completed:
+   - `docs/security/EXTERNAL_PENTEST_PLAYBOOK_2026_Q1.md`
+   - latest pentest report is attached to release evidence.
+3. No unresolved Critical findings and no High findings without approved risk acceptance.
+
 ## 7. Exit and handover
 
 - Announce release completion with validation summary.
