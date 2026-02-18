@@ -113,6 +113,9 @@ type DeliveryStatusFilter = 'all' | 'failed' | 'delivered' | 'pending';
 type DeliveryChannelFilter = 'all' | 'email' | 'push';
 
 const DELIVERY_FILTERS_STORAGE_KEY = 'selfmonitor.security.deliveries.filters.v1';
+const DELIVERY_FILTER_QUERY_STATUS = 'delivery_status';
+const DELIVERY_FILTER_QUERY_CHANNEL = 'delivery_channel';
+const DELIVERY_FILTER_QUERY_WINDOW_HOURS = 'delivery_window_h';
 
 function formatDateTime(value: string | null): string {
   if (!value) {
@@ -256,22 +259,41 @@ export default function SecurityPage({
 
   useEffect(() => {
     try {
-      const rawValue = window.localStorage.getItem(DELIVERY_FILTERS_STORAGE_KEY);
-      if (!rawValue) {
+      const searchParams = new URLSearchParams(window.location.search);
+      const urlStatus = searchParams.get(DELIVERY_FILTER_QUERY_STATUS);
+      const urlChannel = searchParams.get(DELIVERY_FILTER_QUERY_CHANNEL);
+      const urlWindow = searchParams.get(DELIVERY_FILTER_QUERY_WINDOW_HOURS);
+      const hasUrlFilters =
+        isDeliveryStatusFilter(urlStatus) ||
+        isDeliveryChannelFilter(urlChannel) ||
+        normalizeDeliveryWindowHours(urlWindow) > 0;
+
+      if (hasUrlFilters) {
+        if (isDeliveryStatusFilter(urlStatus)) {
+          setDeliveryStatusFilter(urlStatus);
+        }
+        if (isDeliveryChannelFilter(urlChannel)) {
+          setDeliveryChannelFilter(urlChannel);
+        }
+        setDeliveryWindowHours(normalizeDeliveryWindowHours(urlWindow));
         return;
       }
-      const parsed = JSON.parse(rawValue) as {
-        channel?: unknown;
-        status?: unknown;
-        windowHours?: unknown;
-      };
-      if (isDeliveryStatusFilter(parsed.status)) {
-        setDeliveryStatusFilter(parsed.status);
+
+      const rawValue = window.localStorage.getItem(DELIVERY_FILTERS_STORAGE_KEY);
+      if (rawValue) {
+        const parsed = JSON.parse(rawValue) as {
+          channel?: unknown;
+          status?: unknown;
+          windowHours?: unknown;
+        };
+        if (isDeliveryStatusFilter(parsed.status)) {
+          setDeliveryStatusFilter(parsed.status);
+        }
+        if (isDeliveryChannelFilter(parsed.channel)) {
+          setDeliveryChannelFilter(parsed.channel);
+        }
+        setDeliveryWindowHours(normalizeDeliveryWindowHours(parsed.windowHours));
       }
-      if (isDeliveryChannelFilter(parsed.channel)) {
-        setDeliveryChannelFilter(parsed.channel);
-      }
-      setDeliveryWindowHours(normalizeDeliveryWindowHours(parsed.windowHours));
     } catch {
       // Keep default filters when localStorage payload is malformed.
     } finally {
@@ -284,6 +306,25 @@ export default function SecurityPage({
       return;
     }
     try {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (deliveryStatusFilter === 'all') {
+        searchParams.delete(DELIVERY_FILTER_QUERY_STATUS);
+      } else {
+        searchParams.set(DELIVERY_FILTER_QUERY_STATUS, deliveryStatusFilter);
+      }
+      if (deliveryChannelFilter === 'all') {
+        searchParams.delete(DELIVERY_FILTER_QUERY_CHANNEL);
+      } else {
+        searchParams.set(DELIVERY_FILTER_QUERY_CHANNEL, deliveryChannelFilter);
+      }
+      if (deliveryWindowHours <= 0) {
+        searchParams.delete(DELIVERY_FILTER_QUERY_WINDOW_HOURS);
+      } else {
+        searchParams.set(DELIVERY_FILTER_QUERY_WINDOW_HOURS, String(deliveryWindowHours));
+      }
+      const nextQuery = searchParams.toString();
+      const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ''}${window.location.hash}`;
+      window.history.replaceState(window.history.state, '', nextUrl);
       window.localStorage.setItem(
         DELIVERY_FILTERS_STORAGE_KEY,
         JSON.stringify({
@@ -906,6 +947,38 @@ export default function SecurityPage({
     );
   }, [filteredDeliveries]);
 
+  const handleResetDeliveryFilters = useCallback(() => {
+    setDeliveryStatusFilter('all');
+    setDeliveryChannelFilter('all');
+    setDeliveryWindowHours(0);
+  }, []);
+
+  const handleCopyDeliveryFiltersLink = useCallback(async () => {
+    clearNotices();
+    try {
+      const url = new URL(window.location.href);
+      if (deliveryStatusFilter === 'all') {
+        url.searchParams.delete(DELIVERY_FILTER_QUERY_STATUS);
+      } else {
+        url.searchParams.set(DELIVERY_FILTER_QUERY_STATUS, deliveryStatusFilter);
+      }
+      if (deliveryChannelFilter === 'all') {
+        url.searchParams.delete(DELIVERY_FILTER_QUERY_CHANNEL);
+      } else {
+        url.searchParams.set(DELIVERY_FILTER_QUERY_CHANNEL, deliveryChannelFilter);
+      }
+      if (deliveryWindowHours <= 0) {
+        url.searchParams.delete(DELIVERY_FILTER_QUERY_WINDOW_HOURS);
+      } else {
+        url.searchParams.set(DELIVERY_FILTER_QUERY_WINDOW_HOURS, String(deliveryWindowHours));
+      }
+      await navigator.clipboard.writeText(url.toString());
+      setMessage('Security delivery filters link copied.');
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : 'Failed to copy filter link.');
+    }
+  }, [deliveryChannelFilter, deliveryStatusFilter, deliveryWindowHours]);
+
   return (
     <div className={styles.dashboard}>
       <header className={styles.pageHeader}>
@@ -1046,6 +1119,20 @@ export default function SecurityPage({
             type="button"
           >
             Reload receipts
+          </button>
+          <button
+            className={`${styles.button} ${styles.secondaryButton}`}
+            onClick={() => handleResetDeliveryFilters()}
+            type="button"
+          >
+            Reset filters
+          </button>
+          <button
+            className={`${styles.button} ${styles.secondaryButton}`}
+            onClick={() => void handleCopyDeliveryFiltersLink()}
+            type="button"
+          >
+            Copy filter link
           </button>
         </div>
         <p className={styles.tableCaption}>
