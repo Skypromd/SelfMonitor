@@ -188,6 +188,28 @@ type MobileSecurityState = {
   max_failed_login_attempts: number;
 };
 
+type MobileSecurityAlertDeliveryChannel = {
+  receipt_at?: string;
+  receipt_status?: string;
+  status?: string;
+};
+
+type MobileSecurityAlertDelivery = {
+  channels?: {
+    email?: MobileSecurityAlertDeliveryChannel;
+    push?: MobileSecurityAlertDeliveryChannel;
+  };
+  dispatch_id: string;
+  occurred_at?: string;
+  status?: string;
+  title?: string;
+};
+
+type MobileSecurityAlertDeliveriesResponse = {
+  items: MobileSecurityAlertDelivery[];
+  total: number;
+};
+
 type LocalCalendarReminderIndex = Record<
   string,
   {
@@ -419,6 +441,19 @@ function parseLocalCalendarReminderIndex(raw: string | null): LocalCalendarRemin
   }
 }
 
+function resolveAlertChannelStatus(channel: MobileSecurityAlertDeliveryChannel | undefined): string {
+  if (!channel) {
+    return "n/a";
+  }
+  if (typeof channel.receipt_status === "string" && channel.receipt_status.trim()) {
+    return channel.receipt_status.trim();
+  }
+  if (typeof channel.status === "string" && channel.status.trim()) {
+    return channel.status.trim();
+  }
+  return "pending";
+}
+
 export default function App(): React.JSX.Element {
   const webRef = useRef<WebView>(null);
   const [isConnected, setIsConnected] = useState(true);
@@ -447,6 +482,8 @@ export default function App(): React.JSX.Element {
   const [isRefreshingAuthSession, setIsRefreshingAuthSession] = useState(false);
   const [isLockingAccountNow, setIsLockingAccountNow] = useState(false);
   const [mobileSecurityState, setMobileSecurityState] = useState<MobileSecurityState | null>(null);
+  const [latestSecurityAlertDelivery, setLatestSecurityAlertDelivery] =
+    useState<MobileSecurityAlertDelivery | null>(null);
   const analyticsTrackedRef = useRef<Set<string>>(new Set());
   const pulseAnim = useRef(new Animated.Value(0)).current;
   const dockFloatAnim = useRef(new Animated.Value(0)).current;
@@ -1157,25 +1194,39 @@ export default function App(): React.JSX.Element {
       const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
       if (!authToken) {
         setMobileSecurityState(null);
+        setLatestSecurityAlertDelivery(null);
         return;
       }
-      const response = await fetch(`${AUTH_SERVICE_URL}/security/state`, {
-        method: "GET",
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${authToken}`,
-        },
-      });
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
+      const [stateResponse, deliveriesResponse] = await Promise.all([
+        fetch(`${AUTH_SERVICE_URL}/security/state`, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+        }),
+        fetch(`${AUTH_SERVICE_URL}/security/alerts/deliveries?limit=1`, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${authToken}`,
+          },
+        }),
+      ]);
+
+      if (!stateResponse.ok) {
+        if (stateResponse.status === 401 || stateResponse.status === 403) {
           setMobileSecurityState(null);
+          setLatestSecurityAlertDelivery(null);
           return;
         }
-        throw new Error(`HTTP ${response.status}`);
+        throw new Error(`HTTP ${stateResponse.status}`);
       }
-      const payload = (await response.json()) as MobileSecurityState;
+
+      const payload = (await stateResponse.json()) as MobileSecurityState;
       if (!payload || typeof payload.email !== "string") {
         setMobileSecurityState(null);
+        setLatestSecurityAlertDelivery(null);
         return;
       }
       setMobileSecurityState({
@@ -1189,8 +1240,76 @@ export default function App(): React.JSX.Element {
             : null,
         max_failed_login_attempts: Number(payload.max_failed_login_attempts || 0),
       });
+
+      if (deliveriesResponse.ok) {
+        const deliveriesPayload = (await deliveriesResponse.json()) as MobileSecurityAlertDeliveriesResponse;
+        const latestDelivery =
+          Array.isArray(deliveriesPayload.items) && deliveriesPayload.items.length > 0
+            ? deliveriesPayload.items[0]
+            : null;
+        if (latestDelivery && typeof latestDelivery.dispatch_id === "string") {
+          setLatestSecurityAlertDelivery({
+            dispatch_id: latestDelivery.dispatch_id,
+            status: typeof latestDelivery.status === "string" ? latestDelivery.status : undefined,
+            occurred_at:
+              typeof latestDelivery.occurred_at === "string" && latestDelivery.occurred_at.trim()
+                ? latestDelivery.occurred_at
+                : undefined,
+            title: typeof latestDelivery.title === "string" ? latestDelivery.title : undefined,
+            channels:
+              latestDelivery.channels && typeof latestDelivery.channels === "object"
+                ? {
+                    email:
+                      latestDelivery.channels.email && typeof latestDelivery.channels.email === "object"
+                        ? {
+                            status:
+                              typeof latestDelivery.channels.email.status === "string"
+                                ? latestDelivery.channels.email.status
+                                : undefined,
+                            receipt_status:
+                              typeof latestDelivery.channels.email.receipt_status === "string"
+                                ? latestDelivery.channels.email.receipt_status
+                                : undefined,
+                            receipt_at:
+                              typeof latestDelivery.channels.email.receipt_at === "string"
+                                ? latestDelivery.channels.email.receipt_at
+                                : undefined,
+                          }
+                        : undefined,
+                    push:
+                      latestDelivery.channels.push && typeof latestDelivery.channels.push === "object"
+                        ? {
+                            status:
+                              typeof latestDelivery.channels.push.status === "string"
+                                ? latestDelivery.channels.push.status
+                                : undefined,
+                            receipt_status:
+                              typeof latestDelivery.channels.push.receipt_status === "string"
+                                ? latestDelivery.channels.push.receipt_status
+                                : undefined,
+                            receipt_at:
+                              typeof latestDelivery.channels.push.receipt_at === "string"
+                                ? latestDelivery.channels.push.receipt_at
+                                : undefined,
+                          }
+                        : undefined,
+                  }
+                : undefined,
+          });
+        } else {
+          setLatestSecurityAlertDelivery(null);
+        }
+      } else if (deliveriesResponse.status === 401 || deliveriesResponse.status === 403) {
+        setLatestSecurityAlertDelivery(null);
+      } else {
+        setLatestSecurityAlertDelivery(null);
+        void trackAnalyticsEvent("mobile.security.alert_delivery_sync_failed", {
+          status_code: deliveriesResponse.status,
+        });
+      }
     } catch (error) {
       setMobileSecurityState(null);
+      setLatestSecurityAlertDelivery(null);
       void trackAnalyticsEvent("mobile.security.state_sync_failed", {
         message: error instanceof Error ? error.message : "unknown",
       });
@@ -1818,6 +1937,23 @@ export default function App(): React.JSX.Element {
     }
     return "Email verified, 2FA enabled, and no active lockout.";
   }, [mobileSecurityState]);
+  const securityWidgetDeliveryMeta = useMemo(() => {
+    if (!latestSecurityAlertDelivery) {
+      return "Alerts: no delivery receipts yet.";
+    }
+    const emailStatus = resolveAlertChannelStatus(latestSecurityAlertDelivery.channels?.email);
+    const pushStatus = resolveAlertChannelStatus(latestSecurityAlertDelivery.channels?.push);
+    const occurredAt =
+      typeof latestSecurityAlertDelivery.occurred_at === "string" &&
+      latestSecurityAlertDelivery.occurred_at.trim()
+        ? new Date(latestSecurityAlertDelivery.occurred_at).toLocaleTimeString()
+        : null;
+    const overallStatus =
+      typeof latestSecurityAlertDelivery.status === "string" && latestSecurityAlertDelivery.status.trim()
+        ? latestSecurityAlertDelivery.status.trim()
+        : "pending";
+    return `${overallStatus} • Email: ${emailStatus} • Push: ${pushStatus}${occurredAt ? ` • ${occurredAt}` : ""}`;
+  }, [latestSecurityAlertDelivery]);
   useEffect(() => {
     if (!mobileSecurityState) {
       return;
@@ -2196,6 +2332,9 @@ export default function App(): React.JSX.Element {
                 </Text>
                 <Text numberOfLines={2} style={styles.securityWidgetMeta}>
                   {securityWidgetMeta}
+                </Text>
+                <Text numberOfLines={1} style={styles.securityWidgetDeliveryMeta}>
+                  {securityWidgetDeliveryMeta}
                 </Text>
                 <View style={styles.securityWidgetActionRow}>
                   <Pressable
@@ -2751,6 +2890,11 @@ const styles = StyleSheet.create({
     color: "#cbd5e1",
     fontSize: 12,
     fontWeight: "500",
+  },
+  securityWidgetDeliveryMeta: {
+    color: "#93c5fd",
+    fontSize: 11,
+    fontWeight: "600",
   },
   securityWidgetActionRow: {
     flexDirection: "row",

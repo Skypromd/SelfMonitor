@@ -81,6 +81,34 @@ type RealtimeAlert = {
   severity: 'attention' | 'critical';
 };
 
+type AlertDeliveryChannel = {
+  detail?: string;
+  provider_message_id?: string;
+  receipt_at?: string;
+  receipt_reason?: string;
+  receipt_status?: string;
+  status?: string;
+};
+
+type AlertDeliveryItem = {
+  alert_key?: string;
+  channels?: {
+    email?: AlertDeliveryChannel;
+    push?: AlertDeliveryChannel;
+  };
+  dispatch_id: string;
+  last_receipt_at?: string;
+  occurred_at?: string;
+  severity?: string;
+  status?: string;
+  title?: string;
+};
+
+type AlertDeliveriesResponse = {
+  items: AlertDeliveryItem[];
+  total: number;
+};
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return '—';
@@ -90,6 +118,18 @@ function formatDateTime(value: string | null): string {
     return value;
   }
   return parsed.toLocaleString();
+}
+
+function resolveDeliveryStatusLabel(channel: AlertDeliveryChannel | undefined): string {
+  if (!channel) {
+    return '—';
+  }
+  const receiptStatus = typeof channel.receipt_status === 'string' ? channel.receipt_status.trim() : '';
+  if (receiptStatus) {
+    return receiptStatus;
+  }
+  const baseStatus = typeof channel.status === 'string' ? channel.status.trim() : '';
+  return baseStatus || 'pending';
 }
 
 async function getErrorDetail(response: Response, fallback: string): Promise<string> {
@@ -116,6 +156,7 @@ export default function SecurityPage({
 }: SecurityPageProps) {
   const [securityState, setSecurityState] = useState<SecurityState | null>(null);
   const [events, setEvents] = useState<SecurityEvent[]>([]);
+  const [deliveries, setDeliveries] = useState<AlertDeliveryItem[]>([]);
   const [sessions, setSessions] = useState<SecuritySessionItem[]>([]);
   const [sessionSummary, setSessionSummary] = useState<{ active: number; total: number }>({
     active: 0,
@@ -179,6 +220,17 @@ export default function SecurityPage({
     setEvents(Array.isArray(payload.items) ? payload.items : []);
   }, [token]);
 
+  const fetchSecurityAlertDeliveries = useCallback(async () => {
+    const response = await fetch(`${AUTH_SERVICE_BASE_URL}/security/alerts/deliveries?limit=25`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) {
+      throw new Error(await getErrorDetail(response, 'Failed to fetch security alert deliveries.'));
+    }
+    const payload = (await response.json()) as AlertDeliveriesResponse;
+    setDeliveries(Array.isArray(payload.items) ? payload.items : []);
+  }, [token]);
+
   const fetchSecuritySessions = useCallback(async () => {
     const query = includeRevokedSessions ? '?include_revoked=true&limit=80' : '?limit=80';
     const response = await fetch(`${AUTH_SERVICE_BASE_URL}/security/sessions${query}`, {
@@ -199,13 +251,18 @@ export default function SecurityPage({
     clearNotices();
     setIsLoading(true);
     try {
-      await Promise.all([fetchSecurityState(), fetchSecurityEvents(), fetchSecuritySessions()]);
+      await Promise.all([
+        fetchSecurityState(),
+        fetchSecurityEvents(),
+        fetchSecurityAlertDeliveries(),
+        fetchSecuritySessions(),
+      ]);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : 'Failed to load security center.');
     } finally {
       setIsLoading(false);
     }
-  }, [fetchSecurityEvents, fetchSecuritySessions, fetchSecurityState]);
+  }, [fetchSecurityAlertDeliveries, fetchSecurityEvents, fetchSecuritySessions, fetchSecurityState]);
 
   useEffect(() => {
     void reloadSecurityCenter();
@@ -800,6 +857,70 @@ export default function SecurityPage({
             Emergency lock account (30m)
           </button>
         </div>
+      </section>
+
+      <section className={styles.subContainer}>
+        <h2>Alert delivery receipts</h2>
+        <p>Track if security alerts were dispatched and delivered over email/push channels.</p>
+        {deliveries.length === 0 ? (
+          <p className={styles.emptyState}>No alert deliveries recorded yet.</p>
+        ) : (
+          <div className={styles.tableResponsive}>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Alert</th>
+                  <th>Overall</th>
+                  <th>Email</th>
+                  <th>Push</th>
+                  <th>Receipt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {deliveries.map((delivery) => {
+                  const emailStatus = resolveDeliveryStatusLabel(delivery.channels?.email);
+                  const pushStatus = resolveDeliveryStatusLabel(delivery.channels?.push);
+                  const overallStatus = delivery.status || 'pending';
+                  const emailStatusClass =
+                    emailStatus === 'delivered' || emailStatus === 'sent'
+                      ? styles.deliveryStatusHealthy
+                      : emailStatus === 'failed' || emailStatus === 'bounced'
+                        ? styles.deliveryStatusCritical
+                        : styles.deliveryStatusAttention;
+                  const pushStatusClass =
+                    pushStatus === 'delivered' || pushStatus === 'sent'
+                      ? styles.deliveryStatusHealthy
+                      : pushStatus === 'failed' || pushStatus === 'bounced'
+                        ? styles.deliveryStatusCritical
+                        : styles.deliveryStatusAttention;
+                  const overallStatusClass =
+                    overallStatus === 'delivered' || overallStatus === 'dispatched'
+                      ? styles.deliveryStatusHealthy
+                      : overallStatus === 'failed'
+                        ? styles.deliveryStatusCritical
+                        : styles.deliveryStatusAttention;
+                  return (
+                    <tr key={delivery.dispatch_id}>
+                      <td>{formatDateTime(delivery.occurred_at || null)}</td>
+                      <td>{delivery.title || delivery.alert_key || delivery.dispatch_id.slice(0, 12)}</td>
+                      <td>
+                        <span className={`${styles.deliveryStatusPill} ${overallStatusClass}`}>{overallStatus}</span>
+                      </td>
+                      <td>
+                        <span className={`${styles.deliveryStatusPill} ${emailStatusClass}`}>{emailStatus}</span>
+                      </td>
+                      <td>
+                        <span className={`${styles.deliveryStatusPill} ${pushStatusClass}`}>{pushStatus}</span>
+                      </td>
+                      <td>{formatDateTime(delivery.last_receipt_at || null)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className={styles.subContainer}>
