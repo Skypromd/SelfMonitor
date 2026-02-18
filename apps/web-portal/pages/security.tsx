@@ -109,6 +109,9 @@ type AlertDeliveriesResponse = {
   total: number;
 };
 
+type DeliveryStatusFilter = 'all' | 'failed' | 'delivered' | 'pending';
+type DeliveryChannelFilter = 'all' | 'email' | 'push';
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return '—';
@@ -130,6 +133,34 @@ function resolveDeliveryStatusLabel(channel: AlertDeliveryChannel | undefined): 
   }
   const baseStatus = typeof channel.status === 'string' ? channel.status.trim() : '';
   return baseStatus || 'pending';
+}
+
+function normalizeDeliveryStatus(value: string | undefined): string {
+  return (value || '').trim().toLowerCase();
+}
+
+function isSuccessfulDeliveryStatus(status: string): boolean {
+  return ['sent', 'delivered', 'opened', 'clicked', 'partial_delivery'].includes(status);
+}
+
+function isFailedDeliveryStatus(status: string): boolean {
+  return ['failed', 'bounced'].includes(status);
+}
+
+function classifyDeliveryBucket(delivery: AlertDeliveryItem): Exclude<DeliveryStatusFilter, 'all'> {
+  const overallStatus = normalizeDeliveryStatus(delivery.status || 'pending');
+  const emailStatus = normalizeDeliveryStatus(resolveDeliveryStatusLabel(delivery.channels?.email));
+  const pushStatus = normalizeDeliveryStatus(resolveDeliveryStatusLabel(delivery.channels?.push));
+  const statuses = [overallStatus, emailStatus, pushStatus];
+  const hasSuccess = statuses.some((statusItem) => isSuccessfulDeliveryStatus(statusItem));
+  const hasFailure = statuses.some((statusItem) => isFailedDeliveryStatus(statusItem));
+  if (overallStatus === 'failed' || (hasFailure && !hasSuccess)) {
+    return 'failed';
+  }
+  if (overallStatus === 'delivered' || overallStatus === 'partial_delivery' || hasSuccess) {
+    return 'delivered';
+  }
+  return 'pending';
 }
 
 async function getErrorDetail(response: Response, fallback: string): Promise<string> {
@@ -171,6 +202,9 @@ export default function SecurityPage({
   const [twoFactorDisableCode, setTwoFactorDisableCode] = useState('');
   const [twoFactorQrUrl, setTwoFactorQrUrl] = useState<string | null>(null);
   const [includeRevokedSessions, setIncludeRevokedSessions] = useState(false);
+  const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<DeliveryStatusFilter>('all');
+  const [deliveryChannelFilter, setDeliveryChannelFilter] = useState<DeliveryChannelFilter>('all');
+  const [deliveryWindowHours, setDeliveryWindowHours] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [message, setMessage] = useState('');
@@ -767,6 +801,46 @@ export default function SecurityPage({
     return alerts;
   }, [events, securityState, sessionSummary.active]);
 
+  const filteredDeliveries = useMemo(() => {
+    const nowMs = Date.now();
+    return deliveries.filter((delivery) => {
+      const bucket = classifyDeliveryBucket(delivery);
+      if (deliveryStatusFilter !== 'all' && bucket !== deliveryStatusFilter) {
+        return false;
+      }
+      const hasEmailChannel = Boolean(delivery.channels?.email);
+      const hasPushChannel = Boolean(delivery.channels?.push);
+      if (deliveryChannelFilter === 'email' && !hasEmailChannel) {
+        return false;
+      }
+      if (deliveryChannelFilter === 'push' && !hasPushChannel) {
+        return false;
+      }
+      if (deliveryWindowHours > 0) {
+        const anchorDate = delivery.occurred_at || delivery.last_receipt_at || null;
+        const anchorMs = anchorDate ? new Date(anchorDate).getTime() : Number.NaN;
+        if (!Number.isFinite(anchorMs)) {
+          return false;
+        }
+        if (nowMs - anchorMs > deliveryWindowHours * 60 * 60 * 1000) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [deliveries, deliveryChannelFilter, deliveryStatusFilter, deliveryWindowHours]);
+
+  const filteredDeliveriesSummary = useMemo(() => {
+    return filteredDeliveries.reduce(
+      (summary, item) => {
+        const bucket = classifyDeliveryBucket(item);
+        summary[bucket] += 1;
+        return summary;
+      },
+      { delivered: 0, failed: 0, pending: 0 }
+    );
+  }, [filteredDeliveries]);
+
   return (
     <div className={styles.dashboard}>
       <header className={styles.pageHeader}>
@@ -862,7 +936,58 @@ export default function SecurityPage({
       <section className={styles.subContainer}>
         <h2>Alert delivery receipts</h2>
         <p>Track if security alerts were dispatched and delivered over email/push channels.</p>
-        {deliveries.length === 0 ? (
+        <div className={styles.adminActionsRow}>
+          <label className={styles.filterField}>
+            <span>Status</span>
+            <select
+              className={styles.categorySelect}
+              onChange={(event) => setDeliveryStatusFilter(event.target.value as DeliveryStatusFilter)}
+              value={deliveryStatusFilter}
+            >
+              <option value="all">All</option>
+              <option value="failed">Failed only</option>
+              <option value="delivered">Delivered only</option>
+              <option value="pending">Pending only</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Channel</span>
+            <select
+              className={styles.categorySelect}
+              onChange={(event) => setDeliveryChannelFilter(event.target.value as DeliveryChannelFilter)}
+              value={deliveryChannelFilter}
+            >
+              <option value="all">All channels</option>
+              <option value="email">Email</option>
+              <option value="push">Push</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Window</span>
+            <select
+              className={styles.categorySelect}
+              onChange={(event) => setDeliveryWindowHours(Number.parseInt(event.target.value, 10) || 0)}
+              value={String(deliveryWindowHours)}
+            >
+              <option value="0">All time</option>
+              <option value="24">Last 24h</option>
+              <option value="72">Last 72h</option>
+              <option value="168">Last 7d</option>
+            </select>
+          </label>
+          <button
+            className={`${styles.button} ${styles.secondaryButton}`}
+            onClick={() => void fetchSecurityAlertDeliveries()}
+            type="button"
+          >
+            Reload receipts
+          </button>
+        </div>
+        <p className={styles.tableCaption}>
+          Showing {filteredDeliveries.length} of {deliveries.length} deliveries • Failed: {filteredDeliveriesSummary.failed} •
+          Delivered: {filteredDeliveriesSummary.delivered} • Pending: {filteredDeliveriesSummary.pending}
+        </p>
+        {filteredDeliveries.length === 0 ? (
           <p className={styles.emptyState}>No alert deliveries recorded yet.</p>
         ) : (
           <div className={styles.tableResponsive}>
@@ -878,7 +1003,7 @@ export default function SecurityPage({
                 </tr>
               </thead>
               <tbody>
-                {deliveries.map((delivery) => {
+                {filteredDeliveries.map((delivery) => {
                   const emailStatus = resolveDeliveryStatusLabel(delivery.channels?.email);
                   const pushStatus = resolveDeliveryStatusLabel(delivery.channels?.push);
                   const overallStatus = delivery.status || 'pending';
