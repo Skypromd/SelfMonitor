@@ -1,0 +1,146 @@
+SelfMonitor External Anti-Cloning and Copyright Protection Playbook (2026 Q1)
+
+Document owner: Security + Legal
+Status: Active baseline
+Applies to: Web, Mobile, API, Brand, Commercial materials
+
+1) Objective
+This playbook defines external protection controls against:
+- full product cloning;
+- unauthorized source reuse;
+- brand impersonation;
+- unlawful redistribution of exported artifacts and templates.
+
+2) Threat model (external)
+Primary external risks:
+- look-alike apps in app stores;
+- typo-squatted domains and phishing mirrors;
+- copied UI/content/marketing pages;
+- API scraping and automated data harvesting;
+- leaked source snapshots used to launch clone services;
+- unauthorized resale of templates, exports, and branded assets.
+
+3) Legal perimeter (mandatory)
+3.1 Copyright and ownership hygiene
+- Ensure all code/assets/docs contain ownership notices where required.
+- Keep authorship and commit history intact for evidence.
+- Keep the proprietary repository LICENSE current.
+
+3.2 Contractual perimeter
+- Terms of Service and EULA must explicitly prohibit reverse engineering, mirroring, scraping, and derivative competing products.
+- Partner/vendor contracts must include IP assignment, confidentiality, and non-compete language for deliverables.
+
+3.3 Trademark perimeter
+- Register and maintain key word marks/logo marks for priority geographies.
+- Reserve close variants for brand names in app stores and social platforms.
+- Maintain a trademark watch list and monthly conflict review.
+
+4) External monitoring and detection
+4.1 App and web impersonation watch
+- Weekly checks in Apple App Store / Google Play for look-alike names and icons.
+- Weekly scan for typo domains and TLS cert issuance for suspicious domains.
+- Weekly search for copied landing pages and docs.
+
+4.2 Code and asset leak watch
+- Weekly search for public repositories containing unique product strings.
+- Track known signatures (UI text fragments, endpoint naming patterns, watermark labels).
+- Use takedown automation queue for verified leaks.
+
+4.3 Marketplace and social watch
+- Weekly checks on freelancer marketplaces and social channels for unauthorized "resale clone" offers.
+- Archive evidence with URL, timestamp, screenshot, and hash.
+
+5) Technical external controls (already part of baseline)
+5.1 API gateway anti-automation
+- Global rate-limits and auth endpoint burst controls.
+- Signature-based blocking for known scanner traffic and suspicious URI patterns.
+- Enforced request method policy and security headers.
+
+5.2 Export fingerprinting
+- Attach per-download watermark identifiers to CSV/PDF exports.
+- Include user fingerprint + timestamped watermark metadata for attribution evidence.
+- Store enough context to support legal chain-of-custody.
+
+5.3 Mobile attestation for sensitive actions
+- Sensitive mobile security endpoints require mobile attestation session tokens.
+- Validate attestation subject and installation identifier binding.
+- Reject requests with missing/mismatched attestation headers.
+
+6) Evidence and chain-of-custody
+For each incident, collect:
+- screenshot/video capture;
+- offending URL/app listing/repository reference;
+- timestamp in UTC;
+- SHA256 hash of collected evidence;
+- related watermark IDs (if export leakage is involved);
+- relevant API/security logs (non-PII where possible).
+
+Retention:
+- keep full evidence for at least 24 months or per legal requirements.
+
+7) Enforcement workflow (SLA)
+T+0 to T+4h:
+- classify incident severity (critical/high/medium/low);
+- freeze and preserve evidence;
+- assign legal and security owners.
+
+T+4h to T+24h:
+- submit platform takedown notices (app store, host, registrar, social);
+- issue cease-and-desist for clear infringement;
+- rotate exposed secrets/tokens if leakage is suspected.
+
+T+24h to T+72h:
+- escalate repeat offenders via counsel;
+- notify affected partners if contractual/IP impact exists;
+- publish internal post-incident report with corrective actions.
+
+8) Incident severity matrix
+Critical:
+- active phishing clone collecting credentials;
+- clone with unauthorized access to production APIs;
+- leaked proprietary source with live secret exposure.
+
+High:
+- public clone app/site with copied brand and user confusion risk;
+- repeated automated scraping bypass attempts.
+
+Medium:
+- copied non-sensitive content without active abuse.
+
+Low:
+- isolated brand misuse with low confusion impact.
+
+9) Governance and KPIs
+Monthly review metrics:
+- time-to-detect impersonation incidents;
+- time-to-takedown by platform;
+- number of repeat offenders;
+- percentage of leaked exports with attributable watermark match;
+- rate-limit/WAF block trend for scraping signatures.
+
+Quarterly gates:
+- legal text review (Terms/EULA/LICENSE);
+- anti-automation policy tuning;
+- anti-cloning tabletop exercise.
+
+10) 30/60/90 day execution plan
+0-30 days:
+- finalize watchlists (stores/domains/repos/marketplaces);
+- define evidence templates and legal notice templates;
+- train on-call responders.
+
+31-60 days:
+- automate detection feeds and alerting for impersonation signals;
+- integrate takedown ticketing workflow with SLA tracking.
+
+61-90 days:
+- run red-team style cloning simulation;
+- close policy gaps and publish revised playbook.
+
+11) Minimum ownership model
+- Security owner: technical detection and abuse response.
+- Legal owner: notice drafting, takedown, escalation.
+- Product owner: user communication and trust messaging.
+- Engineering owner: hardening actions and release gates.
+
+End of document.
