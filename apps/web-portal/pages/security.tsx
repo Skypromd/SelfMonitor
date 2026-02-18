@@ -112,6 +112,8 @@ type AlertDeliveriesResponse = {
 type DeliveryStatusFilter = 'all' | 'failed' | 'delivered' | 'pending';
 type DeliveryChannelFilter = 'all' | 'email' | 'push';
 
+const DELIVERY_FILTERS_STORAGE_KEY = 'selfmonitor.security.deliveries.filters.v1';
+
 function formatDateTime(value: string | null): string {
   if (!value) {
     return '—';
@@ -145,6 +147,25 @@ function isSuccessfulDeliveryStatus(status: string): boolean {
 
 function isFailedDeliveryStatus(status: string): boolean {
   return ['failed', 'bounced'].includes(status);
+}
+
+function isDeliveryStatusFilter(value: unknown): value is DeliveryStatusFilter {
+  return value === 'all' || value === 'failed' || value === 'delivered' || value === 'pending';
+}
+
+function isDeliveryChannelFilter(value: unknown): value is DeliveryChannelFilter {
+  return value === 'all' || value === 'email' || value === 'push';
+}
+
+function normalizeDeliveryWindowHours(value: unknown): number {
+  const parsed =
+    typeof value === 'number'
+      ? value
+      : Number.parseInt(typeof value === 'string' ? value : '', 10);
+  if (parsed === 24 || parsed === 72 || parsed === 168) {
+    return parsed;
+  }
+  return 0;
 }
 
 function classifyDeliveryBucket(delivery: AlertDeliveryItem): Exclude<DeliveryStatusFilter, 'all'> {
@@ -205,6 +226,7 @@ export default function SecurityPage({
   const [deliveryStatusFilter, setDeliveryStatusFilter] = useState<DeliveryStatusFilter>('all');
   const [deliveryChannelFilter, setDeliveryChannelFilter] = useState<DeliveryChannelFilter>('all');
   const [deliveryWindowHours, setDeliveryWindowHours] = useState<number>(0);
+  const [isDeliveryFiltersHydrated, setIsDeliveryFiltersHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
   const [message, setMessage] = useState('');
@@ -231,6 +253,49 @@ export default function SecurityPage({
       }
     };
   }, [twoFactorQrUrl]);
+
+  useEffect(() => {
+    try {
+      const rawValue = window.localStorage.getItem(DELIVERY_FILTERS_STORAGE_KEY);
+      if (!rawValue) {
+        return;
+      }
+      const parsed = JSON.parse(rawValue) as {
+        channel?: unknown;
+        status?: unknown;
+        windowHours?: unknown;
+      };
+      if (isDeliveryStatusFilter(parsed.status)) {
+        setDeliveryStatusFilter(parsed.status);
+      }
+      if (isDeliveryChannelFilter(parsed.channel)) {
+        setDeliveryChannelFilter(parsed.channel);
+      }
+      setDeliveryWindowHours(normalizeDeliveryWindowHours(parsed.windowHours));
+    } catch {
+      // Keep default filters when localStorage payload is malformed.
+    } finally {
+      setIsDeliveryFiltersHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isDeliveryFiltersHydrated) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        DELIVERY_FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          status: deliveryStatusFilter,
+          channel: deliveryChannelFilter,
+          windowHours: deliveryWindowHours,
+        })
+      );
+    } catch {
+      // Persistence is best-effort and should never block security UI.
+    }
+  }, [deliveryChannelFilter, deliveryStatusFilter, deliveryWindowHours, isDeliveryFiltersHydrated]);
 
   const fetchSecurityState = useCallback(async () => {
     const response = await fetch(`${AUTH_SERVICE_BASE_URL}/security/state`, {
