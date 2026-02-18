@@ -31,6 +31,7 @@ export default function Layout({ children, isDarkMode, onLogout, onToggleTheme, 
     { href: '/marketplace', label: t('nav.marketplace') },
     { href: '/submission', label: t('nav.submission') },
     { href: '/security', label: 'Security' },
+    { href: '/terms', label: 'Legal' },
     { href: '/profile', label: t('nav.profile') },
   ];
 

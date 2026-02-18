@@ -128,6 +128,14 @@ AUTH_SECURITY_ALERT_DISPATCH_TIMEOUT_SECONDS = max(
 )
 AUTH_SECURITY_ALERT_RECEIPTS_ENABLED = _parse_bool_env("AUTH_SECURITY_ALERT_RECEIPTS_ENABLED", False)
 AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET = os.getenv("AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET", "").strip()
+AUTH_MOBILE_ATTESTATION_ENABLED = _parse_bool_env("AUTH_MOBILE_ATTESTATION_ENABLED", True)
+AUTH_MOBILE_ATTESTATION_TOKEN_TTL_MINUTES = _parse_positive_int_env("AUTH_MOBILE_ATTESTATION_TOKEN_TTL_MINUTES", 10)
+AUTH_MOBILE_ATTESTATION_REQUIRE_RECENT_AUTH = _parse_bool_env(
+    "AUTH_MOBILE_ATTESTATION_REQUIRE_RECENT_AUTH",
+    True,
+)
+MOBILE_ATTESTATION_HEADER = "x-selfmonitor-mobile-attestation"
+MOBILE_INSTALLATION_ID_HEADER = "x-selfmonitor-mobile-installation-id"
 
 app = FastAPI(
     title="Auth Service",
@@ -246,6 +254,17 @@ class TokenData(BaseModel):
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(min_length=20)
+
+
+class MobileAttestationSessionRequest(BaseModel):
+    installation_id: str = Field(min_length=8, max_length=128)
+
+
+class MobileAttestationSessionResponse(BaseModel):
+    token_type: str = "bearer"
+    attestation_token: str
+    expires_at: datetime.datetime
+    installation_id: str
 
 
 class PasswordChangeRequest(BaseModel):
@@ -1092,6 +1111,34 @@ def _decode_jwt_payload(token: str) -> Dict[str, Any]:
         ) from exc
 
 
+def create_mobile_attestation_token(*, email: str, installation_id: str) -> tuple[str, datetime.datetime]:
+    normalized_email = _normalize_email(email)
+    now_utc = datetime.datetime.now(datetime.UTC)
+    expires_at = now_utc + datetime.timedelta(minutes=AUTH_MOBILE_ATTESTATION_TOKEN_TTL_MINUTES)
+    token = jwt.encode(
+        {
+            "sub": normalized_email,
+            "typ": "mobile_attestation",
+            "iat": now_utc,
+            "exp": expires_at,
+            "installation_id": installation_id,
+        },
+        SECRET_KEY,
+        algorithm=ALGORITHM,
+    )
+    return token, expires_at
+
+
+def _decode_mobile_attestation_payload(token: str) -> Dict[str, Any]:
+    payload = _decode_jwt_payload(token)
+    if payload.get("typ") != "mobile_attestation":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid mobile attestation token.",
+        )
+    return payload
+
+
 def _parse_jwt_time_claim(value: Any) -> Optional[datetime.datetime]:
     if isinstance(value, (int, float)):
         try:
@@ -1183,6 +1230,38 @@ async def require_recent_auth(token: Annotated[str, Depends(oauth2_scheme)]) -> 
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Step-up authentication required.",
+        )
+
+
+async def require_mobile_attestation(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> None:
+    if not AUTH_MOBILE_ATTESTATION_ENABLED:
+        return
+    attestation_token = request.headers.get(MOBILE_ATTESTATION_HEADER, "").strip()
+    installation_header = request.headers.get(MOBILE_INSTALLATION_ID_HEADER, "").strip()
+    if not attestation_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Mobile attestation token is required.",
+        )
+    if not installation_header:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Mobile installation id header is required.",
+        )
+    payload = _decode_mobile_attestation_payload(attestation_token)
+    if _normalize_email(str(payload.get("sub", ""))) != _normalize_email(current_user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mobile attestation subject mismatch.",
+        )
+    token_installation_id = str(payload.get("installation_id", "")).strip()
+    if not token_installation_id or token_installation_id != installation_header:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Mobile attestation installation mismatch.",
         )
 
 # --- Endpoints ---
@@ -1558,13 +1637,68 @@ async def list_security_alert_deliveries(
     return SecurityAlertDeliveriesResponse(total=len(deliveries), items=sanitized_items)
 
 
-@app.post("/security/push-tokens", response_model=SecurityPushTokenRegisterResponse)
-async def register_security_push_token(
-    payload: SecurityPushTokenRegisterRequest,
+@app.post("/mobile/attestation/session", response_model=MobileAttestationSessionResponse)
+async def issue_mobile_attestation_session(
+    payload: MobileAttestationSessionRequest,
     request: Request,
+    token: Annotated[str, Depends(oauth2_scheme)],
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
+    if not AUTH_MOBILE_ATTESTATION_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Mobile attestation is disabled.",
+        )
+
+    if AUTH_MOBILE_ATTESTATION_REQUIRE_RECENT_AUTH:
+        jwt_payload = _decode_jwt_payload(token)
+        issued_at = _parse_jwt_time_claim(jwt_payload.get("iat"))
+        if not issued_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Step-up authentication required.",
+            )
+        age_minutes = (datetime.datetime.now(datetime.UTC) - issued_at).total_seconds() / 60
+        if age_minutes > STEP_UP_MAX_AGE_MINUTES:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Step-up authentication required.",
+            )
+
+    installation_id = payload.installation_id.strip()
+    if not installation_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="installation_id cannot be blank.")
+
     normalized_email = _normalize_email(current_user.email)
+    attestation_token, expires_at = create_mobile_attestation_token(
+        email=normalized_email,
+        installation_id=installation_id,
+    )
+    _append_security_event(
+        email=normalized_email,
+        event_type="auth.mobile_attestation_issued",
+        request=request,
+        details={
+            "installation_fingerprint": hashlib.sha256(installation_id.encode("utf-8")).hexdigest()[:16],
+            "expires_at": expires_at.isoformat(),
+        },
+    )
+    return MobileAttestationSessionResponse(
+        token_type="bearer",
+        attestation_token=attestation_token,
+        expires_at=expires_at,
+        installation_id=installation_id,
+    )
+
+
+def _register_push_token_for_user(
+    *,
+    email: str,
+    payload: SecurityPushTokenRegisterRequest,
+    request: Request,
+    source: str,
+) -> SecurityPushTokenRegisterResponse:
+    normalized_email = _normalize_email(email)
     provider = _normalize_push_provider(payload.provider)
     token_value = payload.push_token.strip()
     if not token_value:
@@ -1584,12 +1718,71 @@ async def register_security_push_token(
         request=request,
         details={
             "provider": provider,
+            "source": source,
             "token_fingerprint": hashlib.sha256(token_value.encode("utf-8")).hexdigest()[:16],
         },
     )
     return SecurityPushTokenRegisterResponse(
         message="Push token registered.",
         total_active_tokens=active_count,
+    )
+
+
+def _revoke_push_token_for_user(
+    *,
+    email: str,
+    push_token: str,
+    request: Request,
+    source: str,
+) -> SecurityPushTokenRevokeResponse:
+    normalized_email = _normalize_email(email)
+    user_tokens = security_push_tokens_by_user.get(normalized_email, {})
+    token_value = push_token.strip()
+    token_record = user_tokens.get(token_value)
+    if not token_record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Push token not found.")
+    if token_record.get("revoked_at"):
+        return SecurityPushTokenRevokeResponse(message="Push token already revoked.", revoked_tokens=0)
+    token_record["revoked_at"] = datetime.datetime.now(datetime.UTC)
+    _append_security_event(
+        email=normalized_email,
+        event_type="auth.push_token_revoked",
+        request=request,
+        details={
+            "provider": _normalize_push_provider(str(token_record.get("provider", "expo"))),
+            "source": source,
+            "token_fingerprint": hashlib.sha256(token_value.encode("utf-8")).hexdigest()[:16],
+        },
+    )
+    return SecurityPushTokenRevokeResponse(message="Push token revoked.", revoked_tokens=1)
+
+
+@app.post("/security/push-tokens", response_model=SecurityPushTokenRegisterResponse)
+async def register_security_push_token(
+    payload: SecurityPushTokenRegisterRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    return _register_push_token_for_user(
+        email=current_user.email,
+        payload=payload,
+        request=request,
+        source="web",
+    )
+
+
+@app.post("/mobile/security/push-tokens", response_model=SecurityPushTokenRegisterResponse)
+async def register_mobile_security_push_token(
+    payload: SecurityPushTokenRegisterRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _mobile_attestation: None = Depends(require_mobile_attestation),
+):
+    return _register_push_token_for_user(
+        email=current_user.email,
+        payload=payload,
+        request=request,
+        source="mobile_attested",
     )
 
 
@@ -1615,25 +1808,27 @@ async def revoke_security_push_token(
     request: Request,
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-    normalized_email = _normalize_email(current_user.email)
-    user_tokens = security_push_tokens_by_user.get(normalized_email, {})
-    token_value = push_token.strip()
-    token_record = user_tokens.get(token_value)
-    if not token_record:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Push token not found.")
-    if token_record.get("revoked_at"):
-        return SecurityPushTokenRevokeResponse(message="Push token already revoked.", revoked_tokens=0)
-    token_record["revoked_at"] = datetime.datetime.now(datetime.UTC)
-    _append_security_event(
-        email=normalized_email,
-        event_type="auth.push_token_revoked",
+    return _revoke_push_token_for_user(
+        email=current_user.email,
+        push_token=push_token,
         request=request,
-        details={
-            "provider": _normalize_push_provider(str(token_record.get("provider", "expo"))),
-            "token_fingerprint": hashlib.sha256(token_value.encode("utf-8")).hexdigest()[:16],
-        },
+        source="web",
     )
-    return SecurityPushTokenRevokeResponse(message="Push token revoked.", revoked_tokens=1)
+
+
+@app.delete("/mobile/security/push-tokens/{push_token}", response_model=SecurityPushTokenRevokeResponse)
+async def revoke_mobile_security_push_token(
+    push_token: str,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _mobile_attestation: None = Depends(require_mobile_attestation),
+):
+    return _revoke_push_token_for_user(
+        email=current_user.email,
+        push_token=push_token,
+        request=request,
+        source="mobile_attested",
+    )
 
 
 @app.post("/security/alerts/delivery-receipts", response_model=SecurityAlertDeliveryReceiptResponse)
@@ -1826,19 +2021,18 @@ async def revoke_all_security_sessions(
     return RevokeSessionsResponse(message="All sessions revoked.", revoked_sessions=revoked_count)
 
 
-@app.post("/security/lockdown", response_model=SecurityLockdownResponse)
-async def activate_security_lockdown(
-    payload: SecurityLockdownRequest,
+def _activate_lockdown_for_user(
+    *,
+    email: str,
+    lock_minutes: int,
     request: Request,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    _fresh_auth: None = Depends(require_recent_auth),
-):
-    normalized_email = _normalize_email(current_user.email)
+    source: str,
+) -> SecurityLockdownResponse:
+    normalized_email = _normalize_email(email)
     user_record = get_user_record(normalized_email)
     if not user_record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    lock_minutes = int(payload.lock_minutes)
     if lock_minutes > AUTH_EMERGENCY_LOCKDOWN_MAX_MINUTES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1873,6 +2067,7 @@ async def activate_security_lockdown(
             "lock_minutes": lock_minutes,
             "locked_until": locked_until.isoformat(),
             "revoked_sessions": revoked_count,
+            "source": source,
         },
     )
     return SecurityLockdownResponse(
@@ -1880,6 +2075,37 @@ async def activate_security_lockdown(
         locked_until=locked_until,
         lock_minutes=lock_minutes,
         revoked_sessions=revoked_count,
+    )
+
+
+@app.post("/security/lockdown", response_model=SecurityLockdownResponse)
+async def activate_security_lockdown(
+    payload: SecurityLockdownRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
+):
+    return _activate_lockdown_for_user(
+        email=current_user.email,
+        lock_minutes=int(payload.lock_minutes),
+        request=request,
+        source="web",
+    )
+
+
+@app.post("/mobile/security/lockdown", response_model=SecurityLockdownResponse)
+async def activate_mobile_security_lockdown(
+    payload: SecurityLockdownRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    _fresh_auth: None = Depends(require_recent_auth),
+    _mobile_attestation: None = Depends(require_mobile_attestation),
+):
+    return _activate_lockdown_for_user(
+        email=current_user.email,
+        lock_minutes=int(payload.lock_minutes),
+        request=request,
+        source="mobile_attested",
     )
 
 

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import styles from '../styles/Home.module.css';
 
 const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
@@ -112,6 +113,10 @@ export default function HomePage({ onLoginSuccess }: LoginPageProps) {
 
         {message && <p className={styles.message}>{message}</p>}
         {error && <p className={styles.error}>{error}</p>}
+        <p className={styles.tableCaption}>
+          By continuing you agree to our <Link className={styles.link} href="/terms">Terms</Link> and{' '}
+          <Link className={styles.link} href="/eula">EULA</Link>.
+        </p>
       </main>
     </div>
   );

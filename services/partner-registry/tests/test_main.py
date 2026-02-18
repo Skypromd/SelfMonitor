@@ -314,6 +314,7 @@ def test_lead_report_csv_export(mocker):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert "attachment; filename=\"lead_report_" in response.headers["content-disposition"]
+    assert response.headers["x-selfmonitor-export-watermark"]
 
     rows = list(csv.DictReader(io.StringIO(response.text)))
     assert rows[0]["row_type"] == "SUMMARY"
@@ -967,6 +968,7 @@ def test_invoice_pdf_and_accounting_exports(mocker):
     pdf_response = client.get(f"/billing/invoices/{invoice_id}/pdf", headers=get_billing_headers())
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
+    assert pdf_response.headers["x-selfmonitor-export-watermark"]
     assert f"{invoice_payload['invoice_number']}.pdf" in pdf_response.headers["content-disposition"]
     assert pdf_response.content.startswith(b"%PDF-")
 
@@ -976,6 +978,7 @@ def test_invoice_pdf_and_accounting_exports(mocker):
     )
     assert xero_response.status_code == 200
     assert xero_response.headers["content-type"].startswith("text/csv")
+    assert xero_response.headers["x-selfmonitor-export-watermark"]
     assert "ContactName,InvoiceNumber,InvoiceDate,DueDate" in xero_response.text
     assert invoice_payload["invoice_number"] in xero_response.text
 
@@ -985,6 +988,7 @@ def test_invoice_pdf_and_accounting_exports(mocker):
     )
     assert qb_response.status_code == 200
     assert qb_response.headers["content-type"].startswith("text/csv")
+    assert qb_response.headers["x-selfmonitor-export-watermark"]
     assert "Customer,InvoiceNo,InvoiceDate,DueDate" in qb_response.text
     assert invoice_payload["invoice_number"] in qb_response.text
 
@@ -1063,11 +1067,13 @@ def test_self_employed_invoice_lifecycle_and_exports(mocker):
     pdf_response = client.get(f"/self-employed/invoices/{invoice_id}/pdf", headers=owner_headers)
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
+    assert pdf_response.headers["x-selfmonitor-export-watermark"]
     assert pdf_response.content.startswith(b"%PDF-")
 
     csv_response = client.get(f"/self-employed/invoices/{invoice_id}/csv", headers=owner_headers)
     assert csv_response.status_code == 200
     assert csv_response.headers["content-type"].startswith("text/csv")
+    assert csv_response.headers["x-selfmonitor-export-watermark"]
     assert invoice_payload["invoice_number"] in csv_response.text
 
 

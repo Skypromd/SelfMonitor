@@ -1,6 +1,8 @@
 import asyncio
 import datetime
 import csv
+import hashlib
+import hmac
 import io
 import math
 import os
@@ -205,6 +207,14 @@ UNIT_ECONOMICS_MAX_PERIOD_MONTHS = 24
 SEED_GATE_REQUIRED_MRR_GBP = _parse_non_negative_float_env("SEED_GATE_REQUIRED_MRR_GBP", 40_000.0)
 SEED_GATE_MAX_MONTHLY_CHURN_PERCENT = _parse_non_negative_float_env("SEED_GATE_MAX_MONTHLY_CHURN_PERCENT", 3.0)
 SEED_GATE_MIN_LTV_CAC_RATIO = _parse_non_negative_float_env("SEED_GATE_MIN_LTV_CAC_RATIO", 4.0)
+PARTNER_EXPORT_WATERMARK_ENABLED = _parse_bool_env("PARTNER_EXPORT_WATERMARK_ENABLED", True)
+PARTNER_EXPORT_WATERMARK_SECRET = (
+    os.getenv("PARTNER_EXPORT_WATERMARK_SECRET", AUTH_SECRET_KEY).strip() or AUTH_SECRET_KEY
+)
+PARTNER_EXPORT_WATERMARK_VISIBLE_TEXT = os.getenv(
+    "PARTNER_EXPORT_WATERMARK_VISIBLE_TEXT",
+    "SelfMonitor Proprietary",
+).strip()
 
 
 def _claims_to_set(value: Any) -> set[str]:
@@ -245,6 +255,33 @@ def require_billing_report_access(token: str = Depends(get_bearer_token)) -> str
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Insufficient permissions for lead reports",
     )
+
+
+def _build_export_watermark(*, user_id: str, context: str) -> Dict[str, str]:
+    now_utc = datetime.datetime.now(datetime.UTC)
+    user_fingerprint = hashlib.sha256(user_id.encode("utf-8")).hexdigest()[:12]
+    raw_value = f"{user_id}|{context}|{now_utc.isoformat()}|{uuid.uuid4().hex}"
+    watermark_id = hmac.new(
+        PARTNER_EXPORT_WATERMARK_SECRET.encode("utf-8"),
+        raw_value.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()[:20]
+    return {
+        "id": watermark_id,
+        "issued_at": now_utc.isoformat(),
+        "user_fingerprint": user_fingerprint,
+        "context": context,
+        "label": PARTNER_EXPORT_WATERMARK_VISIBLE_TEXT,
+    }
+
+
+def _build_export_response_headers(*, filename: str, watermark: Optional[Dict[str, str]]) -> Dict[str, str]:
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
+        headers["X-SelfMonitor-Export-Watermark"] = watermark["id"]
+        headers["X-SelfMonitor-Export-Context"] = watermark["context"]
+        headers["X-SelfMonitor-Export-User-Fingerprint"] = watermark["user_fingerprint"]
+    return headers
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -1730,7 +1767,11 @@ def _build_nps_trend_response(
     )
 
 
-def _build_investor_snapshot_csv(snapshot: schemas.InvestorSnapshotExportResponse) -> str:
+def _build_investor_snapshot_csv(
+    snapshot: schemas.InvestorSnapshotExportResponse,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["section", "metric", "value"])
@@ -1764,6 +1805,11 @@ def _build_investor_snapshot_csv(snapshot: schemas.InvestorSnapshotExportRespons
     writer.writerow(
         ["unit_economics", "ltv_cac_ratio", "" if snapshot.unit_economics.ltv_cac_ratio is None else snapshot.unit_economics.ltv_cac_ratio]
     )
+    if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
+        writer.writerow(["watermark", "id", watermark["id"]])
+        writer.writerow(["watermark", "issued_at", watermark["issued_at"]])
+        writer.writerow(["watermark", "user_fingerprint", watermark["user_fingerprint"]])
+        writer.writerow(["watermark", "context", watermark["context"]])
 
     return output.getvalue()
 
@@ -2267,7 +2313,7 @@ async def _load_billing_report(
     )
 
 
-def _build_csv_report(report: schemas.LeadReportResponse) -> str:
+def _build_csv_report(report: schemas.LeadReportResponse, *, watermark: Optional[Dict[str, str]] = None) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -2304,20 +2350,35 @@ def _build_csv_report(report: schemas.LeadReportResponse) -> str:
                 row.unique_users,
             ]
         )
+    if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
+        writer.writerow([])
+        writer.writerow(
+            [
+                "WATERMARK",
+                watermark["id"],
+                watermark["issued_at"],
+                watermark["user_fingerprint"],
+                watermark["context"],
+            ]
+        )
     return output.getvalue()
 
 
-def _csv_response(report: schemas.LeadReportResponse) -> Response:
+def _csv_response(report: schemas.LeadReportResponse, *, watermark: Optional[Dict[str, str]] = None) -> Response:
     timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
     filename = f"lead_report_{timestamp}.csv"
     return Response(
-        content=_build_csv_report(report),
+        content=_build_csv_report(report, watermark=watermark),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_build_export_response_headers(filename=filename, watermark=watermark),
     )
 
 
-def _build_billing_csv_report(report: schemas.BillingReportResponse) -> str:
+def _build_billing_csv_report(
+    report: schemas.BillingReportResponse,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -2372,16 +2433,31 @@ def _build_billing_csv_report(report: schemas.BillingReportResponse) -> str:
                 f"{row.amount_gbp:.2f}",
             ]
         )
+    if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
+        writer.writerow([])
+        writer.writerow(
+            [
+                "WATERMARK",
+                watermark["id"],
+                watermark["issued_at"],
+                watermark["user_fingerprint"],
+                watermark["context"],
+            ]
+        )
     return output.getvalue()
 
 
-def _billing_csv_response(report: schemas.BillingReportResponse) -> Response:
+def _billing_csv_response(
+    report: schemas.BillingReportResponse,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> Response:
     timestamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d")
     filename = f"lead_billing_report_{timestamp}.csv"
     return Response(
-        content=_build_billing_csv_report(report),
+        content=_build_billing_csv_report(report, watermark=watermark),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_build_export_response_headers(filename=filename, watermark=watermark),
     )
 
 
@@ -2434,7 +2510,11 @@ def _render_simple_pdf(lines: list[str]) -> bytes:
     return pdf
 
 
-def _build_invoice_pdf(invoice: schemas.BillingInvoiceDetail) -> bytes:
+def _build_invoice_pdf(
+    invoice: schemas.BillingInvoiceDetail,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> bytes:
     invoice_date = invoice.created_at.date().isoformat()
     lines = [
         "Billing Invoice",
@@ -2471,15 +2551,29 @@ def _build_invoice_pdf(invoice: schemas.BillingInvoiceDetail) -> bytes:
                 )
             )
     lines.extend(["", f"Total: {invoice.total_amount_gbp:.2f} {invoice.currency}"])
+    if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
+        lines.extend(
+            [
+                "",
+                f"{watermark['label']}",
+                f"Watermark ID: {watermark['id']}",
+                f"Issued at: {watermark['issued_at']}",
+                f"User fingerprint: {watermark['user_fingerprint']}",
+            ]
+        )
     return _render_simple_pdf(lines)
 
 
-def _invoice_pdf_response(invoice: schemas.BillingInvoiceDetail) -> Response:
+def _invoice_pdf_response(
+    invoice: schemas.BillingInvoiceDetail,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> Response:
     filename = f"{invoice.invoice_number}.pdf"
     return Response(
-        content=_build_invoice_pdf(invoice),
+        content=_build_invoice_pdf(invoice, watermark=watermark),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_build_export_response_headers(filename=filename, watermark=watermark),
     )
 
 
@@ -2638,16 +2732,21 @@ def _accounting_csv_response(
     invoice: schemas.BillingInvoiceDetail,
     *,
     target: Literal["xero", "quickbooks"],
+    watermark: Optional[Dict[str, str]] = None,
 ) -> Response:
     filename = f"{invoice.invoice_number}_{target}.csv"
     return Response(
         content=_build_accounting_csv(invoice, target=target),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_build_export_response_headers(filename=filename, watermark=watermark),
     )
 
 
-def _build_self_employed_invoice_pdf(invoice: schemas.SelfEmployedInvoiceDetail) -> bytes:
+def _build_self_employed_invoice_pdf(
+    invoice: schemas.SelfEmployedInvoiceDetail,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> bytes:
     lines = []
     if invoice.brand_business_name:
         lines.append(f"Brand: {invoice.brand_business_name}")
@@ -2683,19 +2782,37 @@ def _build_self_employed_invoice_pdf(invoice: schemas.SelfEmployedInvoiceDetail)
     )
     if invoice.notes:
         lines.extend(["", f"Notes: {invoice.notes}"])
+    if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
+        lines.extend(
+            [
+                "",
+                f"{watermark['label']}",
+                f"Watermark ID: {watermark['id']}",
+                f"Issued at: {watermark['issued_at']}",
+                f"User fingerprint: {watermark['user_fingerprint']}",
+            ]
+        )
     return _render_simple_pdf(lines)
 
 
-def _self_employed_invoice_pdf_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
+def _self_employed_invoice_pdf_response(
+    invoice: schemas.SelfEmployedInvoiceDetail,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> Response:
     filename = f"{invoice.invoice_number}.pdf"
     return Response(
-        content=_build_self_employed_invoice_pdf(invoice),
+        content=_build_self_employed_invoice_pdf(invoice, watermark=watermark),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_build_export_response_headers(filename=filename, watermark=watermark),
     )
 
 
-def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail) -> str:
+def _build_self_employed_invoice_csv(
+    invoice: schemas.SelfEmployedInvoiceDetail,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> str:
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(
@@ -2753,15 +2870,38 @@ def _build_self_employed_invoice_csv(invoice: schemas.SelfEmployedInvoiceDetail)
             invoice.brand_accent_color or "",
         ]
     )
+    if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
+        writer.writerow(
+            [
+                "WATERMARK",
+                watermark["issued_at"],
+                "",
+                "",
+                watermark["user_fingerprint"],
+                "",
+                watermark["id"],
+                "",
+                "",
+                "",
+                "",
+                "",
+                watermark["context"],
+                watermark["label"],
+            ]
+        )
     return output.getvalue()
 
 
-def _self_employed_invoice_csv_response(invoice: schemas.SelfEmployedInvoiceDetail) -> Response:
+def _self_employed_invoice_csv_response(
+    invoice: schemas.SelfEmployedInvoiceDetail,
+    *,
+    watermark: Optional[Dict[str, str]] = None,
+) -> Response:
     filename = f"{invoice.invoice_number}.csv"
     return Response(
-        content=_build_self_employed_invoice_csv(invoice),
+        content=_build_self_employed_invoice_csv(invoice, watermark=watermark),
         media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_build_export_response_headers(filename=filename, watermark=watermark),
     )
 
 
@@ -3113,7 +3253,15 @@ async def download_self_employed_invoice_pdf(
         action="self_employed.invoice.pdf_downloaded",
         details={"invoice_id": str(invoice_id), "invoice_number": invoice.invoice_number},
     )
-    return _self_employed_invoice_pdf_response(invoice)
+    watermark = (
+        _build_export_watermark(
+            user_id=user_id,
+            context=f"self_employed_invoice_pdf:{invoice.invoice_number}",
+        )
+        if PARTNER_EXPORT_WATERMARK_ENABLED
+        else None
+    )
+    return _self_employed_invoice_pdf_response(invoice, watermark=watermark)
 
 
 @app.get("/self-employed/invoices/{invoice_id}/csv")
@@ -3132,7 +3280,15 @@ async def download_self_employed_invoice_csv(
         action="self_employed.invoice.csv_downloaded",
         details={"invoice_id": str(invoice_id), "invoice_number": invoice.invoice_number},
     )
-    return _self_employed_invoice_csv_response(invoice)
+    watermark = (
+        _build_export_watermark(
+            user_id=user_id,
+            context=f"self_employed_invoice_csv:{invoice.invoice_number}",
+        )
+        if PARTNER_EXPORT_WATERMARK_ENABLED
+        else None
+    )
+    return _self_employed_invoice_csv_response(invoice, watermark=watermark)
 
 
 @app.get(
@@ -4182,7 +4338,15 @@ async def download_billing_invoice_pdf(
         action="partner.billing.invoice.pdf_downloaded",
         details={"invoice_id": str(invoice_id), "invoice_number": invoice.invoice_number},
     )
-    return _invoice_pdf_response(invoice)
+    watermark = (
+        _build_export_watermark(
+            user_id=user_id,
+            context=f"billing_invoice_pdf:{invoice.invoice_number}",
+        )
+        if PARTNER_EXPORT_WATERMARK_ENABLED
+        else None
+    )
+    return _invoice_pdf_response(invoice, watermark=watermark)
 
 
 @app.get("/billing/invoices/{invoice_id}/accounting.csv")
@@ -4202,7 +4366,15 @@ async def download_billing_invoice_accounting_csv(
             "target": target,
         },
     )
-    return _accounting_csv_response(invoice, target=target)
+    watermark = (
+        _build_export_watermark(
+            user_id=user_id,
+            context=f"billing_invoice_accounting_csv:{target}:{invoice.invoice_number}",
+        )
+        if PARTNER_EXPORT_WATERMARK_ENABLED
+        else None
+    )
+    return _accounting_csv_response(invoice, target=target, watermark=watermark)
 
 
 @app.patch("/billing/invoices/{invoice_id}/status", response_model=schemas.BillingInvoiceDetail)
@@ -4240,7 +4412,7 @@ async def get_lead_billing_report(
     start_date: Optional[datetime.date] = Query(default=None),
     end_date: Optional[datetime.date] = Query(default=None),
     statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
-    _billing_user: str = Depends(require_billing_report_access),
+    billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
     report = await _load_billing_report(
@@ -4251,7 +4423,12 @@ async def get_lead_billing_report(
         statuses=_resolve_billing_statuses(statuses),
     )
     if report_format == "csv":
-        return _billing_csv_response(report)
+        watermark = (
+            _build_export_watermark(user_id=billing_user, context="lead_billing_report_csv")
+            if PARTNER_EXPORT_WATERMARK_ENABLED
+            else None
+        )
+        return _billing_csv_response(report, watermark=watermark)
     return report
 
 
@@ -4490,7 +4667,7 @@ async def export_investor_snapshot(
     ),
     nps_period_months: int = Query(default=6, ge=NPS_MIN_PERIOD_MONTHS, le=NPS_MAX_PERIOD_MONTHS),
     as_of_date: Optional[datetime.date] = Query(default=None),
-    _billing_user: str = Depends(require_billing_report_access),
+    billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
     effective_as_of_date = as_of_date or datetime.datetime.now(datetime.UTC).date()
@@ -4527,10 +4704,16 @@ async def export_investor_snapshot(
         unit_economics=unit_economics,
     )
     if report_format == "csv":
+        watermark = (
+            _build_export_watermark(user_id=billing_user, context="investor_snapshot_csv")
+            if PARTNER_EXPORT_WATERMARK_ENABLED
+            else None
+        )
+        filename = "investor_snapshot.csv"
         return Response(
-            content=_build_investor_snapshot_csv(snapshot),
+            content=_build_investor_snapshot_csv(snapshot, watermark=watermark),
             media_type="text/csv",
-            headers={"Content-Disposition": 'attachment; filename="investor_snapshot.csv"'},
+            headers=_build_export_response_headers(filename=filename, watermark=watermark),
         )
     return snapshot
 
@@ -4541,7 +4724,7 @@ async def export_lead_billing_csv(
     start_date: Optional[datetime.date] = Query(default=None),
     end_date: Optional[datetime.date] = Query(default=None),
     statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
-    _billing_user: str = Depends(require_billing_report_access),
+    billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
     report = await _load_billing_report(
@@ -4551,7 +4734,12 @@ async def export_lead_billing_csv(
         end_date=end_date,
         statuses=_resolve_billing_statuses(statuses),
     )
-    return _billing_csv_response(report)
+    watermark = (
+        _build_export_watermark(user_id=billing_user, context="lead_billing_report_csv_legacy")
+        if PARTNER_EXPORT_WATERMARK_ENABLED
+        else None
+    )
+    return _billing_csv_response(report, watermark=watermark)
 
 
 @app.get("/leads/report", response_model=schemas.LeadReportResponse)
@@ -4562,7 +4750,7 @@ async def get_lead_report(
     end_date: Optional[datetime.date] = Query(default=None),
     statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
     billable_only: bool = Query(default=True),
-    _billing_user: str = Depends(require_billing_report_access),
+    billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
     report_statuses = _resolve_report_statuses(billable_only=billable_only, statuses=statuses)
@@ -4574,7 +4762,12 @@ async def get_lead_report(
         statuses=report_statuses,
     )
     if report_format == "csv":
-        return _csv_response(report)
+        watermark = (
+            _build_export_watermark(user_id=billing_user, context="lead_report_csv")
+            if PARTNER_EXPORT_WATERMARK_ENABLED
+            else None
+        )
+        return _csv_response(report, watermark=watermark)
     return report
 
 
@@ -4585,7 +4778,7 @@ async def export_lead_report_csv(
     end_date: Optional[datetime.date] = Query(default=None),
     statuses: Optional[List[schemas.LeadStatus]] = Query(default=None),
     billable_only: bool = Query(default=True),
-    _billing_user: str = Depends(require_billing_report_access),
+    billing_user: str = Depends(require_billing_report_access),
     db: AsyncSession = Depends(get_db),
 ):
     report_statuses = _resolve_report_statuses(billable_only=billable_only, statuses=statuses)
@@ -4596,5 +4789,10 @@ async def export_lead_report_csv(
         end_date=end_date,
         statuses=report_statuses,
     )
-    return _csv_response(report)
+    watermark = (
+        _build_export_watermark(user_id=billing_user, context="lead_report_csv_legacy")
+        if PARTNER_EXPORT_WATERMARK_ENABLED
+        else None
+    )
+    return _csv_response(report, watermark=watermark)
 

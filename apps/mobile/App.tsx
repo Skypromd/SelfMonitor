@@ -75,6 +75,7 @@ const PUSH_ROUTE_MAP: Record<string, string> = {
   dashboard: "/dashboard",
   documents: "/documents",
   invoices: "/dashboard?section=invoices",
+  legal: "/terms",
   reports: "/reports",
   security: "/security",
   submission: "/submission",
@@ -102,7 +103,7 @@ type BridgeMessage = {
 
 type DockAction = {
   icon: keyof typeof Ionicons.glyphMap;
-  id: "dashboard" | "documents" | "scan" | "push" | "security";
+  id: "dashboard" | "documents" | "scan" | "push" | "security" | "legal";
   isPrimary?: boolean;
   label: string;
   onPress: () => void;
@@ -208,6 +209,11 @@ type MobileSecurityAlertDelivery = {
 type MobileSecurityAlertDeliveriesResponse = {
   items: MobileSecurityAlertDelivery[];
   total: number;
+};
+
+type MobileAttestationSessionResponse = {
+  attestation_token: string;
+  installation_id: string;
 };
 
 type LocalCalendarReminderIndex = Record<
@@ -959,6 +965,63 @@ export default function App(): React.JSX.Element {
     [setSecureAuthState]
   );
 
+  const issueMobileAttestationSession = useCallback(
+    async (
+      authToken: string
+    ): Promise<{ attestationToken: string; installationId: string }> => {
+      if (!AUTH_SERVICE_URL) {
+        throw new Error("AUTH_SERVICE_URL is not configured.");
+      }
+      const resolvedInstallationId =
+        installationId ||
+        (await SecureStore.getItemAsync(SECURE_INSTALLATION_ID_KEY)) ||
+        createInstallationId();
+      if (!installationId) {
+        await SecureStore.setItemAsync(SECURE_INSTALLATION_ID_KEY, resolvedInstallationId);
+        setInstallationId(resolvedInstallationId);
+      }
+      const response = await fetch(`${AUTH_SERVICE_URL}/mobile/attestation/session`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          installation_id: resolvedInstallationId,
+        }),
+      });
+      if (!response.ok) {
+        let reason = `HTTP ${response.status}`;
+        try {
+          const payload = (await response.json()) as { detail?: unknown };
+          if (typeof payload.detail === "string" && payload.detail.trim()) {
+            reason = payload.detail.trim();
+          }
+        } catch {
+          // Keep fallback reason.
+        }
+        throw new Error(reason);
+      }
+      const payload = (await response.json()) as MobileAttestationSessionResponse;
+      const attestationToken =
+        typeof payload.attestation_token === "string" ? payload.attestation_token.trim() : "";
+      const returnedInstallationId =
+        typeof payload.installation_id === "string" ? payload.installation_id.trim() : "";
+      if (!attestationToken || !returnedInstallationId) {
+        throw new Error("Attestation session payload is incomplete.");
+      }
+      void trackAnalyticsEvent("mobile.security.attestation_issued", {
+        installation_id_suffix: returnedInstallationId.slice(-6),
+      });
+      return {
+        attestationToken,
+        installationId: returnedInstallationId,
+      };
+    },
+    [installationId, trackAnalyticsEvent]
+  );
+
   const registerPushNotifications = useCallback(async () => {
     try {
       await runHaptic("medium");
@@ -994,12 +1057,15 @@ export default function App(): React.JSX.Element {
         const authToken = await SecureStore.getItemAsync(SECURE_AUTH_TOKEN_KEY);
         if (authToken) {
           try {
-            const registerResponse = await fetch(`${AUTH_SERVICE_URL}/security/push-tokens`, {
+            const attestation = await issueMobileAttestationSession(authToken);
+            const registerResponse = await fetch(`${AUTH_SERVICE_URL}/mobile/security/push-tokens`, {
               method: "POST",
               headers: {
                 Accept: "application/json",
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${authToken}`,
+                "X-SelfMonitor-Mobile-Attestation": attestation.attestationToken,
+                "X-SelfMonitor-Mobile-Installation-Id": attestation.installationId,
               },
               body: JSON.stringify({
                 push_token: tokenResponse.data,
@@ -1046,7 +1112,7 @@ export default function App(): React.JSX.Element {
       });
       await runHaptic("heavy");
     }
-  }, [notifyAction, runHaptic, syncPushTokenToWeb, trackAnalyticsEvent]);
+  }, [issueMobileAttestationSession, notifyAction, runHaptic, syncPushTokenToWeb, trackAnalyticsEvent]);
 
   const syncCalendarLocalReminders = useCallback(async () => {
     if (!PARTNER_REGISTRY_URL || !isConnected) {
@@ -1427,12 +1493,15 @@ export default function App(): React.JSX.Element {
         await runHaptic("medium");
         return;
       }
-      const response = await fetch(`${AUTH_SERVICE_URL}/security/lockdown`, {
+      const attestation = await issueMobileAttestationSession(authToken);
+      const response = await fetch(`${AUTH_SERVICE_URL}/mobile/security/lockdown`, {
         method: "POST",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
           Authorization: `Bearer ${authToken}`,
+          "X-SelfMonitor-Mobile-Attestation": attestation.attestationToken,
+          "X-SelfMonitor-Mobile-Installation-Id": attestation.installationId,
         },
         body: JSON.stringify({
           lock_minutes: MOBILE_EMERGENCY_LOCKDOWN_MINUTES,
@@ -1490,6 +1559,7 @@ export default function App(): React.JSX.Element {
   }, [
     isConnected,
     isLockingAccountNow,
+    issueMobileAttestationSession,
     notifyAction,
     runHaptic,
     setSecureAuthState,
@@ -2062,6 +2132,14 @@ export default function App(): React.JSX.Element {
           openSecurityCenter();
         },
       },
+      {
+        id: "legal",
+        label: "Legal",
+        icon: "document-text-outline",
+        onPress: () => {
+          void navigateInsidePortal("/terms");
+        },
+      },
     ],
     [navigateInsidePortal, openReceiptCapture, openSecurityCenter, registerPushNotifications]
   );
@@ -2454,6 +2532,8 @@ export default function App(): React.JSX.Element {
                       ? isRouteActive("/documents")
                       : action.id === "security"
                         ? isRouteActive("/security")
+                        : action.id === "legal"
+                          ? isRouteActive("/terms") || isRouteActive("/eula")
                       : false;
                 return (
                   <Pressable

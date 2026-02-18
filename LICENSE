@@ -1,0 +1,36 @@
+SelfMonitor Proprietary License v1.0
+Copyright (c) 2026 SelfMonitor.
+All rights reserved.
+
+1. Grant of rights
+This software and all associated source code, assets, configurations, and documentation
+are proprietary to SelfMonitor. No right, title, or interest is transferred except as
+expressly granted in a separate written agreement signed by SelfMonitor.
+
+2. Restrictions
+Without prior written permission from SelfMonitor, you may not:
+- copy, reproduce, distribute, publish, sublicense, rent, lease, or sell this software;
+- create derivative works based on this software;
+- reverse engineer, decompile, disassemble, or otherwise attempt to discover source
+  code, trade secrets, or non-public interfaces;
+- remove or alter proprietary notices, trademarks, watermarking, or attribution markers;
+- use the software to build, train, or support a competing product.
+
+3. Trademark and branding
+SelfMonitor names, logos, visual identity, and product branding are protected by
+trademark and unfair competition laws. Any unauthorized use is prohibited.
+
+4. Confidentiality
+Non-public materials and implementation details are confidential information.
+You must protect them using reasonable technical and organizational safeguards.
+
+5. Enforcement
+Unauthorized use may result in civil and criminal penalties, including injunctive
+relief, damages, and recovery of legal costs.
+
+6. No warranty
+This software is provided "AS IS" unless otherwise stated in a signed agreement.
+
+7. Governing law
+This license is governed by the laws of England and Wales unless superseded by
+an explicit executed contract.

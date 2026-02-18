@@ -10,6 +10,7 @@ const AUTH_TOKEN_KEY = 'authToken';
 const AUTH_REFRESH_TOKEN_KEY = 'authRefreshToken';
 const AUTH_EMAIL_KEY = 'authUserEmail';
 const THEME_KEY = 'appTheme';
+const PUBLIC_ROUTES = new Set(['/', '/terms', '/eula']);
 type ThemeMode = 'light' | 'dark';
 type NativeBridgeMessage =
   | {
@@ -103,7 +104,7 @@ function AppContent({ Component, pageProps }: AppProps) {
       if (storedEmail) {
         setUserEmail(storedEmail);
       }
-    } else if (router.pathname !== '/') {
+    } else if (!PUBLIC_ROUTES.has(router.pathname)) {
       router.push('/');
     }
     setAuthHydrated(true);
@@ -241,6 +242,10 @@ function AppContent({ Component, pageProps }: AppProps) {
   const PageComponent = Component as ComponentType<Record<string, unknown>>;
   if (router.pathname === '/') {
     return <PageComponent {...pageProps} onLoginSuccess={handleLoginSuccess} />;
+  }
+
+  if (PUBLIC_ROUTES.has(router.pathname)) {
+    return <PageComponent {...pageProps} />;
   }
 
   if (!token) {

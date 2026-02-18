@@ -69,6 +69,9 @@ def setup_function() -> None:
     main.AUTH_SECURITY_ALERT_COOLDOWN_MINUTES = 30
     main.AUTH_SECURITY_ALERT_RECEIPTS_ENABLED = False
     main.AUTH_SECURITY_ALERT_RECEIPT_WEBHOOK_SECRET = ""
+    main.AUTH_MOBILE_ATTESTATION_ENABLED = True
+    main.AUTH_MOBILE_ATTESTATION_TOKEN_TTL_MINUTES = 10
+    main.AUTH_MOBILE_ATTESTATION_REQUIRE_RECENT_AUTH = True
 
     main.fake_users_db["admin@example.com"] = main._build_user_record(
         email="admin@example.com",
@@ -512,6 +515,62 @@ def test_emergency_security_lockdown_revokes_sessions_and_blocks_login() -> None
 
     blocked_login = client.post("/token", data={"username": email, "password": password})
     assert blocked_login.status_code == 423
+
+
+def test_mobile_attestation_session_gates_mobile_sensitive_endpoints() -> None:
+    email = "mobile-attest@example.com"
+    password = "shieldedpassword123!"
+    _register(email, password)
+    login_payload = _login(email, password)
+    auth_headers = {"Authorization": f"Bearer {login_payload['access_token']}"}
+
+    missing_attestation = client.post(
+        "/mobile/security/push-tokens",
+        headers=auth_headers,
+        json={"push_token": "ExponentPushToken[mobileAttestValue]", "provider": "expo"},
+    )
+    assert missing_attestation.status_code == 401
+
+    installation_id = "mobile-installation-1234"
+    attestation_response = client.post(
+        "/mobile/attestation/session",
+        headers=auth_headers,
+        json={"installation_id": installation_id},
+    )
+    assert attestation_response.status_code == 200
+    attestation_payload = attestation_response.json()
+    assert attestation_payload["installation_id"] == installation_id
+    assert attestation_payload["attestation_token"]
+
+    mobile_headers = {
+        "Authorization": f"Bearer {login_payload['access_token']}",
+        "X-SelfMonitor-Mobile-Attestation": attestation_payload["attestation_token"],
+        "X-SelfMonitor-Mobile-Installation-Id": installation_id,
+    }
+    register_response = client.post(
+        "/mobile/security/push-tokens",
+        headers=mobile_headers,
+        json={"push_token": "ExponentPushToken[mobileAttestValue]", "provider": "expo"},
+    )
+    assert register_response.status_code == 200
+    assert register_response.json()["total_active_tokens"] == 1
+
+    wrong_installation_headers = dict(mobile_headers)
+    wrong_installation_headers["X-SelfMonitor-Mobile-Installation-Id"] = "other-installation"
+    denied_response = client.post(
+        "/mobile/security/push-tokens",
+        headers=wrong_installation_headers,
+        json={"push_token": "ExponentPushToken[mobileAttestValue2]", "provider": "expo"},
+    )
+    assert denied_response.status_code == 403
+
+    lockdown_response = client.post(
+        "/mobile/security/lockdown",
+        headers=mobile_headers,
+        json={"lock_minutes": 30},
+    )
+    assert lockdown_response.status_code == 200
+    assert lockdown_response.json()["lock_minutes"] == 30
 
 
 def test_risk_alerts_dispatch_on_emergency_lockdown() -> None:

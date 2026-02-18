@@ -107,6 +107,29 @@ Before scaling traffic beyond pilot:
    - latest pentest report is attached to release evidence.
 3. No unresolved Critical findings and no High findings without approved risk acceptance.
 
+## 6.3 IP protection and anti-cloning gate (mandatory)
+
+Before broad release and partner onboarding:
+
+1. Legal visibility:
+   - Proprietary repository license exists at `/LICENSE`.
+   - Web/mobile legal routes are reachable:
+     - `/terms`
+     - `/eula`
+2. Export attribution controls:
+   - export watermarking is enabled (`PARTNER_EXPORT_WATERMARK_ENABLED=true`);
+   - export headers are present (`X-SelfMonitor-Export-Watermark`) on CSV/PDF downloads.
+3. Gateway anti-automation posture:
+   - nginx-gateway WAF/rate-limit policy is active:
+     - global API rate limit;
+     - stricter auth burst control (`/api/auth/token`, `/api/auth/register`);
+     - suspicious scanner/path signatures are blocked with `403`.
+4. Mobile attestation gate:
+   - mobile attestation is enabled (`AUTH_MOBILE_ATTESTATION_ENABLED=true`);
+   - sensitive mobile endpoints require attestation headers:
+     - `/auth/mobile/security/push-tokens`
+     - `/auth/mobile/security/lockdown`
+
 ## 7. Exit and handover
 
 - Announce release completion with validation summary.

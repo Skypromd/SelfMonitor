@@ -228,6 +228,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/attestation/session:
+    post:
+      summary: Issue Mobile Attestation Session
+      operationId: issue_mobile_attestation_session_mobile_attestation_session_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileAttestationSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileAttestationSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
   /security/push-tokens:
     post:
       summary: Register Security Push Token
@@ -279,10 +304,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/security/push-tokens:
+    post:
+      summary: Register Mobile Security Push Token
+      operationId: register_mobile_security_push_token_mobile_security_push_tokens_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityPushTokenRegisterRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRegisterResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
   /security/push-tokens/{push_token}:
     delete:
       summary: Revoke Security Push Token
       operationId: revoke_security_push_token_security_push_tokens__push_token__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: push_token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Push Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRevokeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/security/push-tokens/{push_token}:
+    delete:
+      summary: Revoke Mobile Security Push Token
+      operationId: revoke_mobile_security_push_token_mobile_security_push_tokens__push_token__delete
       security:
       - OAuth2PasswordBearer: []
       parameters:
@@ -408,6 +484,31 @@ paths:
     post:
       summary: Activate Security Lockdown
       operationId: activate_security_lockdown_security_lockdown_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityLockdownRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityLockdownResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /mobile/security/lockdown:
+    post:
+      summary: Activate Mobile Security Lockdown
+      operationId: activate_mobile_security_lockdown_mobile_security_lockdown_post
       requestBody:
         content:
           application/json:
@@ -662,6 +763,39 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    MobileAttestationSessionRequest:
+      properties:
+        installation_id:
+          type: string
+          maxLength: 128
+          minLength: 8
+          title: Installation Id
+      type: object
+      required:
+      - installation_id
+      title: MobileAttestationSessionRequest
+    MobileAttestationSessionResponse:
+      properties:
+        token_type:
+          type: string
+          title: Token Type
+          default: bearer
+        attestation_token:
+          type: string
+          title: Attestation Token
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        installation_id:
+          type: string
+          title: Installation Id
+      type: object
+      required:
+      - attestation_token
+      - expires_at
+      - installation_id
+      title: MobileAttestationSessionResponse
     PasswordChangeRequest:
       properties:
         current_password:
