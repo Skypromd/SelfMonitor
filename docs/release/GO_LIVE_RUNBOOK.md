@@ -68,6 +68,7 @@ Before enabling production traffic, validate these auth controls:
    - `AUTH_MAX_FAILED_LOGIN_ATTEMPTS` and `AUTH_ACCOUNT_LOCKOUT_MINUTES` are configured.
 2. Session/token protection:
    - refresh rotation works (`POST /auth/token/refresh`).
+   - runtime state durability backend is configured (`AUTH_RUNTIME_STATE_BACKEND=redis` recommended).
    - revoke endpoints are reachable:
      - `POST /auth/token/revoke`
      - `GET /auth/security/sessions`

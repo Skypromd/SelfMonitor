@@ -22,6 +22,11 @@ import pyotp
 import qrcode
 from prometheus_fastapi_instrumentator import Instrumentator
 
+try:  # pragma: no cover - optional dependency for runtime durability backend
+    import redis as redis_client_lib
+except Exception:  # pragma: no cover - fallback when redis package is unavailable
+    redis_client_lib = None
+
 # --- Configuration ---
 # The secret key is now read from an environment variable for better security.
 # A default value is provided for convenience in local development without Docker.
@@ -142,10 +147,20 @@ AUTH_LEGAL_TERMS_URL = os.getenv("AUTH_LEGAL_TERMS_URL", "/terms").strip() or "/
 AUTH_LEGAL_EULA_URL = os.getenv("AUTH_LEGAL_EULA_URL", "/eula").strip() or "/eula"
 AUTH_REQUIRE_LEGAL_ACCEPTANCE = _parse_bool_env("AUTH_REQUIRE_LEGAL_ACCEPTANCE", False)
 AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED = _parse_bool_env("AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED", True)
+AUTH_RUNTIME_STATE_BACKEND = os.getenv("AUTH_RUNTIME_STATE_BACKEND", "file").strip().lower() or "file"
 AUTH_RUNTIME_STATE_SNAPSHOT_PATH = os.getenv(
     "AUTH_RUNTIME_STATE_SNAPSHOT_PATH",
     "/tmp/selfmonitor-auth-runtime-state.json",
 ).strip()
+AUTH_RUNTIME_STATE_REDIS_URL = os.getenv("AUTH_RUNTIME_STATE_REDIS_URL", "").strip()
+AUTH_RUNTIME_STATE_REDIS_KEY = os.getenv(
+    "AUTH_RUNTIME_STATE_REDIS_KEY",
+    "selfmonitor:auth:runtime_state",
+).strip()
+AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS = max(
+    _parse_non_negative_float_env("AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS", 0.5),
+    0.05,
+)
 
 app = FastAPI(
     title="Auth Service",
@@ -475,6 +490,9 @@ security_alert_dispatch_log: Dict[str, deque[Dict[str, Any]]] = defaultdict(lamb
 security_alert_deliveries_by_id: Dict[str, Dict[str, Any]] = {}
 security_push_tokens_by_user: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
 runtime_state_snapshot_lock = threading.Lock()
+runtime_state_redis_client: Optional[Any] = None
+runtime_state_redis_client_initialized = False
+runtime_state_redis_warning_logged = False
 
 
 def _to_json_compatible(value: Any) -> Any:
@@ -508,10 +526,102 @@ def _hydrate_datetime_fields(record: Dict[str, Any], fields: list[str]) -> Dict[
     return hydrated
 
 
+def _runtime_state_backend_mode() -> str:
+    candidate = (AUTH_RUNTIME_STATE_BACKEND or "file").strip().lower()
+    if candidate in {"file", "redis", "hybrid"}:
+        return candidate
+    return "file"
+
+
+def _runtime_state_redis_enabled() -> bool:
+    return _runtime_state_backend_mode() in {"redis", "hybrid"} and bool(AUTH_RUNTIME_STATE_REDIS_URL)
+
+
+def _get_runtime_state_redis_client() -> Optional[Any]:
+    global runtime_state_redis_client, runtime_state_redis_client_initialized, runtime_state_redis_warning_logged
+
+    if runtime_state_redis_client_initialized:
+        return runtime_state_redis_client
+
+    runtime_state_redis_client_initialized = True
+    if not _runtime_state_redis_enabled():
+        return None
+
+    if redis_client_lib is None:
+        if not runtime_state_redis_warning_logged:
+            runtime_state_redis_warning_logged = True
+            print("Redis runtime state backend requested but redis package is unavailable; falling back.")
+        return None
+
+    try:
+        runtime_state_redis_client = redis_client_lib.Redis.from_url(
+            AUTH_RUNTIME_STATE_REDIS_URL,
+            socket_timeout=AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS,
+            socket_connect_timeout=AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS,
+            decode_responses=False,
+        )
+        runtime_state_redis_client.ping()
+    except Exception:
+        runtime_state_redis_client = None
+    return runtime_state_redis_client
+
+
+def _read_runtime_state_snapshot_payload() -> Optional[Dict[str, Any]]:
+    backend_mode = _runtime_state_backend_mode()
+
+    if backend_mode in {"redis", "hybrid"}:
+        redis_client = _get_runtime_state_redis_client()
+        if redis_client is not None:
+            try:
+                payload_raw = redis_client.get(AUTH_RUNTIME_STATE_REDIS_KEY)
+                if isinstance(payload_raw, bytes):
+                    payload_raw = payload_raw.decode("utf-8")
+                if isinstance(payload_raw, str) and payload_raw.strip():
+                    parsed = json.loads(payload_raw)
+                    if isinstance(parsed, dict):
+                        return parsed
+            except Exception:
+                pass
+
+    snapshot_path = os.path.abspath(AUTH_RUNTIME_STATE_SNAPSHOT_PATH) if AUTH_RUNTIME_STATE_SNAPSHOT_PATH else ""
+    if snapshot_path and os.path.exists(snapshot_path):
+        try:
+            with open(snapshot_path, "r", encoding="utf-8") as handle:
+                parsed = json.load(handle)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+    return None
+
+
+def _write_runtime_state_snapshot_payload(payload: Dict[str, Any]) -> None:
+    backend_mode = _runtime_state_backend_mode()
+    serialized_payload = json.dumps(payload, ensure_ascii=True)
+    wrote_redis = False
+
+    if backend_mode in {"redis", "hybrid"}:
+        redis_client = _get_runtime_state_redis_client()
+        if redis_client is not None:
+            try:
+                redis_client.set(AUTH_RUNTIME_STATE_REDIS_KEY, serialized_payload)
+                wrote_redis = True
+            except Exception:
+                wrote_redis = False
+
+    snapshot_path = os.path.abspath(AUTH_RUNTIME_STATE_SNAPSHOT_PATH) if AUTH_RUNTIME_STATE_SNAPSHOT_PATH else ""
+    should_write_file = backend_mode in {"file", "hybrid"} or (backend_mode == "redis" and not wrote_redis)
+    if should_write_file and snapshot_path:
+        directory = os.path.dirname(snapshot_path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        with open(snapshot_path, "w", encoding="utf-8") as handle:
+            handle.write(serialized_payload)
+
+
 def _persist_runtime_state_snapshot() -> None:
-    if not AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED or not AUTH_RUNTIME_STATE_SNAPSHOT_PATH:
+    if not AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED:
         return
-    snapshot_path = os.path.abspath(AUTH_RUNTIME_STATE_SNAPSHOT_PATH)
     payload = {
         "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "fake_users_db": _to_json_compatible(fake_users_db),
@@ -539,26 +649,18 @@ def _persist_runtime_state_snapshot() -> None:
     }
     try:
         with runtime_state_snapshot_lock:
-            directory = os.path.dirname(snapshot_path)
-            if directory:
-                os.makedirs(directory, exist_ok=True)
-            with open(snapshot_path, "w", encoding="utf-8") as handle:
-                json.dump(payload, handle, ensure_ascii=True)
+            _write_runtime_state_snapshot_payload(payload)
     except Exception:
         # Snapshot durability is best-effort and must not break auth availability.
         return
 
 
 def _load_runtime_state_snapshot() -> None:
-    if not AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED or not AUTH_RUNTIME_STATE_SNAPSHOT_PATH:
-        return
-    snapshot_path = os.path.abspath(AUTH_RUNTIME_STATE_SNAPSHOT_PATH)
-    if not os.path.exists(snapshot_path):
+    if not AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED:
         return
     try:
         with runtime_state_snapshot_lock:
-            with open(snapshot_path, "r", encoding="utf-8") as handle:
-                payload = json.load(handle)
+            payload = _read_runtime_state_snapshot_payload()
     except Exception:
         return
     if not isinstance(payload, dict):

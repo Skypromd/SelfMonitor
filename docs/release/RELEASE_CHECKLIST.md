@@ -54,6 +54,6 @@ Related docs:
 - [ ] Confirm audit events are being produced for security-relevant actions.
 - [ ] Ensure dependency updates do not introduce known critical CVEs.
 - [ ] Confirm current legal policy version (`AUTH_LEGAL_CURRENT_VERSION`) is published and acceptance endpoint works.
-- [ ] Confirm auth runtime snapshot durability is enabled in target environment.
+- [ ] Confirm auth runtime snapshot durability is enabled in target environment (prefer `AUTH_RUNTIME_STATE_BACKEND=redis`).
 - [ ] Confirm WAF observability dashboards/alerts are active (`docs/observability/WAF_MONITORING_AND_ALERTS.md`).
 

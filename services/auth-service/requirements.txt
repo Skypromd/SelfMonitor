@@ -8,6 +8,7 @@ bcrypt<5
 prometheus-fastapi-instrumentator
 pyotp
 qrcode[pil]
+redis
 
 # Dependencies for testing
 pytest

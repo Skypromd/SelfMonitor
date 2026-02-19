@@ -45,10 +45,16 @@ services:
   auth-service:
     build: ./services/auth-service
     container_name: auth-service
+    depends_on:
+      - redis
     environment:
       # This is how we pass secrets to our services in a production-like environment.
       # In a real cloud deployment, this would come from a secret manager (like AWS Secrets Manager or HashiCorp Vault).
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_RUNTIME_STATE_BACKEND: "${AUTH_RUNTIME_STATE_BACKEND:-redis}"
+      AUTH_RUNTIME_STATE_REDIS_URL: "${AUTH_RUNTIME_STATE_REDIS_URL:-redis://redis:6379/1}"
+      AUTH_RUNTIME_STATE_REDIS_KEY: "${AUTH_RUNTIME_STATE_REDIS_KEY:-selfmonitor:auth:runtime_state}"
+      AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS: "${AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS:-0.5}"
     # ports are no longer exposed directly
     networks:
       - default_network

@@ -77,6 +77,13 @@ def setup_function() -> None:
     main.AUTH_LEGAL_EULA_URL = "/eula"
     main.AUTH_REQUIRE_LEGAL_ACCEPTANCE = False
     main.AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED = False
+    main.AUTH_RUNTIME_STATE_BACKEND = "file"
+    main.AUTH_RUNTIME_STATE_REDIS_URL = ""
+    main.AUTH_RUNTIME_STATE_REDIS_KEY = "selfmonitor:auth:runtime_state"
+    main.AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS = 0.5
+    main.runtime_state_redis_client = None
+    main.runtime_state_redis_client_initialized = False
+    main.runtime_state_redis_warning_logged = False
 
     main.fake_users_db["admin@example.com"] = main._build_user_record(
         email="admin@example.com",
