@@ -511,7 +511,7 @@ def test_legal_policy_current_and_acceptance_flow() -> None:
 
 def test_runtime_cleanup_cycle_prunes_stale_records() -> None:
     email = "cleanup@example.com"
-    _register(email, "cleanupsecurepassword123!")
+    _register(email, "vaultstrongpassword123!")
 
     main.AUTH_RUNTIME_RETENTION_EVENTS_DAYS = 1
     main.AUTH_RUNTIME_RETENTION_DISPATCH_DAYS = 1
