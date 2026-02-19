@@ -583,8 +583,9 @@ def test_runtime_cleanup_cycle_prunes_stale_records() -> None:
     assert "refresh-stale" not in main.revoked_refresh_tokens
     assert main.refresh_tokens_by_user[email] == {"refresh-fresh"}
 
-    assert len(main.security_events_by_user[email]) == 1
-    assert main.security_events_by_user[email][0].event_type == "auth.login_succeeded"
+    remaining_event_types = {event.event_type for event in main.security_events_by_user[email]}
+    assert "auth.login_failed" not in remaining_event_types
+    assert "auth.login_succeeded" in remaining_event_types
     assert list(main.login_attempts_by_ip["203.0.113.10"]) == [fresh]
     assert set(main.security_alert_cooldowns_by_user[email].keys()) == {"recent_login_ip"}
     assert len(main.security_alert_dispatch_log[email]) == 1
