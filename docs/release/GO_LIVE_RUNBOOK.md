@@ -69,6 +69,10 @@ Before enabling production traffic, validate these auth controls:
 2. Session/token protection:
    - refresh rotation works (`POST /auth/token/refresh`).
    - runtime state durability backend is configured (`AUTH_RUNTIME_STATE_BACKEND=redis` recommended).
+   - segmented Redis runtime state persistence and cleanup cadence are configured:
+     - `AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED=true`
+     - `AUTH_RUNTIME_CLEANUP_ENABLED=true`
+     - `AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS` is set.
    - revoke endpoints are reachable:
      - `POST /auth/token/revoke`
      - `GET /auth/security/sessions`

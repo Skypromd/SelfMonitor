@@ -81,6 +81,14 @@ def setup_function() -> None:
     main.AUTH_RUNTIME_STATE_REDIS_URL = ""
     main.AUTH_RUNTIME_STATE_REDIS_KEY = "selfmonitor:auth:runtime_state"
     main.AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS = 0.5
+    main.AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED = True
+    main.AUTH_RUNTIME_RETENTION_EVENTS_DAYS = 30
+    main.AUTH_RUNTIME_RETENTION_DISPATCH_DAYS = 30
+    main.AUTH_RUNTIME_RETENTION_DELIVERIES_DAYS = 30
+    main.AUTH_RUNTIME_RETENTION_PUSH_REVOKED_DAYS = 90
+    main.AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS = 30
+    main.AUTH_RUNTIME_CLEANUP_ENABLED = False
+    main.AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS = 300
     main.runtime_state_redis_client = None
     main.runtime_state_redis_client_initialized = False
     main.runtime_state_redis_warning_logged = False
@@ -499,6 +507,90 @@ def test_legal_policy_current_and_acceptance_flow() -> None:
     assert state_after.status_code == 200
     assert state_after.json()["legal_accepted_version"] == main.AUTH_LEGAL_CURRENT_VERSION
     assert state_after.json()["has_accepted_current_legal"] is True
+
+
+def test_runtime_cleanup_cycle_prunes_stale_records() -> None:
+    email = "cleanup@example.com"
+    _register(email, "cleanupsecurepassword123!")
+
+    main.AUTH_RUNTIME_RETENTION_EVENTS_DAYS = 1
+    main.AUTH_RUNTIME_RETENTION_DISPATCH_DAYS = 1
+    main.AUTH_RUNTIME_RETENTION_DELIVERIES_DAYS = 1
+    main.AUTH_RUNTIME_RETENTION_PUSH_REVOKED_DAYS = 1
+    main.AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS = 1
+    main.AUTH_SECURITY_ALERT_COOLDOWN_MINUTES = 1
+    main.LOGIN_IP_WINDOW_SECONDS = 60
+
+    now = datetime.datetime.now(datetime.UTC)
+    stale = now - datetime.timedelta(days=2)
+    fresh = now - datetime.timedelta(seconds=30)
+
+    main.security_events_by_user[email].append(
+        main.SecurityEvent(event_type="auth.login_failed", occurred_at=stale, details={"failed_attempts": 1})
+    )
+    main.security_events_by_user[email].append(
+        main.SecurityEvent(event_type="auth.login_succeeded", occurred_at=fresh, details={})
+    )
+
+    main.login_attempts_by_ip["203.0.113.10"].append(stale)
+    main.login_attempts_by_ip["203.0.113.10"].append(fresh)
+
+    main.security_alert_cooldowns_by_user[email]["failed_login_spike"] = stale
+    main.security_alert_cooldowns_by_user[email]["recent_login_ip"] = fresh
+
+    main.security_alert_dispatch_log[email].append({"dispatch_id": "dispatch-old", "occurred_at": stale.isoformat()})
+    main.security_alert_dispatch_log[email].append({"dispatch_id": "dispatch-fresh", "occurred_at": fresh.isoformat()})
+
+    main.security_alert_deliveries_by_id["dispatch-old"] = {"dispatch_id": "dispatch-old", "occurred_at": stale.isoformat()}
+    main.security_alert_deliveries_by_id["dispatch-fresh"] = {
+        "dispatch_id": "dispatch-fresh",
+        "occurred_at": fresh.isoformat(),
+    }
+
+    main.security_push_tokens_by_user[email]["ExponentPushToken[stale]"] = {
+        "provider": "expo",
+        "registered_at": stale,
+        "last_used_at": stale,
+        "revoked_at": stale,
+    }
+    main.security_push_tokens_by_user[email]["ExponentPushToken[fresh]"] = {
+        "provider": "expo",
+        "registered_at": fresh,
+        "last_used_at": fresh,
+        "revoked_at": None,
+    }
+
+    main.refresh_token_sessions["refresh-stale"] = {
+        "email": email,
+        "issued_at": stale,
+        "expires_at": stale,
+        "revoked_at": stale,
+    }
+    main.refresh_token_sessions["refresh-fresh"] = {
+        "email": email,
+        "issued_at": fresh,
+        "expires_at": now + datetime.timedelta(days=7),
+        "revoked_at": None,
+    }
+    main.refresh_tokens_by_user[email].update({"refresh-stale", "refresh-fresh"})
+    main.revoked_refresh_tokens.update({"refresh-stale"})
+
+    changed = main._run_runtime_state_cleanup_cycle(now_utc=now)
+    assert changed is True
+
+    assert "refresh-stale" not in main.refresh_token_sessions
+    assert "refresh-fresh" in main.refresh_token_sessions
+    assert "refresh-stale" not in main.revoked_refresh_tokens
+    assert main.refresh_tokens_by_user[email] == {"refresh-fresh"}
+
+    assert len(main.security_events_by_user[email]) == 1
+    assert main.security_events_by_user[email][0].event_type == "auth.login_succeeded"
+    assert list(main.login_attempts_by_ip["203.0.113.10"]) == [fresh]
+    assert set(main.security_alert_cooldowns_by_user[email].keys()) == {"recent_login_ip"}
+    assert len(main.security_alert_dispatch_log[email]) == 1
+    assert "dispatch-old" not in main.security_alert_deliveries_by_id
+    assert "dispatch-fresh" in main.security_alert_deliveries_by_id
+    assert "ExponentPushToken[stale]" not in main.security_push_tokens_by_user[email]
 
 
 def test_security_sessions_management_endpoints() -> None:

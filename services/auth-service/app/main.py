@@ -161,6 +161,17 @@ AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS = max(
     _parse_non_negative_float_env("AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS", 0.5),
     0.05,
 )
+AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED = _parse_bool_env("AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED", True)
+AUTH_RUNTIME_RETENTION_EVENTS_DAYS = _parse_positive_int_env("AUTH_RUNTIME_RETENTION_EVENTS_DAYS", 30)
+AUTH_RUNTIME_RETENTION_DISPATCH_DAYS = _parse_positive_int_env("AUTH_RUNTIME_RETENTION_DISPATCH_DAYS", 30)
+AUTH_RUNTIME_RETENTION_DELIVERIES_DAYS = _parse_positive_int_env("AUTH_RUNTIME_RETENTION_DELIVERIES_DAYS", 30)
+AUTH_RUNTIME_RETENTION_PUSH_REVOKED_DAYS = _parse_positive_int_env("AUTH_RUNTIME_RETENTION_PUSH_REVOKED_DAYS", 90)
+AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS = _parse_positive_int_env(
+    "AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS",
+    max(REFRESH_TOKEN_EXPIRE_DAYS, 30),
+)
+AUTH_RUNTIME_CLEANUP_ENABLED = _parse_bool_env("AUTH_RUNTIME_CLEANUP_ENABLED", True)
+AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS = _parse_positive_int_env("AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS", 300)
 
 app = FastAPI(
     title="Auth Service",
@@ -493,6 +504,21 @@ runtime_state_snapshot_lock = threading.Lock()
 runtime_state_redis_client: Optional[Any] = None
 runtime_state_redis_client_initialized = False
 runtime_state_redis_warning_logged = False
+runtime_cleanup_thread: Optional[threading.Thread] = None
+runtime_cleanup_stop_event = threading.Event()
+
+RUNTIME_STATE_PAYLOAD_SECTIONS = (
+    "fake_users_db",
+    "refresh_token_sessions",
+    "refresh_tokens_by_user",
+    "revoked_refresh_tokens",
+    "security_events_by_user",
+    "login_attempts_by_ip",
+    "security_alert_cooldowns_by_user",
+    "security_alert_dispatch_log",
+    "security_alert_deliveries_by_id",
+    "security_push_tokens_by_user",
+)
 
 
 def _to_json_compatible(value: Any) -> Any:
@@ -524,6 +550,68 @@ def _hydrate_datetime_fields(record: Dict[str, Any], fields: list[str]) -> Dict[
     for field in fields:
         hydrated[field] = _parse_iso_datetime(hydrated.get(field))
     return hydrated
+
+
+def _runtime_state_is_segmented_redis_enabled() -> bool:
+    return _runtime_state_redis_enabled() and AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED
+
+
+def _runtime_state_redis_section_key(section: str) -> str:
+    base_key = AUTH_RUNTIME_STATE_REDIS_KEY or "selfmonitor:auth:runtime_state"
+    return f"{base_key}:section:{section}"
+
+
+def _runtime_state_redis_meta_key() -> str:
+    base_key = AUTH_RUNTIME_STATE_REDIS_KEY or "selfmonitor:auth:runtime_state"
+    return f"{base_key}:meta"
+
+
+def _runtime_state_redis_section_ttl_seconds(section: str) -> int:
+    refresh_retention_seconds = max(
+        AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS * 24 * 60 * 60,
+        (REFRESH_TOKEN_EXPIRE_DAYS + 1) * 24 * 60 * 60,
+    )
+    if section in {"refresh_token_sessions", "refresh_tokens_by_user", "revoked_refresh_tokens"}:
+        return refresh_retention_seconds
+    if section == "security_events_by_user":
+        return AUTH_RUNTIME_RETENTION_EVENTS_DAYS * 24 * 60 * 60
+    if section == "login_attempts_by_ip":
+        return max(LOGIN_IP_WINDOW_SECONDS * 2, 300)
+    if section == "security_alert_cooldowns_by_user":
+        return max(AUTH_SECURITY_ALERT_COOLDOWN_MINUTES * 2 * 60, 600)
+    if section == "security_alert_dispatch_log":
+        return AUTH_RUNTIME_RETENTION_DISPATCH_DAYS * 24 * 60 * 60
+    if section == "security_alert_deliveries_by_id":
+        return AUTH_RUNTIME_RETENTION_DELIVERIES_DAYS * 24 * 60 * 60
+    return 0
+
+
+def _build_runtime_state_payload() -> Dict[str, Any]:
+    return {
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "fake_users_db": _to_json_compatible(fake_users_db),
+        "refresh_token_sessions": _to_json_compatible(refresh_token_sessions),
+        "refresh_tokens_by_user": {
+            email: sorted(tokens)
+            for email, tokens in refresh_tokens_by_user.items()
+        },
+        "revoked_refresh_tokens": sorted(revoked_refresh_tokens),
+        "security_events_by_user": {
+            email: [_to_json_compatible(event) for event in events]
+            for email, events in security_events_by_user.items()
+        },
+        "login_attempts_by_ip": {
+            ip: [_to_json_compatible(timestamp) for timestamp in attempts]
+            for ip, attempts in login_attempts_by_ip.items()
+        },
+        "security_alert_cooldowns_by_user": _to_json_compatible(security_alert_cooldowns_by_user),
+        "security_alert_dispatch_log": {
+            email: [_to_json_compatible(item) for item in items]
+            for email, items in security_alert_dispatch_log.items()
+        },
+        "security_alert_deliveries_by_id": _to_json_compatible(security_alert_deliveries_by_id),
+        "security_push_tokens_by_user": _to_json_compatible(security_push_tokens_by_user),
+    }
 
 
 def _runtime_state_backend_mode() -> str:
@@ -566,12 +654,70 @@ def _get_runtime_state_redis_client() -> Optional[Any]:
     return runtime_state_redis_client
 
 
+def _read_runtime_state_from_redis_segmented(redis_client: Any) -> Optional[Dict[str, Any]]:
+    try:
+        meta_raw = redis_client.get(_runtime_state_redis_meta_key())
+        if isinstance(meta_raw, bytes):
+            meta_raw = meta_raw.decode("utf-8")
+        meta_payload = json.loads(meta_raw) if isinstance(meta_raw, str) and meta_raw.strip() else {}
+        if not isinstance(meta_payload, dict):
+            meta_payload = {}
+    except Exception:
+        meta_payload = {}
+
+    payload: Dict[str, Any] = {
+        "generated_at": str(meta_payload.get("generated_at") or datetime.datetime.now(datetime.UTC).isoformat())
+    }
+    found_sections = 0
+    for section in RUNTIME_STATE_PAYLOAD_SECTIONS:
+        section_key = _runtime_state_redis_section_key(section)
+        try:
+            section_raw = redis_client.get(section_key)
+        except Exception:
+            section_raw = None
+        if isinstance(section_raw, bytes):
+            section_raw = section_raw.decode("utf-8")
+        if not isinstance(section_raw, str) or not section_raw.strip():
+            continue
+        try:
+            payload[section] = json.loads(section_raw)
+            found_sections += 1
+        except Exception:
+            continue
+    if found_sections == 0 or "fake_users_db" not in payload:
+        return None
+    return payload
+
+
+def _write_runtime_state_to_redis_segmented(redis_client: Any, payload: Dict[str, Any]) -> bool:
+    try:
+        meta_payload = {
+            "version": "segmented_v1",
+            "generated_at": payload.get("generated_at") or datetime.datetime.now(datetime.UTC).isoformat(),
+        }
+        redis_client.set(_runtime_state_redis_meta_key(), json.dumps(meta_payload, ensure_ascii=True))
+        for section in RUNTIME_STATE_PAYLOAD_SECTIONS:
+            section_value = payload.get(section)
+            section_key = _runtime_state_redis_section_key(section)
+            redis_client.set(section_key, json.dumps(section_value, ensure_ascii=True))
+            section_ttl = _runtime_state_redis_section_ttl_seconds(section)
+            if section_ttl > 0:
+                redis_client.expire(section_key, section_ttl)
+        return True
+    except Exception:
+        return False
+
+
 def _read_runtime_state_snapshot_payload() -> Optional[Dict[str, Any]]:
     backend_mode = _runtime_state_backend_mode()
 
     if backend_mode in {"redis", "hybrid"}:
         redis_client = _get_runtime_state_redis_client()
         if redis_client is not None:
+            if _runtime_state_is_segmented_redis_enabled():
+                segmented_payload = _read_runtime_state_from_redis_segmented(redis_client)
+                if isinstance(segmented_payload, dict):
+                    return segmented_payload
             try:
                 payload_raw = redis_client.get(AUTH_RUNTIME_STATE_REDIS_KEY)
                 if isinstance(payload_raw, bytes):
@@ -603,11 +749,14 @@ def _write_runtime_state_snapshot_payload(payload: Dict[str, Any]) -> None:
     if backend_mode in {"redis", "hybrid"}:
         redis_client = _get_runtime_state_redis_client()
         if redis_client is not None:
-            try:
-                redis_client.set(AUTH_RUNTIME_STATE_REDIS_KEY, serialized_payload)
-                wrote_redis = True
-            except Exception:
-                wrote_redis = False
+            if _runtime_state_is_segmented_redis_enabled():
+                wrote_redis = _write_runtime_state_to_redis_segmented(redis_client, payload)
+            if not wrote_redis:
+                try:
+                    redis_client.set(AUTH_RUNTIME_STATE_REDIS_KEY, serialized_payload)
+                    wrote_redis = True
+                except Exception:
+                    wrote_redis = False
 
     snapshot_path = os.path.abspath(AUTH_RUNTIME_STATE_SNAPSHOT_PATH) if AUTH_RUNTIME_STATE_SNAPSHOT_PATH else ""
     should_write_file = backend_mode in {"file", "hybrid"} or (backend_mode == "redis" and not wrote_redis)
@@ -622,31 +771,7 @@ def _write_runtime_state_snapshot_payload(payload: Dict[str, Any]) -> None:
 def _persist_runtime_state_snapshot() -> None:
     if not AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED:
         return
-    payload = {
-        "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
-        "fake_users_db": _to_json_compatible(fake_users_db),
-        "refresh_token_sessions": _to_json_compatible(refresh_token_sessions),
-        "refresh_tokens_by_user": {
-            email: sorted(tokens)
-            for email, tokens in refresh_tokens_by_user.items()
-        },
-        "revoked_refresh_tokens": sorted(revoked_refresh_tokens),
-        "security_events_by_user": {
-            email: [_to_json_compatible(event) for event in events]
-            for email, events in security_events_by_user.items()
-        },
-        "login_attempts_by_ip": {
-            ip: [_to_json_compatible(timestamp) for timestamp in attempts]
-            for ip, attempts in login_attempts_by_ip.items()
-        },
-        "security_alert_cooldowns_by_user": _to_json_compatible(security_alert_cooldowns_by_user),
-        "security_alert_dispatch_log": {
-            email: [_to_json_compatible(item) for item in items]
-            for email, items in security_alert_dispatch_log.items()
-        },
-        "security_alert_deliveries_by_id": _to_json_compatible(security_alert_deliveries_by_id),
-        "security_push_tokens_by_user": _to_json_compatible(security_push_tokens_by_user),
-    }
+    payload = _build_runtime_state_payload()
     try:
         with runtime_state_snapshot_lock:
             _write_runtime_state_snapshot_payload(payload)
@@ -799,7 +924,180 @@ def _load_runtime_state_snapshot() -> None:
         )
 
 
+def _extract_runtime_item_timestamp(value: Any) -> Optional[datetime.datetime]:
+    if isinstance(value, datetime.datetime):
+        return _to_utc_datetime(value)
+    if isinstance(value, str):
+        return _parse_iso_datetime(value)
+    return None
+
+
+def _run_runtime_state_cleanup_cycle(now_utc: Optional[datetime.datetime] = None) -> bool:
+    current_time = now_utc or datetime.datetime.now(datetime.UTC)
+    did_change = False
+
+    refresh_revoked_cutoff = current_time - datetime.timedelta(days=AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS)
+    for jti, session in list(refresh_token_sessions.items()):
+        expires_at = _to_utc_datetime(session.get("expires_at"))
+        revoked_at = _to_utc_datetime(session.get("revoked_at"))
+        should_remove = False
+        if expires_at and expires_at <= current_time:
+            should_remove = True
+        elif revoked_at and revoked_at <= refresh_revoked_cutoff:
+            should_remove = True
+        if should_remove:
+            refresh_token_sessions.pop(jti, None)
+            revoked_refresh_tokens.discard(jti)
+            did_change = True
+
+    for email, token_set in list(refresh_tokens_by_user.items()):
+        valid_tokens = {
+            token_id
+            for token_id in token_set
+            if token_id in refresh_token_sessions
+            and _to_utc_datetime(refresh_token_sessions[token_id].get("revoked_at")) is None
+        }
+        if valid_tokens != set(token_set):
+            did_change = True
+        if valid_tokens:
+            refresh_tokens_by_user[email] = valid_tokens
+        else:
+            refresh_tokens_by_user.pop(email, None)
+            did_change = True
+
+    stale_revoked = {token_id for token_id in revoked_refresh_tokens if token_id not in refresh_token_sessions}
+    if stale_revoked:
+        revoked_refresh_tokens.difference_update(stale_revoked)
+        did_change = True
+
+    event_cutoff = current_time - datetime.timedelta(days=AUTH_RUNTIME_RETENTION_EVENTS_DAYS)
+    for email, events in list(security_events_by_user.items()):
+        filtered_events = deque(
+            [event for event in events if event.occurred_at >= event_cutoff],
+            maxlen=200,
+        )
+        if len(filtered_events) != len(events):
+            did_change = True
+        if filtered_events:
+            security_events_by_user[email] = filtered_events
+        else:
+            security_events_by_user.pop(email, None)
+            did_change = True
+
+    login_ip_cutoff = current_time - datetime.timedelta(seconds=LOGIN_IP_WINDOW_SECONDS)
+    for ip, attempts in list(login_attempts_by_ip.items()):
+        while attempts and attempts[0] < login_ip_cutoff:
+            attempts.popleft()
+            did_change = True
+        if not attempts:
+            login_attempts_by_ip.pop(ip, None)
+            did_change = True
+
+    cooldown_cutoff = current_time - datetime.timedelta(minutes=AUTH_SECURITY_ALERT_COOLDOWN_MINUTES)
+    for email, cooldowns in list(security_alert_cooldowns_by_user.items()):
+        for key, timestamp in list(cooldowns.items()):
+            if timestamp < cooldown_cutoff:
+                cooldowns.pop(key, None)
+                did_change = True
+        if not cooldowns:
+            security_alert_cooldowns_by_user.pop(email, None)
+            did_change = True
+
+    dispatch_cutoff = current_time - datetime.timedelta(days=AUTH_RUNTIME_RETENTION_DISPATCH_DAYS)
+    for email, dispatch_items in list(security_alert_dispatch_log.items()):
+        filtered_dispatch = deque(maxlen=100)
+        for item in dispatch_items:
+            if not isinstance(item, dict):
+                continue
+            anchor = _extract_runtime_item_timestamp(item.get("last_receipt_at")) or _extract_runtime_item_timestamp(
+                item.get("occurred_at")
+            )
+            if anchor is None or anchor >= dispatch_cutoff:
+                filtered_dispatch.append(item)
+        if len(filtered_dispatch) != len(dispatch_items):
+            did_change = True
+        if filtered_dispatch:
+            security_alert_dispatch_log[email] = filtered_dispatch
+        else:
+            security_alert_dispatch_log.pop(email, None)
+            did_change = True
+
+    delivery_cutoff = current_time - datetime.timedelta(days=AUTH_RUNTIME_RETENTION_DELIVERIES_DAYS)
+    for dispatch_id, delivery in list(security_alert_deliveries_by_id.items()):
+        if not isinstance(delivery, dict):
+            security_alert_deliveries_by_id.pop(dispatch_id, None)
+            did_change = True
+            continue
+        anchor = _extract_runtime_item_timestamp(delivery.get("last_receipt_at")) or _extract_runtime_item_timestamp(
+            delivery.get("occurred_at")
+        )
+        if anchor is not None and anchor < delivery_cutoff:
+            security_alert_deliveries_by_id.pop(dispatch_id, None)
+            did_change = True
+
+    revoked_push_cutoff = current_time - datetime.timedelta(days=AUTH_RUNTIME_RETENTION_PUSH_REVOKED_DAYS)
+    for email, push_tokens in list(security_push_tokens_by_user.items()):
+        for token_value, record in list(push_tokens.items()):
+            if not isinstance(record, dict):
+                push_tokens.pop(token_value, None)
+                did_change = True
+                continue
+            revoked_at = _to_utc_datetime(record.get("revoked_at"))
+            if revoked_at and revoked_at < revoked_push_cutoff:
+                push_tokens.pop(token_value, None)
+                did_change = True
+        if not push_tokens:
+            security_push_tokens_by_user.pop(email, None)
+            did_change = True
+
+    return did_change
+
+
+def _runtime_cleanup_loop() -> None:
+    while not runtime_cleanup_stop_event.wait(AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS):
+        if not AUTH_RUNTIME_CLEANUP_ENABLED:
+            continue
+        try:
+            with runtime_state_snapshot_lock:
+                changed = _run_runtime_state_cleanup_cycle()
+                if changed and AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED:
+                    payload = _build_runtime_state_payload()
+                    _write_runtime_state_snapshot_payload(payload)
+        except Exception:
+            continue
+
+
 _load_runtime_state_snapshot()
+
+
+@app.on_event("startup")
+def start_runtime_cleanup_worker() -> None:
+    global runtime_cleanup_thread
+    runtime_cleanup_stop_event.clear()
+    if AUTH_RUNTIME_CLEANUP_ENABLED:
+        try:
+            with runtime_state_snapshot_lock:
+                changed = _run_runtime_state_cleanup_cycle()
+                if changed and AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED:
+                    payload = _build_runtime_state_payload()
+                    _write_runtime_state_snapshot_payload(payload)
+        except Exception:
+            pass
+    if runtime_cleanup_thread and runtime_cleanup_thread.is_alive():
+        return
+    runtime_cleanup_thread = threading.Thread(
+        target=_runtime_cleanup_loop,
+        name="auth-runtime-cleanup",
+        daemon=True,
+    )
+    runtime_cleanup_thread.start()
+
+
+@app.on_event("shutdown")
+def stop_runtime_cleanup_worker() -> None:
+    runtime_cleanup_stop_event.set()
+    if runtime_cleanup_thread and runtime_cleanup_thread.is_alive():
+        runtime_cleanup_thread.join(timeout=1.0)
 
 
 def get_user_record(email: str) -> Optional[Dict[str, Any]]:
