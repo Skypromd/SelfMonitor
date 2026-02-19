@@ -22,6 +22,9 @@ Applies to `nginx-gateway` entrypoint in `docker-compose.yml` and all `/api/*` r
    - `X-Frame-Options: DENY`
    - `X-Content-Type-Options: nosniff`
    - `Referrer-Policy: strict-origin-when-cross-origin`
+6. **WAF observability**
+   - Structured JSON gateway logs include WAF reason fields.
+   - Promtail extracts WAF labels for Loki/Grafana triage.
 
 ## Operational guidance
 
@@ -29,6 +32,7 @@ Applies to `nginx-gateway` entrypoint in `docker-compose.yml` and all `/api/*` r
 - Keep allow-list exceptions minimal and time-bound.
 - Treat repeated `403`/`429` spikes as potential abuse indicators and review source IP/user-agent clusters.
 - Couple gateway data with auth security events for correlated incident response.
+- Use `docs/observability/WAF_MONITORING_AND_ALERTS.md` for dashboard queries and alert handling.
 
 ## Change management
 

@@ -39,3 +39,28 @@ groups:
           summary: "API p95 latency is above SLO"
           description: "P95 latency has been above 800ms for 10 minutes."
 
+  - name: fintech-security-edge
+    rules:
+      - alert: FintechApiHigh429Rate
+        expr: |
+          (
+            sum(rate(http_requests_total{job="fintech-app",status="429"}[5m]))
+            /
+            clamp_min(sum(rate(http_requests_total{job="fintech-app"}[5m])), 1)
+          ) > 0.03
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 429 response ratio is elevated"
+          description: "429 responses are above 3% over 10 minutes. Correlate with WAF/rate-limit logs in Loki."
+
+      - alert: FintechApiHigh403Volume
+        expr: sum(rate(http_requests_total{job="fintech-app",status="403"}[5m])) > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 403 volume spike detected"
+          description: "403 responses are above baseline for 10 minutes. Review potential abuse and false positives."
+

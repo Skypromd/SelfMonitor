@@ -8,6 +8,7 @@ import io
 import json
 import os
 import secrets
+import threading
 import time
 import uuid
 
@@ -136,6 +137,15 @@ AUTH_MOBILE_ATTESTATION_REQUIRE_RECENT_AUTH = _parse_bool_env(
 )
 MOBILE_ATTESTATION_HEADER = "x-selfmonitor-mobile-attestation"
 MOBILE_INSTALLATION_ID_HEADER = "x-selfmonitor-mobile-installation-id"
+AUTH_LEGAL_CURRENT_VERSION = os.getenv("AUTH_LEGAL_CURRENT_VERSION", "2026-Q1").strip() or "2026-Q1"
+AUTH_LEGAL_TERMS_URL = os.getenv("AUTH_LEGAL_TERMS_URL", "/terms").strip() or "/terms"
+AUTH_LEGAL_EULA_URL = os.getenv("AUTH_LEGAL_EULA_URL", "/eula").strip() or "/eula"
+AUTH_REQUIRE_LEGAL_ACCEPTANCE = _parse_bool_env("AUTH_REQUIRE_LEGAL_ACCEPTANCE", False)
+AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED = _parse_bool_env("AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED", True)
+AUTH_RUNTIME_STATE_SNAPSHOT_PATH = os.getenv(
+    "AUTH_RUNTIME_STATE_SNAPSHOT_PATH",
+    "/tmp/selfmonitor-auth-runtime-state.json",
+).strip()
 
 app = FastAPI(
     title="Auth Service",
@@ -237,6 +247,8 @@ class User(BaseModel):
     email_verified: bool = False
     locked_until: Optional[datetime.datetime] = None
     last_login_at: Optional[datetime.datetime] = None
+    legal_accepted_version: Optional[str] = None
+    legal_accepted_at: Optional[datetime.datetime] = None
 
 
 class Token(BaseModel):
@@ -311,6 +323,12 @@ class SecurityStateResponse(BaseModel):
     locked_until: Optional[datetime.datetime]
     last_login_at: Optional[datetime.datetime]
     password_changed_at: Optional[datetime.datetime]
+    legal_current_version: str
+    legal_terms_url: str
+    legal_eula_url: str
+    legal_accepted_version: Optional[str]
+    legal_accepted_at: Optional[datetime.datetime]
+    has_accepted_current_legal: bool
 
 
 class SecuritySessionItem(BaseModel):
@@ -393,6 +411,25 @@ class SecurityAlertDeliveriesResponse(BaseModel):
     items: list[Dict[str, Any]]
 
 
+class LegalPolicyCurrentResponse(BaseModel):
+    current_version: str
+    terms_url: str
+    eula_url: str
+    requires_acceptance: bool
+
+
+class LegalPolicyAcceptRequest(BaseModel):
+    version: str = Field(min_length=2, max_length=64)
+    source: str = Field(default="web", min_length=2, max_length=64)
+
+
+class LegalPolicyAcceptResponse(BaseModel):
+    message: str
+    accepted_version: str
+    accepted_at: datetime.datetime
+    has_accepted_current_legal: bool
+
+
 # --- "Database" ---
 
 def _build_user_record(*, email: str, hashed_password: str, is_admin: bool, email_verified: bool) -> Dict[str, Any]:
@@ -413,6 +450,8 @@ def _build_user_record(*, email: str, hashed_password: str, is_admin: bool, emai
             "email_verification_code_hash": None,
             "email_verification_expires_at": None,
             "email_verification_attempts": 0,
+            "legal_accepted_version": None,
+            "legal_accepted_at": None,
         },
         "hashed_password": hashed_password,
     }
@@ -435,6 +474,230 @@ security_alert_cooldowns_by_user: Dict[str, Dict[str, datetime.datetime]] = defa
 security_alert_dispatch_log: Dict[str, deque[Dict[str, Any]]] = defaultdict(lambda: deque(maxlen=100))
 security_alert_deliveries_by_id: Dict[str, Dict[str, Any]] = {}
 security_push_tokens_by_user: Dict[str, Dict[str, Dict[str, Any]]] = defaultdict(dict)
+runtime_state_snapshot_lock = threading.Lock()
+
+
+def _to_json_compatible(value: Any) -> Any:
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, SecurityEvent):
+        return value.model_dump(mode="json")
+    if isinstance(value, dict):
+        return {str(key): _to_json_compatible(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, deque)):
+        return [_to_json_compatible(item) for item in value]
+    return value
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime.datetime]:
+    if isinstance(value, datetime.datetime):
+        return _to_utc_datetime(value)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return _to_utc_datetime(parsed)
+
+
+def _hydrate_datetime_fields(record: Dict[str, Any], fields: list[str]) -> Dict[str, Any]:
+    hydrated = dict(record)
+    for field in fields:
+        hydrated[field] = _parse_iso_datetime(hydrated.get(field))
+    return hydrated
+
+
+def _persist_runtime_state_snapshot() -> None:
+    if not AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED or not AUTH_RUNTIME_STATE_SNAPSHOT_PATH:
+        return
+    snapshot_path = os.path.abspath(AUTH_RUNTIME_STATE_SNAPSHOT_PATH)
+    payload = {
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+        "fake_users_db": _to_json_compatible(fake_users_db),
+        "refresh_token_sessions": _to_json_compatible(refresh_token_sessions),
+        "refresh_tokens_by_user": {
+            email: sorted(tokens)
+            for email, tokens in refresh_tokens_by_user.items()
+        },
+        "revoked_refresh_tokens": sorted(revoked_refresh_tokens),
+        "security_events_by_user": {
+            email: [_to_json_compatible(event) for event in events]
+            for email, events in security_events_by_user.items()
+        },
+        "login_attempts_by_ip": {
+            ip: [_to_json_compatible(timestamp) for timestamp in attempts]
+            for ip, attempts in login_attempts_by_ip.items()
+        },
+        "security_alert_cooldowns_by_user": _to_json_compatible(security_alert_cooldowns_by_user),
+        "security_alert_dispatch_log": {
+            email: [_to_json_compatible(item) for item in items]
+            for email, items in security_alert_dispatch_log.items()
+        },
+        "security_alert_deliveries_by_id": _to_json_compatible(security_alert_deliveries_by_id),
+        "security_push_tokens_by_user": _to_json_compatible(security_push_tokens_by_user),
+    }
+    try:
+        with runtime_state_snapshot_lock:
+            directory = os.path.dirname(snapshot_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(snapshot_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=True)
+    except Exception:
+        # Snapshot durability is best-effort and must not break auth availability.
+        return
+
+
+def _load_runtime_state_snapshot() -> None:
+    if not AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED or not AUTH_RUNTIME_STATE_SNAPSHOT_PATH:
+        return
+    snapshot_path = os.path.abspath(AUTH_RUNTIME_STATE_SNAPSHOT_PATH)
+    if not os.path.exists(snapshot_path):
+        return
+    try:
+        with runtime_state_snapshot_lock:
+            with open(snapshot_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+    except Exception:
+        return
+    if not isinstance(payload, dict):
+        return
+
+    users_payload = payload.get("fake_users_db", {})
+    if isinstance(users_payload, dict):
+        fake_users_db.clear()
+        for email, user_record in users_payload.items():
+            if not isinstance(user_record, dict):
+                continue
+            user_data = user_record.get("user_data", {})
+            if not isinstance(user_data, dict):
+                continue
+            hydrated_user_data = _hydrate_datetime_fields(
+                user_data,
+                [
+                    "locked_until",
+                    "last_login_at",
+                    "password_changed_at",
+                    "email_verification_expires_at",
+                    "legal_accepted_at",
+                ],
+            )
+            fake_users_db[_normalize_email(str(email))] = {
+                "user_data": hydrated_user_data,
+                "hashed_password": str(user_record.get("hashed_password", "")),
+            }
+
+    refresh_sessions_payload = payload.get("refresh_token_sessions", {})
+    if isinstance(refresh_sessions_payload, dict):
+        refresh_token_sessions.clear()
+        for jti, session in refresh_sessions_payload.items():
+            if not isinstance(session, dict):
+                continue
+            hydrated_session = _hydrate_datetime_fields(
+                session,
+                ["issued_at", "expires_at", "revoked_at"],
+            )
+            refresh_token_sessions[str(jti)] = hydrated_session
+
+    refresh_by_user_payload = payload.get("refresh_tokens_by_user", {})
+    refresh_tokens_by_user.clear()
+    if isinstance(refresh_by_user_payload, dict):
+        for email, token_values in refresh_by_user_payload.items():
+            if isinstance(token_values, list):
+                refresh_tokens_by_user[_normalize_email(str(email))].update(
+                    {str(item) for item in token_values if str(item).strip()}
+                )
+
+    revoked_payload = payload.get("revoked_refresh_tokens", [])
+    revoked_refresh_tokens.clear()
+    if isinstance(revoked_payload, list):
+        revoked_refresh_tokens.update({str(item) for item in revoked_payload if str(item).strip()})
+
+    events_payload = payload.get("security_events_by_user", {})
+    security_events_by_user.clear()
+    if isinstance(events_payload, dict):
+        for email, events in events_payload.items():
+            queue: deque[SecurityEvent] = deque(maxlen=200)
+            if isinstance(events, list):
+                for event_payload in events:
+                    if not isinstance(event_payload, dict):
+                        continue
+                    try:
+                        queue.append(SecurityEvent.model_validate(event_payload))
+                    except ValidationError:
+                        continue
+            security_events_by_user[_normalize_email(str(email))] = queue
+
+    login_attempts_payload = payload.get("login_attempts_by_ip", {})
+    login_attempts_by_ip.clear()
+    if isinstance(login_attempts_payload, dict):
+        for ip, timestamps in login_attempts_payload.items():
+            queue: deque[datetime.datetime] = deque()
+            if isinstance(timestamps, list):
+                for timestamp in timestamps:
+                    parsed = _parse_iso_datetime(timestamp)
+                    if parsed:
+                        queue.append(parsed)
+            login_attempts_by_ip[str(ip)] = queue
+
+    cooldowns_payload = payload.get("security_alert_cooldowns_by_user", {})
+    security_alert_cooldowns_by_user.clear()
+    if isinstance(cooldowns_payload, dict):
+        for email, cooldown_map in cooldowns_payload.items():
+            if not isinstance(cooldown_map, dict):
+                continue
+            hydrated_map: Dict[str, datetime.datetime] = {}
+            for key, value in cooldown_map.items():
+                parsed = _parse_iso_datetime(value)
+                if parsed:
+                    hydrated_map[str(key)] = parsed
+            security_alert_cooldowns_by_user[_normalize_email(str(email))] = hydrated_map
+
+    dispatch_payload = payload.get("security_alert_dispatch_log", {})
+    security_alert_dispatch_log.clear()
+    if isinstance(dispatch_payload, dict):
+        for email, deliveries in dispatch_payload.items():
+            queue: deque[Dict[str, Any]] = deque(maxlen=100)
+            if isinstance(deliveries, list):
+                for item in deliveries:
+                    if isinstance(item, dict):
+                        queue.append(item)
+            security_alert_dispatch_log[_normalize_email(str(email))] = queue
+
+    deliveries_by_id_payload = payload.get("security_alert_deliveries_by_id", {})
+    security_alert_deliveries_by_id.clear()
+    if isinstance(deliveries_by_id_payload, dict):
+        for dispatch_id, item in deliveries_by_id_payload.items():
+            if isinstance(item, dict):
+                security_alert_deliveries_by_id[str(dispatch_id)] = item
+
+    push_tokens_payload = payload.get("security_push_tokens_by_user", {})
+    security_push_tokens_by_user.clear()
+    if isinstance(push_tokens_payload, dict):
+        for email, token_map in push_tokens_payload.items():
+            if not isinstance(token_map, dict):
+                continue
+            hydrated_token_map: Dict[str, Dict[str, Any]] = {}
+            for token_value, token_record in token_map.items():
+                if not isinstance(token_record, dict):
+                    continue
+                hydrated_token_map[str(token_value)] = _hydrate_datetime_fields(
+                    token_record,
+                    ["registered_at", "last_used_at", "revoked_at"],
+                )
+            security_push_tokens_by_user[_normalize_email(str(email))] = hydrated_token_map
+
+    if "admin@example.com" not in fake_users_db:
+        fake_users_db["admin@example.com"] = _build_user_record(
+            email="admin@example.com",
+            hashed_password=get_password_hash("admin_password"),
+            is_admin=True,
+            email_verified=True,
+        )
+
+
+_load_runtime_state_snapshot()
 
 
 def get_user_record(email: str) -> Optional[Dict[str, Any]]:
@@ -946,6 +1209,7 @@ def _append_security_event(
             event.details["risk_alert_delivery"] = alert_delivery
     except Exception as exc:  # pragma: no cover - defensive guard
         event.details["risk_alert_delivery_error"] = _truncate_text(str(exc))
+    _persist_runtime_state_snapshot()
 
 
 def _validate_password_policy(password: str, email: str) -> None:
@@ -971,6 +1235,13 @@ def _validate_password_policy(password: str, email: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password is too common.",
         )
+
+
+def _has_accepted_current_legal(user_record: Dict[str, Any]) -> bool:
+    user_data = user_record.get("user_data", {})
+    accepted_version = str(user_data.get("legal_accepted_version") or "").strip()
+    accepted_at = _to_utc_datetime(user_data.get("legal_accepted_at"))
+    return accepted_version == AUTH_LEGAL_CURRENT_VERSION and accepted_at is not None
 
 
 def _extract_totp_code(scopes: list[str]) -> Optional[str]:
@@ -1051,6 +1322,7 @@ def _revoke_refresh_token_jti(jti: str, *, reason: str) -> None:
     email = _normalize_email(str(session.get("email", "")))
     if email:
         refresh_tokens_by_user[email].discard(jti)
+    _persist_runtime_state_snapshot()
 
 
 def _revoke_all_refresh_tokens_for_user(email: str, *, reason: str) -> None:
@@ -1092,6 +1364,7 @@ def _issue_token_pair(email: str, request: Optional[Request]) -> Token:
         "user_agent": request.headers.get("user-agent") if request else None,
     }
     refresh_tokens_by_user[normalized_email].add(refresh_jti)
+    _persist_runtime_state_snapshot()
     return Token(
         access_token=access_token,
         token_type="bearer",
@@ -1200,9 +1473,21 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     return user
 
 
-async def get_current_active_user(current_user: Annotated[User, Depends(get_current_user)]):
+async def get_current_active_user(
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     if not current_user.is_active:
         raise HTTPException(status_code=401, detail="Inactive user", headers={"WWW-Authenticate": "Bearer"})
+    if AUTH_REQUIRE_LEGAL_ACCEPTANCE and not request.url.path.startswith("/legal"):
+        user_record = get_user_record(current_user.email)
+        if not user_record:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
+        if not _has_accepted_current_legal(user_record):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Legal terms acceptance is required before continuing.",
+            )
     return current_user
 
 
@@ -1608,6 +1893,54 @@ async def confirm_email_verification(
     )
 
 
+@app.get("/legal/current", response_model=LegalPolicyCurrentResponse)
+async def get_current_legal_policy():
+    return LegalPolicyCurrentResponse(
+        current_version=AUTH_LEGAL_CURRENT_VERSION,
+        terms_url=AUTH_LEGAL_TERMS_URL,
+        eula_url=AUTH_LEGAL_EULA_URL,
+        requires_acceptance=AUTH_REQUIRE_LEGAL_ACCEPTANCE,
+    )
+
+
+@app.post("/legal/accept", response_model=LegalPolicyAcceptResponse)
+async def accept_current_legal_policy(
+    payload: LegalPolicyAcceptRequest,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    user_record = get_user_record(current_user.email)
+    if not user_record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    requested_version = payload.version.strip()
+    if requested_version != AUTH_LEGAL_CURRENT_VERSION:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Requested legal version '{requested_version}' is not current. "
+                f"Current version is '{AUTH_LEGAL_CURRENT_VERSION}'."
+            ),
+        )
+    accepted_at = datetime.datetime.now(datetime.UTC)
+    user_record["user_data"]["legal_accepted_version"] = AUTH_LEGAL_CURRENT_VERSION
+    user_record["user_data"]["legal_accepted_at"] = accepted_at
+    _append_security_event(
+        email=current_user.email,
+        event_type="auth.legal_terms_accepted",
+        request=request,
+        details={
+            "version": AUTH_LEGAL_CURRENT_VERSION,
+            "source": payload.source.strip().lower(),
+        },
+    )
+    return LegalPolicyAcceptResponse(
+        message="Legal terms accepted.",
+        accepted_version=AUTH_LEGAL_CURRENT_VERSION,
+        accepted_at=accepted_at,
+        has_accepted_current_legal=True,
+    )
+
+
 @app.get("/security/events", response_model=SecurityEventsResponse)
 async def list_security_events(
     current_user: Annotated[User, Depends(get_current_active_user)],
@@ -1892,6 +2225,8 @@ async def ingest_security_alert_delivery_receipt(request: Request):
                 "status": payload.status,
             },
         )
+    else:
+        _persist_runtime_state_snapshot()
     return SecurityAlertDeliveryReceiptResponse(
         message="Delivery receipt processed.",
         dispatch_id=payload.dispatch_id,
@@ -1906,6 +2241,8 @@ async def get_security_state(current_user: Annotated[User, Depends(get_current_a
     if not user_record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     user_data = user_record["user_data"]
+    legal_accepted_version = str(user_data.get("legal_accepted_version") or "").strip() or None
+    legal_accepted_at = _to_utc_datetime(user_data.get("legal_accepted_at"))
     return SecurityStateResponse(
         email=normalized_email,
         email_verified=bool(user_data.get("email_verified", False)),
@@ -1915,6 +2252,14 @@ async def get_security_state(current_user: Annotated[User, Depends(get_current_a
         locked_until=_to_utc_datetime(user_data.get("locked_until")),
         last_login_at=_to_utc_datetime(user_data.get("last_login_at")),
         password_changed_at=_to_utc_datetime(user_data.get("password_changed_at")),
+        legal_current_version=AUTH_LEGAL_CURRENT_VERSION,
+        legal_terms_url=AUTH_LEGAL_TERMS_URL,
+        legal_eula_url=AUTH_LEGAL_EULA_URL,
+        legal_accepted_version=legal_accepted_version,
+        legal_accepted_at=legal_accepted_at,
+        has_accepted_current_legal=(
+            legal_accepted_version == AUTH_LEGAL_CURRENT_VERSION and legal_accepted_at is not None
+        ),
     )
 
 

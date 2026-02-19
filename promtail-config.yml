@@ -17,6 +17,21 @@ scrape_configs:
           job: containerlogs
     pipeline_stages:
       - docker: {}
+      - match:
+          selector: '{container="nginx-gateway"}'
+          stages:
+            - json:
+                expressions:
+                  status: status
+                  waf_bad_ua: waf_bad_ua
+                  waf_bad_uri: waf_bad_uri
+                  waf_block_reason: waf_block_reason
+                  request_uri: request_uri
+            - labels:
+                status:
+                waf_bad_ua:
+                waf_bad_uri:
+                waf_block_reason:
     relabel_configs:
       - source_labels: ['__meta_docker_container_name']
         regex: '/(.*)'

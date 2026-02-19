@@ -38,6 +38,30 @@ class CheckResult:
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+
+def _resolve_pytest_node_id(*, test_file: str, candidates: list[str]) -> str:
+    """Pick the first existing pytest node id by inspecting the test file."""
+    absolute_path = REPO_ROOT / test_file
+    if not absolute_path.exists():
+        return f"{test_file}::{candidates[0]}"
+    try:
+        contents = absolute_path.read_text(encoding="utf-8")
+    except OSError:
+        return f"{test_file}::{candidates[0]}"
+    for candidate in candidates:
+        if f"def {candidate}(" in contents:
+            return f"{test_file}::{candidate}"
+    return f"{test_file}::{candidates[0]}"
+
+
+AUTH_LOGIN_SMOKE_NODE_ID = _resolve_pytest_node_id(
+    test_file="services/auth-service/tests/test_main.py",
+    candidates=[
+        "test_login_and_get_me_returns_token_pair",
+        "test_login_and_get_me",
+    ],
+)
+
 BACKEND_CHECKS: list[Check] = [
     Check(
         id="auth_login",
@@ -47,7 +71,7 @@ BACKEND_CHECKS: list[Check] = [
             "-m",
             "pytest",
             "-q",
-            "services/auth-service/tests/test_main.py::test_login_and_get_me",
+            AUTH_LOGIN_SMOKE_NODE_ID,
         ],
     ),
     Check(

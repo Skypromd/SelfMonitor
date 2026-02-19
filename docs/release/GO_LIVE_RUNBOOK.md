@@ -116,6 +116,9 @@ Before broad release and partner onboarding:
    - Web/mobile legal routes are reachable:
      - `/terms`
      - `/eula`
+   - auth legal policy endpoints work:
+     - `GET /auth/legal/current`
+     - `POST /auth/legal/accept`
 2. Export attribution controls:
    - export watermarking is enabled (`PARTNER_EXPORT_WATERMARK_ENABLED=true`);
    - export headers are present (`X-SelfMonitor-Export-Watermark`) on CSV/PDF downloads.
@@ -124,6 +127,7 @@ Before broad release and partner onboarding:
      - global API rate limit;
      - stricter auth burst control (`/api/auth/token`, `/api/auth/register`);
      - suspicious scanner/path signatures are blocked with `403`.
+   - structured WAF logs are observable in Loki and 403/429 alerts are wired.
 4. Mobile attestation gate:
    - mobile attestation is enabled (`AUTH_MOBILE_ATTESTATION_ENABLED=true`);
    - sensitive mobile endpoints require attestation headers:

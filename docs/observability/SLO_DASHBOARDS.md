@@ -38,6 +38,10 @@ Create one dashboard per environment (`dev`, `staging`, `prod`) with these panel
 5. **System pressure**
    - CPU and memory per service.
    - Restart count / container health trend.
+6. **Edge security / WAF**
+   - 403/429 trends from gateway logs.
+   - WAF block reasons (`bad_user_agent_signature`, `bad_uri_signature`).
+   - Top blocked paths and request patterns.
 
 ## 3. Alerting policy
 
@@ -47,10 +51,14 @@ Prometheus rule file:
 Alert severities:
 - `critical`: service down (`FintechServiceDown`)
 - `warning`: SLO burn-risk (`FintechApiHighErrorRate`, `FintechApiHighP95Latency`)
+- `warning`: edge abuse indicators (`FintechApiHigh429Rate`, `FintechApiHigh403Volume`)
 
 Routing recommendations:
 - `critical` -> paging channel (on-call)
 - `warning` -> engineering Slack + incident triage board
+
+Detailed WAF monitoring queries and triage:
+- `docs/observability/WAF_MONITORING_AND_ALERTS.md`
 
 ## 3.1 HMRC MTD reliability SLO overlay
 

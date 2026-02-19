@@ -53,4 +53,7 @@ Related docs:
 - [ ] Verify auth/JWT checks are active on protected endpoints.
 - [ ] Confirm audit events are being produced for security-relevant actions.
 - [ ] Ensure dependency updates do not introduce known critical CVEs.
+- [ ] Confirm current legal policy version (`AUTH_LEGAL_CURRENT_VERSION`) is published and acceptance endpoint works.
+- [ ] Confirm auth runtime snapshot durability is enabled in target environment.
+- [ ] Confirm WAF observability dashboards/alerts are active (`docs/observability/WAF_MONITORING_AND_ALERTS.md`).
 

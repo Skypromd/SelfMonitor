@@ -170,6 +170,42 @@ paths:
                 $ref: '#/components/schemas/HTTPValidationError'
       security:
       - OAuth2PasswordBearer: []
+  /legal/current:
+    get:
+      summary: Get Current Legal Policy
+      operationId: get_current_legal_policy_legal_current_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalPolicyCurrentResponse'
+  /legal/accept:
+    post:
+      summary: Accept Current Legal Policy
+      operationId: accept_current_legal_policy_legal_accept_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalPolicyAcceptRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalPolicyAcceptResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
   /security/events:
     get:
       summary: List Security Events
@@ -763,6 +799,66 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    LegalPolicyAcceptRequest:
+      properties:
+        version:
+          type: string
+          maxLength: 64
+          minLength: 2
+          title: Version
+        source:
+          type: string
+          maxLength: 64
+          minLength: 2
+          title: Source
+          default: web
+      type: object
+      required:
+      - version
+      title: LegalPolicyAcceptRequest
+    LegalPolicyAcceptResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        accepted_version:
+          type: string
+          title: Accepted Version
+        accepted_at:
+          type: string
+          format: date-time
+          title: Accepted At
+        has_accepted_current_legal:
+          type: boolean
+          title: Has Accepted Current Legal
+      type: object
+      required:
+      - message
+      - accepted_version
+      - accepted_at
+      - has_accepted_current_legal
+      title: LegalPolicyAcceptResponse
+    LegalPolicyCurrentResponse:
+      properties:
+        current_version:
+          type: string
+          title: Current Version
+        terms_url:
+          type: string
+          title: Terms Url
+        eula_url:
+          type: string
+          title: Eula Url
+        requires_acceptance:
+          type: boolean
+          title: Requires Acceptance
+      type: object
+      required:
+      - current_version
+      - terms_url
+      - eula_url
+      - requires_acceptance
+      title: LegalPolicyCurrentResponse
     MobileAttestationSessionRequest:
       properties:
         installation_id:
@@ -1127,6 +1223,29 @@ components:
             format: date-time
           - type: 'null'
           title: Password Changed At
+        legal_current_version:
+          type: string
+          title: Legal Current Version
+        legal_terms_url:
+          type: string
+          title: Legal Terms Url
+        legal_eula_url:
+          type: string
+          title: Legal Eula Url
+        legal_accepted_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Accepted Version
+        legal_accepted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Legal Accepted At
+        has_accepted_current_legal:
+          type: boolean
+          title: Has Accepted Current Legal
       type: object
       required:
       - email
@@ -1137,6 +1256,12 @@ components:
       - locked_until
       - last_login_at
       - password_changed_at
+      - legal_current_version
+      - legal_terms_url
+      - legal_eula_url
+      - legal_accepted_version
+      - legal_accepted_at
+      - has_accepted_current_legal
       title: SecurityStateResponse
     Token:
       properties:
@@ -1193,6 +1318,17 @@ components:
             format: date-time
           - type: 'null'
           title: Last Login At
+        legal_accepted_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Accepted Version
+        legal_accepted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Legal Accepted At
       type: object
       required:
       - email

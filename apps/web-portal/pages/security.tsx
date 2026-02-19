@@ -16,8 +16,14 @@ type SecurityState = {
   email: string;
   email_verified: boolean;
   failed_login_attempts: number;
+  has_accepted_current_legal: boolean;
   is_two_factor_enabled: boolean;
   last_login_at: string | null;
+  legal_accepted_at: string | null;
+  legal_accepted_version: string | null;
+  legal_current_version: string;
+  legal_eula_url: string;
+  legal_terms_url: string;
   locked_until: string | null;
   max_failed_login_attempts: number;
   password_changed_at: string | null;
@@ -232,6 +238,7 @@ export default function SecurityPage({
   const [isDeliveryFiltersHydrated, setIsDeliveryFiltersHydrated] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshingSession, setIsRefreshingSession] = useState(false);
+  const [isAcceptingLegal, setIsAcceptingLegal] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -703,6 +710,37 @@ export default function SecurityPage({
     }
   }, [onLogout, token]);
 
+  const handleAcceptLegalTerms = useCallback(async () => {
+    clearNotices();
+    if (!securityState?.legal_current_version) {
+      setError('Legal policy version is unavailable. Refresh security data and retry.');
+      return;
+    }
+    setIsAcceptingLegal(true);
+    try {
+      const response = await fetch(`${AUTH_SERVICE_BASE_URL}/legal/accept`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          version: securityState.legal_current_version,
+          source: 'web_security_center',
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(await getErrorDetail(response, 'Failed to accept legal policy.'));
+      }
+      setMessage(`Legal policy ${securityState.legal_current_version} accepted.`);
+      await Promise.all([fetchSecurityState(), fetchSecurityEvents()]);
+    } catch (acceptError) {
+      setError(acceptError instanceof Error ? acceptError.message : 'Failed to accept legal policy.');
+    } finally {
+      setIsAcceptingLegal(false);
+    }
+  }, [fetchSecurityEvents, fetchSecurityState, securityState, token]);
+
   const stateMetrics = useMemo(
     () => [
       {
@@ -712,6 +750,12 @@ export default function SecurityPage({
       {
         label: '2FA',
         value: securityState?.is_two_factor_enabled ? 'Enabled' : 'Disabled',
+      },
+      {
+        label: 'Legal',
+        value: securityState?.has_accepted_current_legal
+          ? `Accepted ${securityState.legal_current_version}`
+          : `Pending ${securityState?.legal_current_version || 'current version'}`,
       },
       {
         label: 'Failed logins',
@@ -766,6 +810,14 @@ export default function SecurityPage({
         label: '2FA disabled',
         severity: 'attention',
         hint: 'Enable TOTP 2FA to reduce account takeover risk.',
+      });
+    }
+    if (!securityState?.has_accepted_current_legal) {
+      badges.push({
+        id: 'legal_terms_pending',
+        label: 'Legal policy not accepted',
+        severity: 'attention',
+        hint: `Accept legal policy ${securityState?.legal_current_version || 'current'} to finalize policy compliance.`,
       });
     }
     if (securityState?.locked_until) {
@@ -1067,6 +1119,39 @@ export default function SecurityPage({
           </button>
           <button className={`${styles.button} ${styles.dangerButton}`} onClick={() => void handleEmergencyLockdown()} type="button">
             Emergency lock account (30m)
+          </button>
+        </div>
+      </section>
+
+      <section className={styles.subContainer}>
+        <h2>Legal policy acceptance</h2>
+        <p>
+          Current policy version:{' '}
+          <strong>{securityState?.legal_current_version || '—'}</strong> • Terms:{' '}
+          <a className={styles.link} href={securityState?.legal_terms_url || '/terms'} rel="noreferrer" target="_blank">
+            open
+          </a>{' '}
+          • EULA:{' '}
+          <a className={styles.link} href={securityState?.legal_eula_url || '/eula'} rel="noreferrer" target="_blank">
+            open
+          </a>
+        </p>
+        <p className={styles.tableCaption}>
+          Accepted version: {securityState?.legal_accepted_version || 'Not accepted'} • Accepted at:{' '}
+          {formatDateTime(securityState?.legal_accepted_at ?? null)}
+        </p>
+        <div className={styles.adminActionsRow}>
+          <button
+            className={styles.button}
+            disabled={Boolean(securityState?.has_accepted_current_legal) || isAcceptingLegal}
+            onClick={() => void handleAcceptLegalTerms()}
+            type="button"
+          >
+            {securityState?.has_accepted_current_legal
+              ? 'Current legal version accepted'
+              : isAcceptingLegal
+                ? 'Accepting legal version...'
+                : `Accept legal version ${securityState?.legal_current_version || ''}`}
           </button>
         </div>
       </section>

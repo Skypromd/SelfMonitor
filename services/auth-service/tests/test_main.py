@@ -72,6 +72,11 @@ def setup_function() -> None:
     main.AUTH_MOBILE_ATTESTATION_ENABLED = True
     main.AUTH_MOBILE_ATTESTATION_TOKEN_TTL_MINUTES = 10
     main.AUTH_MOBILE_ATTESTATION_REQUIRE_RECENT_AUTH = True
+    main.AUTH_LEGAL_CURRENT_VERSION = "2026-Q1"
+    main.AUTH_LEGAL_TERMS_URL = "/terms"
+    main.AUTH_LEGAL_EULA_URL = "/eula"
+    main.AUTH_REQUIRE_LEGAL_ACCEPTANCE = False
+    main.AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED = False
 
     main.fake_users_db["admin@example.com"] = main._build_user_record(
         email="admin@example.com",
@@ -455,6 +460,38 @@ def test_security_state_and_events_endpoints() -> None:
     events_payload = events_response.json()
     assert events_payload["total"] >= 1
     assert any(item["event_type"] == "auth.login_succeeded" for item in events_payload["items"])
+
+
+def test_legal_policy_current_and_acceptance_flow() -> None:
+    email = "legal-accept@example.com"
+    password = "stronglegalpassword123!"
+    _register(email, password)
+    login_payload = _login(email, password)
+    headers = {"Authorization": f"Bearer {login_payload['access_token']}"}
+
+    current_response = client.get("/legal/current")
+    assert current_response.status_code == 200
+    current_payload = current_response.json()
+    assert current_payload["current_version"] == main.AUTH_LEGAL_CURRENT_VERSION
+    assert current_payload["terms_url"] == main.AUTH_LEGAL_TERMS_URL
+    assert current_payload["eula_url"] == main.AUTH_LEGAL_EULA_URL
+
+    state_before = client.get("/security/state", headers=headers)
+    assert state_before.status_code == 200
+    assert state_before.json()["has_accepted_current_legal"] is False
+
+    accept_response = client.post(
+        "/legal/accept",
+        headers=headers,
+        json={"version": main.AUTH_LEGAL_CURRENT_VERSION, "source": "web_security_center"},
+    )
+    assert accept_response.status_code == 200
+    assert accept_response.json()["has_accepted_current_legal"] is True
+
+    state_after = client.get("/security/state", headers=headers)
+    assert state_after.status_code == 200
+    assert state_after.json()["legal_accepted_version"] == main.AUTH_LEGAL_CURRENT_VERSION
+    assert state_after.json()["has_accepted_current_legal"] is True
 
 
 def test_security_sessions_management_endpoints() -> None:
