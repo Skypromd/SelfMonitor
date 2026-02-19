@@ -1,4 +1,5 @@
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Annotated, Any, Dict, Optional
 import datetime
@@ -173,10 +174,20 @@ AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS = _parse_positive_int_env(
 AUTH_RUNTIME_CLEANUP_ENABLED = _parse_bool_env("AUTH_RUNTIME_CLEANUP_ENABLED", True)
 AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS = _parse_positive_int_env("AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS", 300)
 
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    _start_runtime_cleanup_worker()
+    try:
+        yield
+    finally:
+        _stop_runtime_cleanup_worker()
+
+
 app = FastAPI(
     title="Auth Service",
     description="Handles user authentication, registration, and token management.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=app_lifespan,
 )
 
 # --- Observability ---
@@ -1070,8 +1081,7 @@ def _runtime_cleanup_loop() -> None:
 _load_runtime_state_snapshot()
 
 
-@app.on_event("startup")
-def start_runtime_cleanup_worker() -> None:
+def _start_runtime_cleanup_worker() -> None:
     global runtime_cleanup_thread
     runtime_cleanup_stop_event.clear()
     if AUTH_RUNTIME_CLEANUP_ENABLED:
@@ -1093,8 +1103,7 @@ def start_runtime_cleanup_worker() -> None:
     runtime_cleanup_thread.start()
 
 
-@app.on_event("shutdown")
-def stop_runtime_cleanup_worker() -> None:
+def _stop_runtime_cleanup_worker() -> None:
     runtime_cleanup_stop_event.set()
     if runtime_cleanup_thread and runtime_cleanup_thread.is_alive():
         runtime_cleanup_thread.join(timeout=1.0)
