@@ -1,6 +1,8 @@
 import os
+import json
 import httpx
 from typing import Annotated, Any, Dict, List, Optional
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
@@ -10,6 +12,9 @@ import uuid
 
 # --- Configuration ---
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
+PARTNERS_CATALOG_PATH = Path(
+    os.getenv("PARTNERS_CATALOG_PATH", str(Path(__file__).with_name("partners.json")))
+)
 
 # --- Security ---
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
@@ -64,32 +69,17 @@ class Partner(BaseModel):
     services_offered: List[str]
     website: HttpUrl
 
-# --- "Database" ---
+# --- Partner Catalog ---
+def load_partner_catalog() -> Dict[uuid.UUID, Partner]:
+    with PARTNERS_CATALOG_PATH.open("r", encoding="utf-8") as f:
+        raw_partners = json.load(f)
+    return {
+        uuid.UUID(item["id"]): Partner(**item)
+        for item in raw_partners
+    }
 
-# In-memory partner store for demonstration purposes
-fake_partners_db = {
-    uuid.UUID("1a8a8f69-a1b7-4c13-9a16-9e9f9a2e3f5d"): Partner(
-        id=uuid.UUID("1a8a8f69-a1b7-4c13-9a16-9e9f9a2e3f5d"),
-        name="SafeFuture Financial Advisors",
-        description="Independent financial advisors regulated by the FCA.",
-        services_offered=["pension_advice", "investment_management", "income_protection"],
-        website="https://www.safefuture.example.com"
-    ),
-    uuid.UUID("b4f1f2d5-9c9a-4e1e-b8d4-5b4d7f6c3a1b"): Partner(
-        id=uuid.UUID("b4f1f2d5-9c9a-4e1e-b8d4-5b4d7f6c3a1b"),
-        name="HomePath Mortgages",
-        description="Specialist mortgage brokers for first-time buyers.",
-        services_offered=["mortgage_advice"],
-        website="https://www.homepath.example.com"
-    ),
-    uuid.UUID("c5e3e1d4-8d8a-3d0d-a7c3-4c3d6f5b2a0a"): Partner(
-        id=uuid.UUID("c5e3e1d4-8d8a-3d0d-a7c3-4c3d6f5b2a0a"),
-        name="TaxSolve Accountants",
-        description="Chartered accountants specializing in self-assessment for freelancers.",
-        services_offered=["accounting", "tax_filing"],
-        website="https://www.taxsolve.example.com"
-    )
-}
+
+partners_catalog = load_partner_catalog()
 
 # --- Endpoints ---
 
@@ -102,7 +92,7 @@ async def list_partners(service_type: Optional[str] = Query(None)):
     """
     Lists all available partners, optionally filtering by service type.
     """
-    partners = list(fake_partners_db.values())
+    partners = list(partners_catalog.values())
     if service_type:
         return [
             p for p in partners if service_type in p.services_offered
@@ -114,7 +104,7 @@ async def get_partner_details(partner_id: uuid.UUID):
     """
     Retrieves details for a specific partner by their ID.
     """
-    partner = fake_partners_db.get(partner_id)
+    partner = partners_catalog.get(partner_id)
     if not partner:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner not found")
     return partner
@@ -127,7 +117,7 @@ async def initiate_handoff(
     """
     Initiates a user handoff to a partner and records it as a compliance event.
     """
-    partner = fake_partners_db.get(partner_id)
+    partner = partners_catalog.get(partner_id)
     if not partner:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner not found")
 

@@ -3,13 +3,12 @@ from fastapi.testclient import TestClient
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from app.main import app, fake_users_db
+from app.main import app, get_user_record, reset_auth_db_for_tests, set_user_admin_for_tests
 
 client = TestClient(app)
 
 def setup_function():
-    # Clear the in-memory database before each test
-    fake_users_db.clear()
+    reset_auth_db_for_tests()
 
 def test_register_user_success():
     """
@@ -25,8 +24,11 @@ def test_register_user_success():
     assert data["is_active"] is True
 
     # Check that the password is not stored in plain text
-    assert "password" not in fake_users_db["test@example.com"]
-    assert "hashed_password" in fake_users_db["test@example.com"]
+    user_record = get_user_record("test@example.com")
+    assert user_record is not None
+    assert "password" not in user_record
+    assert "hashed_password" in user_record
+    assert user_record["hashed_password"] != "averysecurepassword"
 
 def test_register_user_already_exists():
     """
@@ -106,7 +108,7 @@ def test_deactivate_user():
     admin_email = "admin@example.com"
     admin_pass = "adminpass"
     client.post("/register", json={"email": admin_email, "password": admin_pass})
-    fake_users_db[admin_email]["user_data"]["is_admin"] = True
+    set_user_admin_for_tests(admin_email, True)
 
     user_email = "user@example.com"
     user_pass = "userpass"

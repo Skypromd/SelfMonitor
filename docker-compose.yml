@@ -64,6 +64,9 @@ services:
     container_name: auth-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      AUTH_DB_PATH: "/data/auth.db"
+    volumes:
+      - auth_data:/data
     # ports are no longer exposed directly
     healthcheck: *fastapi-healthcheck
     networks:
@@ -118,6 +121,9 @@ services:
     environment:
       COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      CONSENT_DB_PATH: "/data/consent.db"
+    volumes:
+      - consent_data:/data
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -299,6 +305,9 @@ services:
     environment:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      ANALYTICS_DB_PATH: "/data/analytics.db"
+    volumes:
+      - analytics_data:/data
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -414,6 +423,9 @@ services:
 
 volumes:
   postgres_data:
+  auth_data:
+  consent_data:
+  analytics_data:
 
 networks:
   default_network:

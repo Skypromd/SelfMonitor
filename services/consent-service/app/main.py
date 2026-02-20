@@ -8,10 +8,14 @@ import uuid
 import datetime
 import httpx
 import os
+import sqlite3
+import threading
+import json
 
 # --- Configuration ---
 # The URL for the compliance service is now read from an environment variable.
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
+CONSENT_DB_PATH = os.getenv("CONSENT_DB_PATH", "/tmp/consent.db")
 
 # --- Security ---
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
@@ -59,11 +63,117 @@ class Consent(BaseModel):
     created_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     updated_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
 
-# --- "Database" ---
+# --- Database ---
+db_lock = threading.Lock()
 
-# In-memory consent store for demonstration purposes
-# Keyed by consent_id
-fake_consents_db: Dict[uuid.UUID, Consent] = {}
+
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(CONSENT_DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _row_to_consent(row: sqlite3.Row) -> Consent:
+    return Consent(
+        id=uuid.UUID(row["id"]),
+        user_id=row["user_id"],
+        connection_id=uuid.UUID(row["connection_id"]),
+        status=row["status"],
+        provider=row["provider"],
+        scopes=json.loads(row["scopes_json"]),
+        created_at=datetime.datetime.fromisoformat(row["created_at"]),
+        updated_at=datetime.datetime.fromisoformat(row["updated_at"]),
+    )
+
+
+def init_consent_db() -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS consents (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                connection_id TEXT NOT NULL,
+                status TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                scopes_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+
+def reset_consent_db_for_tests() -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute("DELETE FROM consents")
+        conn.commit()
+        conn.close()
+
+
+def insert_consent_for_tests(consent: Consent) -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            INSERT INTO consents (id, user_id, connection_id, status, provider, scopes_json, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(consent.id),
+                consent.user_id,
+                str(consent.connection_id),
+                consent.status,
+                consent.provider,
+                json.dumps(consent.scopes),
+                consent.created_at.isoformat(),
+                consent.updated_at.isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+
+def create_consent(consent: Consent) -> None:
+    insert_consent_for_tests(consent)
+
+
+def get_consent_by_id(consent_id: uuid.UUID) -> Consent | None:
+    with db_lock:
+        conn = _connect()
+        row = conn.execute("SELECT * FROM consents WHERE id = ?", (str(consent_id),)).fetchone()
+        conn.close()
+    return _row_to_consent(row) if row else None
+
+
+def get_active_consents_for_user(user_id: str) -> List[Consent]:
+    with db_lock:
+        conn = _connect()
+        rows = conn.execute(
+            "SELECT * FROM consents WHERE user_id = ? AND status = 'active'",
+            (user_id,),
+        ).fetchall()
+        conn.close()
+    return [_row_to_consent(row) for row in rows]
+
+
+def update_consent(consent: Consent) -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            UPDATE consents
+            SET status = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (consent.status, consent.updated_at.isoformat(), str(consent.id)),
+        )
+        conn.commit()
+        conn.close()
 
 # --- Service Communication ---
 
@@ -94,7 +204,7 @@ async def record_consent(consent_in: ConsentCreate, user_id: str = Depends(get_c
     Records that a user has given consent for a specific connection.
     """
     new_consent = Consent(user_id=user_id, **consent_in.model_dump())
-    fake_consents_db[new_consent.id] = new_consent
+    create_consent(new_consent)
 
     # Log the auditable event
     await log_audit_event(
@@ -114,18 +224,14 @@ async def list_active_consents(user_id: str = Depends(get_current_user_id)):
     """
     Lists all active consents for the authenticated user.
     """
-    user_consents = [
-        c for c in fake_consents_db.values() 
-        if c.user_id == user_id and c.status == 'active'
-    ]
-    return user_consents
+    return get_active_consents_for_user(user_id)
 
 @app.get("/consents/{consent_id}", response_model=Consent)
 async def get_consent(consent_id: uuid.UUID, user_id: str = Depends(get_current_user_id)):
     """
     Retrieves a specific consent by its ID.
     """
-    consent = fake_consents_db.get(consent_id)
+    consent = get_consent_by_id(consent_id)
     if not consent or consent.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consent not found")
     return consent
@@ -135,7 +241,7 @@ async def revoke_consent(consent_id: uuid.UUID, user_id: str = Depends(get_curre
     """
     Revokes a user's consent.
     """
-    consent = fake_consents_db.get(consent_id)
+    consent = get_consent_by_id(consent_id)
     if not consent or consent.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consent not found")
 
@@ -144,6 +250,7 @@ async def revoke_consent(consent_id: uuid.UUID, user_id: str = Depends(get_curre
 
     consent.status = 'revoked'
     consent.updated_at = datetime.datetime.now(datetime.UTC)
+    update_consent(consent)
 
     # Log the auditable event
     await log_audit_event(
@@ -153,3 +260,6 @@ async def revoke_consent(consent_id: uuid.UUID, user_id: str = Depends(get_curre
     )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+init_consent_db()

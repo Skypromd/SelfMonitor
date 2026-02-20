@@ -6,7 +6,7 @@ from jose import jwt
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from app.main import app, fake_consents_db, Consent
+from app.main import app, Consent, insert_consent_for_tests, reset_consent_db_for_tests
 
 client = TestClient(app)
 TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
@@ -19,8 +19,7 @@ def auth_headers(user_id: str = "fake-user-123") -> dict[str, str]:
 
 @pytest.fixture(autouse=True)
 def setup_and_teardown():
-    # Clear the in-memory database before each test
-    fake_consents_db.clear()
+    reset_consent_db_for_tests()
     yield
 
 def test_record_consent_triggers_audit(mocker):
@@ -54,16 +53,16 @@ def test_revoke_consent_triggers_audit(mocker):
     """
     Test that revoking a consent successfully calls the audit log function.
     """
-    # 1. First, create a consent directly in our fake DB
+    # 1. First, create a consent directly in persistent storage
     consent_id = uuid.uuid4()
     user_id = "fake-user-123"
-    fake_consents_db[consent_id] = Consent(
+    insert_consent_for_tests(Consent(
         id=consent_id,
         user_id=user_id,
         connection_id=uuid.uuid4(),
         provider="test_bank",
         scopes=["transactions"]
-    )
+    ))
 
     # 2. Mock the audit log function
     mock_log_audit = mocker.patch("app.main.log_audit_event", new_callable=mocker.AsyncMock)

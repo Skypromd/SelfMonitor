@@ -1,16 +1,19 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Response, Query
+from datetime import timedelta
+import datetime
+import io
+import os
+import sqlite3
+import threading
+from typing import Annotated, Optional
+
+import pyotp
+import qrcode
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel, EmailStr
-from typing import Optional, Annotated, Dict
-from datetime import timedelta
-import datetime
-import os
-import pyotp
-import qrcode
-import io
 from prometheus_fastapi_instrumentator import Instrumentator
+from pydantic import BaseModel, EmailStr
 
 # --- Configuration ---
 # The secret key is now read from an environment variable for better security.
@@ -18,6 +21,10 @@ from prometheus_fastapi_instrumentator import Instrumentator
 SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+AUTH_DB_PATH = os.getenv("AUTH_DB_PATH", "/tmp/auth.db")
+AUTH_ADMIN_EMAIL = os.getenv("AUTH_ADMIN_EMAIL", "admin@example.com")
+AUTH_ADMIN_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin_password")
+AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "true"
 
 app = FastAPI(
     title="Auth Service",
@@ -37,6 +44,7 @@ async def health_check():
 # --- Security Utils ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+db_lock = threading.Lock()
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
@@ -73,37 +81,99 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
-# --- "Database" ---
+# --- Database ---
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(AUTH_DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# In-memory user store for demonstration purposes
-# NOTE: We are adding 2FA fields to the user data.
-fake_users_db: Dict[EmailStr, Dict] = {
-    "admin@example.com": {
-        "user_data": {
-            "email": "admin@example.com",
-            "is_active": True,
-            "is_admin": True,
-            "two_factor_secret": None, # Secret key for TOTP
-            "is_two_factor_enabled": False,
-        },
-        "hashed_password": pwd_context.hash("admin_password"),
-    }
-}
+
+def _seed_admin_user(conn: sqlite3.Connection) -> None:
+    existing = conn.execute("SELECT email FROM users WHERE email = ?", (AUTH_ADMIN_EMAIL,)).fetchone()
+    if existing:
+        return
+    conn.execute(
+        """
+        INSERT INTO users (email, hashed_password, is_active, is_admin, is_two_factor_enabled, two_factor_secret)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (AUTH_ADMIN_EMAIL, get_password_hash(AUTH_ADMIN_PASSWORD), 1, 1, 0, None),
+    )
+    conn.commit()
+
+
+def init_auth_db() -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                hashed_password TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                is_admin INTEGER NOT NULL DEFAULT 0,
+                is_two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+                two_factor_secret TEXT
+            )
+            """
+        )
+        conn.commit()
+        if AUTH_BOOTSTRAP_ADMIN:
+            _seed_admin_user(conn)
+        conn.close()
+
+
+def reset_auth_db_for_tests() -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute("DELETE FROM users")
+        conn.commit()
+        conn.close()
+
+
+def get_user_record(email: str) -> Optional[dict]:
+    with db_lock:
+        conn = _connect()
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        conn.close()
+    return dict(row) if row else None
+
+
+def set_user_admin_for_tests(email: str, is_admin: bool) -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            "UPDATE users SET is_admin = ? WHERE email = ?",
+            (1 if is_admin else 0, email),
+        )
+        conn.commit()
+        conn.close()
+
 
 def get_user(email: str) -> Optional[User]:
-    if email in fake_users_db:
-        user_dict = fake_users_db[email]['user_data']
-        return User(**user_dict)
-    return None
+    row = get_user_record(email)
+    if not row:
+        return None
+    return User(
+        email=row["email"],
+        is_active=bool(row["is_active"]),
+        is_admin=bool(row["is_admin"]),
+        is_two_factor_enabled=bool(row["is_two_factor_enabled"]),
+    )
 
 def authenticate_user(email: str, password: str) -> Optional[User]:
     """Authenticates a user by checking their email and password."""
-    user = get_user(email)
-    if not user:
+    row = get_user_record(email)
+    if not row:
         return None
-    if not verify_password(password, fake_users_db[email]["hashed_password"]):
+    if not verify_password(password, row["hashed_password"]):
         return None
-    return user
+    return User(
+        email=row["email"],
+        is_active=bool(row["is_active"]),
+        is_admin=bool(row["is_admin"]),
+        is_two_factor_enabled=bool(row["is_two_factor_enabled"]),
+    )
 
 # --- Dependencies ---
 
@@ -144,25 +214,23 @@ async def require_admin(current_user: Annotated[User, Depends(get_current_active
 @app.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate):
     user_email = str(user_in.email)
-    if user_email in fake_users_db:
+    if get_user_record(user_email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
-
-    user_data = {
-        "email": user_email,
-        "is_active": True,
-        "is_admin": False, # New users are not admins by default
-        "two_factor_secret": None,
-        "is_two_factor_enabled": False,
-    }
-
-    fake_users_db[user_email] = {
-        "user_data": user_data,
-        "hashed_password": pwd_context.hash(user_in.password),
-    }
-    return User(**user_data)
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            INSERT INTO users (email, hashed_password, is_active, is_admin, is_two_factor_enabled, two_factor_secret)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_email, get_password_hash(user_in.password), 1, 0, 0, None),
+        )
+        conn.commit()
+        conn.close()
+    return User(email=user_email, is_active=True, is_admin=False, is_two_factor_enabled=False)
 
 
 @app.post("/token", response_model=Token)
@@ -187,7 +255,8 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
         if not totp_code:
             raise HTTPException(status_code=401, detail="2FA code required in 'scope' field (e.g., 'totp:123456')")
 
-        totp = pyotp.TOTP(fake_users_db[user.email]["user_data"]["two_factor_secret"])
+        row = get_user_record(user.email)
+        totp = pyotp.TOTP(row["two_factor_secret"] if row else None)
         if not totp.verify(totp_code):
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
 
@@ -209,7 +278,14 @@ async def setup_two_factor_auth(current_user: Annotated[User, Depends(get_curren
 
     # Generate a new secret
     secret = pyotp.random_base32()
-    fake_users_db[current_user.email]["user_data"]["two_factor_secret"] = secret
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            "UPDATE users SET two_factor_secret = ? WHERE email = ?",
+            (secret, current_user.email),
+        )
+        conn.commit()
+        conn.close()
 
     # Generate provisioning URI
     totp = pyotp.TOTP(secret)
@@ -235,7 +311,8 @@ async def verify_two_factor_auth(
     """
     Verifies the TOTP code and enables 2FA for the user.
     """
-    secret = fake_users_db[current_user.email]["user_data"]["two_factor_secret"]
+    row = get_user_record(current_user.email)
+    secret = row["two_factor_secret"] if row else None
     if not secret:
         raise HTTPException(status_code=400, detail="2FA setup not initiated. Call /2fa/setup first.")
 
@@ -244,7 +321,14 @@ async def verify_two_factor_auth(
         raise HTTPException(status_code=400, detail="Invalid code.")
 
     # Enable 2FA for the user
-    fake_users_db[current_user.email]["user_data"]["is_two_factor_enabled"] = True
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            "UPDATE users SET is_two_factor_enabled = 1 WHERE email = ?",
+            (current_user.email,),
+        )
+        conn.commit()
+        conn.close()
     return {"message": "2FA enabled successfully."}
 
 @app.delete("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
@@ -259,8 +343,14 @@ async def disable_two_factor_auth(
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     # Disable 2FA and clear the secret
-    fake_users_db[current_user.email]["user_data"]["is_two_factor_enabled"] = False
-    fake_users_db[current_user.email]["user_data"]["two_factor_secret"] = None
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            "UPDATE users SET is_two_factor_enabled = 0, two_factor_secret = NULL WHERE email = ?",
+            (current_user.email,),
+        )
+        conn.commit()
+        conn.close()
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -284,9 +374,16 @@ async def deactivate_user(
     if not user_to_deactivate.is_active:
         return user_to_deactivate # Already inactive, no change needed
 
-    # Update the "database" directly
-    fake_users_db[user_email]['user_data']['is_active'] = False
+    # Update the persistent user store directly.
+    with db_lock:
+        conn = _connect()
+        conn.execute("UPDATE users SET is_active = 0 WHERE email = ?", (str(user_email),))
+        conn.commit()
+        conn.close()
 
     # Return the updated user model
     user_to_deactivate.is_active = False
     return user_to_deactivate
+
+
+init_auth_db()
