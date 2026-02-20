@@ -1,8 +1,10 @@
 fastapi
 uvicorn[standard]
 pydantic[email]
+python-multipart
 python-jose[cryptography]
 passlib[bcrypt]
+bcrypt<4
 prometheus-fastapi-instrumentator
 pyotp
 qrcode[pil]

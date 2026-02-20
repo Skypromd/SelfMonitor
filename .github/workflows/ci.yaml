@@ -1,50 +1,76 @@
-name: Python Service CI
+name: Monorepo CI
 
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - 'services/**'
+      - 'apps/web-portal/**'
+      - '.github/workflows/ci.yaml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'services/**'
+      - 'apps/web-portal/**'
+      - '.github/workflows/ci.yaml'
 
 jobs:
-  lint-and-test:
-    # This job runs for each Python service that has been changed.
-    # In a real monorepo, you'd use path filtering to determine which services to run on.
+  python-service-tests:
+    name: Python tests (${{ matrix.service }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        # This list would be dynamically generated in a more advanced setup
-        service: [ 'auth-service', 'transactions-service', 'documents-service' ]
+        service:
+          - auth-service
+          - banking-connector
+          - compliance-service
+          - consent-service
+          - tax-engine
+          - transactions-service
+          - user-profile-service
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.12'
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-    - name: Install dependencies for ${{ matrix.service }}
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r services/${{ matrix.service }}/requirements.txt
-        pip install flake8 pytest # Install test and lint dependencies
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/${{ matrix.service }}/requirements.txt
 
-    - name: Lint with flake8
-      working-directory: ./services/${{ matrix.service }}
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      - name: Smoke check Python sources
+        run: |
+          python -m compileall services/${{ matrix.service }}/app
 
-    - name: Run tests with pytest
-      working-directory: ./services/${{ matrix.service }}
-      run: |
-        # This is a placeholder for running actual tests.
-        # You would create a `tests/` directory inside each service.
-        echo "Pytest would run here if 'tests/' directory existed."
-        # pytest
+      - name: Run service unit tests
+        working-directory: ./services/${{ matrix.service }}
+        run: |
+          python -m pytest -q tests/test_main.py
+
+  web-portal-build:
+    name: Web portal production build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./apps/web-portal
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --no-package-lock
+
+      - name: Build web portal
+        run: npm run build

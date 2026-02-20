@@ -137,24 +137,25 @@ async def require_admin(current_user: Annotated[User, Depends(get_current_active
 # --- Endpoints ---
 
 @app.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
-async def register(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
-    if form_data.username in fake_users_db:
+async def register(user_in: UserCreate):
+    user_email = str(user_in.email)
+    if user_email in fake_users_db:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered",
         )
 
     user_data = {
-        "email": form_data.username,
+        "email": user_email,
         "is_active": True,
         "is_admin": False, # New users are not admins by default
         "two_factor_secret": None,
         "is_two_factor_enabled": False,
     }
 
-    fake_users_db[form_data.username] = {
+    fake_users_db[user_email] = {
         "user_data": user_data,
-        "hashed_password": pwd_context.hash(form_data.password),
+        "hashed_password": pwd_context.hash(user_in.password),
     }
     return User(**user_data)
 

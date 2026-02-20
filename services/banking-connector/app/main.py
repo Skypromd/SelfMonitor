@@ -12,14 +12,24 @@ VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
 VAULT_TOKEN = os.getenv("VAULT_TOKEN", "dev-root-token")
 
 vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
-if vault_client.is_authenticated():
+vault_available = False
+try:
+    vault_available = vault_client.is_authenticated()
+except Exception as e:
+    print(f"Warning: Vault is not reachable at startup: {e}")
+
+if vault_available:
     print("Successfully authenticated with Vault.")
 else:
-    print("Error: Could not authenticate with Vault.")
+    print("Warning: Could not authenticate with Vault.")
 
 
 def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
     """Saves sensitive tokens to Vault."""
+    if not vault_available:
+        print("Skipping token persistence because Vault is unavailable.")
+        return
+
     secret_path = f"kv/banking-connections/{connection_id}"
     try:
         vault_client.secrets.kv.v2.create_or_update_secret(

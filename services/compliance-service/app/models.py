@@ -1,5 +1,5 @@
-from sqlalchemy import Column, String, DateTime
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, String, DateTime, JSON
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
 from .database import Base
@@ -11,4 +11,4 @@ class AuditEvent(Base):
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     user_id = Column(String, nullable=False, index=True)
     action = Column(String, nullable=False, index=True)
-    details = Column(JSONB, nullable=True)
+    details = Column(JSON, nullable=True)

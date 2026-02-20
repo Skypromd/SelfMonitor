@@ -31,6 +31,7 @@ async def test_callback_schedules_celery_task(mocker):
     """
     # Mock the .delay() method of our Celery task
     mock_delay = mocker.patch.object(import_transactions_task, 'delay')
+    mock_delay.return_value.id = "test-task-id"
 
     # Use a dummy code to trigger the endpoint
     auth_code = "test-auth-code"
