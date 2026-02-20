@@ -3,10 +3,14 @@ import { useRouter } from 'next/router';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Layout.module.css';
 
+type UserSummary = {
+  email?: string;
+};
+
 type LayoutProps = {
   children: React.ReactNode;
   onLogout: () => void;
-  user: { email: string };
+  user: UserSummary;
 };
 
 export default function Layout({ children, onLogout, user }: LayoutProps) {
