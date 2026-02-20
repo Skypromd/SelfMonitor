@@ -1,0 +1,32 @@
+[
+  {
+    "id": "1a8a8f69-a1b7-4c13-9a16-9e9f9a2e3f5d",
+    "name": "SafeFuture Financial Advisors",
+    "description": "Independent financial advisors regulated by the FCA.",
+    "services_offered": [
+      "pension_advice",
+      "investment_management",
+      "income_protection"
+    ],
+    "website": "https://www.safefuture.example.com"
+  },
+  {
+    "id": "b4f1f2d5-9c9a-4e1e-b8d4-5b4d7f6c3a1b",
+    "name": "HomePath Mortgages",
+    "description": "Specialist mortgage brokers for first-time buyers.",
+    "services_offered": [
+      "mortgage_advice"
+    ],
+    "website": "https://www.homepath.example.com"
+  },
+  {
+    "id": "c5e3e1d4-8d8a-3d0d-a7c3-4c3d6f5b2a0a",
+    "name": "TaxSolve Accountants",
+    "description": "Chartered accountants specializing in self-assessment for freelancers.",
+    "services_offered": [
+      "accounting",
+      "tax_filing"
+    ],
+    "website": "https://www.taxsolve.example.com"
+  }
+]

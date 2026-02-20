@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 pydantic
+python-jose[cryptography]
 sqlalchemy[asyncio]
 asyncpg
 alembic
@@ -8,4 +9,5 @@ alembic
 # Dependencies for testing
 pytest
 pytest-asyncio
+aiosqlite
 httpx

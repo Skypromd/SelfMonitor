@@ -1,7 +1,9 @@
 import os
 import uuid
-from typing import List
+from typing import Annotated, List
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 import boto3
 from botocore.client import Config
@@ -29,15 +31,38 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+# --- Security ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 
 @app.post("/documents/upload", response_model=schemas.Document, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...), 
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Accepts a document, uploads it to S3, creates a DB record, and triggers OCR."""
@@ -58,7 +83,7 @@ async def upload_document(
 
 @app.get("/documents", response_model=List[schemas.Document])
 async def list_documents(
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Lists all documents for the authenticated user from the database."""
@@ -68,7 +93,7 @@ async def list_documents(
 @app.get("/documents/{document_id}", response_model=schemas.Document)
 async def get_document(
     document_id: uuid.UUID,
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves metadata for a specific document."""

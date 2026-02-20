@@ -1,5 +1,7 @@
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
+from jose import jwt
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -13,6 +15,8 @@ from app.database import get_db, Base
 
 # --- Test Database Setup ---
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
+TEST_AUTH_ALGORITHM = "HS256"
 
 engine = create_async_engine(TEST_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=AsyncSession)
@@ -24,7 +28,7 @@ async def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 
 # Fixture to create/drop tables for each test function
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def db_session():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -35,11 +39,18 @@ async def db_session():
 # --- Tests ---
 client = TestClient(app)
 
+
+def auth_headers(user_id: str = "fake-user-123") -> dict[str, str]:
+    token = jwt.encode({"sub": user_id}, TEST_AUTH_SECRET, algorithm=TEST_AUTH_ALGORITHM)
+    return {"Authorization": f"Bearer {token}"}
+
 @pytest.mark.asyncio
 async def test_create_and_get_profile(db_session):
+    headers = auth_headers()
     # Create profile
     response = client.put(
         "/profiles/me",
+        headers=headers,
         json={"first_name": "Test", "last_name": "User", "date_of_birth": "2000-01-01"}
     )
     assert response.status_code == 200
@@ -48,7 +59,7 @@ async def test_create_and_get_profile(db_session):
     assert data["user_id"] == "fake-user-123"
 
     # Get profile
-    response = client.get("/profiles/me")
+    response = client.get("/profiles/me", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert data["first_name"] == "Test"
@@ -56,11 +67,12 @@ async def test_create_and_get_profile(db_session):
 
 @pytest.mark.asyncio
 async def test_update_profile(db_session):
+    headers = auth_headers()
     # Create profile first
-    client.put("/profiles/me", json={"first_name": "Initial", "last_name": "Name"})
+    client.put("/profiles/me", headers=headers, json={"first_name": "Initial", "last_name": "Name"})
 
     # Update profile with a partial schema
-    response = client.put("/profiles/me", json={"first_name": "Updated"})
+    response = client.put("/profiles/me", headers=headers, json={"first_name": "Updated"})
     assert response.status_code == 200
     data = response.json()
     assert data["first_name"] == "Updated"
@@ -68,6 +80,6 @@ async def test_update_profile(db_session):
 
 @pytest.mark.asyncio
 async def test_get_nonexistent_profile(db_session):
-    response = client.get("/profiles/me")
+    response = client.get("/profiles/me", headers=auth_headers())
     assert response.status_code == 404
     assert response.json() == {"detail": "Profile not found"}

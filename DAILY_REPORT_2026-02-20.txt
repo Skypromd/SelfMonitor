@@ -1,0 +1,60 @@
+DAILY REPORT
+Дата: 2026-02-20
+Репозиторий: SelfMonitor
+Ветка: cursor/-bc-4bd633dc-7e3c-4f60-b5bd-b5129b3f9c83-ca53
+
+Что сделали сегодня:
+
+1) Закрыли критические блокеры и вывели backend на реальную JWT-авторизацию:
+- убрали fake auth в ключевых сервисах;
+- добавили проверку токенов и проброс auth между сервисами;
+- обновили тесты под JWT.
+
+2) Усилили безопасность и эксплуатационную готовность:
+- вынесли чувствительные настройки в env;
+- убрали dev-конфигурации из основного контура;
+- включили health checks и /health endpoints для сервисов;
+- ограничили внутренние API и усилили internal auth.
+
+3) Убрали in-memory состояние в важных частях:
+- перевели auth/consent/analytics на persistent хранилище;
+- добавили persistence для calendar/integrations/partner handoffs;
+- вынесли каталоги/данные в файлы там, где это уместно.
+
+4) Доработали рабочие сценарии продукта:
+- tax submission с жизненным циклом статусов;
+- календарные события с сохранением и выборкой;
+- handoff к партнерам с историей;
+- улучшена связность end-to-end пользовательского потока.
+
+5) Расширили качество и проверяемость:
+- расширили CI matrix по Python-сервисам;
+- добавили недостающие unit-тесты для сервисов без покрытия;
+- многократно прогнали сборки и тесты после изменений.
+
+6) Подготовили клиентские материалы:
+- CLIENT_READY_SUMMARY.txt
+- CLIENT_ONE_PAGER_FOR_CLIENT.txt
+- CLIENT_ONE_PAGER_FOR_CLIENT_RU.txt
+- DEMO_SCRIPT_RU.txt
+- docs/runbooks/preprod_rollout_checklist.md
+- docs/runbooks/client_demo_runbook.md
+
+7) Сделали web-portal более стабильным для демо:
+- унифицировали frontend-запросы через единый API Gateway URL;
+- подтвердили успешную production сборку frontend.
+
+Ключевые коммиты за сегодня:
+- ec1b987 Roll out JWT auth across remaining services
+- 84d3dfc Harden runtime config and add service healthchecks
+- ee95041 Persist auth consent analytics and externalize catalogs
+- 81ac6f3 Harden internal APIs and expand CI service checks
+- 0cab782 Finalize service workflows and add missing test coverage
+- 3e86983 Add pre-production checklist and rollout runbook
+- 53b2a14 Unify web API calls via gateway for client demos
+- ae0a4ae Add consolidated client-ready summary text file
+- 48ace2d Add client-facing one-page project summary
+- 8e84859 Add Russian client one-pager and demo script
+
+Итог дня:
+Проект приведен к состоянию, пригодному для клиентской демонстрации и контролируемого rollout.

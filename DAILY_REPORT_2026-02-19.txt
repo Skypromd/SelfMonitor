@@ -1,0 +1,72 @@
+DAILY REPORT
+Date: 2026-02-19
+Repository: /workspace
+Branch: cursor/-bc-4bd633dc-7e3c-4f60-b5bd-b5129b3f9c83-ca53
+
+==================================================
+WHAT WE COMPLETED TODAY
+==================================================
+
+1) Security and authentication
+- Rolled out real JWT validation across remaining backend services.
+- Removed placeholder auth checks.
+- Added token propagation for cross-service calls.
+
+2) Runtime hardening
+- Removed insecure/dev defaults from compose configuration.
+- Added health endpoints and compose healthchecks for services.
+- Hardened Weaviate access (API key based, anonymous access disabled).
+
+3) Data persistence improvements
+- Replaced in-memory storage with persistent stores in key services:
+  - auth-service
+  - consent-service
+  - analytics-service
+- Added persistent storage/workflows for:
+  - calendar-service events
+  - integrations-service submissions
+  - partner-registry handoffs
+- Externalized static catalogs to files (partners/translations).
+
+4) Internal API protection
+- Restricted internal routes and enforced auth/user scope checks where needed.
+- Secured QnA indexing endpoint with internal token.
+- Hardened compliance/calendar/categorization access controls.
+
+5) CI and test coverage
+- Expanded CI service checks to a wider service matrix.
+- Added missing tests for services without baseline coverage.
+- Re-ran and validated builds/tests after each major change set.
+
+6) Frontend/client readiness
+- Unified web-portal backend calls through API Gateway
+  (NEXT_PUBLIC_API_GATEWAY_URL).
+- Removed risky direct per-service localhost routing in UI.
+- Verified production web build after changes.
+
+7) Documentation and client materials
+- Added pre-prod checklist and rollout runbook.
+- Added client demo runbook.
+- Added consolidated summary and one-pager files (EN/RU).
+- Added Russian demo script.
+
+==================================================
+KEY COMMITS FROM TODAY
+==================================================
+- ec1b987  Roll out JWT auth across remaining services
+- 84d3dfc  Harden runtime config and add service healthchecks
+- ee95041  Persist auth consent analytics and externalize catalogs
+- 81ac6f3  Harden internal APIs and expand CI service checks
+- 0cab782  Finalize service workflows and add missing test coverage
+- 3e86983  Add pre-production checklist and rollout runbook
+- 53b2a14  Unify web API calls via gateway for client demos
+- ae0a4ae  Add consolidated client-ready summary text file
+- 48ace2d  Add client-facing one-page project summary
+- 8e84859  Add Russian client one-pager and demo script
+
+==================================================
+CURRENT STATE
+==================================================
+- Client demo materials are prepared and saved in repository.
+- Main changes are committed and pushed to remote branch.
+- Project is prepared for local startup and customer demo flow.

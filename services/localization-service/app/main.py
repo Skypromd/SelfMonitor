@@ -1,4 +1,8 @@
-from fastapi import FastAPI, HTTPException, status, Path
+import json
+import os
+from pathlib import Path as FilePath
+
+from fastapi import FastAPI, HTTPException, Path, status
 from typing import Dict
 
 app = FastAPI(
@@ -7,155 +11,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- "Database" for translations ---
-# In a real app, this would come from a TMS (Translation Management System)
-# like Lokalise or Crowdin, and be cached.
-fake_translations_db = {
-    "en-GB": {
-        "common": {
-            "submit": "Submit",
-            "cancel": "Cancel",
-            "logout": "Logout",
-            "save": "Save"
-        },
-        "login": {
-            "title": "FinTech App",
-            "description": "Register or log in to continue",
-            "register_button": "Register",
-            "login_button": "Login"
-        },
-        "nav": {
-            "dashboard": "Dashboard",
-            "transactions": "Transactions",
-            "documents": "Documents",
-            "profile": "Profile"
-        },
-        "dashboard": {
-            "title": "Main Dashboard",
-            "description": "Welcome to your financial dashboard."
-        },
-        "profile": {
-            "title": "Your Profile"
-        },
-        "partners": {
-            "description": "Here is a list of trusted, FCA-regulated partners you can be handed off to for advice.",
-            "handoff_button": "Initiate Handoff"
-        },
-        "submission": {
-            "description": "Calculate and submit your tax return to HMRC.",
-            "form_title": "New UK Tax Submission",
-            "submit_button": "Calculate & Submit to HMRC",
-            "success_title": "Submission Successfully Initiated"
-        },
-        "admin": {
-            "description": "Manage users and system settings.",
-            "form_title": "Deactivate a User",
-            "deactivate_button": "Deactivate User"
-        },
-        "reports": {
-            "description": "Generate custom reports based on your financial data.",
-            "mortgage_title": "Mortgage Readiness Report",
-            "mortgage_description": "Generate a PDF summary of your income over the last 12 months. This can be useful when applying for a mortgage.",
-            "generate_button": "Generate Report",
-            "generating_button": "Generating..."
-        },
-        "documents": {
-            "description": "Upload and manage your receipts and invoices.",
-            "upload_title": "Upload a Document",
-            "upload_button": "Upload",
-            "uploading_button": "Uploading...",
-            "col_filename": "Filename",
-            "col_status": "Status",
-            "col_vendor": "Vendor",
-            "col_amount": "Amount",
-            "col_uploaded_at": "Uploaded At",
-            "search_title": "Semantic Document Search",
-            "search_description": "Ask a question about your documents in natural language.",
-            "search_placeholder": "e.g., 'where did I buy coffee last month?'",
-            "search_button": "Search",
-            "all_documents_title": "All Uploaded Documents"
-        }
-    },
-    "de-DE": {
-        "common": {
-            "submit": "Einreichen",
-            "cancel": "Abbrechen",
-            "logout": "Ausloggen",
-            "save": "Speichern"
-        },
-        "login": {
-            "title": "FinTech App",
-            "description": "Registrieren Sie sich oder melden Sie sich an, um fortzufahren",
-            "register_button": "Registrieren",
-            "login_button": "Anmelden"
-        },
-        "nav": {
-            "dashboard": "Dashboard",
-            "activity": "Aktivitätsprotokoll",
-            "transactions": "Transaktionen",
-            "documents": "Dokumente",
-            "reports": "Berichte",
-            "marketplace": "Marktplatz",
-            "submission": "HMRC-Übermittlung",
-            "profile": "Profil",
-            "admin": "Admin"
-        },
-        "dashboard": {
-            "title": "Haupt-Dashboard",
-            "description": "Willkommen zu Ihrem Finanz-Dashboard."
-        },
-        "profile": {
-            "title": "Ihr Profil"
-        },
-        "partners": {
-            "description": "Hier finden Sie eine Liste von vertrauenswürdigen, von der FCA regulierten Partnern, an die Sie zur Beratung weitergeleitet werden können.",
-            "handoff_button": "Handoff einleiten"
-        },
-        "submission": {
-            "description": "Berechnen und übermitteln Sie hier Ihre Steuererklärung an HMRC.",
-            "form_title": "Neue Steuererklärung für Großbritannien",
-            "submit_button": "Berechnen & an HMRC senden",
-            "success_title": "Übermittlung erfolgreich eingeleitet"
-        },
-        "admin": {
-            "description": "Benutzer und Systemeinstellungen verwalten.",
-            "form_title": "Einen Benutzer deaktivieren",
-            "deactivate_button": "Benutzer deaktivieren"
-        },
-        "reports": {
-            "description": "Erstellen Sie benutzerdefinierte Berichte basierend auf Ihren Finanzdaten.",
-            "mortgage_title": "Bericht zur Hypothekenbereitschaft",
-            "mortgage_description": "Erstellen Sie eine PDF-Zusammenfassung Ihres Einkommens der letzten 12 Monate. Dies kann bei der Beantragung einer Hypothek nützlich sein.",
-            "generate_button": "Bericht erstellen",
-            "generating_button": "Wird erstellt..."
-        },
-        "marketplace": {
-            "description": "Entdecken Sie unseren Marktplatz mit vertrauenswürdigen Partnern, die Ihnen bei Buchhaltung, Hypotheken und Versicherungen helfen können."
-        },
-        "activity": {
-            "description": "Hier ist eine Aufzeichnung der letzten wichtigen Ereignisse in Ihrem Konto.",
-            "col_date": "Datum",
-            "col_action": "Aktion",
-            "col_details": "Details"
-        },
-        "documents": {
-            "description": "Laden Sie Ihre Belege und Rechnungen hoch und verwalten Sie sie.",
-            "upload_title": "Dokument hochladen",
-            "upload_button": "Hochladen",
-            "uploading_button": "Lädt hoch...",
-            "col_filename": "Dateiname",
-            "col_status": "Status",
-            "col_vendor": "Anbieter",
-            "col_amount": "Betrag",
-            "col_uploaded_at": "Hochgeladen am",
-            "search_title": "Semantische Dokumentsuche",
-            "search_description": "Stellen Sie eine Frage zu Ihren Dokumenten in natürlicher Sprache.",
-            "search_placeholder": "z.B. 'wo habe ich letzten monat kaffee gekauft?'",
-            "search_button": "Suchen",
-            "all_documents_title": "Alle hochgeladenen Dokumente"
-        }
-    }
-}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
+# --- Persistent Translations Catalog ---
+TRANSLATIONS_PATH = FilePath(
+    os.getenv("LOCALIZATION_CATALOG_PATH", str(FilePath(__file__).with_name("translations.json")))
+)
+
+
+def load_translations_catalog() -> Dict[str, Dict[str, Dict[str, str]]]:
+    with TRANSLATIONS_PATH.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+translations_catalog = load_translations_catalog()
 
 # --- Endpoints ---
 
@@ -172,7 +45,7 @@ async def get_translations_by_component(
     """
     Retrieves a key-value map for a given locale and component.
     """
-    if locale_data := fake_translations_db.get(locale):
+    if locale_data := translations_catalog.get(locale):
         if component_data := locale_data.get(component):
             return component_data
 
@@ -191,7 +64,7 @@ async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB
     Retrieves all translation namespaces for a given locale.
     This is useful for loading all strings for a single-page application.
     """
-    if locale_data := fake_translations_db.get(locale):
+    if locale_data := translations_catalog.get(locale):
         return locale_data
 
     raise HTTPException(

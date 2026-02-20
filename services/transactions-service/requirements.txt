@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 pydantic
+python-jose[cryptography]
 sqlalchemy[asyncio]
 asyncpg
 alembic
@@ -12,4 +13,5 @@ opentelemetry-instrumentation-fastapi
 # Dependencies for testing
 pytest
 pytest-asyncio
+aiosqlite
 pact-python

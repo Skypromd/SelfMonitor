@@ -1,5 +1,18 @@
 version: '3.8'
 
+x-fastapi-healthcheck: &fastapi-healthcheck
+  test:
+    [
+      "CMD",
+      "python",
+      "-c",
+      "import urllib.request; urllib.request.urlopen('http://localhost:80/health', timeout=5)",
+    ]
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 40s
+
 services:
   nginx-gateway:
     build: ./nginx
@@ -33,11 +46,16 @@ services:
       - postgres_data:/var/lib/postgresql/data/
       - ./infra/postgres:/docker-entrypoint-initdb.d # Run init scripts
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: db_user_profile
+      POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
+      POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
     ports:
       - "5432:5432" # Expose port for local inspection
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-db_user_profile}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - default_network
 
@@ -45,10 +63,12 @@ services:
     build: ./services/auth-service
     container_name: auth-service
     environment:
-      # This is how we pass secrets to our services in a production-like environment.
-      # In a real cloud deployment, this would come from a secret manager (like AWS Secrets Manager or HashiCorp Vault).
-      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      AUTH_DB_PATH: "/data/auth.db"
+    volumes:
+      - auth_data:/data
     # ports are no longer exposed directly
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -58,9 +78,11 @@ services:
     depends_on:
       - postgres
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_user_profile"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_user_profile"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     # Run migrations before starting the app server
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -71,9 +93,11 @@ services:
       - postgres
       - categorization-service
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_transactions"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_transactions"
       CATEGORIZATION_SERVICE_URL: "http://categorization-service/categorize"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -83,8 +107,10 @@ services:
     depends_on:
       - postgres
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_compliance"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_compliance"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -95,6 +121,11 @@ services:
       - compliance-service
     environment:
       COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      CONSENT_DB_PATH: "/data/consent.db"
+    volumes:
+      - consent_data:/data
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -103,11 +134,12 @@ services:
     container_name: banking-connector
     depends_on:
       - transactions-service
-      - vault
     environment:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/import"
-      VAULT_ADDR: "http://vault:8200"
-      VAULT_TOKEN: "dev-root-token" # This is the default root token for Vault's dev mode
+      VAULT_ADDR: "${VAULT_ADDR:?VAULT_ADDR must be set}"
+      VAULT_TOKEN: "${VAULT_TOKEN:?VAULT_TOKEN must be set}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -116,6 +148,11 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - default_network
 
@@ -144,7 +181,7 @@ services:
       - localstack
       - qna-service
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_documents"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_documents"
       CELERY_BROKER_URL: "redis://redis:6379/0"
       CELERY_RESULT_BACKEND: "redis://redis:6379/0"
       AWS_ENDPOINT_URL: "http://localstack:4566"
@@ -153,6 +190,7 @@ services:
       AWS_DEFAULT_REGION: "eu-west-2"
       S3_BUCKET_NAME: "documents-bucket"
       QNA_SERVICE_URL: "http://qna-service/index"
+      QNA_INTERNAL_TOKEN: "${QNA_INTERNAL_TOKEN:?QNA_INTERNAL_TOKEN must be set}"
     networks:
       - default_network
 
@@ -194,16 +232,19 @@ services:
       - postgres
       - localstack
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_documents"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_documents"
       AWS_ENDPOINT_URL: "http://localstack:4566" # Point to LocalStack
       AWS_ACCESS_KEY_ID: "test"
       AWS_SECRET_ACCESS_KEY: "test"
       AWS_DEFAULT_REGION: "eu-west-2"
       S3_BUCKET_NAME: "documents-bucket"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      QNA_INTERNAL_TOKEN: "${QNA_INTERNAL_TOKEN:?QNA_INTERNAL_TOKEN must be set}"
     # No longer need local volume for uploads
     # volumes:
     #   - documents_data:/uploads
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -221,6 +262,8 @@ services:
       CALENDAR_SERVICE_URL: "http://calendar-service/events"
       OTEL_SERVICE_NAME: "tax-engine"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -231,6 +274,8 @@ services:
       - transactions-service
     environment:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -241,12 +286,23 @@ services:
       - compliance-service
     environment:
       COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      PARTNER_DB_PATH: "/data/partner_registry.db"
+    volumes:
+      - partner_registry_data:/data
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
   integrations-service:
     build: ./services/integrations-service
     container_name: integrations-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      INTEGRATIONS_DB_PATH: "/data/integrations.db"
+    volumes:
+      - integrations_data:/data
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -257,18 +313,27 @@ services:
       - transactions-service
     environment:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      ANALYTICS_DB_PATH: "/data/analytics.db"
+    volumes:
+      - analytics_data:/data
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
   localization-service:
     build: ./services/localization-service
     container_name: localization-service
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
   categorization-service:
     build: ./services/categorization-service
     container_name: categorization-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -291,20 +356,10 @@ services:
       - weaviate
     environment:
       WEAVIATE_URL: "http://weaviate:8080"
-    networks:
-      - default_network
-
-  vault:
-    image: hashicorp/vault:1.15
-    container_name: vault
-    ports:
-      - "8200:8200"
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: "dev-root-token"
-      VAULT_DEV_LISTEN_ADDRESS: "0.0.0.0:8200"
-    cap_add:
-      - IPC_LOCK
-    command: "server -dev"
+      WEAVIATE_API_KEY: "${WEAVIATE_API_KEY:?WEAVIATE_API_KEY must be set}"
+      QNA_INTERNAL_TOKEN: "${QNA_INTERNAL_TOKEN:?QNA_INTERNAL_TOKEN must be set}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -355,6 +410,12 @@ services:
   calendar-service:
     build: ./services/calendar-service
     container_name: calendar-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      CALENDAR_DB_PATH: "/data/calendar.db"
+    volumes:
+      - calendar_data:/data
+    healthcheck: *fastapi-healthcheck
     networks:
       - default_network
 
@@ -366,7 +427,12 @@ services:
     restart: on-failure:0
     environment:
       QUERY_DEFAULTS_LIMIT: 25
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'
+      AUTHENTICATION_APIKEY_ENABLED: 'true'
+      AUTHENTICATION_APIKEY_ALLOWED_KEYS: "${WEAVIATE_API_KEY:?WEAVIATE_API_KEY must be set}"
+      AUTHENTICATION_APIKEY_USERS: "${WEAVIATE_API_USER:-qna-service}"
+      AUTHORIZATION_ADMINLIST_ENABLED: 'true'
+      AUTHORIZATION_ADMINLIST_USERS: "${WEAVIATE_ADMIN_USER:?WEAVIATE_ADMIN_USER must be set}"
       PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
       DEFAULT_VECTORIZER_MODULE: 'none' # We will generate vectors ourselves
       CLUSTER_HOSTNAME: 'node1'
@@ -375,6 +441,12 @@ services:
 
 volumes:
   postgres_data:
+  auth_data:
+  consent_data:
+  analytics_data:
+  calendar_data:
+  partner_registry_data:
+  integrations_data:
 
 networks:
   default_network:
