@@ -11,25 +11,29 @@ import hvac
 from .celery_app import import_transactions_task
 
 # --- Vault Client Setup ---
-VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
-VAULT_TOKEN = os.getenv("VAULT_TOKEN", "dev-root-token")
+VAULT_ADDR = os.getenv("VAULT_ADDR")
+VAULT_TOKEN = os.getenv("VAULT_TOKEN")
 
-vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
+vault_client = None
 vault_available = False
-try:
-    vault_available = vault_client.is_authenticated()
-except Exception as e:
-    print(f"Warning: Vault is not reachable at startup: {e}")
+if VAULT_ADDR and VAULT_TOKEN:
+    vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
+    try:
+        vault_available = vault_client.is_authenticated()
+    except Exception as e:
+        print(f"Warning: Vault is not reachable at startup: {e}")
+else:
+    print("Warning: Vault is not configured; token persistence is disabled.")
 
 if vault_available:
     print("Successfully authenticated with Vault.")
-else:
+elif vault_client:
     print("Warning: Could not authenticate with Vault.")
 
 
 def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
     """Saves sensitive tokens to Vault."""
-    if not vault_available:
+    if not vault_available or not vault_client:
         print("Skipping token persistence because Vault is unavailable.")
         return
 
@@ -92,6 +96,11 @@ class Transaction(BaseModel):
     description: str
     amount: float
     currency: str
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 # --- Endpoints ---
 @app.post("/connections/initiate", response_model=InitiateConnectionResponse)

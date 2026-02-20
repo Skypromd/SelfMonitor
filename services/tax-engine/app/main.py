@@ -74,6 +74,11 @@ class TaxCalculationResult(BaseModel):
     summary_by_category: List[TaxSummaryItem]
 
 # --- Endpoints ---
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/calculate", response_model=TaxCalculationResult)
 async def calculate_tax(
     request: TaxCalculationRequest, 

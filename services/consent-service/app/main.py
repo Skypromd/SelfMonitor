@@ -84,6 +84,10 @@ async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]):
 
 # --- Endpoints ---
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.post("/consents", response_model=Consent, status_code=status.HTTP_201_CREATED)
 async def record_consent(consent_in: ConsentCreate, user_id: str = Depends(get_current_user_id)):
     """

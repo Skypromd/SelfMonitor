@@ -7,6 +7,12 @@ app = FastAPI(
     description="Manages calendar events and reminders for users."
 )
 
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 class CalendarEvent(BaseModel):
     user_id: str
     event_title: str

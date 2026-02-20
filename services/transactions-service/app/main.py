@@ -43,6 +43,11 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
     return user_id
 
 # --- Endpoints ---
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/import", status_code=status.HTTP_202_ACCEPTED)
 async def import_transactions(
     request: schemas.TransactionImportRequest, 

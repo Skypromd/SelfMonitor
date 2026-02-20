@@ -123,6 +123,11 @@ class Transaction(BaseModel):
     amount: float
 
 # --- Forecasting Endpoint ---
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow_forecast(
     request: ForecastRequest,

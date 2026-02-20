@@ -6,6 +6,7 @@ from sentence_transformers import SentenceTransformer
 
 # --- Configuration ---
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
+WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
 # Load a small but effective model for generating sentence embeddings
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -17,7 +18,10 @@ app = FastAPI(
 
 # --- Weaviate Client and Schema ---
 try:
-    client = weaviate.Client(WEAVIATE_URL)
+    client_kwargs = {}
+    if WEAVIATE_API_KEY:
+        client_kwargs["auth_client_secret"] = weaviate.AuthApiKey(api_key=WEAVIATE_API_KEY)
+    client = weaviate.Client(WEAVIATE_URL, **client_kwargs)
     print("Successfully connected to Weaviate.")
 except Exception as e:
     print(f"Error connecting to Weaviate: {e}")
@@ -42,6 +46,13 @@ def ensure_schema_exists():
 @app.on_event("startup")
 def startup_event():
     ensure_schema_exists()
+
+
+@app.get("/health")
+async def health_check():
+    if not client:
+        raise HTTPException(status_code=503, detail="Weaviate not available")
+    return {"status": "ok"}
 
 # --- API Models ---
 class IndexRequest(BaseModel):

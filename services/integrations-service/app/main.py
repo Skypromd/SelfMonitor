@@ -50,6 +50,10 @@ class SubmissionStatus(BaseModel):
 
 # --- Endpoints ---
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.post(
     "/integrations/hmrc/submit-tax-return",
     response_model=SubmissionStatus,

@@ -29,6 +29,11 @@ app = FastAPI(
 # This line adds an instrumentator that exposes a /metrics endpoint
 Instrumentator().instrument(app).expose(app)
 
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # --- Security Utils ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")

@@ -93,6 +93,10 @@ fake_partners_db = {
 
 # --- Endpoints ---
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 @app.get("/partners", response_model=List[Partner])
 async def list_partners(service_type: Optional[str] = Query(None)):
     """

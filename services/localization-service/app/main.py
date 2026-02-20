@@ -7,6 +7,12 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 # --- "Database" for translations ---
 # In a real app, this would come from a TMS (Translation Management System)
 # like Lokalise or Crowdin, and be cached.

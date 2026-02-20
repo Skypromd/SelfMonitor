@@ -12,6 +12,11 @@ app = FastAPI(
 )
 
 # --- Endpoints ---
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/audit-events", response_model=schemas.AuditEvent, status_code=status.HTTP_201_CREATED)
 async def record_audit_event(
     event: schemas.AuditEventCreate,

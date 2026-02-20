@@ -53,6 +53,12 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
         raise credentials_exception
     return user_id
 
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/documents/upload", response_model=schemas.Document, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...), 

@@ -57,6 +57,11 @@ class AdviceResponse(BaseModel):
     generated_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
 
 # --- Endpoints ---
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.post("/generate", response_model=AdviceResponse)
 async def generate_advice(
     request: AdviceRequest, 
