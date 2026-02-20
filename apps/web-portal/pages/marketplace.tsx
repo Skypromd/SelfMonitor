@@ -84,7 +84,11 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
       if (!acc[title]) {
         acc[title] = [];
       }
-      acc[title] = [...new Set([...acc[title], ...grouped])];
+      const uniqueById = new Map<string, Partner>();
+      [...acc[title], ...grouped].forEach((partner) => {
+        uniqueById.set(partner.id, partner);
+      });
+      acc[title] = Array.from(uniqueById.values());
       return acc;
     }, {} as Record<string, Partner[]>);
   }, [groupedPartners]);
