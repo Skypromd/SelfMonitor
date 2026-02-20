@@ -144,8 +144,6 @@ async def calculate_and_submit_tax(
     user_id: str = Depends(get_current_user_id),
     auth_token: str = Depends(oauth2_scheme),
 ):
-    # This re-uses the logic from the calculate endpoint.
-    # In a real app, this logic would be in a shared function.
     calculation_result = await calculate_tax(request, user_id, auth_token)
 
     # 5. Submit the calculated tax to the integrations service

@@ -46,8 +46,7 @@ class CategorizationRequest(BaseModel):
 class CategorizationResponse(BaseModel):
     category: Optional[str]
 
-# This is a placeholder for a real ML model.
-# It uses simple rules to categorize transactions.
+# Deterministic ruleset used as the baseline categorization model.
 def suggest_category_from_rules(description: str) -> Optional[str]:
     """A simple rule-based model to categorize a transaction."""
     desc_lower = description.lower()

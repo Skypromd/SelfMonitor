@@ -11,6 +11,7 @@ import httpx
 import sqlite3
 import threading
 import json
+import time
 from collections import defaultdict
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
@@ -21,6 +22,7 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 ANALYTICS_DB_PATH = os.getenv("ANALYTICS_DB_PATH", "/tmp/analytics.db")
+ANALYTICS_JOB_DURATION_SECONDS = float(os.getenv("ANALYTICS_JOB_DURATION_SECONDS", "0.2"))
 
 
 def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
@@ -53,6 +55,7 @@ class JobRequest(BaseModel):
 
 class JobStatus(BaseModel):
     job_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    user_id: str
     job_type: Literal['run_etl_transactions', 'train_categorization_model']
     status: Literal['pending', 'running', 'completed', 'failed'] = 'pending'
     created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
@@ -76,6 +79,7 @@ def init_analytics_db() -> None:
             """
             CREATE TABLE IF NOT EXISTS jobs (
                 job_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL DEFAULT '',
                 job_type TEXT NOT NULL,
                 status TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -84,6 +88,17 @@ def init_analytics_db() -> None:
             )
             """
         )
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
+        if "user_id" not in columns:
+            conn.execute("ALTER TABLE jobs ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
+        conn.commit()
+        conn.close()
+
+
+def reset_analytics_db_for_tests() -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute("DELETE FROM jobs")
         conn.commit()
         conn.close()
 
@@ -91,6 +106,7 @@ def init_analytics_db() -> None:
 def _row_to_job(row: sqlite3.Row) -> JobStatus:
     return JobStatus(
         job_id=uuid.UUID(row["job_id"]),
+        user_id=row["user_id"],
         job_type=row["job_type"],
         status=row["status"],
         created_at=datetime.datetime.fromisoformat(row["created_at"]),
@@ -104,11 +120,12 @@ def save_job(job: JobStatus) -> None:
         conn = _connect()
         conn.execute(
             """
-            INSERT INTO jobs (job_id, job_type, status, created_at, finished_at, result_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO jobs (job_id, user_id, job_type, status, created_at, finished_at, result_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(job.job_id),
+                job.user_id,
                 job.job_type,
                 job.status,
                 job.created_at.isoformat(),
@@ -147,54 +164,51 @@ def update_job(job: JobStatus) -> None:
         conn.commit()
         conn.close()
 
-def simulate_job_execution(job_id: uuid.UUID):
-    """
-    Simulates the completion of a background job.
-    In a real app, this would be managed by a task queue like Celery.
-    """
+def run_job_worker(job_id: uuid.UUID):
     job = get_job(job_id)
-    if job and job.status == 'running':
-        job.status = 'completed'
-        job.finished_at = datetime.datetime.utcnow()
-        job.result = {
-            "message": f"{job.job_type} finished successfully.",
-            "rows_processed": 15000
-        }
-        update_job(job)
+    if not job:
+        return
+
+    job.status = 'running'
+    update_job(job)
+    time.sleep(ANALYTICS_JOB_DURATION_SECONDS)
+
+    job.status = 'completed'
+    job.finished_at = datetime.datetime.utcnow()
+    job.result = {
+        "message": f"{job.job_type} finished successfully.",
+        "rows_processed": 15000,
+    }
+    update_job(job)
 
 # --- Endpoints ---
 
 @app.post("/jobs", response_model=JobStatus, status_code=status.HTTP_202_ACCEPTED)
-async def trigger_job(request: JobRequest):
+async def trigger_job(
+    request: JobRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Accepts a new job request and puts it into a 'pending' state.
     """
-    new_job = JobStatus(job_type=request.job_type)
+    new_job = JobStatus(user_id=user_id, job_type=request.job_type)
     save_job(new_job)
-
-    print(f"Job {new_job.job_id} of type '{new_job.job_type}' created.")
-    # In a real app, you would now trigger the background task:
-    # run_analytics_job.delay(new_job.job_id, request.parameters)
-
+    threading.Thread(target=run_job_worker, args=(new_job.job_id,), daemon=True).start()
     return new_job
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
-async def get_job_status(job_id: uuid.UUID):
+async def get_job_status(
+    job_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+):
     """
     Retrieves the status of a specific job.
     """
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
-
-    # To make the demo interactive, simulate the job's progress.
-    if job.status == 'pending':
-        job.status = 'running'
-        update_job(job)
-    elif job.status == 'running':
-        # Simulate completion on the next poll
-        simulate_job_execution(job.job_id)
-        job = get_job(job_id)
+    if job.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     return job
 

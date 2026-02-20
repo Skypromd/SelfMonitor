@@ -1,5 +1,8 @@
 import os
 import json
+import datetime
+import sqlite3
+import threading
 import httpx
 from typing import Annotated, Any, Dict, List, Optional
 from pathlib import Path
@@ -15,6 +18,7 @@ COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8
 PARTNERS_CATALOG_PATH = Path(
     os.getenv("PARTNERS_CATALOG_PATH", str(Path(__file__).with_name("partners.json")))
 )
+PARTNER_DB_PATH = os.getenv("PARTNER_DB_PATH", "/tmp/partner_registry.db")
 
 # --- Security ---
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
@@ -70,6 +74,16 @@ class Partner(BaseModel):
     services_offered: List[str]
     website: HttpUrl
 
+
+class HandoffRecord(BaseModel):
+    handoff_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    user_id: str
+    partner_id: uuid.UUID
+    partner_name: str
+    status: str = "initiated"
+    audit_event_id: Optional[str] = None
+    created_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
+
 # --- Partner Catalog ---
 def load_partner_catalog() -> Dict[uuid.UUID, Partner]:
     with PARTNERS_CATALOG_PATH.open("r", encoding="utf-8") as f:
@@ -81,6 +95,94 @@ def load_partner_catalog() -> Dict[uuid.UUID, Partner]:
 
 
 partners_catalog = load_partner_catalog()
+
+# --- Persistent handoff store ---
+db_lock = threading.Lock()
+
+
+def _connect() -> sqlite3.Connection:
+    conn = sqlite3.connect(PARTNER_DB_PATH, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_partner_db() -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS partner_handoffs (
+                handoff_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                partner_id TEXT NOT NULL,
+                partner_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                audit_event_id TEXT,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+
+
+def reset_partner_db_for_tests() -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute("DELETE FROM partner_handoffs")
+        conn.commit()
+        conn.close()
+
+
+def save_handoff(handoff: HandoffRecord) -> None:
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            INSERT INTO partner_handoffs (
+                handoff_id, user_id, partner_id, partner_name, status, audit_event_id, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                str(handoff.handoff_id),
+                handoff.user_id,
+                str(handoff.partner_id),
+                handoff.partner_name,
+                handoff.status,
+                handoff.audit_event_id,
+                handoff.created_at.isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+
+def list_handoffs_for_user(user_id: str) -> List[HandoffRecord]:
+    with db_lock:
+        conn = _connect()
+        rows = conn.execute(
+            """
+            SELECT * FROM partner_handoffs
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        conn.close()
+
+    return [
+        HandoffRecord(
+            handoff_id=uuid.UUID(row["handoff_id"]),
+            user_id=row["user_id"],
+            partner_id=uuid.UUID(row["partner_id"]),
+            partner_name=row["partner_name"],
+            status=row["status"],
+            audit_event_id=row["audit_event_id"],
+            created_at=datetime.datetime.fromisoformat(row["created_at"]),
+        )
+        for row in rows
+    ]
 
 # --- Endpoints ---
 
@@ -116,16 +218,9 @@ async def initiate_handoff(
     user_id: str = Depends(get_current_user_id),
     auth_token: str = Depends(oauth2_scheme),
 ):
-    """
-    Initiates a user handoff to a partner and records it as a compliance event.
-    """
     partner = partners_catalog.get(partner_id)
     if not partner:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Partner not found")
-
-    # In a real app, this would trigger a workflow: e.g., send an email,
-    # make an API call to the partner's system, etc.
-    print(f"Initiating handoff for user {user_id} to partner {partner.name}.")
 
     audit_event_id = await log_audit_event(
         user_id=user_id,
@@ -137,7 +232,24 @@ async def initiate_handoff(
         auth_token=auth_token,
     )
 
+    handoff = HandoffRecord(
+        user_id=user_id,
+        partner_id=partner.id,
+        partner_name=partner.name,
+        audit_event_id=audit_event_id,
+    )
+    save_handoff(handoff)
+
     return {
         "message": f"Handoff to {partner.name} initiated.",
-        "audit_event_id": audit_event_id
+        "audit_event_id": audit_event_id,
+        "handoff_id": str(handoff.handoff_id),
     }
+
+
+@app.get("/handoffs", response_model=List[HandoffRecord])
+async def get_my_handoffs(user_id: str = Depends(get_current_user_id)):
+    return list_handoffs_for_user(user_id)
+
+
+init_partner_db()

@@ -287,6 +287,9 @@ services:
     environment:
       COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      PARTNER_DB_PATH: "/data/partner_registry.db"
+    volumes:
+      - partner_registry_data:/data
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -296,6 +299,9 @@ services:
     container_name: integrations-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      INTEGRATIONS_DB_PATH: "/data/integrations.db"
+    volumes:
+      - integrations_data:/data
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -406,6 +412,9 @@ services:
     container_name: calendar-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      CALENDAR_DB_PATH: "/data/calendar.db"
+    volumes:
+      - calendar_data:/data
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -435,6 +444,9 @@ volumes:
   auth_data:
   consent_data:
   analytics_data:
+  calendar_data:
+  partner_registry_data:
+  integrations_data:
 
 networks:
   default_network:
