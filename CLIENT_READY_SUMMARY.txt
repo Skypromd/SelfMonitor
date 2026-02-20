@@ -1,0 +1,127 @@
+CLIENT READY SUMMARY
+Date: 2026-02-19
+Branch: cursor/-bc-4bd633dc-7e3c-4f60-b5bd-b5129b3f9c83-ca53
+Current commit: 53b2a14
+
+==================================================
+1) FINAL STATUS
+==================================================
+The project is prepared for client presentation/demo and staged rollout.
+Core blockers were removed:
+- JWT-based auth rollout across services
+- security hardening of runtime configuration
+- replacement of in-memory state with persistent storage in critical services
+- health endpoints and healthchecks
+- internal API hardening + auth propagation
+- expanded CI checks and service-level tests
+- frontend API routing unified through API Gateway
+
+==================================================
+2) KEY TECHNICAL DELIVERIES
+==================================================
+
+[A] Authentication and Security
+- Removed fake auth dependencies and switched to JWT validation in core services.
+- Enforced user scope checks for sensitive APIs.
+- Hardened internal service-to-service auth propagation.
+- Removed weak/dev defaults from compose runtime.
+
+[B] Runtime Hardening
+- Added /health endpoints for all FastAPI services.
+- Added healthcheck blocks in docker-compose for services and infra.
+- Disabled anonymous Weaviate access; enabled API-key based auth.
+- Added internal token protection for QnA indexing endpoint.
+
+[C] Persistence and Data Integrity
+- auth-service: moved user state to persistent SQLite store.
+- consent-service: moved consent state to persistent SQLite store.
+- analytics-service: moved jobs to persistent store with worker progression.
+- calendar-service: persistent event storage + list endpoint.
+- integrations-service: persistent HMRC submission lifecycle + status endpoints.
+- partner-registry: persistent handoff history.
+- localization and partner catalogs externalized to JSON files.
+
+[D] CI and Test Coverage
+- Expanded Python CI matrix to all services.
+- Added missing tests for:
+  - analytics-service
+  - calendar-service
+  - categorization-service
+  - integrations-service
+  - partner-registry
+- Existing service tests remained green after changes.
+
+[E] Frontend Client-Readiness
+- Unified all web-portal backend calls to:
+  NEXT_PUBLIC_API_GATEWAY_URL (single entry point)
+- Removed direct dependency on many localhost service ports.
+- Verified production build after unification.
+
+==================================================
+3) IMPORTANT FILES ADDED/UPDATED
+==================================================
+
+Runbooks:
+- docs/runbooks/preprod_rollout_checklist.md
+- docs/runbooks/client_demo_runbook.md
+
+Client-facing stability:
+- apps/web-portal/pages/_app.tsx
+- apps/web-portal/pages/index.tsx
+- apps/web-portal/pages/dashboard.tsx
+- apps/web-portal/pages/submission.tsx
+- apps/web-portal/pages/reports.tsx
+- apps/web-portal/pages/documents.tsx
+- apps/web-portal/pages/marketplace.tsx
+- apps/web-portal/pages/activity.tsx
+- apps/web-portal/pages/profile.tsx
+- apps/web-portal/pages/admin.tsx
+
+Platform and service hardening:
+- docker-compose.yml
+- nginx/nginx.conf
+- services/* (auth, consent, analytics, calendar, integrations, partner-registry, qna, etc.)
+
+==================================================
+4) RECENT MILESTONE COMMITS
+==================================================
+
+- ec1b987  Roll out JWT auth across remaining services
+- 84d3dfc  Harden runtime config and add service healthchecks
+- ee95041  Persist auth consent analytics and externalize catalogs
+- 81ac6f3  Harden internal APIs and expand CI service checks
+- 0cab782  Finalize service workflows and add missing test coverage
+- 3e86983  Add pre-production checklist and rollout runbook
+- 53b2a14  Unify web API calls via gateway for client demos
+
+==================================================
+5) HOW TO RUN CLIENT DEMO
+==================================================
+
+1. Copy environment template:
+   cp .env.example .env
+
+2. Fill required secrets/credentials in .env
+   (AUTH_SECRET_KEY, DB creds, Vault creds, Weaviate key, QNA_INTERNAL_TOKEN)
+
+3. Start backend stack:
+   docker compose up --build
+
+4. Start web app:
+   cd apps/web-portal
+   npm install
+   npm run dev
+
+5. Open:
+   http://localhost:3000
+
+Use detailed guided flow:
+   docs/runbooks/client_demo_runbook.md
+
+==================================================
+6) OPERATIONAL NOTE
+==================================================
+
+For production promotion and rollback criteria, use:
+   docs/runbooks/preprod_rollout_checklist.md
+
