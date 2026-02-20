@@ -5,7 +5,7 @@ import '../styles/globals.css';
 import Layout from '../components/Layout';
 import { I18nProvider, I18nContext } from '../context/i18n';
 
-const LOCALIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || 'http://localhost:8012';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type AuthUser = {
   email: string;
@@ -44,7 +44,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     const fetchTranslations = async () => {
       const lang = locale || defaultLocale || 'en-GB';
       try {
-        const response = await fetch(`${LOCALIZATION_SERVICE_URL}/translations/${lang}/all`);
+        const response = await fetch(`${API_GATEWAY_URL}/localization/translations/${lang}/all`);
         if (!response.ok) {
           throw new Error('Failed to fetch translations');
         }

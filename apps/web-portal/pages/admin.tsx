@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type AdminPageProps = {
   token: string;
@@ -20,7 +20,7 @@ export default function AdminPage({ token }: AdminPageProps) {
     setMessage('');
 
     try {
-      const response = await fetch(`${AUTH_SERVICE_BASE_URL}/users/${emailToDeactivate}/deactivate`, {
+      const response = await fetch(`${API_GATEWAY_URL}/auth/users/${emailToDeactivate}/deactivate`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });

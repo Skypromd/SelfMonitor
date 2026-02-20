@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const COMPLIANCE_SERVICE_URL = process.env.NEXT_PUBLIC_COMPLIANCE_SERVICE_URL || 'http://localhost:8003';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type ActivityPageProps = {
   token: string;
@@ -28,12 +28,9 @@ export default function ActivityPage({ token, user }: ActivityPageProps) {
       }
 
       try {
-        const response = await fetch(
-          `${COMPLIANCE_SERVICE_URL}/audit-events?user_id=${encodeURIComponent(user.email)}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        const response = await fetch(`${API_GATEWAY_URL}/compliance/audit-events`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
         if (!response.ok) {
           throw new Error('Failed to fetch activity log');

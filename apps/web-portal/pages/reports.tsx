@@ -2,7 +2,7 @@ import { useState } from 'react';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:8011';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type ReportsPageProps = {
   token: string;
@@ -17,7 +17,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     setIsLoading(true);
     setError('');
     try {
-      const response = await fetch(`${ANALYTICS_SERVICE_URL}/reports/mortgage-readiness`, {
+      const response = await fetch(`${API_GATEWAY_URL}/analytics/reports/mortgage-readiness`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {

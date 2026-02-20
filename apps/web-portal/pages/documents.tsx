@@ -2,8 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const DOCUMENTS_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENTS_SERVICE_URL || 'http://localhost:8006';
-const QNA_SERVICE_URL = process.env.NEXT_PUBLIC_QNA_SERVICE_URL || 'http://localhost:8014';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type DocumentsPageProps = {
   token: string;
@@ -30,7 +29,7 @@ function SemanticSearch({ token }: { token: string }) {
     }
 
     try {
-      const response = await fetch(`${QNA_SERVICE_URL}/search`, {
+      const response = await fetch(`${API_GATEWAY_URL}/qna/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ query }),
@@ -89,7 +88,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
 
   const fetchDocuments = async () => {
     try {
-      const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents`, {
+      const response = await fetch(`${API_GATEWAY_URL}/documents/documents`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -125,7 +124,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
     formData.append('file', selectedFile);
 
     try {
-      const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents/upload`, {
+      const response = await fetch(`${API_GATEWAY_URL}/documents/documents/upload`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData,

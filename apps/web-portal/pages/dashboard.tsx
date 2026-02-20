@@ -4,9 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:8011';
-const TAX_ENGINE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || 'http://localhost:8007';
-const ADVICE_SERVICE_URL = process.env.NEXT_PUBLIC_ADVICE_SERVICE_URL || 'http://localhost:8008';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type DashboardPageProps = {
   token: string;
@@ -29,7 +27,7 @@ function TaxCalculator({ token }: { token: string }) {
     setResult(null);
 
     try {
-      const response = await fetch(`${TAX_ENGINE_URL}/calculate`, {
+      const response = await fetch(`${API_GATEWAY_URL}/tax/calculate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ start_date: startDate, end_date: endDate, jurisdiction: 'UK' }),
@@ -85,7 +83,7 @@ function CashFlowChart({ token }: { token: string }) {
   useEffect(() => {
     const fetchForecast = async () => {
       try {
-        const response = await fetch(`${ANALYTICS_SERVICE_URL}/forecast/cash-flow`, {
+        const response = await fetch(`${API_GATEWAY_URL}/analytics/forecast/cash-flow`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ days_to_forecast: 30 }),
@@ -135,7 +133,7 @@ function ActionCenter({ token }: { token: string }) {
   useEffect(() => {
     const fetchAdvice = async () => {
       try {
-        const response = await fetch(`${ADVICE_SERVICE_URL}/generate`, {
+        const response = await fetch(`${API_GATEWAY_URL}/advice/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ topic: 'income_protection' }),

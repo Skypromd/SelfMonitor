@@ -2,7 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const PROFILE_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_PROFILE_SERVICE_URL || 'http://localhost:8001';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type ProfilePageProps = {
   token: string;
@@ -28,7 +28,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
     setMessage('');
     setError('');
     try {
-      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me`, {
+      const response = await fetch(`${API_GATEWAY_URL}/profile/profiles/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 404) {
@@ -64,7 +64,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
     setMessage('');
     setError('');
     try {
-      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me`, {
+      const response = await fetch(`${API_GATEWAY_URL}/profile/profiles/me`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...profile, date_of_birth: profile.date_of_birth || null }),

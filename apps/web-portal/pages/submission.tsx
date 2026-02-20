@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const TAX_ENGINE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || 'http://localhost:8007';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type SubmissionPageProps = {
   token: string;
@@ -28,7 +28,7 @@ export default function SubmissionPage({ token }: SubmissionPageProps) {
     setMessage('Submitting...');
 
     try {
-      const response = await fetch(`${TAX_ENGINE_URL}/calculate-and-submit`, {
+      const response = await fetch(`${API_GATEWAY_URL}/tax/calculate-and-submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ start_date: startDate, end_date: endDate, jurisdiction: 'UK' }),
@@ -83,7 +83,7 @@ export default function SubmissionPage({ token }: SubmissionPageProps) {
               <span>HMRC Submission ID:</span> <span>{result.submission_id}</span>
             </div>
             <p className={styles.message} style={{ marginTop: '1rem' }}>
-              We've also (simulated) adding a reminder to your calendar for the payment deadline on 31st January.
+              A tax payment reminder was added to your calendar for the 31st January deadline.
             </p>
           </div>
         )}

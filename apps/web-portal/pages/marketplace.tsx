@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
 
-const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || 'http://localhost:8009';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type MarketplacePageProps = {
   token: string;
@@ -24,7 +24,7 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
   useEffect(() => {
     const fetchPartners = async () => {
       try {
-        const response = await fetch(`${PARTNER_REGISTRY_URL}/partners`, {
+        const response = await fetch(`${API_GATEWAY_URL}/partners/partners`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) {
@@ -55,7 +55,7 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
   const handleHandoff = async (partnerId: string, partnerName: string) => {
     setMessage('');
     try {
-      const response = await fetch(`${PARTNER_REGISTRY_URL}/partners/${partnerId}/handoff`, {
+      const response = await fetch(`${API_GATEWAY_URL}/partners/partners/${partnerId}/handoff`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
