@@ -1,6 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException
+from typing import Annotated, List, Optional
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
 import uuid
 import datetime
 import os
@@ -41,10 +44,27 @@ def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: s
         print(f"Error storing tokens in Vault: {e}")
 
 
-# --- Placeholder Security ---
-def fake_auth_check():
-    """A fake dependency to simulate user authentication."""
-    return {"user_id": "fake-user-123"}
+# --- Security ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
 
 app = FastAPI(
     title="Banking Connector Service",
@@ -77,15 +97,17 @@ class Transaction(BaseModel):
 @app.post("/connections/initiate", response_model=InitiateConnectionResponse)
 async def initiate_connection(
     request: InitiateConnectionRequest,
-    auth_user: dict = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id)
 ):
-    print(f"User {auth_user['user_id']} is initiating connection with {request.provider_id}")
+    print(f"User {user_id} is initiating connection with {request.provider_id}")
     consent_url = f"https://fake-bank-provider.com/consent?client_id={request.provider_id}&redirect_uri={request.redirect_uri}&scope=transactions"
     return InitiateConnectionResponse(consent_url=consent_url)
 
 @app.get("/connections/callback", response_model=CallbackResponse)
 async def handle_provider_callback(
     code: str,
+    user_id: str = Depends(get_current_user_id),
+    auth_token: str = Depends(oauth2_scheme),
     state: Optional[str] = None,
 ):
     if not code:
@@ -108,8 +130,12 @@ async def handle_provider_callback(
     ]
 
     # Dispatch the task to the Celery queue.
-    # We convert Pydantic models to dicts as Celery works best with simple data types.
-    task = import_transactions_task.delay(str(connection_id), [t.dict() for t in mock_transactions])
+    # We forward the caller's token so transactions-service can keep user ownership.
+    task = import_transactions_task.delay(
+        str(connection_id),
+        [t.model_dump() for t in mock_transactions],
+        auth_token,
+    )
 
     return CallbackResponse(
         connection_id=connection_id,

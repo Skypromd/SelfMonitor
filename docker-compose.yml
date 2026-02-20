@@ -59,6 +59,7 @@ services:
       - postgres
     environment:
       DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_user_profile"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     # Run migrations before starting the app server
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -73,6 +74,7 @@ services:
     environment:
       DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_transactions"
       CATEGORIZATION_SERVICE_URL: "http://categorization-service/categorize"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
@@ -95,6 +97,7 @@ services:
       - compliance-service
     environment:
       COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     networks:
       - default_network
 
@@ -108,6 +111,7 @@ services:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/import"
       VAULT_ADDR: "http://vault:8200"
       VAULT_TOKEN: "dev-root-token" # This is the default root token for Vault's dev mode
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     networks:
       - default_network
 
@@ -200,6 +204,7 @@ services:
       AWS_SECRET_ACCESS_KEY: "test"
       AWS_DEFAULT_REGION: "eu-west-2"
       S3_BUCKET_NAME: "documents-bucket"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     # No longer need local volume for uploads
     # volumes:
     #   - documents_data:/uploads
@@ -221,6 +226,7 @@ services:
       CALENDAR_SERVICE_URL: "http://calendar-service/events"
       OTEL_SERVICE_NAME: "tax-engine"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     networks:
       - default_network
 
@@ -231,6 +237,7 @@ services:
       - transactions-service
     environment:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     networks:
       - default_network
 
@@ -241,12 +248,15 @@ services:
       - compliance-service
     environment:
       COMPLIANCE_SERVICE_URL: "http://compliance-service/audit-events"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     networks:
       - default_network
 
   integrations-service:
     build: ./services/integrations-service
     container_name: integrations-service
+    environment:
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     networks:
       - default_network
 
@@ -257,6 +267,7 @@ services:
       - transactions-service
     environment:
       TRANSACTIONS_SERVICE_URL: "http://transactions-service/transactions/me"
+      AUTH_SECRET_KEY: "a_secure_random_string_for_jwt_signing_!@#$%^"
     networks:
       - default_network
 

@@ -1,14 +1,34 @@
-from fastapi import FastAPI, Depends, status
+import os
+from typing import Annotated, Literal
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from typing import Literal
 import uuid
 import datetime
 
-# --- Placeholder Security ---
+# --- Security ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
 
 app = FastAPI(
     title="Integrations Service",
@@ -37,7 +57,7 @@ class SubmissionStatus(BaseModel):
 )
 async def submit_tax_return(
     request: HMRCSubmissionRequest, 
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id)
 ):
     """
     Simulates submitting a tax return to an external service like HMRC.

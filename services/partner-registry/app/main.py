@@ -1,17 +1,37 @@
 import os
 import httpx
-from fastapi import FastAPI, HTTPException, status, Query, Depends
+from typing import Annotated, Any, Dict, List, Optional
+
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel, HttpUrl, Field
-from typing import List, Optional, Dict, Any
 import uuid
 
 # --- Configuration ---
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+# --- Security ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
 
 app = FastAPI(
     title="Partner Registry Service",
@@ -98,7 +118,7 @@ async def get_partner_details(partner_id: uuid.UUID):
 @app.post("/partners/{partner_id}/handoff", status_code=status.HTTP_202_ACCEPTED)
 async def initiate_handoff(
     partner_id: uuid.UUID,
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id)
 ):
     """
     Initiates a user handoff to a partner and records it as a compliance event.

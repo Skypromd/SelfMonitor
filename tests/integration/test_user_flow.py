@@ -6,6 +6,24 @@ import os
 # URL'ы наших сервисов, как они доступны снаружи Docker через API Gateway
 API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:8000/api")
 
+def register_and_login():
+    unique_email = f"testuser_{uuid.uuid4()}@example.com"
+    password = "a_strong_password"
+
+    reg_response = httpx.post(
+        f"{API_GATEWAY_URL}/auth/register",
+        json={"email": unique_email, "password": password}
+    )
+    assert reg_response.status_code == 201
+
+    login_response = httpx.post(
+        f"{API_GATEWAY_URL}/auth/token",
+        data={"username": unique_email, "password": password}
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
 def test_user_registration_and_profile_creation():
     """
     This is an integration test that checks the flow between
@@ -68,27 +86,29 @@ def test_full_transaction_import_flow():
     4. The worker calls transactions-service, which calls categorization-service.
     5. The final, categorized data is written to the database.
     """
-    # 1. Trigger the flow by calling the banking-connector callback
+    # 1. Create a user and get a valid JWT for downstream service auth
+    auth_headers = register_and_login()
+
+    # 2. Trigger the flow by calling the banking-connector callback
     callback_response = httpx.get(
-        f"{API_GATEWAY_URL}/banking/connections/callback?code=integration-test-code"
+        f"{API_GATEWAY_URL}/banking/connections/callback?code=integration-test-code",
+        headers=auth_headers
     )
     assert callback_response.status_code == 200
     callback_data = callback_response.json()
     account_id = callback_data["connection_id"]
     print(f"Callback successful. Account ID: {account_id}. Celery task ID: {callback_data['task_id']}")
 
-    # 2. Wait for the asynchronous processing to complete.
+    # 3. Wait for the asynchronous processing to complete.
     # In a real-world test suite, we might use more sophisticated polling
     # or check the Celery task status, but sleep is simple and effective here.
     print("Waiting for Celery worker to process the task...")
     time.sleep(8) # Give enough time for Celery task (mocked 2s) + network calls
 
-    # 3. Verify the final result in the transactions-service
-    # We need auth for this, but our fake_auth_check uses a static user_id,
-    # so we don't need a real token for this specific test.
+    # 4. Verify the final result in the transactions-service
     get_trans_response = httpx.get(
         f"{API_GATEWAY_URL}/transactions/accounts/{account_id}/transactions",
-        headers={"Authorization": "Bearer fake-token"} # This is for passing the auth check
+        headers=auth_headers
     )
 
     assert get_trans_response.status_code == 200
@@ -96,7 +116,7 @@ def test_full_transaction_import_flow():
 
     print("Received transactions from transactions-service:", transactions)
 
-    # 4. Assert that the data is correct and auto-categorization worked
+    # 5. Assert that the data is correct and auto-categorization worked
     assert len(transactions) == 2
 
     tesco_transaction = next((t for t in transactions if t['description'] == 'Tesco'), None)

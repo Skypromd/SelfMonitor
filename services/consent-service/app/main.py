@@ -1,6 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException, status, Response
+from typing import Annotated, Any, Dict, List, Literal
+
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel, Field
-from typing import List, Literal, Dict, Any
 import uuid
 import datetime
 import httpx
@@ -10,11 +13,27 @@ import os
 # The URL for the compliance service is now read from an environment variable.
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
 
-# --- Placeholder Security ---
+# --- Security ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
 
 
 app = FastAPI(
@@ -66,7 +85,7 @@ async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]):
 # --- Endpoints ---
 
 @app.post("/consents", response_model=Consent, status_code=status.HTTP_201_CREATED)
-async def record_consent(consent_in: ConsentCreate, user_id: str = Depends(fake_auth_check)):
+async def record_consent(consent_in: ConsentCreate, user_id: str = Depends(get_current_user_id)):
     """
     Records that a user has given consent for a specific connection.
     """
@@ -87,7 +106,7 @@ async def record_consent(consent_in: ConsentCreate, user_id: str = Depends(fake_
     return new_consent
 
 @app.get("/consents", response_model=List[Consent])
-async def list_active_consents(user_id: str = Depends(fake_auth_check)):
+async def list_active_consents(user_id: str = Depends(get_current_user_id)):
     """
     Lists all active consents for the authenticated user.
     """
@@ -98,7 +117,7 @@ async def list_active_consents(user_id: str = Depends(fake_auth_check)):
     return user_consents
 
 @app.get("/consents/{consent_id}", response_model=Consent)
-async def get_consent(consent_id: uuid.UUID, user_id: str = Depends(fake_auth_check)):
+async def get_consent(consent_id: uuid.UUID, user_id: str = Depends(get_current_user_id)):
     """
     Retrieves a specific consent by its ID.
     """
@@ -108,7 +127,7 @@ async def get_consent(consent_id: uuid.UUID, user_id: str = Depends(fake_auth_ch
     return consent
 
 @app.delete("/consents/{consent_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_consent(consent_id: uuid.UUID, user_id: str = Depends(fake_auth_check)):
+async def revoke_consent(consent_id: uuid.UUID, user_id: str = Depends(get_current_user_id)):
     """
     Revokes a user's consent.
     """

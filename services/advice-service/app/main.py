@@ -1,18 +1,38 @@
 import datetime
 import os
 from collections import defaultdict
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 
 import httpx
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
 # --- Configuration ---
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    return "fake-user-123"
+# --- Security ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
 
 app = FastAPI(
     title="Advice Service",
@@ -40,14 +60,15 @@ class AdviceResponse(BaseModel):
 @app.post("/generate", response_model=AdviceResponse)
 async def generate_advice(
     request: AdviceRequest, 
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id),
+    auth_token: str = Depends(oauth2_scheme),
 ):
     print(f"Generating advice for user {user_id} on topic: {request.topic}")
 
     # --- Fetch transactions once for all topics that need them ---
     try:
         async with httpx.AsyncClient() as client:
-            headers = {"Authorization": "Bearer fake-token"}
+            headers = {"Authorization": f"Bearer {auth_token}"}
             response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
             response.raise_for_status()
             transactions = [Transaction(**t) for t in response.json()]

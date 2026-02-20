@@ -1,4 +1,9 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+import os
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
@@ -10,10 +15,27 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    """A fake dependency to simulate user authentication and return a user ID."""
-    return "fake-user-123"
+# --- Security ---
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
 
 # @app.on_event("startup")
 # async def startup():
@@ -24,7 +46,7 @@ def fake_auth_check() -> str:
 # --- Endpoints ---
 @app.get("/profiles/me", response_model=schemas.UserProfile)
 async def get_my_profile(
-    user_id: str = Depends(fake_auth_check), 
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves the profile for the currently authenticated user from the database."""
@@ -36,7 +58,7 @@ async def get_my_profile(
 @app.put("/profiles/me", response_model=schemas.UserProfile)
 async def create_or_update_my_profile(
     profile_update: schemas.UserProfileUpdate,
-    user_id: str = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Creates a new profile or updates an existing one for the authenticated user in the database."""

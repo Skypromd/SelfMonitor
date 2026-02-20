@@ -2,6 +2,7 @@
 fastapi
 uvicorn[standard]
 pydantic
+python-jose[cryptography]
 httpx
 opentelemetry-distro
 opentelemetry-instrumentation-fastapi
