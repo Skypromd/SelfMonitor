@@ -108,6 +108,7 @@ services:
       - postgres
     environment:
       DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_compliance"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     healthcheck: *fastapi-healthcheck
     networks:
@@ -189,6 +190,7 @@ services:
       AWS_DEFAULT_REGION: "eu-west-2"
       S3_BUCKET_NAME: "documents-bucket"
       QNA_SERVICE_URL: "http://qna-service/index"
+      QNA_INTERNAL_TOKEN: "${QNA_INTERNAL_TOKEN:?QNA_INTERNAL_TOKEN must be set}"
     networks:
       - default_network
 
@@ -237,6 +239,7 @@ services:
       AWS_DEFAULT_REGION: "eu-west-2"
       S3_BUCKET_NAME: "documents-bucket"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      QNA_INTERNAL_TOKEN: "${QNA_INTERNAL_TOKEN:?QNA_INTERNAL_TOKEN must be set}"
     # No longer need local volume for uploads
     # volumes:
     #   - documents_data:/uploads
@@ -322,6 +325,8 @@ services:
   categorization-service:
     build: ./services/categorization-service
     container_name: categorization-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -346,6 +351,8 @@ services:
     environment:
       WEAVIATE_URL: "http://weaviate:8080"
       WEAVIATE_API_KEY: "${WEAVIATE_API_KEY:?WEAVIATE_API_KEY must be set}"
+      QNA_INTERNAL_TOKEN: "${QNA_INTERNAL_TOKEN:?QNA_INTERNAL_TOKEN must be set}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -397,6 +404,8 @@ services:
   calendar-service:
     build: ./services/calendar-service
     container_name: calendar-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network

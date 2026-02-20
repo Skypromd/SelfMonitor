@@ -13,6 +13,7 @@ from . import crud, schemas
 # --- DB & Service URL Setup ---
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost/db_documents")
 QNA_SERVICE_URL = os.getenv("QNA_SERVICE_URL", "http://localhost:8014/index")
+QNA_INTERNAL_TOKEN = os.getenv("QNA_INTERNAL_TOKEN")
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -24,10 +25,15 @@ celery = Celery(__name__, broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEN
 
 def index_document_content(user_id: str, doc_id: str, filename: str, content: str):
     """Synchronous function to call the Q&A service for indexing."""
+    if not QNA_INTERNAL_TOKEN:
+        print("Error indexing document: QNA_INTERNAL_TOKEN is not configured.")
+        return
+
     try:
         with httpx.Client() as client:
             response = client.post(
                 QNA_SERVICE_URL,
+                headers={"X-Internal-Token": QNA_INTERNAL_TOKEN},
                 json={
                     "user_id": user_id,
                     "document_id": doc_id,

@@ -1,12 +1,20 @@
 import os
+from typing import Annotated
+
 import weaviate
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
 
 # --- Configuration ---
 WEAVIATE_URL = os.getenv("WEAVIATE_URL", "http://localhost:8080")
 WEAVIATE_API_KEY = os.getenv("WEAVIATE_API_KEY")
+QNA_INTERNAL_TOKEN = os.getenv("QNA_INTERNAL_TOKEN")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 # Load a small but effective model for generating sentence embeddings
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -54,6 +62,23 @@ async def health_check():
         raise HTTPException(status_code=503, detail="Weaviate not available")
     return {"status": "ok"}
 
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
+
 # --- API Models ---
 class IndexRequest(BaseModel):
     user_id: str
@@ -62,7 +87,6 @@ class IndexRequest(BaseModel):
     text_content: str
 
 class SearchRequest(BaseModel):
-    user_id: str
     query: str
 
 class SearchResult(BaseModel):
@@ -73,9 +97,16 @@ class SearchResult(BaseModel):
 
 # --- Endpoints ---
 @app.post("/index")
-async def index_document(request: IndexRequest):
+async def index_document(
+    request: IndexRequest,
+    internal_token: Annotated[str | None, Header(alias="X-Internal-Token")] = None,
+):
     if not client:
         raise HTTPException(status_code=503, detail="Weaviate not available")
+    if not QNA_INTERNAL_TOKEN:
+        raise HTTPException(status_code=503, detail="QnA internal token is not configured")
+    if internal_token != QNA_INTERNAL_TOKEN:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized internal caller")
 
     # 1. Generate embedding for the text content
     vector = model.encode(request.text_content).tolist()
@@ -97,7 +128,10 @@ async def index_document(request: IndexRequest):
     return {"message": "Document indexed successfully."}
 
 @app.post("/search", response_model=list[SearchResult])
-async def search_documents(request: SearchRequest):
+async def search_documents(
+    request: SearchRequest,
+    user_id: str = Depends(get_current_user_id),
+):
     if not client:
         raise HTTPException(status_code=503, detail="Weaviate not available")
 
@@ -112,7 +146,7 @@ async def search_documents(request: SearchRequest):
         .with_where({
             "path": ["user_id"],
             "operator": "Equal",
-            "valueText": request.user_id,
+            "valueText": user_id,
         })
         .with_limit(5)
         .with_additional(["distance"]) # 'distance' is Weaviate's measure of similarity

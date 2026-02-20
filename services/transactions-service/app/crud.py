@@ -9,11 +9,16 @@ import asyncio
 
 CATEGORIZATION_SERVICE_URL = os.getenv("CATEGORIZATION_SERVICE_URL", "http://localhost:8013/categorize")
 
-async def get_suggested_category(description: str) -> str | None:
+async def get_suggested_category(description: str, auth_token: str) -> str | None:
     """Calls the categorization service to get a suggested category."""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.post(CATEGORIZATION_SERVICE_URL, json={"description": description}, timeout=2.0)
+            response = await client.post(
+                CATEGORIZATION_SERVICE_URL,
+                headers={"Authorization": f"Bearer {auth_token}"},
+                json={"description": description},
+                timeout=2.0,
+            )
             if response.status_code == 200:
                 return response.json().get("category")
     except httpx.RequestError:
@@ -21,12 +26,18 @@ async def get_suggested_category(description: str) -> str | None:
         return None
     return None
 
-async def create_transactions(db: AsyncSession, user_id: str, account_id: uuid.UUID, transactions: List[schemas.TransactionBase]):
+async def create_transactions(
+    db: AsyncSession,
+    user_id: str,
+    account_id: uuid.UUID,
+    transactions: List[schemas.TransactionBase],
+    auth_token: str,
+):
     """
     Creates multiple transaction records, enriching them with categories from the categorization service.
     """
     # Create categorization tasks for all transactions concurrently
-    category_tasks = [get_suggested_category(t.description) for t in transactions]
+    category_tasks = [get_suggested_category(t.description, auth_token) for t in transactions]
     suggested_categories = await asyncio.gather(*category_tasks)
 
     db_transactions = []

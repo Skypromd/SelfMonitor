@@ -52,6 +52,7 @@ async def health_check():
 async def import_transactions(
     request: schemas.TransactionImportRequest, 
     user_id: str = Depends(get_current_user_id),
+    auth_token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ):
     """Imports a batch of transactions for an account into the database."""
@@ -59,7 +60,8 @@ async def import_transactions(
         db, 
         user_id=user_id, 
         account_id=request.account_id, 
-        transactions=request.transactions
+        transactions=request.transactions,
+        auth_token=auth_token,
     )
     return {"message": "Import request accepted", "imported_count": imported_count}
 

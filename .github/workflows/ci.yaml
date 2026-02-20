@@ -15,17 +15,26 @@ on:
       - '.github/workflows/ci.yaml'
 
 jobs:
-  python-service-tests:
-    name: Python tests (${{ matrix.service }})
+  python-service-checks:
+    name: Python checks (${{ matrix.service }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         service:
+          - advice-service
+          - analytics-service
           - auth-service
           - banking-connector
+          - calendar-service
+          - categorization-service
           - compliance-service
           - consent-service
+          - documents-service
+          - integrations-service
+          - localization-service
+          - partner-registry
+          - qna-service
           - tax-engine
           - transactions-service
           - user-profile-service
@@ -48,10 +57,14 @@ jobs:
         run: |
           python -m compileall services/${{ matrix.service }}/app
 
-      - name: Run service unit tests
+      - name: Run service unit tests when present
         working-directory: ./services/${{ matrix.service }}
         run: |
-          python -m pytest -q tests/test_main.py
+          if [ -f tests/test_main.py ]; then
+            python -m pytest -q tests/test_main.py
+          else
+            echo "No tests/test_main.py for ${{ matrix.service }}, skipping tests."
+          fi
 
   web-portal-build:
     name: Web portal production build

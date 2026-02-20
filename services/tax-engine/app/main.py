@@ -169,12 +169,16 @@ async def calculate_and_submit_tax(
             # UK Self Assessment payment deadline is 31st Jan of the next year
             deadline_year = request.end_date.year + 1
             deadline = datetime.date(deadline_year, 1, 31)
-            await client.post(CALENDAR_SERVICE_URL, json={
-                "user_id": user_id,
-                "event_title": "UK Self Assessment Tax Payment Due",
-                "event_date": deadline.isoformat(),
-                "notes": f"Estimated tax due: £{calculation_result.estimated_tax_due}. Submission ID: {submission_data.get('submission_id')}"
-            })
+            await client.post(
+                CALENDAR_SERVICE_URL,
+                headers={"Authorization": f"Bearer {auth_token}"},
+                json={
+                    "user_id": user_id,
+                    "event_title": "UK Self Assessment Tax Payment Due",
+                    "event_date": deadline.isoformat(),
+                    "notes": f"Estimated tax due: £{calculation_result.estimated_tax_due}. Submission ID: {submission_data.get('submission_id')}",
+                },
+            )
     except httpx.RequestError:
         # This is a non-critical step, so we don't fail the whole request if it fails.
         print("Warning: Could not create calendar event.")

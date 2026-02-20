@@ -177,12 +177,13 @@ def update_consent(consent: Consent) -> None:
 
 # --- Service Communication ---
 
-async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]):
+async def log_audit_event(user_id: str, action: str, details: Dict[str, Any], auth_token: str):
     """Sends an event to the compliance service."""
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
                 COMPLIANCE_SERVICE_URL,
+                headers={"Authorization": f"Bearer {auth_token}"},
                 json={"user_id": user_id, "action": action, "details": details},
                 timeout=5.0
             )
@@ -199,7 +200,11 @@ async def health_check():
     return {"status": "ok"}
 
 @app.post("/consents", response_model=Consent, status_code=status.HTTP_201_CREATED)
-async def record_consent(consent_in: ConsentCreate, user_id: str = Depends(get_current_user_id)):
+async def record_consent(
+    consent_in: ConsentCreate,
+    user_id: str = Depends(get_current_user_id),
+    auth_token: str = Depends(oauth2_scheme),
+):
     """
     Records that a user has given consent for a specific connection.
     """
@@ -214,7 +219,8 @@ async def record_consent(consent_in: ConsentCreate, user_id: str = Depends(get_c
             "consent_id": str(new_consent.id),
             "provider": new_consent.provider,
             "scopes": new_consent.scopes
-        }
+        },
+        auth_token=auth_token,
     )
 
     return new_consent
@@ -237,7 +243,11 @@ async def get_consent(consent_id: uuid.UUID, user_id: str = Depends(get_current_
     return consent
 
 @app.delete("/consents/{consent_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def revoke_consent(consent_id: uuid.UUID, user_id: str = Depends(get_current_user_id)):
+async def revoke_consent(
+    consent_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    auth_token: str = Depends(oauth2_scheme),
+):
     """
     Revokes a user's consent.
     """
@@ -256,7 +266,8 @@ async def revoke_consent(consent_id: uuid.UUID, user_id: str = Depends(get_curre
     await log_audit_event(
         user_id=user_id,
         action="consent.revoked",
-        details={"consent_id": str(consent.id)}
+        details={"consent_id": str(consent.id)},
+        auth_token=auth_token,
     )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)

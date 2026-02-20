@@ -45,12 +45,13 @@ app = FastAPI(
 )
 
 # --- Service Communication ---
-async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]) -> str | None:
+async def log_audit_event(user_id: str, action: str, details: Dict[str, Any], auth_token: str) -> str | None:
     """Sends an event to the compliance service and returns the event ID."""
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 COMPLIANCE_SERVICE_URL,
+                headers={"Authorization": f"Bearer {auth_token}"},
                 json={"user_id": user_id, "action": action, "details": details},
                 timeout=5.0
             )
@@ -112,7 +113,8 @@ async def get_partner_details(partner_id: uuid.UUID):
 @app.post("/partners/{partner_id}/handoff", status_code=status.HTTP_202_ACCEPTED)
 async def initiate_handoff(
     partner_id: uuid.UUID,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user_id),
+    auth_token: str = Depends(oauth2_scheme),
 ):
     """
     Initiates a user handoff to a partner and records it as a compliance event.
@@ -131,7 +133,8 @@ async def initiate_handoff(
         details={
             "partner_id": str(partner.id),
             "partner_name": partner.name,
-        }
+        },
+        auth_token=auth_token,
     )
 
     return {
