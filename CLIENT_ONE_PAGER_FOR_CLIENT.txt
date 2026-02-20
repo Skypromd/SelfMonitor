@@ -1,0 +1,37 @@
+CLIENT ONE-PAGER
+Date: 2026-02-19
+
+PROJECT STATUS
+The platform is ready for client demonstration and controlled rollout.
+Core reliability, security, and end-to-end user flows are in place.
+
+WHAT IS ALREADY WORKING
+1. Secure sign-in and protected user sessions.
+2. Profile management (create/update/view).
+3. Transaction import, categorization, and review.
+4. Tax calculation and submission workflow.
+5. Document upload and semantic search.
+6. Partner handoff workflow and activity visibility.
+7. Monitoring and operational health checks.
+
+WHAT THIS MEANS FOR YOU
+- You can see a complete product journey from login to insights.
+- Key scenarios are connected and functioning as one platform.
+- The solution is now stable enough for customer demos and pilot use.
+
+DEMO FORMAT (10-15 MINUTES)
+1. Register and login.
+2. Create/update profile.
+3. Connect/import transactions.
+4. Open dashboard (forecast + tax estimate + guidance).
+5. Submit tax flow.
+6. Upload a document and run semantic search.
+7. Initiate partner handoff and view activity.
+
+NEXT PHASE AFTER DEMO
+- Start pilot rollout.
+- Collect client feedback.
+- Prioritize final product polish for broad production expansion.
+
+CONTACT
+Technical runbook is available internally if needed by delivery teams.
