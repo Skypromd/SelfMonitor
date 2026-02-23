@@ -3,12 +3,16 @@ from fastapi.testclient import TestClient
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from app.main import app, get_user_record, reset_auth_db_for_tests, set_user_admin_for_tests
+for module_name in list(sys.modules):
+    if module_name == "app" or module_name.startswith("app."):
+        sys.modules.pop(module_name, None)
+from app.main import app, fake_users_db
 
 client = TestClient(app)
 
 def setup_function():
-    reset_auth_db_for_tests()
+    # Clear the in-memory database before each test
+    fake_users_db.clear()
 
 def test_register_user_success():
     """
@@ -16,7 +20,7 @@ def test_register_user_success():
     """
     response = client.post(
         "/register",
-        json={"email": "test@example.com", "password": "averysecurepassword"},
+        data={"username": "test@example.com", "password": "averysecurepassword"},
     )
     assert response.status_code == 201
     data = response.json()
@@ -24,11 +28,8 @@ def test_register_user_success():
     assert data["is_active"] is True
 
     # Check that the password is not stored in plain text
-    user_record = get_user_record("test@example.com")
-    assert user_record is not None
-    assert "password" not in user_record
-    assert "hashed_password" in user_record
-    assert user_record["hashed_password"] != "averysecurepassword"
+    assert "password" not in fake_users_db["test@example.com"]
+    assert "hashed_password" in fake_users_db["test@example.com"]
 
 def test_register_user_already_exists():
     """
@@ -37,12 +38,12 @@ def test_register_user_already_exists():
     # First, create the user
     client.post(
         "/register",
-        json={"email": "existing@example.com", "password": "averysecurepassword"},
+        data={"username": "existing@example.com", "password": "averysecurepassword"},
     )
     # Then, try to create it again
     response = client.post(
         "/register",
-        json={"email": "existing@example.com", "password": "anotherpassword"},
+        data={"username": "existing@example.com", "password": "anotherpassword"},
     )
     assert response.status_code == 400
     assert response.json() == {"detail": "Email already registered"}
@@ -54,7 +55,7 @@ def test_login_and_get_me():
     # 1. Register user
     email = "login-test@example.com"
     password = "averysecurepassword"
-    register_response = client.post("/register", json={"email": email, "password": password})
+    register_response = client.post("/register", data={"username": email, "password": password})
     assert register_response.status_code == 201
 
     # 2. Log in to get token
@@ -83,7 +84,7 @@ def test_login_wrong_password():
     """
     email = "wrong-pass@example.com"
     password = "averysecurepassword"
-    client.post("/register", json={"email": email, "password": password})
+    client.post("/register", data={"username": email, "password": password})
 
     response = client.post(
         "/token",
@@ -107,12 +108,12 @@ def test_deactivate_user():
     # 1. Register an admin and a regular user
     admin_email = "admin@example.com"
     admin_pass = "adminpass"
-    client.post("/register", json={"email": admin_email, "password": admin_pass})
-    set_user_admin_for_tests(admin_email, True)
+    client.post("/register", data={"username": admin_email, "password": admin_pass})
+    fake_users_db[admin_email]["user_data"]["is_admin"] = True
 
     user_email = "user@example.com"
     user_pass = "userpass"
-    client.post("/register", json={"email": user_email, "password": user_pass})
+    client.post("/register", data={"username": user_email, "password": user_pass})
 
     # 2. Admin logs in
     admin_login_response = client.post("/token", data={"username": admin_email, "password": admin_pass})
@@ -137,11 +138,11 @@ def test_deactivate_user():
 def test_non_admin_cannot_deactivate():
     # 1. Register two users
     user1_email = "user1@example.com"
-    client.post("/register", json={"email": user1_email, "password": "password1"})
+    client.post("/register", data={"username": user1_email, "password": "password1"})
 
     user2_email = "user2@example.com"
     user2_pass = "password2"
-    client.post("/register", json={"email": user2_email, "password": user2_pass})
+    client.post("/register", data={"username": user2_email, "password": user2_pass})
 
     # 2. User 2 logs in
     user2_login_response = client.post("/token", data={"username": user2_email, "password": user2_pass})

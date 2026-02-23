@@ -12,4 +12,4 @@ opentelemetry-instrumentation-httpx
 pytest
 pytest-asyncio
 pytest-mock
-pact-python
+pact-python==3.2.1

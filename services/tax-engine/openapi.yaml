@@ -52,6 +52,8 @@ paths:
                     format: uuid
                   message:
                     type: string
+        '402':
+          description: Pro subscription required.
         '502':
           description: Error communicating with a downstream service.
 
@@ -70,10 +72,34 @@ components:
           type: string
           description: The tax jurisdiction (e.g., 'UK', 'US-CA').
           example: 'UK'
+        manual_adjustments:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualAdjustment'
       required:
         - start_date
         - end_date
         - jurisdiction
+    ManualAdjustment:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        description:
+          type: string
+        amount:
+          type: number
+          format: float
+        tax_category:
+          type: string
+          description: Optional SA103 tax category override.
+        business_use_percent:
+          type: number
+          format: float
+          description: Business-use percentage (0-100).
+      required:
+        - amount
     TaxSummaryItem:
       type: object
       properties:
@@ -83,7 +109,10 @@ components:
         total_amount:
           type: number
           format: float
-        taxable_amount:
+        allowable_amount:
+          type: number
+          format: float
+        disallowable_amount:
           type: number
           format: float
     TaxCalculationResult:
@@ -103,6 +132,24 @@ components:
         total_expenses:
           type: number
           format: float
+        total_allowable_expenses:
+          type: number
+          format: float
+        total_disallowable_expenses:
+          type: number
+          format: float
+        taxable_profit:
+          type: number
+          format: float
+        income_tax_due:
+          type: number
+          format: float
+        class2_nic:
+          type: number
+          format: float
+        class4_nic:
+          type: number
+          format: float
         estimated_tax_due:
           type: number
           format: float
@@ -116,6 +163,12 @@ components:
         - end_date
         - total_income
         - total_expenses
+        - total_allowable_expenses
+        - total_disallowable_expenses
+        - taxable_profit
+        - income_tax_due
+        - class2_nic
+        - class4_nic
         - estimated_tax_due
 
   securitySchemes:

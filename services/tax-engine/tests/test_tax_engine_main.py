@@ -1,22 +1,17 @@
 import pytest
 from fastapi.testclient import TestClient
 import httpx
-from jose import jwt
 
 # Adjust path to import app
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+for module_name in list(sys.modules):
+    if module_name == "app" or module_name.startswith("app."):
+        sys.modules.pop(module_name, None)
 from app.main import app
 
 client = TestClient(app)
-TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
-TEST_AUTH_ALGORITHM = "HS256"
-
-
-def auth_headers(user_id: str = "fake-user-123") -> dict[str, str]:
-    token = jwt.encode({"sub": user_id}, TEST_AUTH_SECRET, algorithm=TEST_AUTH_ALGORITHM)
-    return {"Authorization": f"Bearer {token}"}
 
 @pytest.mark.asyncio
 async def test_calculate_tax_with_mocked_transactions(mocker):
@@ -36,7 +31,7 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
     mock_response = httpx.Response(
         200,
         json=mock_transactions,
-        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+        request=httpx.Request("GET", "http://transactions.test/transactions/me"),
     )
     mock_get = mocker.patch(
         "httpx.AsyncClient.get",
@@ -46,7 +41,6 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
     # 3. Call the /calculate endpoint
     response = client.post(
         "/calculate",
-        headers=auth_headers(),
         json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"}
     )
 
@@ -59,12 +53,19 @@ async def test_calculate_tax_with_mocked_transactions(mocker):
 
     # Check the calculation logic
     # Total income = 3000
-    # Total deductible expenses = 150 (transport) + 50 (office_supplies) = 200
+    # Allowable expenses = 150 (transport) + 50 (office_supplies) = 200
+    # Disallowable expenses = 80 (groceries)
     # Taxable profit = 3000 - 200 = 2800
     # Personal allowance = 12570. Since 2800 < 12570, taxable amount is 0.
     # Estimated tax = 0
     assert data["total_income"] == 3000.0
     assert data["total_expenses"] == 200.0
+    assert data["total_allowable_expenses"] == 200.0
+    assert data["total_disallowable_expenses"] == 80.0
+    assert data["taxable_profit"] == 2800.0
+    assert data["income_tax_due"] == 0.0
+    assert data["class2_nic"] == 0.0
+    assert data["class4_nic"] == 0.0
     assert data["estimated_tax_due"] == 0.0
 
 @pytest.mark.asyncio
@@ -80,7 +81,6 @@ async def test_calculate_tax_service_unavailable(mocker):
 
     response = client.post(
         "/calculate",
-        headers=auth_headers(),
         json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"}
     )
 

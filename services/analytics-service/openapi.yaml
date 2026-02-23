@@ -115,6 +115,130 @@ paths:
               schema:
                 type: string
                 format: binary
+        '402':
+          description: Pro subscription required.
+  /reports/monthly-summary:
+    get:
+      summary: Get monthly summary
+      tags:
+        - Reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: month
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+      responses:
+        '200':
+          description: Monthly summary report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodSummary'
+  /reports/quarterly-summary:
+    get:
+      summary: Get quarterly summary (Pro)
+      tags:
+        - Reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: quarter
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 4
+      responses:
+        '200':
+          description: Quarterly summary report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodSummary'
+        '402':
+          description: Pro subscription required.
+  /reports/profit-loss:
+    get:
+      summary: Get profit & loss report (Pro)
+      tags:
+        - Reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: start_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Profit & loss report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodSummary'
+        '402':
+          description: Pro subscription required.
+  /reports/tax-year-summary:
+    get:
+      summary: Get tax year summary (Pro)
+      tags:
+        - Reports
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tax_year
+          in: query
+          required: false
+          schema:
+            type: string
+            example: '2023-04-06/2024-04-05'
+      responses:
+        '200':
+          description: Tax year summary.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeriodSummary'
+        '402':
+          description: Pro subscription required.
+  /reports/reporting-cadence:
+    get:
+      summary: Get reporting cadence
+      tags:
+        - Reports
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Reporting cadence response.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportingCadenceResponse'
 components:
   schemas:
     ForecastRequest:
@@ -140,6 +264,58 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DataPoint'
+    SummaryByCategory:
+      type: object
+      properties:
+        category:
+          type: string
+        income_total:
+          type: number
+          format: float
+        expense_total:
+          type: number
+          format: float
+        net_total:
+          type: number
+          format: float
+    PeriodSummary:
+      type: object
+      properties:
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        total_income:
+          type: number
+          format: float
+        total_expenses:
+          type: number
+          format: float
+        net_profit:
+          type: number
+          format: float
+        transaction_count:
+          type: integer
+        summary_by_category:
+          type: array
+          items:
+            $ref: '#/components/schemas/SummaryByCategory'
+    ReportingCadenceResponse:
+      type: object
+      properties:
+        cadence:
+          type: string
+          enum: [monthly, quarterly]
+        turnover_last_12_months:
+          type: number
+          format: float
+        threshold:
+          type: number
+          format: float
+        quarterly_required:
+          type: boolean
     JobRequest:
       type: object
       properties:

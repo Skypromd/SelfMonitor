@@ -19,10 +19,9 @@ def test_transaction_service_honours_pact_with_tax_engine(live_server):
     contract expected by the TaxEngineService consumer.
     """
     # 1. Настраиваем Verifier
-    verifier = Verifier(
-        provider='TransactionsService',
-        provider_base_url=live_server.url # URL работающего инстанса нашего сервиса
-    )
+    verifier = Verifier("TransactionsService")
+    verifier.add_source(PACT_FILE)
+    verifier.add_transport(url=live_server.url)
 
     # 2. Указываем, где найти состояние "given" из контракта.
     # Это URL, по которому Pact будет делать POST-запросы, чтобы настроить
@@ -33,11 +32,11 @@ def test_transaction_service_honours_pact_with_tax_engine(live_server):
     # 3. Запускаем проверку
     # success, logs = verifier.verify_pacts(PACT_FILE, provider_states_setup_url=f"{live_server.url}/_pact/provider_states")
     # В нашем случае мы не реализуем provider_states, поэтому упрощаем.
-    success, logs = verifier.verify_pacts(PACT_FILE)
+    success = verifier.verify()
 
     # 4. Проверяем результат
     # Если `success` будет False, pytest и так "упадёт", но для наглядности:
-    assert success == True
+    assert success is True
 
 @pytest.fixture(scope="session")
 def live_server():

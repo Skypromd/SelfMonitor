@@ -690,6 +690,60 @@
   color: #a0aec0;
 }
 
+/* Tax readiness widget */
+.readinessHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.readinessBadge {
+  background-color: #edf2f7;
+  border: 1px solid #cbd5e0;
+  color: #2d3748;
+  padding: 0.35rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.readinessScore {
+  margin: 0.75rem 0 0.5rem;
+  color: #2d3748;
+}
+
+.readinessBar {
+  height: 10px;
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.readinessBarFill {
+  height: 100%;
+  background-color: #38a169;
+}
+
+.readinessList {
+  margin: 1rem 0 0.5rem;
+  padding-left: 1.25rem;
+  color: #4a5568;
+}
+
+.readinessActionsTitle {
+  margin: 0.5rem 0 0.25rem;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.readinessActions {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: #4a5568;
+}
+
 /* Styles for Semantic Search */
 .searchResults {
   margin-top: 1.5rem;

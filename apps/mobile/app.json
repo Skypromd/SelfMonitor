@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "Self Assessment Assistant",
+    "slug": "self-assessment-assistant",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "selfmonitor",
+    "platforms": ["ios", "android"],
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "infoPlist": {
+        "NSCameraUsageDescription": "We use the camera to scan receipts.",
+        "NSPhotoLibraryUsageDescription": "We access your photos to upload receipts."
+      }
+    },
+    "android": {
+      "permissions": ["CAMERA"]
+    },
+    "plugins": ["expo-notifications"]
+  }
+}

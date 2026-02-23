@@ -1,8 +1,8 @@
 # Core application dependencies
 fastapi
+python-multipart
 uvicorn[standard]
 pydantic
-python-jose[cryptography]
 sqlalchemy[asyncio]
 asyncpg
 alembic
@@ -10,14 +10,8 @@ httpx
 opentelemetry-distro
 opentelemetry-instrumentation-fastapi
 
-# Event streaming dependencies
-kafka-python==2.0.2
-aiokafka==0.8.11
-avro==1.11.3
-confluent-kafka[avro]==2.2.0
-
 # Dependencies for testing
 pytest
 pytest-asyncio
+pact-python==3.2.1
 aiosqlite
-pact-python

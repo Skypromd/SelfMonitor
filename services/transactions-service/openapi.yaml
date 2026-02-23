@@ -34,6 +34,60 @@ paths:
                     type: string
                   imported_count:
                     type: integer
+                  skipped_count:
+                    type: integer
+  /import/csv:
+    post:
+      summary: Import transactions from CSV
+      tags:
+        - Transactions
+      description: Uploads a CSV file and imports transactions with de-duplication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - account_id
+                - file
+              properties:
+                account_id:
+                  type: string
+                  format: uuid
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: CSV import accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionResult'
+  /ingest/partner:
+    post:
+      summary: Ingest a partner batch
+      tags:
+        - Transactions
+      description: Accepts a partner payload and imports transactions with de-duplication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerIngestionRequest'
+      responses:
+        '202':
+          description: Partner batch accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionResult'
   /accounts/{account_id}/transactions:
     get:
       summary: Get transactions for an account
@@ -121,6 +175,13 @@ components:
         currency:
           type: string
           example: 'GBP'
+        tax_category:
+          type: string
+          description: Optional SA103 tax category override.
+        business_use_percent:
+          type: number
+          format: float
+          description: Business-use percentage (0-100).
     TransactionImportRequest:
       type: object
       properties:
@@ -140,6 +201,53 @@ components:
         category:
           type: string
           example: 'groceries'
+        tax_category:
+          type: string
+          example: 'travel'
+        business_use_percent:
+          type: number
+          format: float
+          example: 80
+    PartnerIngestionRequest:
+      type: object
+      required:
+        - schema_version
+        - source_system
+        - user_reference
+        - account_id
+        - transactions
+      properties:
+        schema_version:
+          type: string
+          example: '1.0'
+        source_system:
+          type: string
+          example: 'partner-app'
+        user_reference:
+          type: string
+          example: 'partner-user-42'
+        account_id:
+          type: string
+          format: uuid
+        tax_year:
+          type: string
+          example: '2023-04-06/2024-04-05'
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TransactionBase'
+        metadata:
+          type: object
+          additionalProperties: true
+    IngestionResult:
+      type: object
+      properties:
+        message:
+          type: string
+        imported_count:
+          type: integer
+        skipped_count:
+          type: integer
     Transaction:
       allOf:
         - $ref: '#/components/schemas/TransactionBase'

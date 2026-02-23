@@ -3,14 +3,10 @@ import { useRouter } from 'next/router';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Layout.module.css';
 
-type UserSummary = {
-  email?: string;
-};
-
 type LayoutProps = {
   children: React.ReactNode;
   onLogout: () => void;
-  user: UserSummary;
+  user?: { email: string };
 };
 
 export default function Layout({ children, onLogout, user }: LayoutProps) {
@@ -21,7 +17,7 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
   // This is a placeholder for a real admin check.
   // We assume the first user registered is the admin, so we hardcode it here.
   // In a real app, this should come from user roles/permissions.
-  const isAdmin = user.email === 'admin@example.com';
+  const isAdmin = user?.email === 'admin@example.com';
 
   const navItems = [
     { href: '/dashboard', label: t('nav.dashboard') },

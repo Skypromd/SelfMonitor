@@ -22,8 +22,8 @@ paths:
               properties:
                 provider_id:
                   type: string
-                  description: The ID of the Open Banking provider (e.g., 'true_layer', 'tink').
-                  example: 'true_layer'
+                  description: The ID of the Open Banking provider (e.g., 'saltedge').
+                  example: 'saltedge'
                 redirect_uri:
                   type: string
                   format: uri
@@ -44,18 +44,34 @@ paths:
                     type: string
                     format: uri
                     description: The URL for the user consent screen.
+                  state:
+                    type: string
+                    description: Optional state value returned by the provider.
   /connections/callback:
     get:
       summary: Handle provider callback
       tags:
         - Connections
       parameters:
+        - name: provider_id
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 'saltedge'
+          description: Provider identifier (defaults to mock_bank).
         - name: code
           in: query
-          required: true
+          required: false
           schema:
             type: string
           description: The authorization code provided by the bank.
+        - name: connection_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Provider connection id (Salt Edge returns this on redirect).
         - name: state
           in: query
           required: false
@@ -72,12 +88,39 @@ paths:
                 properties:
                   connection_id:
                     type: string
-                    format: uuid
                   status:
                     type: string
                     example: 'successful'
+                  account_id:
+                    type: string
+                    format: uuid
+                    description: Internal account id used for imports.
+                  task_id:
+                    type: string
+                    description: Optional Celery task id for imports.
         '400':
           description: Error during callback handling.
+  /providers:
+    get:
+      summary: List available providers
+      tags:
+        - Connections
+      responses:
+        '200':
+          description: A list of providers and configuration status.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                    display_name:
+                      type: string
+                    configured:
+                      type: string
   /accounts/{account_id}/transactions:
     get:
       summary: Get transactions for a bank account
