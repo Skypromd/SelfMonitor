@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-jose[cryptography]
+
+# Dependencies for testing
+pytest
+pytest-asyncio

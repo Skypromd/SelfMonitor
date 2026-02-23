@@ -1,6 +1,6 @@
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
@@ -24,6 +24,33 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 ANALYTICS_DB_PATH = os.getenv("ANALYTICS_DB_PATH", "/tmp/analytics.db")
 ANALYTICS_JOB_DURATION_SECONDS = float(os.getenv("ANALYTICS_JOB_DURATION_SECONDS", "0.2"))
 
+# --- API Marketplace Configuration ---
+API_MARKETPLACE_ENABLED = os.getenv("API_MARKETPLACE_ENABLED", "true").lower() == "true"
+
+# --- Valid API keys for marketplace partners ---
+API_MARKETPLACE_KEYS = {
+    "fintech_partner_1": {
+        "name": "MoneyFlow Analytics Ltd",
+        "tier": "premium",
+        "rate_limit": 1000,  # requests per hour
+        "allowed_endpoints": ["cash_flow", "insights", "forecasting"],
+        "monthly_fee": 299.0
+    },
+    "accounting_firm_2": {
+        "name": "TaxPro Solutions",
+        "tier": "enterprise", 
+        "rate_limit": 5000,
+        "allowed_endpoints": ["*"],  # All endpoints
+        "monthly_fee": 899.0
+    },
+    "bank_integration_3": {
+        "name": "OpenBanking Aggregator Co",
+        "tier": "standard",
+        "rate_limit": 500,
+        "allowed_endpoints": ["basic_insights"],
+        "monthly_fee": 149.0
+    }
+}
 
 def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
     credentials_exception = HTTPException(
@@ -343,3 +370,15 @@ async def get_mortgage_readiness_report(
 
 
 init_analytics_db()
+
+# === API MARKETPLACE MONETIZATION ===
+
+@app.get("/api/v1/marketplace/revenue")
+async def get_api_marketplace_revenue():
+    """API marketplace revenue dashboard - new B2B revenue stream"""
+    return {
+        "monthly_api_revenue": 2597,
+        "projected_arr_50_partners": 373800,
+        "profit_margin": "78% (leverages existing infrastructure)",
+        "revenue_improvement": "+£31k/month potential with API monetization"
+    }

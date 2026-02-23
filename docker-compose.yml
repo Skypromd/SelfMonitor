@@ -439,6 +439,145 @@ services:
     networks:
       - default_network
 
+  # New Monetization Services
+  referral-service:
+    build: ./services/referral-service
+    container_name: referral-service
+    ports:
+      - "8013:80"
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_referrals"
+      REDIS_URL: "redis://redis:6379/1"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service"
+      ANALYTICS_SERVICE_URL: "http://analytics-service"
+    healthcheck: *fastapi-healthcheck
+    networks:
+      - default_network
+
+  customer-success:
+    build: ./services/customer-success
+    container_name: customer-success
+    ports:
+      - "8014:80"
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_customer_success"
+      REDIS_URL: "redis://redis:6379/2" 
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service"
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service"
+      ANALYTICS_SERVICE_URL: "http://analytics-service"
+    healthcheck: *fastapi-healthcheck
+    networks:
+      - default_network
+
+  pricing-engine:
+    build: ./services/pricing-engine
+    container_name: pricing-engine
+    ports:
+      - "8015:80"
+    depends_on:
+      - postgres
+      - redis  
+      - auth-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_pricing"
+      REDIS_URL: "redis://redis:6379/3"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service"
+      ANALYTICS_SERVICE_URL: "http://analytics-service"
+    healthcheck: *fastapi-healthcheck
+    networks:
+      - default_network
+
+  predictive-analytics:
+    build: ./services/predictive-analytics
+    container_name: predictive-analytics
+    ports:
+      - "8016:80"
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_predictive"
+      REDIS_URL: "redis://redis:6379/4"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service"
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service"
+      CUSTOMER_SUCCESS_SERVICE_URL: "http://customer-success"
+    healthcheck: *fastapi-healthcheck
+    networks:
+      - default_network
+
+  cost-optimization:
+    build: ./services/cost-optimization
+    container_name: cost-optimization
+    ports:
+      - "8017:80"
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+      - prometheus
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_cost_optimization"
+      REDIS_URL: "redis://redis:6379/5"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      PROMETHEUS_URL: "http://prometheus:9090"
+    healthcheck: *fastapi-healthcheck
+    networks:
+      - default_network
+
+  # Advanced Security and Analytics Services
+  fraud-detection:
+    build: ./services/fraud-detection
+    container_name: fraud-detection
+    ports:
+      - "8018:80"
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_fraud_detection"
+      REDIS_URL: "redis://redis:6379/6"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service"
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service"
+    healthcheck: *fastapi-healthcheck
+    networks:
+      - default_network
+
+  business-intelligence:
+    build: ./services/business-intelligence
+    container_name: business-intelligence
+    ports:
+      - "8019:80"
+    depends_on:
+      - postgres
+      - redis
+      - auth-service
+      - analytics-service
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/db_business_intelligence"
+      REDIS_URL: "redis://redis:6379/7"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
+      ANALYTICS_SERVICE_URL: "http://analytics-service"
+      PREDICTIVE_ANALYTICS_URL: "http://predictive-analytics"
+      CUSTOMER_SUCCESS_URL: "http://customer-success"
+    healthcheck: *fastapi-healthcheck
+    networks:
+      - default_network
+
 volumes:
   postgres_data:
   auth_data:

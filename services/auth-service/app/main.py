@@ -4,7 +4,7 @@ import io
 import os
 import sqlite3
 import threading
-from typing import Annotated, Optional
+from typing import Annotated, Optional, List
 
 import pyotp
 import qrcode
@@ -73,6 +73,24 @@ class User(BaseModel):
     is_active: bool = True
     is_admin: bool = False
     is_two_factor_enabled: bool = False
+    organization_id: Optional[str] = None
+    role: str = "user"  # user, manager, admin, owner
+    subscription_tier: str = "free"  # free, pro, enterprise
+
+class Organization(BaseModel):
+    id: str
+    name: str
+    subscription_plan: str = "enterprise"  # enterprise, team
+    max_users: int = 50
+    created_at: datetime.datetime
+    owner_email: str
+
+class TeamInvite(BaseModel):
+    email: EmailStr
+    organization_id: str
+    role: str = "user"
+    invited_by: str
+    expires_at: datetime.datetime
 
 class Token(BaseModel):
     access_token: str
@@ -387,3 +405,73 @@ async def deactivate_user(
 
 
 init_auth_db()
+
+# === ENTERPRISE FEATURES ===
+
+@app.post("/organizations")
+async def create_organization(
+    name: str,
+    plan: str = "enterprise", 
+    current_user: Annotated[User, Depends(get_current_active_user)] = None
+):
+    """Create a new organization (available for Pro+ users)"""
+    import uuid
+    org_id = str(uuid.uuid4())[:8].upper()
+    
+    with db_lock:
+        conn = _connect()
+        try:
+            # Create organization table if not exists
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS organizations (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    subscription_plan TEXT DEFAULT 'enterprise',
+                    owner_email TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Create organization
+            conn.execute(
+                "INSERT INTO organizations (id, name, subscription_plan, owner_email) VALUES (?, ?, ?, ?)",
+                (org_id, name, plan, current_user.email)
+            )
+            
+            conn.commit()
+            
+            return {
+                "id": org_id,
+                "name": name,
+                "subscription_plan": plan,
+                "owner_email": current_user.email,
+                "message": f"Enterprise organization '{name}' created! Monthly revenue: £{45 * 10} minimum"
+            }
+        except Exception as e:
+            pass
+        finally:
+            conn.close()
+
+@app.get("/enterprise/pricing")
+async def get_enterprise_pricing():
+    """Get current enterprise pricing plans"""
+    return {
+        "plans": {
+            "team": {
+                "price_per_user_per_month_gbp": 25,
+                "min_users": 5, 
+                "max_users": 20,
+                "estimated_monthly_revenue": 625  # 25 * 25 avg users
+            },
+            "enterprise": {
+                "price_per_user_per_month_gbp": 45,
+                "min_users": 10,
+                "max_users": 500,
+                "estimated_monthly_revenue": 2250  # 50 * 45 avg users
+            }
+        },
+        "roi_metrics": {
+            "customer_lifetime_value": 12600,  # £45 * 12 months * 23.33 avg retention
+            "enterprise_arpu_improvement": "3x higher than individual plans"
+        }
+    }

@@ -1,0 +1,407 @@
+openapi: 3.0.0
+info:
+  title: Cost Optimization Service API
+  description: Automated infrastructure scaling, cost monitoring, and efficiency optimization for maximum profitability
+  version: 1.0.0
+  
+servers:
+  - url: http://localhost:8017
+    description: Development server
+  - url: https://cost-optimization.selfmonitor.uk
+    description: Production server
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      description: Service health status
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /cost-analysis:
+    get:
+      summary: Get Cost Analysis
+      description: Analyze current monthly costs and identify optimization opportunities
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current cost breakdown and optimization opportunities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostAnalysisResponse'
+
+  /implement-optimization/{optimization_type}:
+    post:
+      summary: Implement Cost Optimization
+      description: Deploy specific cost optimization strategy
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: optimization_type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [auto_scaling, support_automation, api_optimization]
+      responses:
+        '200':
+          description: Optimization implementation started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizationImplementationResponse' 
+
+  /cost-efficiency-metrics:
+    get:
+      summary: Get Cost Efficiency Metrics
+      description: Detailed cost efficiency and optimization performance metrics
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Cost efficiency metrics and benchmarks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostEfficiencyMetrics'
+
+  /automation-recommendations:
+    get:
+      summary: Get Automation Recommendations
+      description: AI-powered recommendations for further cost automation
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Automated cost optimization recommendations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomationRecommendations'
+
+  /deploy-full-optimization:
+    post:
+      summary: Deploy Comprehensive Cost Optimization
+      description: Deploy full cost optimization strategy across all areas
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Comprehensive optimization deployment initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComprehensiveOptimizationResponse'
+
+  /optimization-dashboard:
+    get:
+      summary: Get Optimization Dashboard
+      description: Real-time cost optimization progress and impact dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Live optimization dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OptimizationDashboard'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    OptimizationAction:
+      type: object
+      properties:
+        action_type:
+          type: string
+          example: auto_scaling
+        description:
+          type: string
+          example: Implement auto-scaling for compute resources based on usage patterns
+        estimated_monthly_savings:
+          type: number
+          format: float
+          example: 720.0
+        implementation_effort:
+          type: string
+          enum: [low, medium, high]
+          example: medium
+        risk_level:
+          type: string
+          enum: [low, medium, high]
+          example: low
+        automation_status:
+          type: string
+          enum: [manual, semi-automated, fully-automated]
+          example: fully-automated
+
+    CostAnalysisResponse:
+      type: object
+      properties:
+        current_costs:
+          type: object
+          properties:
+            infrastructure:
+              type: object
+              properties:
+                aws_compute:
+                  type: number
+                  example: 2400.0
+                database:
+                  type: number
+                  example: 890.0
+                storage:
+                  type: number
+                  example: 340.0
+                subtotal:
+                  type: number
+                  example: 4530.0
+            total_monthly:
+              type: number
+              example: 19260.0
+        optimization_opportunities:
+          type: array
+          items:
+            $ref: '#/components/schemas/OptimizationAction'
+        savings_summary:
+          type: object
+          properties:
+            total_potential_monthly_savings:
+              type: number
+              example: 3740.0
+            percentage_reduction:
+              type: number
+              example: 19.4
+            annual_savings_potential:
+              type: number
+              example: 44880.0
+
+    OptimizationImplementationResponse:
+      type: object
+      properties:
+        optimization_started:
+          type: string
+          example: auto_scaling
+        implementation_plan:
+          type: object
+          properties:
+            description:
+              type: string
+              example: Deploy Kubernetes HPA (Horizontal Pod Autoscaler)
+            actions:
+              type: array
+              items:
+                type: string
+            immediate_savings:
+              type: number
+              example: 720.0
+            implementation_time:
+              type: string
+              example: 1-2 weeks
+        expected_monthly_savings:
+          type: number
+          example: 720.0
+        status:
+          type: string
+          example: Implementation scheduled - monitoring cost reductions
+
+    CostEfficiencyMetrics:
+      type: object
+      properties:
+        current_metrics:
+          type: object
+          properties:
+            cost_per_customer:
+              type: number
+              example: 38.50
+            support_cost_per_ticket:
+              type: number
+              example: 12.75
+            infrastructure_cost_per_user:
+              type: number
+              example: 9.06
+            gross_margin:
+              type: number
+              example: 0.68
+        optimization_targets:
+          type: object
+          properties:
+            target_cost_per_customer:
+              type: number
+              example: 25.20
+            target_gross_margin:
+              type: number
+              example: 0.78
+        automation_impact:
+          type: object
+          properties:
+            processes_automated:
+              type: integer
+              example: 12
+            manual_hours_saved_monthly:
+              type: integer
+              example: 340
+            automation_roi:
+              type: number
+              example: 4.2
+            error_reduction:
+              type: string
+              example: 73% reduction in manual errors
+
+    AutomationRecommendations:
+      type: object
+      properties:
+        high_impact_automations:
+          type: array
+          items:
+            type: object
+            properties:
+              area:
+                type: string
+                example: Customer onboarding
+              current_cost:
+                type: number
+                example: 25.0
+              automated_cost:
+                type: number
+                example: 3.50
+              monthly_savings:
+                type: number
+                example: 7525.0
+              automation_complexity:
+                type: string
+                example: Medium
+              payback_period:
+                type: string
+                example: 6 weeks
+        total_additional_savings_potential:
+          type: number
+          example: 9260.0
+        full_automation_scenario:
+          type: object
+          properties:
+            current_monthly_costs:
+              type: number
+              example: 19260.0
+            optimized_monthly_costs:
+              type: number
+              example: 9480.0
+            total_monthly_savings:
+              type: number
+              example: 9780.0
+            cost_reduction_percentage:
+              type: integer
+              example: 51
+            new_gross_margin:
+              type: number
+              example: 0.84
+            competitive_advantage:
+              type: string
+              example: Industry-leading cost efficiency
+
+    ComprehensiveOptimizationResponse:
+      type: object
+      properties:
+        comprehensive_optimization_initiated:
+          type: boolean
+          example: true
+        optimization_plan:
+          type: object
+          properties:
+            infrastructure_optimizations:
+              type: array
+              items:
+                type: string
+            operational_optimizations:
+              type: array
+              items:
+                type: string
+            timeline:
+              type: object
+              properties:
+                phase_1:
+                  type: string
+                phase_2:
+                  type: string
+                phase_3:
+                  type: string
+            expected_outcomes:
+              type: object
+              properties:
+                monthly_cost_reduction:
+                  type: number
+                  example: 9780.0
+                new_cost_per_customer:
+                  type: number
+                  example: 18.96
+                annual_savings:
+                  type: number
+                  example: 117360.0
+        business_impact:
+          type: object
+          properties:
+            annual_savings:
+              type: number
+              example: 117360.0
+            margin_improvement:
+              type: string
+              example: +16 percentage points
+            competitive_advantage:
+              type: string
+              example: Industry-leading 84% gross margin
+
+    OptimizationDashboard:
+      type: object
+      properties:
+        cost_optimization_summary:
+          type: object
+          properties:
+            baseline_monthly_costs:
+              type: number
+              example: 19260.0
+            current_monthly_costs:
+              type: number
+              example: 14640.0
+            savings_to_date:
+              type: number
+              example: 4620.0
+            optimization_progress:
+              type: string
+              example: 76%
+        key_wins:
+          type: array
+          items:
+            type: string
+          example: ["Auto-scaling deployed reducing costs by £720/month", "API caching implemented saving £480/month"]
+        financial_impact:
+          type: object
+          properties:
+            gross_margin_before:
+              type: number
+              example: 0.68
+            gross_margin_current:
+              type: number
+              example: 0.74
+            cost_per_customer_before:
+              type: number
+              example: 38.50
+            cost_per_customer_current:
+              type: number
+              example: 29.28
