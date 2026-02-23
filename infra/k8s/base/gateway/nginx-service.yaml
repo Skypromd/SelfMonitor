@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: selfmonitor
+  labels:
+    app: nginx-gateway
+    component: gateway
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9113"
+    prometheus.io/path: "/metrics"
+spec:
+  type: LoadBalancer
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  - name: metrics
+    port: 9113
+    targetPort: 9113
+    protocol: TCP
+  selector:
+    app: nginx-gateway
+    component: gateway
+  sessionAffinity: None
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-headless
+  namespace: selfmonitor
+  labels:
+    app: nginx-gateway
+    component: gateway
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: nginx-gateway
+    component: gateway

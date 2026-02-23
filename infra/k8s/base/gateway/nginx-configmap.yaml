@@ -1,0 +1,348 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: selfmonitor
+  labels:
+    app: nginx-gateway
+    component: gateway
+data:
+  nginx.conf: |
+    worker_processes auto;
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+    
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+        
+        # Logging
+        log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                        '$status $body_bytes_sent "$http_referer" '
+                        '"$http_user_agent" "$http_x_forwarded_for" '
+                        'rt=$request_time uct="$upstream_connect_time" '
+                        'uht="$upstream_header_time" urt="$upstream_response_time"';
+        
+        access_log /var/log/nginx/access.log main;
+        error_log /var/log/nginx/error.log warn;
+        
+        # Performance
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+        
+        # Compression
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 1024;
+        gzip_types
+            text/plain
+            text/css
+            text/xml
+            text/javascript
+            application/json
+            application/javascript
+            application/xml+rss
+            application/atom+xml;
+        
+        # Rate limiting
+        limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
+        limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/s;
+        limit_req_zone $binary_remote_addr zone=ai:10m rate=2r/s;
+        
+        # Headers
+        add_header X-Frame-Options "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-XSS-Protection "1; mode=block" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+        
+        # Upstream definitions for all services
+        upstream auth_service {
+            least_conn;
+            server auth-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream user_profile_service {
+            least_conn;
+            server user-profile-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream transactions_service {
+            least_conn;
+            server transactions-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream analytics_service {
+            least_conn;
+            server analytics-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream ai_agent_service {
+            least_conn;
+            server ai-agent-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream advice_service {
+            least_conn;
+            server advice-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream banking_connector {
+            least_conn;
+            server banking-connector:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream tax_engine {
+            least_conn;
+            server tax-engine:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream compliance_service {
+            least_conn;
+            server compliance-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream categorization_service {
+            least_conn;
+            server categorization-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream documents_service {
+            least_conn;
+            server documents-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream qna_service {
+            least_conn;
+            server qna-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream calendar_service {
+            least_conn;
+            server calendar-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream localization_service {
+            least_conn;
+            server localization-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream partner_registry {
+            least_conn;
+            server partner-registry:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream integrations_service {
+            least_conn;
+            server integrations-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream consent_service {
+            least_conn;
+            server consent-service:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream business_intelligence {
+            least_conn;
+            server business-intelligence:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream fraud_detection {
+            least_conn;
+            server fraud-detection:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        upstream predictive_analytics {
+            least_conn;
+            server predictive-analytics:80 max_fails=3 fail_timeout=30s;
+        }
+        
+        # Health check endpoint
+        server {
+            listen 80;
+            server_name health.selfmonitor.local;
+            
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+            
+            location /nginx-status {
+                stub_status on;
+                access_log off;
+                allow 10.0.0.0/8;
+                allow 172.16.0.0/12;
+                allow 192.168.0.0/16;
+                deny all;
+            }
+        }
+        
+        # Main API Gateway
+        server {
+            listen 80;
+            server_name api.selfmonitor.local localhost;
+            
+            # Security headers
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+            
+            # Global request timeout
+            proxy_read_timeout 60s;
+            proxy_connect_timeout 10s;
+            proxy_send_timeout 60s;
+            
+            # Common proxy headers
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Auth service routes
+            location /auth/ {
+                limit_req zone=auth burst=10 nodelay;
+                proxy_pass http://auth_service/;
+            }
+            
+            # User profile routes
+            location /users/ {
+                limit_req zone=api burst=20 nodelay;
+                proxy_pass http://user_profile_service/;
+            }
+            
+            # Transactions routes
+            location /transactions/ {
+                limit_req zone=api burst=30 nodelay;
+                proxy_pass http://transactions_service/;
+            }
+            
+            # Analytics routes
+            location /analytics/ {
+                limit_req zone=api burst=15 nodelay;
+                proxy_pass http://analytics_service/;
+            }
+            
+            # AI Agent routes (special handling for streaming)
+            location /ai/ {
+                limit_req zone=ai burst=5 nodelay;
+                proxy_pass http://ai_agent_service/;
+                proxy_buffering off;
+                proxy_cache off;
+                proxy_read_timeout 300s;
+                chunked_transfer_encoding on;
+            }
+            
+            # AI Agent streaming endpoint
+            location /ai/chat/stream {
+                limit_req zone=ai burst=2 nodelay;
+                proxy_pass http://ai_agent_service/chat/stream;
+                proxy_buffering off;
+                proxy_cache off;
+                proxy_read_timeout 300s;
+                proxy_http_version 1.1;
+                proxy_set_header Connection "";
+                chunked_transfer_encoding on;
+            }
+            
+            # Advice service routes
+            location /advice/ {
+                limit_req zone=api burst=20 nodelay;
+                proxy_pass http://advice_service/;
+            }
+            
+            # Banking connector routes
+            location /banking/ {
+                limit_req zone=api burst=10 nodelay;
+                proxy_pass http://banking_connector/;
+            }
+            
+            # Tax engine routes
+            location /tax/ {
+                limit_req zone=api burst=15 nodelay;
+                proxy_pass http://tax_engine/;
+            }
+            
+            # Compliance routes
+            location /compliance/ {
+                limit_req zone=api burst=10 nodelay;
+                proxy_pass http://compliance_service/;
+            }
+            
+            # Categorization routes
+            location /categorization/ {
+                limit_req zone=api burst=25 nodelay;
+                proxy_pass http://categorization_service/;
+            }
+            
+            # Documents routes
+            location /documents/ {
+                limit_req zone=api burst=20 nodelay;
+                proxy_pass http://documents_service/;
+                client_max_body_size 50M;
+            }
+            
+            # QnA service routes
+            location /qna/ {
+                limit_req zone=api burst=10 nodelay;
+                proxy_pass http://qna_service/;
+            }
+            
+            # Calendar service routes
+            location /calendar/ {
+                limit_req zone=api burst=20 nodelay;
+                proxy_pass http://calendar_service/;
+            }
+            
+            # Localization routes
+            location /localization/ {
+                limit_req zone=api burst=30 nodelay;
+                proxy_pass http://localization_service/;
+            }
+            
+            # Partner registry routes
+            location /partners/ {
+                limit_req zone=api burst=10 nodelay;
+                proxy_pass http://partner_registry/;
+            }
+            
+            # Integrations routes
+            location /integrations/ {
+                limit_req zone=api burst=15 nodelay;
+                proxy_pass http://integrations_service/;
+            }
+            
+            # Consent service routes
+            location /consent/ {
+                limit_req zone=api burst=10 nodelay;
+                proxy_pass http://consent_service/;
+            }
+            
+            # Business Intelligence routes
+            location /bi/ {
+                limit_req zone=api burst=10 nodelay;
+                proxy_pass http://business_intelligence/;
+            }
+            
+            # Fraud Detection routes
+            location /fraud/ {
+                limit_req zone=api burst=5 nodelay;
+                proxy_pass http://fraud_detection/;
+            }
+            
+            # Predictive Analytics routes
+            location /predict/ {
+                limit_req zone=api burst=10 nodelay;
+                proxy_pass http://predictive_analytics/;
+            }
+            
+            # Default health check
+            location = / {
+                return 200 "SelfMonitor API Gateway - Ready";
+                add_header Content-Type text/plain;
+            }
+        }
+    }

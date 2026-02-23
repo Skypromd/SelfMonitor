@@ -1,0 +1,65 @@
+# Istio Service Mesh Installation Guide for SelfMonitor
+# Production-ready setup for 23 microservices
+
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: selfmonitor-control-plane
+spec:
+  # Production configuration with observability
+  values:
+    pilot:
+      traceSampling: 10.0  # 10% sampling (integration with OpenTelemetry)
+      env:
+        EXTERNAL_ISTIOD: false
+    global:
+      meshID: selfmonitor-mesh
+      network: selfmonitor-network
+      tracer:
+        jaeger:
+          address: jaeger-collector:14268
+      
+  components:
+    pilot:
+      k8s:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        hpaSpec:
+          minReplicas: 2
+          maxReplicas: 5
+    
+    ingressGateways:
+    - name: istio-ingressgateway
+      enabled: true
+      k8s:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 2000m
+            memory: 1024Mi
+        service:
+          ports:
+          - port: 80
+            targetPort: 8080
+            name: http2
+          - port: 443
+            targetPort: 8443
+            name: https
+          type: LoadBalancer
+
+---
+# Enable namespace for automatic sidecar injection
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: selfmonitor
+  labels:
+    istio-injection: enabled
+    mesh: selfmonitor-mesh

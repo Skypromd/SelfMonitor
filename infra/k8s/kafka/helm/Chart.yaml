@@ -1,0 +1,40 @@
+# Helm Chart for SelfMonitor Kafka Deployment
+apiVersion: v2
+name: selfmonitor-kafka
+description: Production-ready Apache Kafka deployment for SelfMonitor platform
+type: application
+version: 1.0.0
+appVersion: "7.4.0"
+home: https://github.com/selfmonitor/selfmonitor
+sources:
+  - https://github.com/confluentinc/cp-helm-charts
+maintainers:
+  - name: SelfMonitor Team
+    email: devops@selfmonitor.com
+keywords:
+  - kafka
+  - streaming
+  - event-driven
+  - confluent
+  - zookeeper
+dependencies:
+  - name: common
+    version: 2.x.x
+    repository: https://charts.bitnami.com/bitnami
+annotations:
+  category: Streaming
+  images: |
+    - name: kafka
+      image: confluentinc/cp-kafka:7.4.0
+    - name: zookeeper
+      image: confluentinc/cp-zookeeper:7.4.0
+    - name: schema-registry
+      image: confluentinc/cp-schema-registry:7.4.0
+    - name: kafka-connect
+      image: confluentinc/cp-kafka-connect:7.4.0
+    - name: ksqldb
+      image: confluentinc/cp-ksqldb-server:7.4.0
+    - name: kafka-ui
+      image: provectuslabs/kafka-ui:latest
+    - name: kafka-exporter
+      image: danielqsj/kafka-exporter:v1.7.0

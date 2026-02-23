@@ -1,10 +1,43 @@
 openapi: 3.0.3
 info:
-  title: Analytics Service
+  title: SelfMonitor Advanced Analytics & ML Pipeline
   description: >-
-    Handles background analytical tasks, such as running ETL jobs and training
-    ML models.
-  version: 1.0.0
+    Enterprise-grade analytics and machine learning platform providing:
+    - Comprehensive ML model lifecycle management
+    - Advanced data pipeline orchestration  
+    - Real-time business intelligence dashboards
+    - Customer segmentation and cohort analysis
+    - Anomaly detection and predictive analytics
+    - Automated feature engineering
+    - Data quality monitoring and validation
+    - API marketplace for B2B ML services
+  version: 2.0.0
+  contact:
+    name: SelfMonitor Analytics Team
+    email: analytics@selfmonitor.ai
+  license:
+    name: Proprietary
+    url: https://selfmonitor.ai/license
+
+servers:
+  - url: https://api.selfmonitor.ai/analytics/v2
+    description: Production Analytics API
+  - url: https://staging-api.selfmonitor.ai/analytics/v2  
+    description: Staging Analytics API
+
+tags:
+  - name: ML Models
+    description: Machine learning model lifecycle management
+  - name: Data Pipelines
+    description: ETL and data processing pipeline orchestration
+  - name: Business Intelligence
+    description: Reports, dashboards, and business metrics
+  - name: Advanced Analytics
+    description: Segmentation, cohort analysis, and predictive insights
+  - name: Data Quality
+    description: Data validation and monitoring
+  - name: API Marketplace
+    description: B2B API monetization and partner services
 paths:
   /jobs:
     post:

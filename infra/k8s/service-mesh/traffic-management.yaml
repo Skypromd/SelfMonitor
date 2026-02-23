@@ -1,0 +1,207 @@
+# Istio Traffic Management for SelfMonitor
+# Canary deployments, circuit breakers, and load balancing
+
+---
+# Virtual Service for predictive-analytics (Canary deployment ready)
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: predictive-analytics-vs
+  namespace: selfmonitor
+spec:
+  hosts:
+  - predictive-analytics
+  http:
+  - match:
+    - headers:
+        canary:
+          exact: "true"
+    route:
+    - destination:
+        host: predictive-analytics
+        subset: v2
+      weight: 100
+  - route:
+    - destination:
+        host: predictive-analytics
+        subset: v1
+      weight: 90
+    - destination:
+        host: predictive-analytics
+        subset: v2  
+      weight: 10
+
+---
+# Destination rules with circuit breaker
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: predictive-analytics-dr
+  namespace: selfmonitor
+spec:
+  host: predictive-analytics
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        http2MaxRequests: 100
+        maxRequestsPerConnection: 10
+        maxRetries: 3
+        consecutiveGatewayErrors: 5
+        interval: 30s
+        baseEjectionTime: 30s
+        maxEjectionPercent: 50
+    outlierDetection:
+      consecutiveGatewayErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+  subsets:
+  - name: v1
+    labels:
+      version: v1
+  - name: v2
+    labels:
+      version: v2
+
+---
+# Circuit breaker for external APIs (banking connectors)
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: banking-connector-dr
+  namespace: selfmonitor
+spec:
+  host: banking-connector
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 50
+      http:
+        http1MaxPendingRequests: 25
+        maxRequestsPerConnection: 5
+        maxRetries: 2
+    outlierDetection:
+      consecutiveGatewayErrors: 3
+      interval: 10s
+      baseEjectionTime: 10s
+      maxEjectionPercent: 80
+
+---
+# Load balancing for high-traffic services
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: transactions-service-dr
+  namespace: selfmonitor
+spec:
+  host: transactions-service  
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_CONN
+    connectionPool:
+      tcp:
+        maxConnections: 200
+      http:
+        http2MaxRequests: 1000
+        maxRequestsPerConnection: 50
+
+---
+# Fault injection for resilience testing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: chaos-testing-vs
+  namespace: selfmonitor
+spec:
+  hosts:
+  - user-profile-service
+  http:
+  - match:
+    - headers:
+        chaos-test:
+          exact: "true"
+    fault:
+      delay:
+        percentage:
+          value: 10.0
+        fixedDelay: 2s
+      abort:
+        percentage:
+          value: 5.0
+        httpStatus: 500
+    route:
+    - destination:
+        host: user-profile-service
+  - route:
+    - destination:
+        host: user-profile-service
+
+---
+# Gateway for external traffic
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: selfmonitor-gateway
+  namespace: selfmonitor
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - api.selfmonitor.com
+    tls:
+      httpsRedirect: true
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: selfmonitor-tls
+    hosts:
+    - api.selfmonitor.com
+
+---
+# External traffic routing
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: selfmonitor-external-vs
+  namespace: selfmonitor
+spec:
+  hosts:
+  - api.selfmonitor.com
+  gateways:
+  - selfmonitor-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /api/auth
+    route:
+    - destination:
+        host: auth-service
+        port:
+          number: 8001
+  - match:
+    - uri:
+        prefix: /api/predictions
+    route:
+    - destination:
+        host: predictive-analytics
+        port:
+          number: 8015
+  - match:
+    - uri:
+        prefix: /api/
+    route:
+    - destination:
+        host: nginx-gateway
+        port:
+          number: 80

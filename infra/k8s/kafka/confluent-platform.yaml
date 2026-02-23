@@ -1,0 +1,425 @@
+# Schema Registry and Confluent Platform Components for SelfMonitor
+# Production-ready deployment with HA configuration
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: schema-registry
+  namespace: kafka
+  labels:
+    app: schema-registry
+    component: confluent-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: schema-registry
+  template:
+    metadata:
+      labels:
+        app: schema-registry
+        component: confluent-platform
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: schema-registry
+        image: confluentinc/cp-schema-registry:7.4.0
+        ports:
+        - containerPort: 8081
+          name: rest
+        env:
+        - name: SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS
+          value: "kafka-service:9092"
+        - name: SCHEMA_REGISTRY_HOST_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: SCHEMA_REGISTRY_LISTENERS
+          value: "http://0.0.0.0:8081"
+        - name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC
+          value: "_schemas"
+        - name: SCHEMA_REGISTRY_KAFKASTORE_TOPIC_REPLICATION_FACTOR
+          value: "3"
+        - name: SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL
+          value: "BACKWARD"
+        - name: SCHEMA_REGISTRY_LOG4J_ROOT_LOGLEVEL
+          value: "INFO"
+        - name: SCHEMA_REGISTRY_ACCESS_CONTROL_ALLOW_ORIGINS
+          value: "*"
+        - name: SCHEMA_REGISTRY_ACCESS_CONTROL_ALLOW_METHODS
+          value: "GET,POST,PUT,DELETE,OPTIONS"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /subjects
+            port: 8081
+          initialDelaySeconds: 30
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /subjects
+            port: 8081
+          initialDelaySeconds: 30
+          timeoutSeconds: 10
+          periodSeconds: 30
+
+---
+# Schema Registry Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: schema-registry-service
+  namespace: kafka
+  labels:
+    app: schema-registry
+spec:
+  ports:
+    - port: 8081
+      targetPort: 8081
+      name: rest
+  selector:
+    app: schema-registry
+
+---
+# KSQL Server Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ksqldb-server
+  namespace: kafka
+  labels:
+    app: ksqldb-server
+    component: confluent-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ksqldb-server
+  template:
+    metadata:
+      labels:
+        app: ksqldb-server
+        component: confluent-platform
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: ksqldb-server
+        image: confluentinc/cp-ksqldb-server:7.4.0
+        ports:
+        - containerPort: 8088
+          name: rest
+        env:
+        - name: KSQL_CONFIG_DIR
+          value: "/etc/ksql"
+        - name: KSQL_BOOTSTRAP_SERVERS
+          value: "kafka-service:9092"
+        - name: KSQL_HOST_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: KSQL_LISTENERS
+          value: "http://0.0.0.0:8088"
+        - name: KSQL_CACHE_MAX_BYTES_BUFFERING
+          value: "0"
+        - name: KSQL_KSQL_SCHEMA_REGISTRY_URL
+          value: "http://schema-registry-service:8081"
+        - name: KSQL_PRODUCER_INTERCEPTOR_CLASSES
+          value: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+        - name: KSQL_CONSUMER_INTERCEPTOR_CLASSES
+          value: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+        - name: KSQL_KSQL_STREAMS_REPLICATION_FACTOR
+          value: "3"
+        - name: KSQL_KSQL_INTERNAL_TOPIC_REPLICAS
+          value: "3"
+        - name: KSQL_KSQL_INTERNAL_TOPIC_MIN_INSYNC_REPLICAS
+          value: "2"
+        - name: KSQL_KSQL_LOGGING_PROCESSING_TOPIC_REPLICATION_FACTOR
+          value: "3"
+        - name: KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE
+          value: "true"
+        - name: KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE
+          value: "true"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        readinessProbe:
+          httpGet:
+            path: /info
+            port: 8088
+          initialDelaySeconds: 60
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /info
+            port: 8088
+          initialDelaySeconds: 60
+          timeoutSeconds: 10
+          periodSeconds: 30
+
+---
+# KSQL Server Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ksqldb-service
+  namespace: kafka
+  labels:
+    app: ksqldb-server
+spec:
+  ports:
+    - port: 8088
+      targetPort: 8088
+      name: rest
+  selector:
+    app: ksqldb-server
+
+---
+# Kafka Connect Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-connect
+  namespace: kafka
+  labels:
+    app: kafka-connect
+    component: confluent-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kafka-connect
+  template:
+    metadata:
+      labels:
+        app: kafka-connect
+        component: confluent-platform
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: kafka-connect
+        image: confluentinc/cp-kafka-connect:7.4.0
+        ports:
+        - containerPort: 8083
+          name: rest
+        env:
+        - name: CONNECT_BOOTSTRAP_SERVERS
+          value: "kafka-service:9092"
+        - name: CONNECT_REST_ADVERTISED_HOST_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: CONNECT_REST_PORT
+          value: "8083"
+        - name: CONNECT_GROUP_ID
+          value: "selfmonitor-connect-cluster"
+        - name: CONNECT_CONFIG_STORAGE_TOPIC
+          value: "selfmonitor-connect-configs"
+        - name: CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR
+          value: "3"
+        - name: CONNECT_OFFSET_FLUSH_INTERVAL_MS
+          value: "10000"
+        - name: CONNECT_OFFSET_STORAGE_TOPIC
+          value: "selfmonitor-connect-offsets"
+        - name: CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR
+          value: "3"
+        - name: CONNECT_STATUS_STORAGE_TOPIC
+          value: "selfmonitor-connect-status"
+        - name: CONNECT_STATUS_STORAGE_REPLICATION_FACTOR
+          value: "3"
+        - name: CONNECT_KEY_CONVERTER
+          value: "io.confluent.connect.avro.AvroConverter"
+        - name: CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL
+          value: "http://schema-registry-service:8081"
+        - name: CONNECT_VALUE_CONVERTER
+          value: "io.confluent.connect.avro.AvroConverter"
+        - name: CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL
+          value: "http://schema-registry-service:8081"
+        - name: CONNECT_LOG4J_ROOT_LOGLEVEL
+          value: "INFO"
+        - name: CONNECT_LOG4J_LOGGERS
+          value: "org.apache.kafka.connect.runtime.rest=WARN,org.reflections=ERROR"
+        - name: CONNECT_PLUGIN_PATH
+          value: "/usr/share/java,/usr/share/confluent-hub-components"
+        - name: CONNECT_PRODUCER_INTERCEPTOR_CLASSES
+          value: "io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor"
+        - name: CONNECT_CONSUMER_INTERCEPTOR_CLASSES
+          value: "io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        readinessProbe:
+          httpGet:
+            path: /connectors
+            port: 8083
+          initialDelaySeconds: 60
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /connectors
+            port: 8083
+          initialDelaySeconds: 60
+          timeoutSeconds: 10
+          periodSeconds: 30
+        volumeMounts:
+        - name: connect-plugins
+          mountPath: /usr/share/confluent-hub-components
+      volumes:
+      - name: connect-plugins
+        emptyDir: {}
+      initContainers:
+      - name: install-connectors
+        image: confluentinc/cp-kafka-connect:7.4.0
+        command:
+        - /bin/sh
+        - -c
+        - |
+          confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:10.7.4
+          confluent-hub install --no-prompt debezium/debezium-connector-postgresql:2.2.1
+          confluent-hub install --no-prompt confluentinc/kafka-connect-elasticsearch:14.0.10
+          confluent-hub install --no-prompt mongo/kafka-connect-mongodb:1.11.0
+        volumeMounts:
+        - name: connect-plugins
+          mountPath: /usr/share/confluent-hub-components
+
+---
+# Kafka Connect Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-connect-service
+  namespace: kafka
+  labels:
+    app: kafka-connect
+spec:
+  ports:
+    - port: 8083
+      targetPort: 8083
+      name: rest
+  selector:
+    app: kafka-connect
+
+---
+# ConfigMap for Kafka initialization scripts
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-init-scripts
+  namespace: kafka
+data:
+  create-topics.sh: |
+    #!/bin/bash
+    set -e
+    
+    echo "Waiting for Kafka to be ready..."
+    until kafka-topics --bootstrap-server kafka-service:9092 --list; do
+      echo "Kafka not ready yet..."
+      sleep 5
+    done
+    
+    echo "Creating Kafka topics..."
+    
+    # User events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic user.events --partitions 12 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=604800000
+    
+    # Transaction events  
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic transaction.events --partitions 12 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=2592000000
+    
+    # Fraud detection events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic fraud.alerts --partitions 8 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=7776000000
+    
+    # AI/ML events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic ml.predictions --partitions 8 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=604800000
+    
+    # Analytics events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic analytics.events --partitions 12 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=2592000000
+    
+    # Audit events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic audit.events --partitions 6 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=31536000000
+    
+    # Notification events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic notification.events --partitions 6 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=604800000
+    
+    # Document processing events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic document.events --partitions 6 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=2592000000
+    
+    # Compliance events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic compliance.events --partitions 4 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=31536000000
+    
+    # Integration events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic integration.events --partitions 8 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=604800000
+    
+    # System events
+    kafka-topics --bootstrap-server kafka-service:9092 --create --if-not-exists \
+      --topic system.events --partitions 4 --replication-factor 3 \
+      --config cleanup.policy=delete --config retention.ms=2592000000
+    
+    echo "All topics created successfully!"
+    kafka-topics --bootstrap-server kafka-service:9092 --list
+
+---
+# Job for creating Kafka topics
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topic-setup
+  namespace: kafka
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: kafka-setup
+        image: confluentinc/cp-kafka:7.4.0
+        command: ["/bin/bash", "/scripts/create-topics.sh"]
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+      volumes:
+      - name: scripts
+        configMap:
+          name: kafka-init-scripts
+          defaultMode: 0755
+  backoffLimit: 3

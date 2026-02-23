@@ -1,0 +1,82 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: selfmonitor-services
+  namespace: selfmonitor-monitoring
+  labels:
+    app: selfmonitor
+    component: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+    - selfmonitor
+  selector:
+    matchLabels:
+      prometheus.io/scrape: "true"
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: selfmonitor-ai-agent
+  namespace: selfmonitor-monitoring
+  labels:
+    app: selfmonitor
+    component: ai-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+    - selfmonitor
+  selector:
+    matchLabels:
+      app: ai-agent-service
+  endpoints:
+  - port: metrics
+    interval: 15s
+    path: /metrics
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: selfmonitor-nginx
+  namespace: selfmonitor-monitoring
+  labels:
+    app: selfmonitor
+    component: gateway-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+    - selfmonitor
+  selector:
+    matchLabels:
+      app: nginx-gateway
+  endpoints:
+  - port: metrics
+    interval: 15s
+    path: /metrics
+
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: selfmonitor-databases
+  namespace: selfmonitor-monitoring
+  labels:
+    app: selfmonitor
+    component: database-monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+    - selfmonitor
+  selector:
+    matchLabels:
+      component: database
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics

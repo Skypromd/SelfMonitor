@@ -1,0 +1,61 @@
+# International Expansion Platform Dependencies
+
+# Core FastAPI & Web Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-jose[cryptography]==3.3.0
+httpx==0.25.2
+
+# Internationalization & Localization
+babel==2.13.1
+pyicu==2.11
+python-babel==2.11.0
+langdetect==1.0.9
+googletrans==4.0.0rc1
+
+# Currency & Financial
+forex-python==1.8
+currency-converter==0.5.5
+currencyconverter==0.16.11
+money==1.4.0
+
+# Regional Data & Geolocation
+pycountry==23.12.11
+geopy==2.4.1
+python-geoip2==4.6.0
+tzlocal==5.2
+
+# Database & Storage
+sqlalchemy==2.0.23
+alembic==1.13.1
+redis==5.0.1
+psycopg2-binary==2.9.9
+
+# Compliance & Regulations
+python-compliance==1.2.0
+gdpr-tools==0.1.5
+sox-compliance==1.0.3
+
+# Payment Processing
+stripe==7.8.0
+paypal-sdk==1.14.0
+wise-platform-api==1.0.0
+
+# Data Processing & Analysis
+pandas==2.1.4
+numpy==1.25.2
+openpyxl==3.1.2
+
+# Monitoring & Observability
+prometheus-client==0.19.0
+structlog==23.2.0
+
+# Testing & Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+
+# Production
+gunicorn==21.2.0
+python-dotenv==1.0.0

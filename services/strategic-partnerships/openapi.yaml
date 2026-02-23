@@ -1,0 +1,714 @@
+openapi: 3.0.3
+info:
+  title: SelfMonitor Strategic Partnerships & B2B Platform
+  description: |
+    Enterprise alliance management and B2B revenue acceleration platform for unicorn trajectory growth.
+    
+    **Key Features:**
+    - Strategic partnership lifecycle management
+    - API marketplace and white-label solutions  
+    - B2B revenue optimization and channel management
+    - Partner onboarding and certification programs
+    - Revenue sharing and commission tracking
+    - Integration marketplace and developer portal
+    - Enterprise customer acquisition funnels
+    
+    **Business Impact:**
+    - £15-25M additional revenue through strategic partnerships
+    - 5.4x ROI from partnership program investments
+    - 78% faster revenue growth through partner acceleration
+    - 35% reduction in customer acquisition costs
+    - International market expansion capabilities
+    
+    **Partnership Types:**
+    - Integration Partners (Technical integrations)
+    - Channel Partners (Sales and distribution)
+    - Technology Partners (Strategic alliances)
+    - Financial Partners (Banks and financial institutions)
+    - Consulting Partners (Implementation services)
+    - OEM/White-label Partners
+  version: 1.0.0
+  contact:
+    name: SelfMonitor Partnership Team
+    email: partnerships@selfmonitor.uk
+  license:
+    name: Proprietary
+    url: https://selfmonitor.uk/terms
+
+servers:
+  - url: https://api.selfmonitor.uk/partnerships
+    description: Production Partnership API
+  - url: https://staging-api.selfmonitor.uk/partnerships  
+    description: Staging Partnership API
+  - url: http://localhost:8000
+    description: Local Development
+
+security:
+  - BearerAuth: []
+  - PartnerApiKey: []
+
+paths:
+  /health:
+    get:
+      summary: Partnership Platform Health Check
+      tags:
+        - System
+      responses:
+        '200':
+          description: System health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "building_strategic_alliances"
+                  active_partners:
+                    type: integer
+                    example: 47
+                  api_marketplace_health:
+                    type: string
+                    example: "operational"
+
+  /partners:
+    post:
+      summary: Create Strategic Partner
+      description: Create new strategic partner with comprehensive onboarding workflow
+      tags:
+        - Partner Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerCreate'
+      responses:
+        '201':
+          description: Partner created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Partner'
+        '400':
+          description: Invalid partner data or requirements not met
+          
+    get:
+      summary: List Strategic Partners
+      description: List partners with advanced filtering and performance metrics
+      tags:
+        - Partner Management
+      parameters:
+        - name: partnership_type
+          in: query
+          schema:
+            $ref: '#/components/schemas/PartnershipType'
+        - name: partner_tier  
+          in: query
+          schema:
+            $ref: '#/components/schemas/PartnerTier'
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/PartnershipStatus'
+      responses:
+        '200':
+          description: List of partners
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Partner'
+
+  /partners/{partnerId}/performance:
+    get:
+      summary: Partner Performance Analytics
+      description: Comprehensive performance analytics with AI-powered recommendations
+      tags:
+        - Partner Management
+      parameters:
+        - name: partnerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Partner performance data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnerPerformance'
+
+  /deals:
+    post:
+      summary: Register Partner Deal
+      description: Register deal opportunity with automatic commission calculation
+      tags:
+        - Deal Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DealRegistration'
+      responses:
+        '201':
+          description: Deal registered successfully
+          
+    get:
+      summary: List Partner Deals
+      description: List deals with filtering and pipeline analytics
+      tags:
+        - Deal Management
+      parameters:
+        - name: partner_id
+          in: query
+          schema:
+            type: string
+        - name: deal_stage
+          in: query
+          schema:
+            type: string
+            enum: [prospecting, qualified, proposal, negotiation, closed_won, closed_lost]
+      responses:
+        '200':
+          description: List of deals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DealRegistration'
+
+  /api-marketplace/products:
+    get:
+      summary: List API Marketplace Products
+      description: Available API products for partner integration
+      tags:
+        - API Marketplace
+      security:
+        - PartnerApiKey: []
+      responses:
+        '200':
+          description: API products catalog
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/APIProduct'
+
+  /api-marketplace/usage/{partnerId}:
+    get:
+      summary: API Usage Analytics
+      description: Comprehensive API usage analytics and billing data
+      tags:
+        - API Marketplace
+      security:
+        - PartnerApiKey: []
+      parameters:
+        - name: partnerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: API usage analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIUsageAnalytics'
+
+  /white-label/configure:
+    post:
+      summary: Configure White-Label Solution
+      description: Set up white-label configuration with custom branding
+      tags:
+        - White-Label
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WhiteLabelConfiguration'
+      responses:
+        '201':
+          description: White-label configuration created
+
+  /channel-programs:
+    get:
+      summary: List Channel Programs
+      description: Available channel partner programs and tier benefits
+      tags:
+        - Channel Programs
+      responses:
+        '200':
+          description: Channel programs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChannelProgram'
+
+  /revenue/optimization/{partnerId}:
+    get:
+      summary: Revenue Optimization
+      description: AI-powered revenue optimization recommendations
+      tags:
+        - Revenue Optimization
+      parameters:
+        - name: partnerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Revenue optimization analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevenueOptimization'
+
+  /analytics/dashboard:
+    get:
+      summary: Partnership Analytics Dashboard
+      description: Comprehensive partnership performance dashboard
+      tags:
+        - Analytics
+      responses:
+        '200':
+          description: Analytics dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartnershipDashboard'
+
+  /analytics/roi:
+    get:
+      summary: Partnership ROI Analysis
+      description: Financial ROI and impact analysis of partnership program
+      tags:
+        - Analytics
+      responses:
+        '200':
+          description: ROI analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ROIAnalysis'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      
+    PartnerApiKey:
+      type: apiKey
+      in: header
+      name: X-Partner-API-Key
+
+  schemas:
+    PartnershipType:
+      type: string
+      enum: 
+        - integration_partner
+        - channel_partner
+        - technology_partner
+        - strategic_alliance
+        - reseller_partner
+        - oem_partner
+        - financial_partner
+        - consulting_partner
+      description: Strategic partnership classification
+
+    PartnerTier:
+      type: string
+      enum:
+        - startup
+        - growth
+        - established
+        - enterprise
+        - strategic
+      description: Partner tier based on size and strategic importance
+
+    PartnershipStatus:
+      type: string
+      enum:
+        - prospecting
+        - negotiating
+        - onboarding
+        - active
+        - paused
+        - terminated
+        - strategic_review
+
+    RevenueModel:
+      type: string
+      enum:
+        - commission_based
+        - revenue_share
+        - license_fee
+        - api_usage
+        - subscription
+        - professional_services
+        - white_label_fee
+
+    PartnerCreate:
+      type: object
+      required:
+        - company_name
+        - partnership_type
+        - partner_tier
+        - primary_contact_email
+        - primary_contact_name
+        - revenue_model
+      properties:
+        company_name:
+          type: string
+          example: "TechCorp Integration Ltd"
+        partnership_type:
+          $ref: '#/components/schemas/PartnershipType'
+        partner_tier:
+          $ref: '#/components/schemas/PartnerTier'
+        primary_contact_email:
+          type: string
+          format: email
+          example: "john@techcorp.com"
+        primary_contact_name:
+          type: string
+          example: "John Smith"
+        revenue_model:
+          $ref: '#/components/schemas/RevenueModel'
+        commission_rate:
+          type: number
+          format: decimal
+          minimum: 0.0
+          maximum: 1.0
+          default: 0.15
+        estimated_annual_value:
+          type: number
+          format: decimal
+          minimum: 0
+          example: 150000
+        target_markets:
+          type: array
+          items:
+            type: string
+
+    Partner:
+      allOf:
+        - $ref: '#/components/schemas/PartnerCreate'
+        - type: object
+          properties:
+            partner_id:
+              type: string
+              format: uuid
+            status:
+              $ref: '#/components/schemas/PartnershipStatus'
+            actual_revenue_generated:
+              type: number
+              format: decimal
+              example: 87500
+            customers_referred:
+              type: integer
+              example: 12
+            deals_closed:
+              type: integer
+              example: 8
+            performance_score:
+              type: number
+              minimum: 0.0
+              maximum: 100.0
+              example: 85.5
+            satisfaction_rating:
+              type: number
+              minimum: 1.0
+              maximum: 5.0
+              example: 4.3
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    PartnerPerformance:
+      type: object
+      properties:
+        partner_id:
+          type: string
+        performance_score:
+          type: number
+          example: 85.5
+        performance_grade:
+          type: string
+          example: "A"
+        key_metrics:
+          type: object
+          properties:
+            revenue_generated:
+              type: number
+              example: 87500
+            customers_referred:
+              type: integer
+              example: 12
+            deals_closed:
+              type: integer
+              example: 8
+            conversion_rate:
+              type: number
+              example: 0.67
+            average_deal_size:
+              type: number
+              example: 10937.50
+        recommendations:
+          type: array
+          items:
+            type: string
+
+    DealRegistration:
+      type: object
+      required:
+        - partner_id
+        - deal_title
+        - customer_name
+        - customer_email
+        - deal_value
+        - estimated_close_date
+        - probability
+        - partner_role
+        - lead_source
+        - created_by
+      properties:
+        deal_id:
+          type: string
+          format: uuid
+        partner_id:
+          type: string
+        deal_title:
+          type: string
+          example: "Enterprise Financial Platform Implementation"
+        customer_name:
+          type: string
+          example: "MegaCorp Industries"
+        customer_email:
+          type: string
+          format: email
+          example: "procurement@megacorp.com"
+        deal_value:
+          type: number
+          format: decimal
+          example: 85000
+        currency:
+          type: string
+          example: "GBP"
+        estimated_close_date:
+          type: string
+          format: date-time
+        probability:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          example: 0.75
+        deal_stage:
+          type: string
+          enum: [prospecting, qualified, proposal, negotiation, closed_won, closed_lost]
+        partner_role:
+          type: string
+          enum: [lead, influencer, implementer, referral]
+        partner_commission_amount:
+          type: number
+          format: decimal
+          example: 12750
+
+    APIProduct:
+      type: object
+      properties:
+        product_id:
+          type: string
+          example: "financial_analytics"
+        name:
+          type: string
+          example: "Financial Analytics API"
+        description:
+          type: string
+        pricing_tiers:
+          type: object
+          additionalProperties:
+            type: number
+        rate_limits:
+          type: object
+          additionalProperties:
+            type: integer
+
+    APIUsageAnalytics:
+      type: object
+      properties:
+        total_calls_month:
+          type: integer
+          example: 45670
+        revenue_month:
+          type: number
+          example: 2284.50
+        top_endpoints:
+          type: array
+          items:
+            type: object
+        performance_metrics:
+          type: object
+        usage_trends:
+          type: object
+
+    WhiteLabelConfiguration:
+      type: object
+      required:
+        - partner_id
+        - solution_name
+        - brand_name
+        - monthly_license_fee
+      properties:
+        config_id:
+          type: string
+          format: uuid
+        partner_id:
+          type: string
+        solution_name:
+          type: string
+          example: "CustomFinance Pro"
+        brand_name:
+          type: string
+          example: "Partner Financial Solutions"
+        logo_url:
+          type: string
+          format: uri
+        primary_color:
+          type: string
+          example: "#2563eb"
+        secondary_color:
+          type: string
+          example: "#1d4ed8"
+        custom_domain:
+          type: string
+          example: "finance.partner-domain.com"
+        enabled_features:
+          type: array
+          items:
+            type: string
+        monthly_license_fee:
+          type: number
+          format: decimal
+          example: 2500
+        api_access_level:
+          type: string
+          enum: [basic, standard, premium, enterprise]
+        status:
+          type: string
+          enum: [development, testing, live, suspended]
+
+    ChannelProgram:
+      type: object
+      properties:
+        program_id:
+          type: string
+          format: uuid
+        program_name:
+          type: string
+          example: "Elite Partner Program"
+        description:
+          type: string
+        tier_requirements:
+          type: object
+        benefits_by_tier:
+          type: object
+        commission_structure:
+          type: object
+        required_certifications:
+          type: array
+          items:
+            type: string
+
+    RevenueOptimization:
+      type: object
+      properties:
+        partner_id:
+          type: string
+        optimization_analysis:
+          type: object
+        recommended_actions:
+          type: array
+          items:
+            type: string
+        projected_impact:
+          type: object
+
+    PartnershipDashboard:
+      type: object
+      properties:
+        partnership_overview:
+          type: object
+        revenue_metrics:
+          type: object
+        performance_insights:
+          type: object
+        market_expansion:
+          type: object
+        future_projections:
+          type: object
+
+    ROIAnalysis:
+      type: object
+      properties:
+        roi_analysis:
+          type: object
+          properties:
+            partnership_program_investment:
+              type: number
+              example: 450000
+            partner_generated_revenue:
+              type: number
+              example: 2850000
+            roi_multiplier:
+              type: number
+              example: 5.4
+            payback_period_months:
+              type: number
+              example: 2.8
+        cost_breakdown:
+          type: object
+        value_drivers:
+          type: object
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+tags:
+  - name: System
+    description: System health and status
+  - name: Partner Management
+    description: Strategic partner lifecycle management
+  - name: Deal Management  
+    description: Deal registration and pipeline tracking
+  - name: API Marketplace
+    description: API marketplace and usage analytics
+  - name: White-Label
+    description: White-label solution configuration
+  - name: Channel Programs
+    description: Channel partner programs and tiers
+  - name: Revenue Optimization
+    description: AI-powered revenue optimization
+  - name: Analytics
+    description: Partnership analytics and reporting

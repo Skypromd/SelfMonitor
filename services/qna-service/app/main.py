@@ -1,5 +1,6 @@
 import os
 from typing import Annotated
+from contextlib import asynccontextmanager
 
 import weaviate
 from fastapi import Depends, FastAPI, Header, HTTPException, status
@@ -18,10 +19,19 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 # Load a small but effective model for generating sentence embeddings
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan"""
+    # Startup
+    ensure_schema_exists()
+    yield
+    # Shutdown - no cleanup needed for this service
+
 app = FastAPI(
     title="Q&A and Semantic Search Service",
     description="Handles creating text embeddings and searching for documents.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # --- Weaviate Client and Schema ---
@@ -51,9 +61,6 @@ def ensure_schema_exists():
         client.schema.create_class(document_schema)
         print("Schema created.")
 
-@app.on_event("startup")
-def startup_event():
-    ensure_schema_exists()
 
 
 @app.get("/health")

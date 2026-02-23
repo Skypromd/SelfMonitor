@@ -1,5 +1,5 @@
 import os
-import datetime
+from datetime import datetime, timedelta, timezone
 import httpx
 from typing import Annotated, List, Optional, Dict, Any
 from enum import Enum
@@ -156,7 +156,7 @@ async def get_user_journey(
                 current_stage=current_stage,
                 stages_completed=stages_completed,
                 days_since_registration=7,  # Mock data
-                last_login=datetime.datetime.utcnow(),
+                last_login=datetime.now(timezone.utc),
                 engagement_score=engagement_score,
                 churn_risk=churn_risk,
                 success_actions_taken=["profile_completed", "first_bank_connected"]
@@ -169,7 +169,7 @@ async def get_user_journey(
             current_stage=OnboardingStage.REGISTRATION,
             stages_completed=[],
             days_since_registration=0,
-            last_login=datetime.datetime.utcnow(),
+            last_login=datetime.now(timezone.utc),
             engagement_score=10.0,
             churn_risk=ChurnRisk.MEDIUM
         )

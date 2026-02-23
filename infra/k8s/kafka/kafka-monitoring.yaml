@@ -1,0 +1,463 @@
+# Kafka Monitoring Stack for SelfMonitor
+# JMX Exporter, Kafka Exporter, and Grafana Dashboards
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-exporter
+  namespace: kafka
+  labels:
+    app: kafka-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-exporter
+        component: monitoring
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9308"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: kafka-exporter
+        image: danielqsj/kafka-exporter:v1.7.0
+        args:
+        - --kafka.server=kafka-service:9092
+        - --web.listen-address=0.0.0.0:9308
+        - --log.level=info
+        - --topic.filter=.*
+        - --group.filter=.*
+        ports:
+        - containerPort: 9308
+          name: metrics
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9308
+          initialDelaySeconds: 30
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9308
+          initialDelaySeconds: 30
+          timeoutSeconds: 10
+
+---
+# Kafka Exporter Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter-service
+  namespace: kafka
+  labels:
+    app: kafka-exporter
+spec:
+  ports:
+    - port: 9308
+      targetPort: 9308
+      name: metrics
+  selector:
+    app: kafka-exporter
+
+---
+# JMX Exporter ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-jmx-config
+  namespace: kafka
+data:
+  kafka-jmx.yml: |
+    startDelaySeconds: 0
+    ssl: false
+    lowercaseOutputName: false
+    lowercaseOutputLabelNames: false
+    rules:
+    # Kafka Broker Metrics
+    - pattern: 'kafka.server<type=(.+), name=(.+)><>Value'
+      name: kafka_server_$1_$2
+    - pattern: 'kafka.server<type=(.+), name=(.+), (.+)=(.+)><>Value'
+      name: kafka_server_$1_$2
+      labels:
+        "$3": "$4"
+    - pattern: 'kafka.server<type=(.+), name=(.+), (.+)=(.+), (.+)=(.+)><>Value'
+      name: kafka_server_$1_$2
+      labels:
+        "$3": "$4"
+        "$5": "$6"
+    
+    # Topic Metrics
+    - pattern: 'kafka.log<type=(.+), name=(.+), topic=(.+)><>Value'
+      name: kafka_log_$1_$2
+      labels:
+        topic: "$3"
+    
+    # Network Metrics
+    - pattern: 'kafka.network<type=(.+), name=(.+)><>Value'
+      name: kafka_network_$1_$2
+    - pattern: 'kafka.network<type=(.+), name=(.+), request=(.+)><>Value'
+      name: kafka_network_$1_$2
+      labels:
+        request: "$3"
+    
+    # Producer Metrics
+    - pattern: 'kafka.producer<type=(.+), name=(.+)><>Value'
+      name: kafka_producer_$1_$2
+    - pattern: 'kafka.producer<type=(.+), name=(.+), (.+)=(.+)><>Value'
+      name: kafka_producer_$1_$2
+      labels:
+        "$3": "$4"
+    
+    # Consumer Metrics
+    - pattern: 'kafka.consumer<type=(.+), name=(.+)><>Value'
+      name: kafka_consumer_$1_$2
+    - pattern: 'kafka.consumer<type=(.+), name=(.+), (.+)=(.+)><>Value'
+      name: kafka_consumer_$1_$2
+      labels:
+        "$3": "$4"
+    
+    # Controller Metrics
+    - pattern: 'kafka.controller<type=(.+), name=(.+)><>Value'
+      name: kafka_controller_$1_$2
+    
+    # JVM Metrics
+    - pattern: 'java.lang<type=(.+), name=(.+)><>(.+)'
+      name: jvm_$1_$2_$3
+    - pattern: 'java.lang<type=(.+), name=(.+), (.+)=(.+)><>(.+)'
+      name: jvm_$1_$2_$5
+      labels:
+        "$3": "$4"
+
+---
+# Zookeeper JMX Exporter ConfigMap  
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zookeeper-jmx-config
+  namespace: kafka
+data:
+  zookeeper-jmx.yml: |
+    startDelaySeconds: 0
+    ssl: false 
+    lowercaseOutputName: false
+    lowercaseOutputLabelNames: false
+    rules:
+    # Zookeeper Server Metrics
+    - pattern: 'org.apache.ZooKeeperService<name0=(.+), name1=(.+)><>(.+)'
+      name: zookeeper_$1_$2_$3
+    - pattern: 'org.apache.ZooKeeperService<name0=(.+)><>(.+)'
+      name: zookeeper_$1_$2
+    
+    # JVM Metrics for Zookeeper
+    - pattern: 'java.lang<type=(.+), name=(.+)><>(.+)'
+      name: zookeeper_jvm_$1_$2_$3
+    - pattern: 'java.lang<type=(.+), name=(.+), (.+)=(.+)><>(.+)'
+      name: zookeeper_jvm_$1_$2_$5
+      labels:
+        "$3": "$4"
+
+---
+# JMX Exporter for Kafka Brokers
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-jmx-exporter
+  namespace: kafka
+  labels:
+    app: kafka-jmx-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-jmx-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-jmx-exporter
+        component: monitoring
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: jmx-exporter
+        image: sscaling/jmx-prometheus-exporter:0.18.0
+        args:
+        - "8080"
+        - "/etc/jmx-exporter/kafka-jmx.yml"
+        ports:
+        - containerPort: 8080
+          name: metrics
+        volumeMounts:
+        - name: jmx-config
+          mountPath: /etc/jmx-exporter
+        env:
+        - name: JVM_OPTS
+          value: "-Xms64m -Xmx128m"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "100m"
+      volumes:
+      - name: jmx-config
+        configMap:
+          name: kafka-jmx-config
+
+---
+# JMX Exporter Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-jmx-exporter-service
+  namespace: kafka
+  labels:
+    app: kafka-jmx-exporter
+spec:
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: metrics
+  selector:
+    app: kafka-jmx-exporter
+
+---
+# ServiceMonitor for Prometheus scraping
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-monitoring
+  namespace: kafka
+  labels:
+    app: kafka
+    component: monitoring
+spec:
+  selector:
+    matchLabels:
+      component: monitoring
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+# Grafana Dashboard ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-grafana-dashboard
+  namespace: kafka
+  labels:
+    grafana_dashboard: "1"
+data:
+  kafka-overview.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Kafka Overview - SelfMonitor",
+        "tags": ["kafka", "selfmonitor"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Broker Count",
+            "type": "singlestat",
+            "targets": [
+              {
+                "expr": "count(up{job=\"kafka-exporter\"})",
+                "legendFormat": "Brokers"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Topic Count",
+            "type": "singlestat", 
+            "targets": [
+              {
+                "expr": "kafka_topics",
+                "legendFormat": "Topics"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Total Messages",
+            "type": "singlestat",
+            "targets": [
+              {
+                "expr": "sum(kafka_topic_partition_current_offset)",
+                "legendFormat": "Messages"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+          },
+          {
+            "id": 4,
+            "title": "Consumer Groups",
+            "type": "singlestat",
+            "targets": [
+              {
+                "expr": "kafka_consumer_groups",
+                "legendFormat": "Groups"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+          },
+          {
+            "id": 5,
+            "title": "Message Rate by Topic",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(kafka_topic_partition_current_offset[5m])",
+                "legendFormat": "{{topic}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+          },
+          {
+            "id": 6,
+            "title": "Consumer Lag by Topic", 
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "kafka_consumer_lag_sum",
+                "legendFormat": "{{topic}} - {{consumergroup}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+          },
+          {
+            "id": 7,
+            "title": "Broker CPU Usage",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(kafka_server_BrokerTopicMetrics_MessagesInPerSec[5m])",
+                "legendFormat": "{{instance}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 8, "x": 0, "y": 16}
+          },
+          {
+            "id": 8,
+            "title": "Broker Memory Usage",
+            "type": "graph", 
+            "targets": [
+              {
+                "expr": "jvm_memory_bytes_used{area=\"heap\"} / jvm_memory_bytes_max{area=\"heap\"}",
+                "legendFormat": "{{instance}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 8, "x": 8, "y": 16}
+          },
+          {
+            "id": 9,
+            "title": "Network IO",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "rate(kafka_server_BrokerTopicMetrics_BytesInPerSec[5m])",
+                "legendFormat": "Bytes In/sec"
+              },
+              {
+                "expr": "rate(kafka_server_BrokerTopicMetrics_BytesOutPerSec[5m])", 
+                "legendFormat": "Bytes Out/sec"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 8, "x": 16, "y": 16}
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "5s"
+      }
+    }
+
+---
+# Alerting Rules for Kafka
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kafka-alerts
+  namespace: kafka
+  labels:
+    prometheus: kafka
+    role: alert-rules
+spec:
+  groups:
+  - name: kafka.rules
+    rules:
+    - alert: KafkaBrokerDown
+      expr: up{job="kafka-exporter"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        service: kafka
+      annotations:
+        summary: "Kafka broker is down"
+        description: "Kafka broker {{ $labels.instance }} has been down for more than 1 minute."
+    
+    - alert: KafkaConsumerLag  
+      expr: kafka_consumer_lag_sum > 1000
+      for: 5m
+      labels:
+        severity: warning
+        service: kafka
+      annotations:
+        summary: "High consumer lag detected"
+        description: "Consumer group {{ $labels.consumergroup }} has lag of {{ $value }} on topic {{ $labels.topic }}."
+    
+    - alert: KafkaHighDiskUsage
+      expr: (kafka_log_size / kafka_log_end_offset) > 0.8
+      for: 10m
+      labels:
+        severity: warning
+        service: kafka
+      annotations:
+        summary: "Kafka disk usage is high"
+        description: "Kafka broker {{ $labels.instance }} disk usage is above 80%."
+    
+    - alert: KafkaUnderReplicatedPartitions
+      expr: kafka_cluster_partition_under_replicated > 0
+      for: 5m
+      labels:
+        severity: critical
+        service: kafka
+      annotations:
+        summary: "Under-replicated partitions detected"
+        description: "{{ $value }} partitions are under-replicated in the Kafka cluster."
+    
+    - alert: KafkaOfflinePartitions
+      expr: kafka_controller_offline_partitions_count > 0
+      for: 1m
+      labels:
+        severity: critical
+        service: kafka
+      annotations:
+        summary: "Offline partitions detected"
+        description: "{{ $value }} partitions are offline in the Kafka cluster."

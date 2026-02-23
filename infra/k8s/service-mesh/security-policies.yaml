@@ -1,0 +1,111 @@
+# Istio Security Policies for SelfMonitor
+# mTLS and authorization rules for 23 microservices
+
+---
+# Enable strict mTLS for all services
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: selfmonitor
+spec:
+  mtls:
+    mode: STRICT
+
+---
+# Authorization policy for auth-service
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: auth-service-policy
+  namespace: selfmonitor
+spec:
+  selector:
+    matchLabels:
+      app: auth-service
+  rules:
+  - from:
+    - source:
+        principals: ["cluster.local/ns/selfmonitor/sa/nginx-gateway"]
+  - to:
+    - operation:
+        methods: ["POST"]
+        paths: ["/token", "/register", "/refresh"]
+
+---
+# Authorization policy for user data access
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: user-data-policy
+  namespace: selfmonitor
+spec:
+  selector:
+    matchLabels:
+      app: user-profile-service
+  rules:
+  - from:
+    - source:
+        principals: 
+          - "cluster.local/ns/selfmonitor/sa/predictive-analytics"
+          - "cluster.local/ns/selfmonitor/sa/fraud-detection"
+          - "cluster.local/ns/selfmonitor/sa/analytics-service"
+  - to:
+    - operation:
+        methods: ["GET"]
+        paths: ["/users/*", "/profiles/*"]
+
+---
+# Authorization policy for transactions access
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: transactions-policy
+  namespace: selfmonitor
+spec:
+  selector:
+    matchLabels:
+      app: transactions-service
+  rules:
+  - from:
+    - source:
+        principals:
+          - "cluster.local/ns/selfmonitor/sa/analytics-service"
+          - "cluster.local/ns/selfmonitor/sa/fraud-detection"
+          - "cluster.local/ns/selfmonitor/sa/predictive-analytics"
+          - "cluster.local/ns/selfmonitor/sa/tax-engine"
+  - to:
+    - operation:
+        methods: ["GET", "POST"]
+        paths: ["/transactions/*", "/accounts/*/transactions"]
+
+---
+# Allow AI services to communicate
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: ai-services-policy
+  namespace: selfmonitor
+spec:
+  selector:
+    matchLabels:
+      category: ai-service
+  rules:
+  - from:
+    - source:
+        principals:
+          - "cluster.local/ns/selfmonitor/sa/ai-agent-service"
+          - "cluster.local/ns/selfmonitor/sa/predictive-analytics"
+          - "cluster.local/ns/selfmonitor/sa/fraud-detection"
+          - "cluster.local/ns/selfmonitor/sa/business-intelligence"
+
+---
+# Deny all policy (default deny) - applied last
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deny-all
+  namespace: selfmonitor
+spec:
+  # No rules = deny all
+  # This ensures only explicitly allowed traffic passes

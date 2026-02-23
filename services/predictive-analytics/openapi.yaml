@@ -1,0 +1,566 @@
+openapi: 3.0.3
+info:
+  title: SelfMonitor Real-time Recommendation Engine
+  version: 2.0.0
+  description: |
+    AI-powered real-time recommendations for financial optimization, investment strategies, and business growth.
+    
+    This service provides personalized, intelligent recommendations based on user behavior, financial data, 
+    and predictive analytics. It combines traditional churn prediction with advanced recommendation algorithms
+    to deliver actionable insights for financial success.
+    
+    ## Key Features
+    - **Real-time Recommendations**: Personalized financial optimization suggestions
+    - **Churn Prevention**: ML-powered user retention analytics
+    - **Investment Guidance**: AI-driven investment strategy recommendations
+    - **Tax Optimization**: Intelligent tax planning suggestions
+    - **Business Growth**: Scaling and efficiency recommendations
+    - **Product Discovery**: Feature adoption and optimization
+    
+    ## Authentication
+    All endpoints require valid JWT authentication token in the Authorization header.
+    
+  contact:
+    name: SelfMonitor Development Team
+    email: dev@selfmonitor.app
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://localhost:8006
+    description: Development server
+  - url: https://recommendations.selfmonitor.app
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Recommendations
+    description: Real-time personalized recommendations
+  - name: Churn Prediction
+    description: ML-powered churn analysis and prevention
+  - name: Analytics
+    description: Performance metrics and analytics
+  - name: Health
+    description: Service health and monitoring
+
+paths:
+  /recommendations/{user_id}:
+    get:
+      tags:
+        - Recommendations
+      summary: Get personalized recommendations
+      description: |
+        Retrieve real-time personalized recommendations for financial optimization, 
+        investment strategies, and business growth based on user profile and behavior.
+      operationId: get_real_time_recommendations
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
+        - name: refresh
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Force refresh cache and generate new recommendations
+      responses:
+        '200':
+          description: Personalized recommendations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationResponse'
+              examples:
+                financial_optimization:
+                  summary: Financial optimization recommendations
+                  value:
+                    recommendations:
+                      - id: "cash_flow_opt_user123"
+                        type: "cash_flow_management"
+                        title: "Optimize Cash Flow Management"
+                        description: "Your expenses are high relative to income. Implement optimization strategies."
+                        priority: "high"
+                        estimated_impact:
+                          financial: 500.0
+                          stress_reduction: 8.0
+                        confidence_score: 0.85
+                        action_items:
+                          - "Review and categorize all expenses"
+                          - "Identify top 3 expense reduction opportunities"
+                        roi_estimate: 5.2
+                    total_potential_impact:
+                      financial: 1250.0
+                      time_savings: 15.0
+                      recommendation_count: 4
+        '401':
+          description: Authentication required
+        '404':
+          description: User not found
+
+  /recommendations/{user_id}/category/{category}:
+    get:
+      tags:
+        - Recommendations
+      summary: Get category-specific recommendations
+      description: Retrieve recommendations for a specific category or type
+      operationId: get_category_recommendations
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
+        - name: category
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RecommendationType'
+          description: Recommendation category
+      responses:
+        '200':
+          description: Category-specific recommendations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Recommendation'
+
+  /recommendations/{recommendation_id}/action:
+    post:
+      tags:
+        - Recommendations
+      summary: Take action on recommendation
+      description: |
+        Execute an action on a specific recommendation (accept, dismiss, schedule, implement).
+        Actions are logged for ML model improvement.
+      operationId: take_recommendation_action
+      parameters:
+        - name: recommendation_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Recommendation ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum: [accept, dismiss, schedule, implement]
+                  description: Action to take on the recommendation
+              required:
+                - action
+      responses:
+        '200':
+          description: Action executed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recommendation_id:
+                    type: string
+                  action:
+                    type: string
+                  result:
+                    type: string
+                  status:
+                    type: string
+        '400':
+          description: Invalid action
+
+  /recommendations/analytics/performance:
+    get:
+      tags:
+        - Analytics
+      summary: Get recommendation performance
+      description: Get performance analytics and metrics for the recommendation engine
+      operationId: get_recommendation_performance
+      responses:
+        '200':
+          description: Performance analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendationPerformance'
+
+  /churn-prediction/{user_id}:
+    get:
+      tags:
+        - Churn Prediction
+      summary: Predict user churn risk
+      description: |
+        Analyze user behavior and predict churn probability using ML models.
+        Provides risk assessment and recommended interventions.
+      operationId: predict_churn_risk
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
+      responses:
+        '200':
+          description: Churn prediction analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChurnPrediction'
+              examples:
+                high_risk:
+                  summary: High churn risk user
+                  value:
+                    user_id: "user_123"
+                    churn_probability: 0.734
+                    risk_level: "high"
+                    key_risk_factors:
+                      - "Inactive for 18 days"
+                      - "Low feature adoption"
+                    recommended_interventions:
+                      - "Send re-engagement email sequence"
+                      - "Personal onboarding call"
+                    predicted_ltv_if_retained: 315.20
+                    intervention_cost_estimate: 25.0
+                    roi_of_intervention: 11.61
+
+  /cohort-churn-analysis:
+    get:
+      tags:
+        - Churn Prediction
+      summary: Analyze cohort churn patterns
+      description: Analyze churn patterns and trends across user cohorts
+      operationId: analyze_cohort_churn
+      parameters:
+        - name: cohort_month
+          in: query
+          schema:
+            type: string
+            default: "2026-01"
+          description: Cohort month (YYYY-MM format)
+      responses:
+        '200':
+          description: Cohort churn analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CohortAnalysis'
+
+  /intervention-campaigns/{campaign_type}:
+    post:
+      tags:
+        - Churn Prediction
+      summary: Launch retention campaign
+      description: Launch targeted retention campaigns based on churn predictions
+      operationId: launch_intervention_campaign
+      parameters:
+        - name: campaign_type
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [reactivation_email, personal_outreach, feature_onboarding, pricing_intervention]
+          description: Type of retention campaign
+        - name: target_risk_level
+          in: query
+          schema:
+            $ref: '#/components/schemas/ChurnRisk'
+            default: high
+          description: Target churn risk level
+      responses:
+        '200':
+          description: Campaign launched successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignResponse'
+
+  /ml-model-performance:
+    get:
+      tags:
+        - Analytics
+      summary: Get ML model performance
+      description: Get performance metrics for churn prediction ML models
+      operationId: get_churn_model_performance
+      responses:
+        '200':
+          description: ML model performance metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelPerformance'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check if the recommendation engine service is healthy
+      operationId: health_check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RecommendationType:
+      type: string
+      enum:
+        - financial_optimization
+        - investment_strategy
+        - tax_optimization
+        - business_growth
+        - cash_flow_management
+        - cost_reduction
+        - product_feature
+        - automation_setup
+
+    Priority:
+      type: string
+      enum: [low, medium, high, urgent]
+
+    ChurnRisk:
+      type: string
+      enum: [low, medium, high, critical]
+
+    Recommendation:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique recommendation ID
+        type:
+          $ref: '#/components/schemas/RecommendationType'
+        title:
+          type: string
+          description: Recommendation title
+        description:
+          type: string
+          description: Detailed description
+        priority:
+          $ref: '#/components/schemas/Priority'
+        estimated_impact:
+          type: object
+          description: Estimated impact metrics
+          properties:
+            financial:
+              type: number
+              format: float
+            time_savings:
+              type: number
+              format: float
+        confidence_score:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        action_items:
+          type: array
+          items:
+            type: string
+        deadline:
+          type: string
+          format: date
+          nullable: true
+        implementation_cost:
+          type: number
+          format: float
+        roi_estimate:
+          type: number
+          format: float
+        category_tags:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+
+    RecommendationResponse:
+      type: object
+      properties:
+        recommendations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Recommendation'
+        user_profile_summary:
+          type: object
+          properties:
+            user_id:
+              type: string
+            account_type:
+              type: string
+            risk_tolerance:
+              type: string
+            financial_goals:
+              type: array
+              items:
+                type: string
+        total_potential_impact:
+          type: object
+          properties:
+            financial:
+              type: number
+              format: float
+            time_savings:
+              type: number
+              format: float
+            recommendation_count:
+              type: integer
+        next_review_date:
+          type: string
+          format: date
+        generated_at:
+          type: string
+          format: date-time
+
+    ChurnPrediction:
+      type: object
+      properties:
+        user_id:
+          type: string
+        churn_probability:
+          type: number
+          format: float
+          minimum: 0.0
+          maximum: 1.0
+        risk_level:
+          $ref: '#/components/schemas/ChurnRisk'
+        key_risk_factors:
+          type: array
+          items:
+            type: string
+        recommended_interventions:
+          type: array
+          items:
+            type: string
+        predicted_ltv_if_retained:
+          type: number
+          format: float
+        intervention_cost_estimate:
+          type: number
+          format: float
+        roi_of_intervention:
+          type: number
+          format: float
+
+    CohortAnalysis:
+      type: object
+      properties:
+        cohort_month:
+          type: string
+        initial_users:
+          type: integer
+        churn_by_month:
+          type: object
+        predictive_insights:
+          type: object
+        retention_improvements:
+          type: object
+
+    CampaignResponse:
+      type: object
+      properties:
+        campaign_launched:
+          type: string
+        campaign_details:
+          type: object
+        targeting:
+          type: object
+        business_impact:
+          type: object
+
+    ModelPerformance:
+      type: object
+      properties:
+        model_metrics:
+          type: object
+          properties:
+            accuracy:
+              type: number
+              format: float
+            precision:
+              type: number
+              format: float
+            recall:
+              type: number
+              format: float
+            f1_score:
+              type: number
+              format: float
+            auc_roc:
+              type: number
+              format: float
+        model_features:
+          type: object
+        business_impact:
+          type: object
+        continuous_improvement:
+          type: object
+
+    RecommendationPerformance:
+      type: object
+      properties:
+        engine_performance:
+          type: object
+          properties:
+            total_recommendations_generated:
+              type: integer
+            acceptance_rate:
+              type: number
+              format: float
+            implementation_rate:
+              type: number
+              format: float
+            average_financial_impact:
+              type: number
+              format: float
+            user_satisfaction_score:
+              type: number
+              format: float
+        recommendation_categories:
+          type: object
+        ml_model_performance:
+          type: object
+        business_impact:
+          type: object
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, error]
+        service:
+          type: string
+        version:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        cache_status:
+          type: string
+          enum: [connected, disconnected]

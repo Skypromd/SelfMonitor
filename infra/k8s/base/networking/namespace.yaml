@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: selfmonitor
+  labels:
+    name: selfmonitor
+    environment: production
+    project: selfmonitor-fintech
+    version: "2.0.0"
+  annotations:
+    description: "SelfMonitor FinTech Platform - Main application namespace"
+    contact: "dev@selfmonitor.app"
+    compliance: "ISO27001,PCI-DSS"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: selfmonitor-monitoring
+  labels:
+    name: selfmonitor-monitoring
+    environment: production
+    project: selfmonitor-fintech
+    purpose: monitoring
+  annotations:
+    description: "SelfMonitor Platform - Monitoring and observability"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: selfmonitor-system
+  labels:
+    name: selfmonitor-system
+    environment: production
+    project: selfmonitor-fintech
+    purpose: system
+  annotations:
+    description: "SelfMonitor Platform - System components and operators"

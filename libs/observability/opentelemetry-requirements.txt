@@ -1,0 +1,19 @@
+# OpenTelemetry integration for SelfMonitor services
+# Production-ready distributed tracing configuration
+
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-instrumentation==0.42b0
+
+# Auto-instrumentation for common libraries
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-httpx==0.42b0
+opentelemetry-instrumentation-redis==0.42b0
+opentelemetry-instrumentation-sqlalchemy==0.42b0
+
+# Exporters for different backends
+opentelemetry-exporter-jaeger-thrift==1.21.0
+opentelemetry-exporter-otlp==1.21.0
+
+# Propagators
+opentelemetry-propagator-b3==1.21.0

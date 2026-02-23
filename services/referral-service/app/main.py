@@ -1,6 +1,6 @@
 import os
 import uuid
-import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional, List
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -155,7 +155,7 @@ async def join_referral_campaign(
     if not campaign or not campaign.is_active:
         raise HTTPException(status_code=404, detail="Campaign not found or inactive")
     
-    if campaign.end_date and campaign.end_date < datetime.datetime.utcnow():
+    if campaign.end_date and campaign.end_date < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Campaign has ended")
     
     # Create/update user's referral code for this campaign

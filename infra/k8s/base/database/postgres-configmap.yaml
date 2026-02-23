@@ -1,0 +1,253 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: selfmonitor
+  labels:
+    app: postgres
+    component: database
+data:
+  # PostgreSQL Configuration
+  postgresql.conf: |
+    # Connection Settings
+    max_connections = 200
+    shared_buffers = 256MB
+    effective_cache_size = 1GB
+    work_mem = 4MB
+    maintenance_work_mem = 64MB
+    
+    # Write Ahead Logging
+    wal_buffers = 16MB
+    checkpoint_completion_target = 0.9
+    max_wal_size = 1GB
+    min_wal_size = 256MB
+    
+    # Query Tuning
+    random_page_cost = 1.1
+    effective_io_concurrency = 200
+    
+    # Logging
+    log_destination = 'stderr'
+    logging_collector = on
+    log_directory = 'pg_log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_min_duration_statement = 1000
+    log_line_prefix = '%t [%p-%l] %q%u@%d '
+    
+    # Performance Monitoring
+    shared_preload_libraries = 'pg_stat_statements'
+    track_activity_query_size = 2048
+    pg_stat_statements.max = 10000
+    pg_stat_statements.track = all
+    
+    # Security
+    ssl = on
+    ssl_cert_file = '/etc/ssl/certs/server.crt'
+    ssl_key_file = '/etc/ssl/private/server.key'
+    
+  # Database initialization script
+  init-databases.sql: |
+    -- Create databases for each service
+    CREATE DATABASE db_auth;
+    CREATE DATABASE db_user_profile;
+    CREATE DATABASE db_transactions;
+    CREATE DATABASE db_analytics;
+    CREATE DATABASE db_compliance;
+    CREATE DATABASE db_documents;
+    CREATE DATABASE db_advice;
+    CREATE DATABASE db_ai_agent;
+    CREATE DATABASE db_business_intelligence;
+    CREATE DATABASE db_fraud_detection;
+    CREATE DATABASE db_predictive_analytics;
+    CREATE DATABASE db_monitoring;
+    
+    -- Create monitoring user
+    CREATE USER monitoring WITH PASSWORD 'monitoring_password';
+    GRANT CONNECT ON DATABASE db_monitoring TO monitoring;
+    GRANT USAGE ON SCHEMA public TO monitoring;
+    GRANT SELECT ON ALL TABLES IN SCHEMA public TO monitoring;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO monitoring;
+    
+    -- Create backup user
+    CREATE USER backup_user WITH PASSWORD 'backup_password';
+    GRANT CONNECT ON ALL DATABASES TO backup_user;
+    ALTER USER backup_user WITH REPLICATION;
+    
+  # Health check script
+  health-check.sh: |
+    #!/bin/bash
+    set -e
+    
+    # Check if PostgreSQL is accepting connections
+    pg_isready -h localhost -p 5432 -U $POSTGRES_USER -d $POSTGRES_DB
+    
+    # Check database sizes
+    psql -h localhost -U $POSTGRES_USER -d $POSTGRES_DB -c "
+      SELECT 
+        datname,
+        pg_size_pretty(pg_database_size(datname)) as size
+      FROM pg_database 
+      WHERE datname NOT IN ('template0', 'template1', 'postgres')
+      ORDER BY pg_database_size(datname) DESC;
+    "
+    
+    # Check for long-running queries
+    psql -h localhost -U $POSTGRES_USER -d $POSTGRES_DB -c "
+      SELECT 
+        pid,
+        now() - pg_stat_activity.query_start AS duration,
+        query
+      FROM pg_stat_activity
+      WHERE (now() - pg_stat_activity.query_start) > interval '5 minutes'
+      AND state = 'active';
+    "
+    
+  # Backup script
+  backup.sh: |
+    #!/bin/bash
+    set -e
+    
+    BACKUP_DIR="/backup"
+    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+    
+    echo "Starting PostgreSQL backup at $TIMESTAMP"
+    
+    # Create directory for this backup
+    mkdir -p "$BACKUP_DIR/$TIMESTAMP"
+    
+    # Backup each database
+    for DB in db_auth db_user_profile db_transactions db_analytics db_compliance db_documents db_advice db_ai_agent db_business_intelligence db_fraud_detection db_predictive_analytics; do
+      echo "Backing up $DB..."
+      pg_dump -h localhost -U $POSTGRES_USER -d $DB | gzip > "$BACKUP_DIR/$TIMESTAMP/${DB}.sql.gz"
+    done
+    
+    # Create a full cluster backup
+    echo "Creating full cluster backup..."
+    pg_dumpall -h localhost -U $POSTGRES_USER | gzip > "$BACKUP_DIR/$TIMESTAMP/full_cluster.sql.gz"
+    
+    # Remove backups older than 7 days
+    find $BACKUP_DIR -type d -mtime +7 -exec rm -rf {} + 2>/dev/null || true
+    
+    echo "Backup completed successfully"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-scripts
+  namespace: selfmonitor
+  labels:
+    app: postgres
+    component: initialization
+data:
+  01-create-databases.sql: |
+    -- SelfMonitor Platform Database Initialization
+    -- Creates all required databases for microservices
+    
+    -- Core Service Databases
+    CREATE DATABASE IF NOT EXISTS db_auth;
+    CREATE DATABASE IF NOT EXISTS db_user_profile;
+    CREATE DATABASE IF NOT EXISTS db_transactions;
+    CREATE DATABASE IF NOT EXISTS db_analytics;
+    CREATE DATABASE IF NOT EXISTS db_compliance;
+    CREATE DATABASE IF NOT EXISTS db_documents;
+    CREATE DATABASE IF NOT EXISTS db_advice;
+    
+    -- New AI and Analytics Databases
+    CREATE DATABASE IF NOT EXISTS db_ai_agent;
+    CREATE DATABASE IF NOT EXISTS db_business_intelligence;
+    CREATE DATABASE IF NOT EXISTS db_fraud_detection;
+    CREATE DATABASE IF NOT EXISTS db_predictive_analytics;
+    
+    -- Monitoring Database
+    CREATE DATABASE IF NOT EXISTS db_monitoring;
+    
+    -- Set database owners
+    ALTER DATABASE db_auth OWNER TO selfmonitor;
+    ALTER DATABASE db_user_profile OWNER TO selfmonitor;
+    ALTER DATABASE db_transactions OWNER TO selfmonitor;
+    ALTER DATABASE db_analytics OWNER TO selfmonitor;
+    ALTER DATABASE db_compliance OWNER TO selfmonitor;
+    ALTER DATABASE db_documents OWNER TO selfmonitor;
+    ALTER DATABASE db_advice OWNER TO selfmonitor;
+    ALTER DATABASE db_ai_agent OWNER TO selfmonitor;
+    ALTER DATABASE db_business_intelligence OWNER TO selfmonitor;
+    ALTER DATABASE db_fraud_detection OWNER TO selfmonitor;
+    ALTER DATABASE db_predictive_analytics OWNER TO selfmonitor;
+    ALTER DATABASE db_monitoring OWNER TO selfmonitor;
+    
+  02-create-users.sql: |
+    -- Create service-specific users with limited permissions
+    
+    -- Auth Service User
+    CREATE USER auth_service WITH PASSWORD 'auth_service_password';
+    GRANT CONNECT ON DATABASE db_auth TO auth_service;
+    
+    -- User Profile Service User
+    CREATE USER user_profile_service WITH PASSWORD 'user_profile_password';
+    GRANT CONNECT ON DATABASE db_user_profile TO user_profile_service;
+    
+    -- Transactions Service User
+    CREATE USER transactions_service WITH PASSWORD 'transactions_password';
+    GRANT CONNECT ON DATABASE db_transactions TO transactions_service;
+    
+    -- Analytics Service User
+    CREATE USER analytics_service WITH PASSWORD 'analytics_password';
+    GRANT CONNECT ON DATABASE db_analytics TO analytics_service;
+    
+    -- AI Agent Service User
+    CREATE USER ai_agent_service WITH PASSWORD 'ai_agent_password';
+    GRANT CONNECT ON DATABASE db_ai_agent TO ai_agent_service;
+    
+    -- Monitoring User (read-only)
+    CREATE USER monitoring WITH PASSWORD 'monitoring_password';
+    GRANT CONNECT ON ALL DATABASES TO monitoring;
+    
+    -- Backup User
+    CREATE USER backup_user WITH PASSWORD 'backup_password';
+    GRANT CONNECT ON ALL DATABASES TO backup_user;
+    ALTER USER backup_user WITH REPLICATION;
+
+  03-setup-extensions.sql: |
+    -- Install required PostgreSQL extensions for each database
+    
+    \c db_auth;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    
+    \c db_user_profile;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "postgis";
+    
+    \c db_transactions;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "btree_gin";
+    
+    \c db_analytics;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    \c db_ai_agent;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "vector";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    \c db_business_intelligence;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+    CREATE EXTENSION IF NOT EXISTS "tablefunc";
+    
+    \c db_fraud_detection;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    
+    \c db_predictive_analytics;
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+    CREATE EXTENSION IF NOT EXISTS "tablefunc";
+    
+    \c db_monitoring;
+    CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+    CREATE EXTENSION IF NOT EXISTS "pg_buffercache";

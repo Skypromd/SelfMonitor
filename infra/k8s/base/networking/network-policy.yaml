@@ -1,0 +1,129 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: selfmonitor-network-policy
+  namespace: selfmonitor
+  labels:
+    app: selfmonitor
+    component: security
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  
+  ingress:
+  # Allow traffic from nginx gateway
+  - from:
+    - podSelector:
+        matchLabels:
+          app: nginx-gateway
+    ports:
+    - protocol: TCP
+      port: 80
+  
+  # Allow inter-service communication
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: selfmonitor
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 8080
+  
+  # Allow monitoring traffic
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: selfmonitor-monitoring
+    ports:
+    - protocol: TCP
+      port: 9090    # Prometheus metrics
+    - protocol: TCP
+      port: 8080    # Health checks
+  
+  # Allow database connections
+  - from:
+    - podSelector:
+        matchLabels:
+          type: service
+    to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  - from:
+    - podSelector:
+        matchLabels:
+          type: service
+    to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  
+  # Allow HTTPS traffic to external APIs
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+  
+  # Allow HTTP traffic to external APIs
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 80
+  
+  # Allow inter-service communication
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: selfmonitor
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 8080
+  
+  # Allow database connections
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-default
+  namespace: selfmonitor
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress

@@ -1,0 +1,643 @@
+openapi: 3.0.3
+info:
+  title: SelfMonitor IPO Readiness Infrastructure
+  description: |
+    Enterprise governance and public company infrastructure platform for achieving unicorn status and IPO readiness.
+    
+    **Core Capabilities:**
+    - Comprehensive IPO readiness assessment with 85+ metrics
+    - Corporate governance frameworks and board management
+    - Financial reporting automation and audit trail systems
+    - Investor relations and shareholder communication platform
+    - Regulatory compliance automation across multiple jurisdictions
+    - Enterprise risk management and internal controls
+    - Executive compensation and equity management
+    - Public company operational excellence framework
+    
+    **IPO Readiness Components:**
+    - Financial Readiness (30% weight): Revenue growth, profitability, financial controls
+    - Corporate Governance (25% weight): Board independence, audit committee, risk management
+    - Market Readiness (20% weight): Market size, competitive position, brand recognition
+    - Operational Readiness (15% weight): Technology platform, cybersecurity, scalability
+    - Legal & Regulatory (10% weight): Compliance, IP portfolio, litigation risk
+    
+    **Target Outcome:**
+    - Unicorn valuation: £1B+ enterprise value
+    - IPO timeline: 6-24 months based on readiness score
+    - Public company compliance: Multi-jurisdiction regulatory readiness
+    - Institutional investor preparedness: Enterprise-grade governance
+    
+    **Business Impact:**
+    - IPO valuation target: £1.2B enterprise value
+    - Public market readiness across UK, US, and EU markets
+    - Institutional-grade corporate governance framework
+    - Automated regulatory compliance and financial reporting
+  version: 1.0.0
+  contact:
+    name: SelfMonitor IPO Readiness Team
+    email: ipo@selfmonitor.uk
+  license:
+    name: Proprietary
+    url: https://selfmonitor.uk/terms
+
+servers:
+  - url: https://api.selfmonitor.uk/ipo
+    description: Production IPO Readiness API
+  - url: https://staging-api.selfmonitor.uk/ipo
+    description: Staging IPO Readiness API
+  - url: http://localhost:8000
+    description: Local Development
+
+security:
+  - BearerAuth: []
+  - IPOApiKey: []
+
+paths:
+  /health:
+    get:
+      summary: IPO Platform Health Check
+      tags:
+        - System
+      responses:
+        '200':
+          description: System health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "building_unicorn_infrastructure"
+                  ipo_readiness_platform:
+                    type: string
+                    example: "operational"
+                  target_valuation:
+                    type: string
+                    example: "£1000000000"
+
+  /assessment/comprehensive:
+    get:
+      summary: Comprehensive IPO Readiness Assessment
+      description: Conduct full IPO readiness assessment across all dimensions
+      tags:
+        - IPO Assessment
+      responses:
+        '200':
+          description: Comprehensive readiness score
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IPOReadinessScore'
+
+  /assessment/financial:
+    get:
+      summary: Financial Readiness Assessment
+      description: Detailed assessment of financial readiness for public company status
+      tags:
+        - IPO Assessment
+      responses:
+        '200':
+          description: Financial readiness analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialReadiness'
+
+  /governance/board-members:
+    post:
+      summary: Add Board Member
+      description: Add new board member with governance validation
+      tags:
+        - Board Governance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BoardMemberCreate'
+      responses:
+        '201':
+          description: Board member added successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardMember'
+
+  /governance/board-composition:
+    get:
+      summary: Board Composition Analysis
+      description: Get board composition metrics and governance analysis
+      tags:
+        - Board Governance
+      responses:
+        '200':
+          description: Board composition and governance metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BoardComposition'
+
+  /reporting/financial:
+    post:
+      summary: Create Financial Report
+      description: Generate quarterly or annual financial report
+      tags:
+        - Financial Reporting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinancialReportCreate'
+      responses:
+        '201':
+          description: Financial report created successfully
+
+  /reporting/dashboard:
+    get:
+      summary: Financial Reporting Dashboard
+      description: Comprehensive financial reporting dashboard and metrics
+      tags:
+        - Financial Reporting
+      responses:
+        '200':
+          description: Financial dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinancialDashboard'
+
+  /investor-relations/communications:
+    post:
+      summary: Create Investor Communication
+      description: Create investor communication and outreach plan
+      tags:
+        - Investor Relations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvestorCommunicationCreate'
+      responses:
+        '201':
+          description: Investor communication created
+
+  /investor-relations/dashboard:
+    get:
+      summary: Investor Relations Dashboard
+      description: Comprehensive investor relations metrics and engagement data
+      tags:
+        - Investor Relations
+      responses:
+        '200':
+          description: Investor relations dashboard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvestorRelationsDashboard'
+
+  /compliance/assessment/{framework}:
+    get:
+      summary: Regulatory Compliance Assessment
+      description: Assess compliance status for specific regulatory framework
+      tags:
+        - Regulatory Compliance
+      parameters:
+        - name: framework
+          in: path
+          required: true
+          schema:
+            $ref: '#/components/schemas/RegulatoryFramework'
+      responses:
+        '200':
+          description: Compliance assessment results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceAssessment'
+
+  /compliance/dashboard:
+    get:
+      summary: Regulatory Compliance Dashboard
+      description: Comprehensive regulatory compliance status and metrics
+      tags:
+        - Regulatory Compliance
+      responses:
+        '200':
+          description: Compliance dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComplianceDashboard'
+
+  /valuation/analysis:
+    get:
+      summary: IPO Valuation Analysis
+      description: Comprehensive valuation analysis for IPO planning
+      tags:
+        - Valuation & Market Analysis
+      responses:
+        '200':
+          description: Valuation analysis and IPO pricing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValuationAnalysis'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      
+    IPOApiKey:
+      type: apiKey
+      in: header
+      name: X-IPO-API-Key
+
+  schemas:
+    RegulatoryFramework:
+      type: string
+      enum:
+        - fca_uk
+        - sec_us
+        - esma_eu
+        - pci_dss
+        - gdpr
+        - sarbanes_oxley
+        - basel_iii
+      description: Regulatory compliance framework
+
+    IPOReadinessScore:
+      type: object
+      properties:
+        assessment_id:
+          type: string
+          format: uuid
+        company_name:
+          type: string
+          example: "SelfMonitor"
+        assessment_date:
+          type: string
+          format: date-time
+        financial_readiness:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          example: 87.5
+        governance_readiness:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          example: 82.3
+        market_readiness:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          example: 91.2
+        operational_readiness:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          example: 89.7
+        legal_readiness:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          example: 93.1
+        overall_score:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+          example: 86.8
+        readiness_grade:
+          type: string
+          example: "B+"
+          enum: ["A+", "A", "B+", "B", "C+", "C", "D"]
+        ipo_timeline_estimate:
+          type: string
+          example: "12-18 months"
+        key_improvement_areas:
+          type: array
+          items:
+            type: string
+        estimated_valuation:
+          type: number
+          example: 875000000
+        created_by:
+          type: string
+
+    FinancialReadiness:
+      type: object
+      properties:
+        financial_readiness_score:
+          type: number
+          example: 87.5
+        financial_grade:
+          type: string
+          example: "B+"
+        financial_metrics:
+          type: object
+          properties:
+            revenue_growth_3yr_cagr:
+              type: number
+              example: 0.45
+            ebitda_margin:
+              type: number
+              example: 0.25
+            gross_margin:
+              type: number
+              example: 0.78
+            free_cash_flow_positive:
+              type: boolean
+              example: true
+            sox_compliance_readiness:
+              type: number
+              example: 0.85
+            big4_audit:
+              type: boolean
+              example: true
+        improvement_areas:
+          type: array
+          items:
+            type: string
+        ipo_prerequisites:
+          type: object
+
+    BoardMemberCreate:
+      type: object
+      required:
+        - full_name
+        - title
+        - email
+        - position
+      properties:
+        full_name:
+          type: string
+          example: "Sarah Johnson"
+        title:
+          type: string
+          example: "Chairman of the Board"
+        email:
+          type: string
+          format: email
+          example: "sarah.johnson@example.com"
+        position:
+          type: string
+          enum: ["chairman", "ceo", "independent_director", "executive_director", "lead_director"]
+        is_independent:
+          type: boolean
+          example: true
+        committee_memberships:
+          type: array
+          items:
+            type: string
+        professional_background:
+          type: string
+        public_company_experience:
+          type: boolean
+        board_experience_years:
+          type: integer
+
+    BoardMember:
+      allOf:
+        - $ref: '#/components/schemas/BoardMemberCreate'
+        - type: object
+          properties:
+            member_id:
+              type: string
+              format: uuid
+            appointment_date:
+              type: string
+              format: date-time
+            term_expiration:
+              type: string
+              format: date-time
+            performance_rating:
+              type: number
+              minimum: 1.0
+              maximum: 5.0
+            created_at:
+              type: string
+              format: date-time
+
+    BoardComposition:
+      type: object
+      properties:
+        board_composition:
+          type: object
+          properties:
+            total_members:
+              type: integer
+              example: 7
+            independent_members:
+              type: integer
+              example: 5
+            independence_ratio:
+              type: number
+              example: 0.71
+            chairman_independent:
+              type: boolean
+              example: true
+        committee_structure:
+          type: object
+        governance_metrics:
+          type: object
+        ipo_governance_readiness:
+          type: object
+
+    FinancialReportCreate:
+      type: object
+      required:
+        - report_type
+        - reporting_period
+        - revenue
+        - prepared_by
+      properties:
+        report_type:
+          type: string
+          enum: [s1_registration, form_10k, form_10q, form_8k, proxy_statement, earnings_release]
+        reporting_period:
+          type: string
+          example: "Q4 2026"
+        revenue:
+          type: number
+          example: 12500000
+        gross_profit:
+          type: number
+          example: 9750000
+        operating_income:
+          type: number
+          example: 3125000
+        net_income:
+          type: number
+          example: 2000000
+        prepared_by:
+          type: string
+
+    FinancialDashboard:
+      type: object
+      properties:
+        current_period:
+          type: object
+        annual_performance:
+          type: object
+        ipo_financial_metrics:
+          type: object
+        reporting_readiness:
+          type: object
+        upcoming_milestones:
+          type: array
+          items:
+            type: object
+
+    InvestorCommunicationCreate:
+      type: object
+      required:
+        - communication_type
+        - title
+        - scheduled_date
+        - created_by
+      properties:
+        communication_type:
+          type: string
+          enum: [earnings_call, investor_presentation, roadshow, shareholder_letter, guidance_update]
+        title:
+          type: string
+          example: "Q4 2026 Earnings Call"
+        target_audience:
+          type: array
+          items:
+            type: string
+        expected_participants:
+          type: integer
+          example: 150
+        scheduled_date:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+
+    InvestorRelationsDashboard:
+      type: object
+      properties:
+        shareholder_base:
+          type: object
+        investor_engagement:
+          type: object
+        stock_performance:
+          type: object
+        communication_calendar:
+          type: array
+          items:
+            type: object
+        analyst_coverage:
+          type: object
+
+    ComplianceAssessment:
+      type: object
+      properties:
+        compliance_id:
+          type: string
+          format: uuid
+        regulatory_framework:
+          $ref: '#/components/schemas/RegulatoryFramework'
+        compliance_status:
+          type: string
+          enum: [compliant, non_compliant, in_progress, not_applicable]
+        compliance_score:
+          type: number
+          minimum: 0.0
+          maximum: 100.0
+        identified_gaps:
+          type: array
+          items:
+            type: string
+        remediation_plan:
+          type: array
+          items:
+            type: string
+        compliance_risk_level:
+          type: string
+          enum: [low, medium, high, critical]
+
+    ComplianceDashboard:
+      type: object
+      properties:
+        compliance_overview:
+          type: object
+        framework_compliance:
+          type: object
+        ipo_compliance_readiness:
+          type: object
+        upcoming_requirements:
+          type: array
+          items:
+            type: object
+        risk_assessment:
+          type: object
+
+    ValuationAnalysis:
+      type: object
+      properties:
+        current_valuation:
+          type: object
+          properties:
+            pre_ipo_valuation:
+              type: number
+              example: 875000000
+            valuation_method:
+              type: string
+              example: "dcf_and_multiples"
+            confidence_interval:
+              type: array
+              items:
+                type: number
+        ipo_pricing_analysis:
+          type: object
+          properties:
+            target_valuation:
+              type: number
+              example: 1200000000
+            price_range:
+              type: array
+              items:
+                type: number
+            shares_to_offer:
+              type: integer
+              example: 15000000
+        comparable_analysis:
+          type: object
+        sensitivity_analysis:
+          type: object
+        market_timing:
+          type: object
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+tags:
+  - name: System
+    description: System health and status monitoring
+  - name: IPO Assessment
+    description: Comprehensive IPO readiness assessment
+  - name: Board Governance
+    description: Board composition and corporate governance
+  - name: Financial Reporting
+    description: Financial reporting and audit trail systems
+  - name: Investor Relations
+    description: Investor communication and relations management
+  - name: Regulatory Compliance
+    description: Multi-jurisdiction regulatory compliance
+  - name: Valuation & Market Analysis
+    description: IPO valuation and market analysis

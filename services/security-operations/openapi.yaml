@@ -1,0 +1,529 @@
+openapi: 3.0.3
+info:
+  title: SelfMonitor Security Operations Center (SOC)
+  description: >-
+    Enterprise-grade security hardening, threat detection, and compliance automation platform providing:
+    - Real-time threat detection and response using AI/ML
+    - Advanced vulnerability management and automated patching
+    - Zero-trust architecture enforcement and continuous verification
+    - Enterprise-grade encryption and key management
+    - SIEM/SOAR automation and orchestration
+    - Multi-framework compliance monitoring (SOX, PCI-DSS, GDPR, FCA)
+    - Security incident response orchestration
+    - Financial impact tracking and ROI optimization
+    - Enterprise readiness assessment for unicorn trajectory
+  version: 3.0.0
+  contact:
+    name: SelfMonitor Security Operations Team
+    email: security@selfmonitor.ai
+  license:
+    name: Proprietary
+    url: https://selfmonitor.ai/security-license
+
+servers:
+  - url: https://api.selfmonitor.ai/security/v3
+    description: Production Security Operations API
+  - url: https://staging-api.selfmonitor.ai/security/v3
+    description: Staging Security Operations API
+
+tags:
+  - name: Threat Detection
+    description: AI-powered real-time threat detection and analysis
+  - name: Vulnerability Management
+    description: Automated vulnerability assessment and remediation
+  - name: Incident Response
+    description: Security incident tracking and automated response
+  - name: Compliance Automation
+    description: Multi-framework compliance monitoring and reporting
+  - name: Zero Trust
+    description: Zero-trust architecture and access control
+  - name: Encryption Services
+    description: Enterprise-grade encryption and key management
+  - name: Financial Impact
+    description: Security ROI and business value metrics
+  - name: Enterprise Readiness
+    description: Unicorn trajectory and investor readiness assessment
+
+security:
+  - BearerAuth: []
+  - APIKeyAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for authenticated access
+    APIKeyAuth:
+      type: apiKey
+      in: header
+      name: X-SOC-API-Key
+      description: SOC API key for service-to-service communication
+
+  schemas:
+    ThreatLevel:
+      type: string
+      enum: [low, medium, high, critical, catastrophic]
+      description: Threat severity classification based on NIST framework
+      
+    SecurityEventType:
+      type: string
+      enum: 
+        - auth_failure
+        - privilege_escalation
+        - data_exfiltration
+        - malware_detection
+        - network_intrusion
+        - vulnerability_exploit
+        - policy_violation
+        - anomalous_behavior
+        - compliance_breach
+        - insider_threat
+      description: Types of security events monitored
+
+    ComplianceFramework:
+      type: string
+      enum: [sox, pci_dss, gdpr, fca_sysc, iso27001, nist_csf]
+      description: Supported compliance frameworks
+
+    SecurityThreatIntelligence:
+      type: object
+      required:
+        - threat_id
+        - threat_type
+        - threat_level
+        - attack_vector
+        - confidence_score
+        - first_detected
+      properties:
+        threat_id:
+          type: string
+          format: uuid
+          description: Unique threat identifier
+        threat_type:
+          $ref: '#/components/schemas/SecurityEventType'
+        threat_level:
+          $ref: '#/components/schemas/ThreatLevel'
+        source_ip:
+          type: string
+          description: Source IP address of threat
+        target_asset:
+          type: string
+          description: Targeted system or asset
+        attack_vector:
+          type: string
+          description: Method of attack
+        indicators_of_compromise:
+          type: array
+          items:
+            type: string
+          description: List of IOCs detected
+        mitigation_actions:
+          type: array
+          items:
+            type: string
+          description: Recommended mitigation actions
+        confidence_score:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+          description: Confidence level of threat assessment
+        first_detected:
+          type: string
+          format: date-time
+          description: First detection timestamp
+        last_activity:
+          type: string
+          format: date-time
+          description: Last observed activity
+        geographic_origin:
+          type: string
+          description: Geographic origin of threat
+        attribution:
+          type: string
+          description: Threat actor attribution
+
+    VulnerabilityAssessment:
+      type: object
+      required:
+        - vulnerability_id
+        - severity
+        - cvss_score
+        - description
+        - discovered_date
+      properties:
+        vulnerability_id:
+          type: string
+          format: uuid
+        cve_id:
+          type: string
+          description: Common Vulnerabilities and Exposures ID
+        severity:
+          type: string
+          enum: [none, low, medium, high, critical]
+        cvss_score:
+          type: number
+          minimum: 0.0
+          maximum: 10.0
+        affected_assets:
+          type: array
+          items:
+            type: string
+        description:
+          type: string
+        exploitation_likelihood:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        business_impact:
+          type: string
+        remediation_steps:
+          type: array
+          items:
+            type: string
+        patch_available:
+          type: boolean
+        discovered_date:
+          type: string
+          format: date-time
+
+    SecurityIncident:
+      type: object
+      required:
+        - incident_id
+        - title
+        - incident_type
+        - severity
+        - status
+        - detection_time
+      properties:
+        incident_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        incident_type:
+          $ref: '#/components/schemas/SecurityEventType'
+        severity:
+          $ref: '#/components/schemas/ThreatLevel'
+        status:
+          type: string
+          enum: [detected, investigating, contained, eradicated, recovered, closed]
+        assigned_analyst:
+          type: string
+        affected_users:
+          type: array
+          items:
+            type: string
+        affected_systems:
+          type: array
+          items:
+            type: string
+        financial_impact:
+          type: number
+        detection_time:
+          type: string
+          format: date-time
+
+    ComplianceControl:
+      type: object
+      required:
+        - control_id
+        - framework
+        - control_number
+        - control_title
+        - implementation_status
+        - effectiveness_rating
+        - next_review
+      properties:
+        control_id:
+          type: string
+          format: uuid
+        framework:
+          $ref: '#/components/schemas/ComplianceFramework'
+        control_number:
+          type: string
+        control_title:
+          type: string
+        control_description:
+          type: string
+        implementation_status:
+          type: string
+          enum: [implemented, partially_implemented, not_implemented]
+        effectiveness_rating:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+        last_assessment:
+          type: string
+          format: date-time
+        next_review:
+          type: string
+          format: date-time
+        automation_level:
+          type: number
+          minimum: 0.0
+          maximum: 1.0
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Security service health check
+      responses:
+        '200':
+          description: Service health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: secure
+                  threat_detection:
+                    type: string
+                    example: active
+                  compliance_monitoring:
+                    type: string
+                    example: operational
+
+  /security/dashboard:
+    get:
+      tags: [Threat Detection]
+      summary: Comprehensive security operations dashboard
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Security dashboard data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threat_landscape:
+                    type: object
+                  vulnerability_management:
+                    type: object
+                  compliance_status:
+                    type: object
+                  incident_response:
+                    type: object
+                  financial_protection:
+                    type: object
+
+  /security/threat-detection/analyze:
+    post:
+      tags: [Threat Detection]
+      summary: Real-time threat detection and analysis
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                source_ip:
+                  type: string
+                user_agent:
+                  type: string
+                request_pattern:
+                  type: string
+                attack_vector:
+                  type: string
+      responses:
+        '200':
+          description: Threat analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityThreatIntelligence'
+
+  /security/vulnerabilities:
+    get:
+      tags: [Vulnerability Management]
+      summary: Get current vulnerability assessment results
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [none, low, medium, high, critical]
+      responses:
+        '200':
+          description: Vulnerability assessment results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/VulnerabilityAssessment'
+
+  /security/incidents:
+    post:
+      tags: [Incident Response]
+      summary: Create and track security incident
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                incident_type:
+                  $ref: '#/components/schemas/SecurityEventType'
+                severity:
+                  $ref: '#/components/schemas/ThreatLevel'
+      responses:
+        '201':
+          description: Security incident created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityIncident'
+
+  /security/compliance:
+    get:
+      tags: [Compliance Automation]
+      summary: Get compliance control assessments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: framework
+          in: query
+          schema:
+            $ref: '#/components/schemas/ComplianceFramework'
+      responses:
+        '200':
+          description: Compliance control assessments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ComplianceControl'
+
+  /security/encryption/encrypt:
+    post:
+      tags: [Encryption Services]
+      summary: Encrypt sensitive data using enterprise-grade encryption
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+      responses:
+        '200':
+          description: Data encrypted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  encrypted_data:
+                    type: string
+                  encryption_algorithm:
+                    type: string
+                  key_id:
+                    type: string
+
+  /security/zero-trust/evaluate:
+    post:
+      tags: [Zero Trust]
+      summary: Evaluate access request against zero-trust policies
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                resource:
+                  type: string
+                action:
+                  type: string
+                context:
+                  type: object
+      responses:
+        '200':
+          description: Zero-trust access evaluation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_request_id:
+                    type: string
+                  access_granted:
+                    type: boolean
+                  overall_trust_score:
+                    type: number
+                  risk_factors:
+                    type: object
+
+  /security/financial-impact:
+    get:
+      tags: [Financial Impact]
+      summary: Comprehensive security ROI and monetization metrics
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Security financial impact metrics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  threat_prevention_value:
+                    type: object
+                  compliance_value:
+                    type: object
+                  operational_efficiency:
+                    type: object
+                  total_security_roi:
+                    type: object
+
+  /security/enterprise-readiness:
+    get:
+      tags: [Enterprise Readiness]
+      summary: Enterprise security readiness assessment for unicorn trajectory
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Enterprise security readiness assessment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  security_maturity:
+                    type: object
+                  certification_status:
+                    type: object
+                  unicorn_security_requirements:
+                    type: object
+                  competitive_security_positioning:
+                    type: object

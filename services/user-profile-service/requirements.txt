@@ -6,6 +6,12 @@ sqlalchemy[asyncio]
 asyncpg
 alembic
 
+# Event streaming dependencies
+kafka-python==2.0.2
+aiokafka==0.8.11
+avro==1.11.3
+confluent-kafka[avro]==2.2.0
+
 # Dependencies for testing
 pytest
 pytest-asyncio

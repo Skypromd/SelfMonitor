@@ -3,7 +3,7 @@ from sqlalchemy.future import select
 from sqlalchemy import func, text
 from sqlalchemy.orm import selectinload
 import uuid
-import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from . import models, schemas
@@ -51,7 +51,7 @@ async def get_referral_statistics(db: AsyncSession, referral_code_id: uuid.UUID)
     total_referrals = total_result.scalar()
     
     # Get this month's conversions
-    current_month_start = datetime.datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    current_month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     monthly_result = await db.execute(
         select(func.count(models.ReferralUsage.id))
         .where(models.ReferralUsage.referral_code_id == referral_code_id)

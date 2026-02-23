@@ -1,0 +1,590 @@
+openapi: 3.0.3
+info:
+  title: SelfMate AI Agent Service
+  version: 1.0.0
+  description: |
+    Enterprise-grade AI financial advisor with autonomous capabilities.
+    
+    SelfMate is an intelligent AI agent that provides personalized financial advice,
+    proactive insights, and automated financial management for individuals and businesses.
+    
+    ## Key Features
+    - **Autonomous Advisory**: GPT-4 powered financial recommendations
+    - **Proactive Monitoring**: Real-time financial health tracking
+    - **Cross-Service Integration**: Seamless integration with all SelfMonitor services
+    - **Advanced Memory**: Persistent conversation history and user preferences
+    - **Dynamic Tools**: Real-time access to financial data and services
+    
+    ## Authentication
+    All endpoints require valid JWT authentication token in the Authorization header.
+    
+  contact:
+    name: SelfMonitor Development Team
+    email: dev@selfmonitor.app
+  license:
+    name: Proprietary
+    
+servers:
+  - url: http://localhost:8010
+    description: Development server
+  - url: https://ai-agent.selfmonitor.app
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Chat
+    description: Conversation endpoints
+  - name: Sessions
+    description: Session management
+  - name: Health
+    description: Service health and monitoring
+  - name: Admin
+    description: Administrative endpoints
+
+paths:
+  /chat:
+    post:
+      tags:
+        - Chat
+      summary: Send message to AI agent
+      description: |
+        Send a message to SelfMate AI agent and receive intelligent response.
+        The agent analyzes the message context and provides personalized financial advice.
+      operationId: chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+            examples:
+              financial_question:
+                summary: Ask about financial health
+                value:
+                  message: "How is my financial health this month?"
+                  session_id: "session_12345"
+              tax_planning:
+                summary: Ask about tax planning
+                value:
+                  message: "Can you help me optimize my tax strategy for this year?"
+                  session_id: "session_12345"
+      responses:
+        '200':
+          description: Successful response from AI agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+              examples:
+                financial_health:
+                  summary: Financial health analysis response
+                  value:
+                    response: "Based on your recent transactions, your financial health looks solid! Your cash flow has improved 15% this month..."
+                    session_id: "session_12345"
+                    suggestions:
+                      - "Review your investment portfolio"
+                      - "Set up emergency fund automation"
+                    metadata:
+                      confidence: 0.92
+                      response_time_ms: 1250
+                      tools_used: ["financial_analysis", "cash_flow_calculator"]
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+        '429':
+          description: Rate limit exceeded
+        '500':
+          description: Internal server error
+
+  /chat/stream:
+    post:
+      tags:
+        - Chat
+      summary: Stream AI agent response
+      description: |
+        Stream AI agent response in real-time for a more interactive experience.
+        Responses are sent as Server-Sent Events (SSE).
+      operationId: chat_stream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: SSE stream of AI responses
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: Server-Sent Events stream
+              example: |
+                data: {"type": "token", "content": "Based"}
+                
+                data: {"type": "token", "content": " on"}
+                
+                data: {"type": "token", "content": " your"}
+                
+                data: {"type": "done", "session_id": "session_12345"}
+
+  /sessions:
+    post:
+      tags:
+        - Sessions
+      summary: Create new conversation session
+      description: Create a new conversation session for the authenticated user
+      operationId: create_session
+      responses:
+        '201':
+          description: Session created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          description: Authentication required
+
+    get:
+      tags:
+        - Sessions
+      summary: Get user's active sessions
+      description: Retrieve all active conversation sessions for the authenticated user
+      operationId: get_sessions
+      responses:
+        '200':
+          description: List of active sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+
+  /sessions/{session_id}:
+    get:
+      tags:
+        - Sessions
+      summary: Get session details
+      description: Get detailed information about a specific conversation session
+      operationId: get_session
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session ID
+      responses:
+        '200':
+          description: Session details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetailResponse'
+        '404':
+          description: Session not found
+
+    delete:
+      tags:
+        - Sessions
+      summary: End conversation session
+      description: End a conversation session and clean up resources
+      operationId: end_session
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session ID
+      responses:
+        '200':
+          description: Session ended successfully
+        '404':
+          description: Session not found
+
+  /sessions/{session_id}/history:
+    get:
+      tags:
+        - Sessions
+      summary: Get conversation history
+      description: Retrieve conversation history for a specific session
+      operationId: get_conversation_history
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Session ID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Maximum number of conversation turns to return
+      responses:
+        '200':
+          description: Conversation history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationHistoryResponse'
+
+  /insights:
+    get:
+      tags:
+        - Chat
+      summary: Get proactive insights
+      description: |
+        Get proactive financial insights and recommendations based on current user data.
+        These are AI-generated insights that don't require user prompts.
+      operationId: get_insights
+      responses:
+        '200':
+          description: Proactive insights
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InsightsResponse'
+
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Check if the AI agent service is healthy and operational
+      operationId: health_check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+
+  /metrics:
+    get:
+      tags:
+        - Health
+      summary: Service metrics
+      description: Get operational metrics for monitoring and observability
+      operationId: get_metrics
+      security: []
+      responses:
+        '200':
+          description: Service metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+
+  /admin/stats:
+    get:
+      tags:
+        - Admin
+      summary: Get service statistics
+      description: Get comprehensive service usage and performance statistics
+      operationId: get_admin_stats
+      responses:
+        '200':
+          description: Service statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminStatsResponse'
+        '403':
+          description: Admin access required
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: User's message to the AI agent
+          example: "How can I improve my cash flow this month?"
+        session_id:
+          type: string
+          description: Optional session ID for conversation continuity
+          example: "session_12345"
+        context:
+          type: object
+          description: Optional additional context
+          properties:
+            urgency:
+              type: string
+              enum: [low, medium, high]
+            category:
+              type: string
+              example: "financial_planning"
+
+    ChatResponse:
+      type: object
+      properties:
+        response:
+          type: string
+          description: AI agent's response
+          example: "Based on your recent transactions, I can see a few opportunities to improve your cash flow..."
+        session_id:
+          type: string
+          description: Session ID for this conversation
+          example: "session_12345"
+        suggestions:
+          type: array
+          items:
+            type: string
+          description: Follow-up suggestions
+          example: 
+            - "Set up automated savings"
+            - "Review recurring subscriptions"
+        metadata:
+          type: object
+          properties:
+            confidence:
+              type: number
+              format: float
+              minimum: 0
+              maximum: 1
+              description: Confidence score for the response
+            response_time_ms:
+              type: integer
+              description: Response generation time in milliseconds
+            tools_used:
+              type: array
+              items:
+                type: string
+              description: Tools used to generate the response
+
+    SessionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+          example: "session_12345"
+        welcome_message:
+          type: string
+          example: "Hello! I'm SelfMate, your AI financial advisor. How can I help you today?"
+        suggestions:
+          type: array
+          items:
+            type: string
+          example:
+            - "Analyze my financial health"
+            - "Help with tax planning"
+        created_at:
+          type: string
+          format: date-time
+
+    SessionListResponse:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SessionInfo'
+        total:
+          type: integer
+          description: Total number of sessions
+
+    SessionInfo:
+      type: object
+      properties:
+        session_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_activity:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+        is_active:
+          type: boolean
+
+    SessionDetailResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        user_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        last_activity:
+          type: string
+          format: date-time
+        message_count:
+          type: integer
+        is_active:
+          type: boolean
+        summary:
+          type: string
+          description: AI-generated session summary
+        topics:
+          type: array
+          items:
+            type: string
+          description: Main topics discussed
+
+    ConversationHistoryResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        conversations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationTurn'
+        total:
+          type: integer
+
+    ConversationTurn:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        user_message:
+          type: string
+        agent_response:
+          type: string
+        metadata:
+          type: object
+
+    InsightsResponse:
+      type: object
+      properties:
+        insights:
+          type: array
+          items:
+            $ref: '#/components/schemas/Insight'
+        generated_at:
+          type: string
+          format: date-time
+
+    Insight:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [opportunity, warning, recommendation, tip]
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: string
+          enum: [low, medium, high]
+        estimated_impact:
+          type: string
+          description: Estimated financial impact
+        action_required:
+          type: boolean
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        version:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        dependencies:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [healthy, unhealthy]
+            ai_service:
+              type: string
+              enum: [healthy, unhealthy]
+            memory_system:
+              type: string
+              enum: [healthy, unhealthy]
+
+    MetricsResponse:
+      type: object
+      properties:
+        requests_total:
+          type: integer
+        requests_per_minute:
+          type: number
+        average_response_time_ms:
+          type: number
+        error_rate:
+          type: number
+          format: float
+        active_sessions:
+          type: integer
+        memory_usage_bytes:
+          type: integer
+
+    AdminStatsResponse:
+      type: object
+      properties:
+        total_conversations:
+          type: integer
+        total_users:
+          type: integer
+        avg_session_duration_minutes:
+          type: number
+        most_common_topics:
+          type: array
+          items:
+            type: object
+            properties:
+              topic:
+                type: string
+              count:
+                type: integer
+        performance_metrics:
+          type: object
+          properties:
+            avg_response_time_ms:
+              type: number
+            p95_response_time_ms:
+              type: number
+            success_rate:
+              type: number
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+        code:
+          type: string
+          description: Error code
+        details:
+          type: object
+          description: Additional error details
+        timestamp:
+          type: string
+          format: date-time
