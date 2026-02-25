@@ -15,8 +15,21 @@ type ForecastPoint = {
   balance: number;
 };
 
+type TaxResult = {
+  start_date: string;
+  end_date: string;
+  total_income: number;
+  total_expenses: number;
+  estimated_tax_due: number;
+};
+
+type AdviceItem = {
+  headline: string;
+  details: string;
+};
+
 function TaxCalculator({ token }: { token: string }) {
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<TaxResult | null>(null);
   const [error, setError] = useState('');
   const [startDate, setStartDate] = useState('2023-01-01');
   const [endDate, setEndDate] = useState('2023-12-31');
@@ -127,7 +140,7 @@ function CashFlowChart({ token }: { token: string }) {
 }
 
 function ActionCenter({ token }: { token: string }) {
-  const [advice, setAdvice] = useState<any>(null);
+  const [advice, setAdvice] = useState<AdviceItem | null>(null);
   const router = useRouter();
 
   useEffect(() => {

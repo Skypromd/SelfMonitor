@@ -10,6 +10,7 @@ const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://local
 
 type AuthUser = {
   email: string;
+  is_admin: boolean;
 };
 
 type AppPageProps = {
@@ -22,21 +23,24 @@ function decodeUserFromToken(token: string): AuthUser {
   try {
     const payloadPart = token.split('.')[1];
     if (!payloadPart) {
-      return { email: '' };
+      return { email: '', is_admin: false };
     }
 
     const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
     const payload = JSON.parse(atob(padded));
-    return { email: typeof payload.sub === 'string' ? payload.sub : '' };
+    return {
+      email: typeof payload.sub === 'string' ? payload.sub : '',
+      is_admin: typeof payload.is_admin === 'boolean' ? payload.is_admin : false,
+    };
   } catch {
-    return { email: '' };
+    return { email: '', is_admin: false };
   }
 }
 
 function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   const [token, setToken] = useState<string | null>(null);
-  const [user, setUser] = useState<AuthUser>({ email: '' });
+  const [user, setUser] = useState<AuthUser>({ email: '', is_admin: false });
   const router = useRouter();
   const { setTranslations } = useContext(I18nContext);
   const { locale, defaultLocale } = router;
@@ -59,27 +63,43 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     fetchTranslations();
   }, [locale, defaultLocale, setTranslations]);
 
+  const fetchUserInfo = async (authToken: string) => {
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUser((prev) => ({ ...prev, is_admin: data.is_admin === true }));
+      }
+    } catch {
+      // Fall back to JWT-decoded values
+    }
+  };
+
   useEffect(() => {
-    const storedToken = localStorage.getItem('authToken');
+    const storedToken = sessionStorage.getItem('authToken');
     if (storedToken) {
       setToken(storedToken);
       setUser(decodeUserFromToken(storedToken));
+      fetchUserInfo(storedToken);
     } else if (router.pathname !== '/') {
       router.replace('/');
     }
   }, [router.pathname, router]);
 
   const handleLoginSuccess = (newToken: string) => {
-    localStorage.setItem('authToken', newToken);
+    sessionStorage.setItem('authToken', newToken);
     setToken(newToken);
     setUser(decodeUserFromToken(newToken));
+    fetchUserInfo(newToken);
     router.push('/dashboard');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('authToken');
+    sessionStorage.removeItem('authToken');
     setToken(null);
-    setUser({ email: '' });
+    setUser({ email: '', is_admin: false });
     router.push('/');
   };
 

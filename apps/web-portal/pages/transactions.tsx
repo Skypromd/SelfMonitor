@@ -3,6 +3,15 @@ import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
+type Transaction = {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  currency: string;
+  category?: string;
+};
+
 type TransactionsPageProps = {
   token: string;
 };
@@ -22,7 +31,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
       if (!response.ok) throw new Error('Failed to initiate connection');
       const data = await response.json();
       setConsentUrl(data.consent_url);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Unknown error'); }
   };
 
   const handleGrant = async () => {
@@ -34,7 +43,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
       if (!response.ok) throw new Error('Failed to complete connection');
       const data = await response.json();
       onConnectionComplete(data.connection_id);
-    } catch (err: any) { setError(err.message); }
+    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Unknown error'); }
   };
 
   return (
@@ -54,7 +63,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
 }
 
 function TransactionsList({ token, accountId }: { token: string, accountId: string }) {
-  const [transactions, setTransactions] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [error, setError] = useState('');
 
   const availableCategories = ['groceries', 'transport', 'income', 'food_and_drink', 'subscriptions'];
@@ -70,7 +79,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
           if (!response.ok) throw new Error('Failed to fetch transactions');
           const data = await response.json();
           setTransactions(data);
-        } catch (err: any) { setError(err.message); }
+        } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Unknown error'); }
       }, 1000);
     };
     fetchTransactions();
@@ -85,7 +94,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
       });
       if (!response.ok) throw new Error('Failed to update category');
       setTransactions(transactions.map(t => t.id === transactionId ? { ...t, category: newCategory } : t));
-    } catch (err: any) { console.error("Failed to update category:", err); }
+    } catch (err: unknown) { console.error("Failed to update category:", err); }
   };
 
   if (!accountId) return null;

@@ -15,9 +15,16 @@ type DocumentItem = {
   uploaded_at: string;
 };
 
+type SearchResult = {
+  document_id: string;
+  filename: string;
+  content: string;
+  score: number;
+};
+
 function SemanticSearch({ token }: { token: string }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState('');
   const { t } = useTranslation();
 
