@@ -41,3 +41,5 @@ Dev server runs on `http://localhost:3000`. The `.env.local` file points API req
 - `qna-service` returns 503 because it uses a deprecated Weaviate Python client (v3 API) that is incompatible with newer `weaviate-client` packages. This is non-blocking for other services.
 - Localization keys show as raw keys (e.g. `nav.dashboard`) in the UI because the localization service returns translation keys rather than translated strings. This is cosmetic.
 - Docker must be started manually in Cloud Agent VMs: `sudo dockerd &>/tmp/dockerd.log &` (systemd is not available).
+- `business-intelligence` service has `Optional[BackgroundTasks]` in `generate_business_insights` which is incompatible with FastAPI 0.133+. Tests work around this by monkey-patching `fastapi.routing.APIRoute.__init__` before importing the app.
+- Python service tests require `AUTH_SECRET_KEY` env var set **before** importing `app.main` (all services read it at module level via `os.environ["AUTH_SECRET_KEY"]`). Each test file sets it at the top.
