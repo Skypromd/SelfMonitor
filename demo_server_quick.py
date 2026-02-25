@@ -1,12 +1,23 @@
 """Quick demo server for SelfMonitor Platform"""
 from typing import Any
 from fastapi import FastAPI
+from fastapi.responses import Response
 
 app = FastAPI(
     title="SelfMonitor Demo Server",
     description="Quick demonstration server for SelfMonitor FinTech Platform",
     version="1.0.0"
 )
+
+@app.get("/favicon.ico")
+async def favicon() -> Response:
+    """Return empty favicon to prevent 404 errors"""
+    return Response(content=b"", media_type="image/x-icon")
+
+@app.get("/robots.txt")
+async def robots() -> Response:
+    """Return robots.txt"""
+    return Response(content="User-agent: *\nDisallow:", media_type="text/plain")
 
 @app.get("/")
 async def root() -> dict[str, str]:
