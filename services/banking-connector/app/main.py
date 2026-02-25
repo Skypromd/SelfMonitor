@@ -1,64 +1,78 @@
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials  
+import logging
+from typing import Annotated, List, Optional
+
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
 from pydantic import BaseModel, HttpUrl
-from typing import List, Optional
+from urllib.parse import urlparse
 import uuid
 import datetime
 import os
 import hvac
-from jose import JWTError, jwt
 from .celery_app import import_transactions_task
-from .providers import get_provider, list_providers
 
-# Security
-security = HTTPBearer()
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
-JWT_ALGORITHM = "HS256"
-
-def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
-    """Extract user ID from JWT token"""
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        user_id = payload.get("sub")
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user_id
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+logger = logging.getLogger(__name__)
 
 # --- Vault Client Setup ---
-VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
-VAULT_TOKEN = os.getenv("VAULT_TOKEN", "dev-root-token")
-VAULT_DISABLED = os.getenv("VAULT_DISABLED", "").lower() in {"1", "true", "yes"}
+VAULT_ADDR = os.getenv("VAULT_ADDR")
+VAULT_TOKEN = os.getenv("VAULT_TOKEN")
 
 vault_client = None
-if VAULT_DISABLED:
-    print("Vault disabled. Skipping Vault initialization.")
-else:
+vault_available = False
+if VAULT_ADDR and VAULT_TOKEN:
     vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
     try:
-        if vault_client.is_authenticated():
-            print("Successfully authenticated with Vault.")
-        else:
-            print("Error: Could not authenticate with Vault.")
-    except Exception as exc:
-        print(f"Vault unavailable: {exc}")
+        vault_available = vault_client.is_authenticated()
+    except Exception as e:
+        logger.warning("Vault is not reachable at startup: %s", e)
+else:
+    logger.warning("Vault is not configured; token persistence is disabled.")
+
+if vault_available:
+    logger.info("Successfully authenticated with Vault.")
+elif vault_client:
+    logger.warning("Could not authenticate with Vault.")
 
 
-def save_connection_metadata(connection_id: str, metadata: dict):
-    """Saves provider metadata to Vault."""
-    if not vault_client:
-        print("Vault client unavailable. Skipping metadata storage.")
+def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
+    """Saves sensitive tokens to Vault."""
+    if not vault_available or not vault_client:
+        logger.warning("Skipping token persistence because Vault is unavailable.")
         return
+
     secret_path = f"kv/banking-connections/{connection_id}"
     try:
         vault_client.secrets.kv.v2.create_or_update_secret(
             path=secret_path,
-            secret=metadata,
+            secret=dict(access_token=access_token, refresh_token=refresh_token),
         )
-        print(f"Metadata for connection {connection_id} securely stored in Vault.")
+        logger.info("Tokens stored in Vault for connection %s", connection_id)
     except Exception as e:
-        print(f"Error storing tokens in Vault: {e}")
+        logger.error("Error storing tokens in Vault: %s", e)
+
+
+# --- Security ---
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
+AUTH_ALGORITHM = "HS256"
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+
+def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise credentials_exception from exc
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+    return user_id
 
 app = FastAPI(
     title="Banking Connector Service",
@@ -73,19 +87,12 @@ class InitiateConnectionRequest(BaseModel):
 
 class InitiateConnectionResponse(BaseModel):
     consent_url: HttpUrl
-    state: Optional[str] = None
 
 class CallbackResponse(BaseModel):
-    connection_id: str
-    account_id: str
+    connection_id: uuid.UUID
     status: str
     message: str
-    task_id: Optional[str] = None
-
-class ProviderInfo(BaseModel):
-    id: str
-    display_name: str
-    configured: str
+    task_id: str
 
 class Transaction(BaseModel):
     provider_transaction_id: str
@@ -94,68 +101,68 @@ class Transaction(BaseModel):
     amount: float
     currency: str
 
+
+ALLOWED_REDIRECT_DOMAINS = {"localhost", "127.0.0.1"}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # --- Endpoints ---
 @app.post("/connections/initiate", response_model=InitiateConnectionResponse)
 async def initiate_connection(
     request: InitiateConnectionRequest,
     user_id: str = Depends(get_current_user_id)
 ):
-    print(f"User {user_id} is initiating connection with {request.provider_id}")
-    try:
-        provider = get_provider(request.provider_id)
-        result = await provider.initiate(user_id, str(request.redirect_uri))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    parsed = urlparse(str(request.redirect_uri))
+    if parsed.hostname not in ALLOWED_REDIRECT_DOMAINS:
+        raise HTTPException(status_code=400, detail="Redirect URI domain not allowed")
 
-    return InitiateConnectionResponse(consent_url=result.consent_url, state=result.state)
+    logger.info("User %s is initiating connection with %s", user_id, request.provider_id)
+    consent_url = f"https://fake-bank-provider.com/consent?client_id={request.provider_id}&redirect_uri={request.redirect_uri}&scope=transactions"
+    return InitiateConnectionResponse(consent_url=consent_url)
 
 @app.get("/connections/callback", response_model=CallbackResponse)
 async def handle_provider_callback(
-    provider_id: str = "mock_bank",
-    code: Optional[str] = None,
-    connection_id: Optional[str] = None,
-    state: Optional[str] = None,
+    code: str,
     user_id: str = Depends(get_current_user_id),
+    auth_token: str = Depends(oauth2_scheme),
+    state: Optional[str] = None,
 ):
-    try:
-        provider = get_provider(provider_id)
-        callback_result = await provider.handle_callback(
-            user_id=user_id,
-            code=code,
-            connection_id=connection_id,
-            state=state,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    if not code:
+        raise HTTPException(status_code=400, detail="Authorization code is missing")
 
-    account_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{provider_id}:{callback_result.connection_id}"))
-    metadata = dict(callback_result.metadata)
-    metadata.update(
-        {
-            "provider_id": provider_id,
-            "connection_id": callback_result.connection_id,
-            "account_id": account_id,
-        }
+    logger.info("Exchanging authorization code for access token")
+    connection_id = uuid.uuid4()
+
+    # 1. Simulate receiving sensitive tokens from the bank
+    mock_access_token = f"acc-tok-{uuid.uuid4()}"
+    mock_refresh_token = f"ref-tok-{uuid.uuid4()}"
+
+    # 2. Securely store these tokens in Vault instead of our own database
+    save_tokens_to_vault(str(connection_id), mock_access_token, mock_refresh_token)
+
+    # 3. Simulate fetching transactions after successful connection
+    mock_transactions = [
+        Transaction(provider_transaction_id="provider-txn-1", date=datetime.date.today(), description="Tesco", amount=-25.50, currency="GBP"),
+        Transaction(provider_transaction_id="provider-txn-2", date=datetime.date.today() - datetime.timedelta(days=1), description="Amazon", amount=-12.99, currency="GBP"),
+    ]
+
+    # Dispatch the task to the Celery queue.
+    # We forward the caller's token so transactions-service can keep user ownership.
+    task = import_transactions_task.delay(
+        str(connection_id),
+        [t.model_dump() for t in mock_transactions],
+        auth_token,
     )
-    save_connection_metadata(callback_result.connection_id, metadata)
-
-    task_id = None
-    if callback_result.transactions:
-        task = import_transactions_task.delay(account_id, callback_result.transactions)
-        task_id = task.id
 
     return CallbackResponse(
-        connection_id=callback_result.connection_id,
-        account_id=account_id,
-        status=callback_result.status,
-        message=callback_result.message,
-        task_id=task_id,
+        connection_id=connection_id,
+        status="processing",
+        message="Connection established. Transaction import has been dispatched to a background worker.",
+        task_id=task.id
     )
-
-
-@app.get("/providers", response_model=List[ProviderInfo])
-async def list_available_providers():
-    return [ProviderInfo(**provider) for provider in list_providers()]
 
 @app.get("/accounts/{account_id}/transactions", response_model=List[Transaction], deprecated=True)
 async def get_transactions(account_id: uuid.UUID):

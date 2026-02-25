@@ -96,3 +96,129 @@ async def test_query_for_other_user_is_forbidden(db_session):
     response = client.get("/audit-events?user_id=user_2", headers=headers)
     assert response.status_code == 403
     assert response.json()["detail"] == "Forbidden user scope"
+
+
+@pytest.mark.asyncio
+async def test_post_audit_event(db_session):
+    """POST /audit-events creates an event and returns 201."""
+    headers = auth_headers("post-user")
+    response = client.post(
+        "/audit-events",
+        headers=headers,
+        json={
+            "user_id": "post-user",
+            "action": "document.uploaded",
+            "details": {"filename": "receipt.pdf"},
+        },
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["user_id"] == "post-user"
+    assert data["action"] == "document.uploaded"
+    assert data["details"]["filename"] == "receipt.pdf"
+    assert "id" in data
+    assert "timestamp" in data
+
+
+@pytest.mark.asyncio
+async def test_post_audit_event_without_details(db_session):
+    """POST /audit-events works when details is omitted (nullable)."""
+    headers = auth_headers("no-detail-user")
+    response = client.post(
+        "/audit-events",
+        headers=headers,
+        json={"user_id": "no-detail-user", "action": "logout"},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["action"] == "logout"
+    assert data["details"] is None
+
+
+@pytest.mark.asyncio
+async def test_post_audit_event_forbidden_for_different_user(db_session):
+    """POST /audit-events returns 403 when user_id in body != authenticated user."""
+    headers = auth_headers("real-user")
+    response = client.post(
+        "/audit-events",
+        headers=headers,
+        json={"user_id": "someone-else", "action": "hack.attempt"},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Forbidden user scope"
+
+
+@pytest.mark.asyncio
+async def test_get_audit_events_with_user_id_query(db_session):
+    """GET /audit-events?user_id=X filters events by user_id."""
+    headers = auth_headers("filter-user")
+    # Create two events
+    client.post(
+        "/audit-events",
+        headers=headers,
+        json={"user_id": "filter-user", "action": "action_a"},
+    )
+    client.post(
+        "/audit-events",
+        headers=headers,
+        json={"user_id": "filter-user", "action": "action_b"},
+    )
+
+    response = client.get("/audit-events?user_id=filter-user", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    actions = {e["action"] for e in data}
+    assert actions == {"action_a", "action_b"}
+
+
+@pytest.mark.asyncio
+async def test_get_audit_events_without_query_returns_own(db_session):
+    """GET /audit-events without user_id param returns events for the authenticated user."""
+    headers = auth_headers("own-events-user")
+    client.post(
+        "/audit-events",
+        headers=headers,
+        json={"user_id": "own-events-user", "action": "test.action"},
+    )
+    response = client.get("/audit-events", headers=headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 1
+    assert data[0]["user_id"] == "own-events-user"
+
+
+@pytest.mark.asyncio
+async def test_post_audit_event_returns_401_without_token(db_session):
+    """POST /audit-events returns 401 when no auth token is provided."""
+    response = client.post(
+        "/audit-events",
+        json={"user_id": "anon", "action": "nope"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_audit_events_returns_401_without_token(db_session):
+    """GET /audit-events returns 401 when no auth token is provided."""
+    response = client.get("/audit-events")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_post_audit_event_returns_401_with_invalid_token(db_session):
+    """POST /audit-events returns 401 with an invalid JWT."""
+    response = client.post(
+        "/audit-events",
+        headers={"Authorization": "Bearer bad-token"},
+        json={"user_id": "anon", "action": "nope"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_check(db_session):
+    """GET /health returns 200."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

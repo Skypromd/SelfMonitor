@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Annotated
 from contextlib import asynccontextmanager
@@ -17,6 +18,8 @@ AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 # Load a small but effective model for generating sentence embeddings
+logger = logging.getLogger(__name__)
+
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 @asynccontextmanager
@@ -40,14 +43,14 @@ try:
     if WEAVIATE_API_KEY:
         client_kwargs["auth_client_secret"] = weaviate.AuthApiKey(api_key=WEAVIATE_API_KEY)
     client = weaviate.Client(WEAVIATE_URL, **client_kwargs)
-    print("Successfully connected to Weaviate.")
+    logger.info("Successfully connected to Weaviate.")
 except Exception as e:
-    print(f"Error connecting to Weaviate: {e}")
+    logger.error("Error connecting to Weaviate: %s", e)
     client = None
 
 def ensure_schema_exists():
     if client and not client.schema.exists("DocumentChunk"):
-        print("Creating 'DocumentChunk' schema in Weaviate...")
+        logger.info("Creating 'DocumentChunk' schema in Weaviate...")
         document_schema = {
             "class": "DocumentChunk",
             "description": "A chunk of text from a user's document",
@@ -59,7 +62,7 @@ def ensure_schema_exists():
             ]
         }
         client.schema.create_class(document_schema)
-        print("Schema created.")
+        logger.info("Schema created.")
 
 
 

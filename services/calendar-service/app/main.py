@@ -162,6 +162,11 @@ async def create_calendar_event(
     if event.user_id != current_user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden user scope")
 
+    if event.event_date.year < 2020:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Event date cannot be before 2020")
+    if event.event_date.year > 2100:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Event date cannot be after 2100")
+
     record = CalendarEventRecord(**event.model_dump())
     create_event(record)
     return record

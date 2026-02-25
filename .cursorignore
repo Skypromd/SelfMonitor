@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.next/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Docker volumes and data
+postgres_data/
+auth_data/
+consent_data/
+analytics_data/
+calendar_data/
+partner_registry_data/
+integrations_data/
+
+# Logs and temp files
+*.log
+/tmp/
+.dockerd.log
+
+# IDE and OS
+.DS_Store
+*.swp
+*.swo
+
+# Large binary files
+*.whl
+*.tar.gz
+*.zip
+
+# Git internals (Cursor indexes by default)
+.git/
+
+# Terraform state (sensitive)
+*.tfstate
+*.tfstate.backup
+.terraform/

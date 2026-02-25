@@ -4,8 +4,8 @@ import datetime
 
 class UserProfileBase(BaseModel):
     """Base schema for user profile data."""
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    first_name: Optional[str] = Field(default=None, max_length=100)
+    last_name: Optional[str] = Field(default=None, max_length=100)
     date_of_birth: Optional[datetime.date] = None
     email: Optional[str] = None
     phone: Optional[str] = None

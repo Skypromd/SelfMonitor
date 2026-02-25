@@ -10,9 +10,6 @@ import sys
 import os
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-for module_name in list(sys.modules):
-    if module_name == "app" or module_name.startswith("app."):
-        sys.modules.pop(module_name, None)
 
 from app.main import app
 from app.database import get_db, Base
@@ -90,26 +87,101 @@ async def test_get_nonexistent_profile(db_session):
 
 
 @pytest.mark.asyncio
-async def test_subscription_defaults(db_session):
-    response = client.get("/subscriptions/me")
+async def test_get_profile_found(db_session):
+    """Test GET /profiles/me returns the profile when it exists."""
+    headers = auth_headers("found-user")
+    # Create the profile first
+    client.put(
+        "/profiles/me",
+        headers=headers,
+        json={"first_name": "Found", "last_name": "User", "date_of_birth": "1990-05-15"},
+    )
+    # Fetch it
+    response = client.get("/profiles/me", headers=headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["subscription_plan"] == "free"
-    assert data["subscription_status"] == "active"
-    assert data["billing_cycle"] == "monthly"
+    assert data["user_id"] == "found-user"
+    assert data["first_name"] == "Found"
+    assert data["last_name"] == "User"
+    assert data["date_of_birth"] == "1990-05-15"
+    assert "created_at" in data
+    assert "updated_at" in data
 
 
 @pytest.mark.asyncio
-async def test_update_subscription(db_session):
+async def test_get_profile_404_for_different_user(db_session):
+    """GET /profiles/me returns 404 when the authenticated user has no profile."""
+    headers = auth_headers("no-profile-user")
+    response = client.get("/profiles/me", headers=headers)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_put_profile_creates_new(db_session):
+    """PUT /profiles/me creates a new profile when none exists."""
+    headers = auth_headers("new-user-1")
     response = client.put(
-        "/subscriptions/me",
-        json={
-            "subscription_plan": "pro",
-            "subscription_status": "active",
-            "monthly_close_day": 5
-        }
+        "/profiles/me",
+        headers=headers,
+        json={"first_name": "New", "last_name": "Person"},
     )
     assert response.status_code == 200
     data = response.json()
-    assert data["subscription_plan"] == "pro"
-    assert data["monthly_close_day"] == 5
+    assert data["user_id"] == "new-user-1"
+    assert data["first_name"] == "New"
+    assert data["last_name"] == "Person"
+
+
+@pytest.mark.asyncio
+async def test_put_profile_updates_existing(db_session):
+    """PUT /profiles/me updates only the provided fields of an existing profile."""
+    headers = auth_headers("update-user")
+    # Create
+    client.put(
+        "/profiles/me",
+        headers=headers,
+        json={"first_name": "Original", "last_name": "Name", "date_of_birth": "1985-01-01"},
+    )
+    # Update only first_name
+    response = client.put(
+        "/profiles/me",
+        headers=headers,
+        json={"first_name": "Changed"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["first_name"] == "Changed"
+    assert data["last_name"] == "Name"
+    assert data["date_of_birth"] == "1985-01-01"
+
+
+@pytest.mark.asyncio
+async def test_get_profile_returns_401_without_token(db_session):
+    """GET /profiles/me returns 401 when no auth token is provided."""
+    response = client.get("/profiles/me")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_put_profile_returns_401_without_token(db_session):
+    """PUT /profiles/me returns 401 when no auth token is provided."""
+    response = client.put("/profiles/me", json={"first_name": "No Auth"})
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_get_profile_returns_401_with_invalid_token(db_session):
+    """GET /profiles/me returns 401 with an invalid JWT."""
+    response = client.get(
+        "/profiles/me",
+        headers={"Authorization": "Bearer invalid-token"},
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_health_check(db_session):
+    """GET /health returns 200."""
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

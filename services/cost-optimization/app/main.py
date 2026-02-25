@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Annotated, Dict, Any
 from enum import Enum
@@ -6,6 +7,8 @@ from fastapi import Depends, FastAPI, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Cost Optimization Service", 
@@ -203,10 +206,10 @@ async def implement_cost_optimization(
 
 async def execute_optimization(optimization_type: str, plan: Dict[str, Any]):
     """Execute optimization plan in background"""
-    print(f"Executing {optimization_type} optimization...")
+    logger.info("Executing %s optimization...", optimization_type)
     for action in plan["actions"]:
-        print(f"  ✓ {action}")
-    print(f"Estimated monthly savings: £{plan['immediate_savings']}")
+        logger.info("  completed: %s", action)
+    logger.info("Estimated monthly savings: £%s", plan['immediate_savings'])
 
 @app.get("/cost-efficiency-metrics")
 async def get_cost_efficiency_metrics(
@@ -342,11 +345,10 @@ async def deploy_comprehensive_cost_optimization(
 
 async def execute_comprehensive_optimization(plan: Dict[str, Any]):
     """Execute comprehensive optimization plan"""
-    print("🚀 Deploying comprehensive cost optimization...")
-    print("📊 Target: 51% cost reduction, 84% gross margin")
-    print("💰 Annual savings: £117,360")
-    print("🎯 New cost per customer: £18.96 (vs £38.50 current)")
-    print("✨ Achievement: Industry-leading cost efficiency!")
+    logger.info("Deploying comprehensive cost optimization...")
+    logger.info("Target: 51%% cost reduction, 84%% gross margin")
+    logger.info("Annual savings: £117,360")
+    logger.info("New cost per customer: £18.96 (vs £38.50 current)")
 
 @app.get("/optimization-dashboard") 
 async def get_optimization_dashboard(

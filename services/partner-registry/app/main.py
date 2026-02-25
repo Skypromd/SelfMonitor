@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import datetime
@@ -12,6 +13,8 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, HttpUrl, Field
 import uuid
+
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
@@ -62,7 +65,7 @@ async def log_audit_event(user_id: str, action: str, details: Dict[str, Any], au
             response.raise_for_status()
             return response.json().get("id")
     except httpx.RequestError as e:
-        print(f"Error: Could not log audit event to compliance service: {e}")
+        logger.error("Could not log audit event to compliance service: %s", e)
         return None
 
 # --- Models ---

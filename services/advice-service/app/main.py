@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 from collections import defaultdict
 from typing import Annotated, Literal, Optional
@@ -8,6 +9,8 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
@@ -68,7 +71,7 @@ async def generate_advice(
     user_id: str = Depends(get_current_user_id),
     auth_token: str = Depends(oauth2_scheme),
 ):
-    print(f"Generating advice for user {user_id} on topic: {request.topic}")
+    logger.info("Generating advice for user %s on topic: %s", user_id, request.topic)
 
     # --- Fetch transactions once for all topics that need them ---
     try:

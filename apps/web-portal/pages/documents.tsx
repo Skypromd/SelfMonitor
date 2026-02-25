@@ -5,9 +5,16 @@ import { useTranslation } from '../hooks/useTranslation';
 const DOCUMENTS_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENTS_SERVICE_URL || 'http://localhost:8006';
 const QNA_SERVICE_URL = process.env.NEXT_PUBLIC_QNA_SERVICE_URL || 'http://localhost:8014';
 
+type SearchResult = {
+  document_id: string;
+  filename: string;
+  content: string;
+  score: number;
+};
+
 function SemanticSearch({ token }: { token: string }) {
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState('');
   const { t } = useTranslation();
 

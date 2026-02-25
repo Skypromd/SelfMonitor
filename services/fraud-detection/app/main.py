@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Annotated, List, Dict, Any
 from enum import Enum
@@ -7,6 +8,8 @@ from fastapi import Depends, FastAPI, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Fraud Detection Service", 
@@ -203,11 +206,11 @@ async def create_fraud_alert(
 
 async def execute_fraud_response(alert_id: str, response_plan: Dict[str, Any], user_id: str):
     """Execute automated fraud response actions"""
-    print(f"🚨 Executing fraud response for alert {alert_id}")
-    print(f"👤 User: {user_id}")
+    logger.info("Executing fraud response for alert %s", alert_id)
+    logger.info("User: %s", user_id)
     for action in response_plan["immediate_actions"]:
-        print(f"  ✓ {action}")
-    print(f"💰 Estimated loss prevented: £{response_plan['estimated_loss_prevented']}")
+        logger.info("  completed: %s", action)
+    logger.info("Estimated loss prevented: £%s", response_plan['estimated_loss_prevented'])
 
 @app.get("/fraud-analytics")
 async def get_fraud_analytics(
@@ -334,10 +337,10 @@ async def automated_compliance_check(
 
 async def execute_compliance_actions(user_id: str, actions: List[str]):
     """Execute automated compliance actions"""
-    print(f"📋 Executing compliance actions for user {user_id}")
+    logger.info("Executing compliance actions for user %s", user_id)
     for action in actions:
-        print(f"  ✓ {action}")
-    print("✅ Compliance actions completed")
+        logger.info("  completed: %s", action)
+    logger.info("Compliance actions completed")
 
 @app.get("/security-monetization-metrics")
 async def get_security_monetization_metrics(
