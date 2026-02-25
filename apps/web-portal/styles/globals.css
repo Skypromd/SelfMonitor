@@ -1,16 +1,43 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --lp-bg: #0f172a;
+  --lp-bg-elevated: #1e293b;
+  --lp-bg-card: #334155;
+  --lp-text: #f1f5f9;
+  --lp-text-muted: #94a3b8;
+  --lp-accent-teal: #0d9488;
+  --lp-accent-teal-light: #14b8a6;
+  --lp-accent-gold: #d97706;
+  --lp-accent-gold-light: #f59e0b;
+  --lp-border: rgba(148, 163, 184, 0.15);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body {
   padding: 0;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
-    Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
+  background: var(--lp-bg);
+  color: var(--lp-text);
+  font-family: 'Inter', sans-serif;
 }
 
 a {
-  color: inherit;
+  color: var(--lp-accent-teal);
   text-decoration: none;
+  transition: color 0.2s;
 }
 
-* {
-  box-sizing: border-box;
+a:hover {
+  color: var(--lp-accent-teal-light);
 }
