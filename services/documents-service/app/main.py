@@ -1,7 +1,8 @@
 import os
+import re
 import uuid
 from typing import Annotated, List
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
+from fastapi import FastAPI, Depends, HTTPException, Query, status, UploadFile, File
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,17 @@ from botocore.exceptions import ClientError
 from . import crud, models, schemas
 from .database import get_db
 from .celery_app import ocr_processing_task
+
+# --- File Upload Validation ---
+MAX_FILE_SIZE_MB = 50
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt"}
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf", "image/png", "image/jpeg", "image/gif",
+    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv", "text/plain",
+}
 
 # --- S3 Configuration ---
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "documents-bucket")
@@ -32,7 +44,7 @@ app = FastAPI(
 )
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -59,6 +71,14 @@ async def health_check():
     return {"status": "ok"}
 
 
+def _sanitize_filename(filename: str) -> str:
+    """Sanitize a filename by stripping path components and dangerous characters."""
+    safe = os.path.basename(filename)
+    safe = re.sub(r'[^\w\s\-.]', '', safe)
+    safe = safe.strip()
+    return safe
+
+
 @app.post("/documents/upload", response_model=schemas.Document, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     file: UploadFile = File(...), 
@@ -66,7 +86,37 @@ async def upload_document(
     db: AsyncSession = Depends(get_db)
 ):
     """Accepts a document, uploads it to S3, creates a DB record, and triggers OCR."""
-    file_extension = os.path.splitext(file.filename)[1]
+    # --- Filename sanitization ---
+    raw_filename = file.filename or ""
+    safe_filename = _sanitize_filename(raw_filename)
+    if not safe_filename:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+
+    # --- File extension validation ---
+    file_extension = os.path.splitext(safe_filename)[1].lower()
+    if file_extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File extension '{file_extension}' is not allowed. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+        )
+
+    # --- Content-type validation ---
+    content_type = (file.content_type or "").lower()
+    if content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Content type '{content_type}' is not allowed.",
+        )
+
+    # --- File size validation ---
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE_MB}MB.",
+        )
+    await file.seek(0)
+
     s3_key = f"{user_id}/{uuid.uuid4()}{file_extension}"
 
     try:
@@ -74,7 +124,7 @@ async def upload_document(
     except ClientError as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload file to S3: {e}")
 
-    db_document = await crud.create_document(db, user_id=user_id, filename=file.filename, filepath=s3_key)
+    db_document = await crud.create_document(db, user_id=user_id, filename=safe_filename, filepath=s3_key)
 
     # Trigger the background task for OCR processing.
     ocr_processing_task.delay(str(db_document.id), db_document.user_id, db_document.filename)
@@ -84,10 +134,12 @@ async def upload_document(
 @app.get("/documents", response_model=List[schemas.Document])
 async def list_documents(
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
 ):
     """Lists all documents for the authenticated user from the database."""
-    return await crud.get_documents_by_user(db, user_id=user_id)
+    return await crud.get_documents_by_user(db, user_id=user_id, skip=skip, limit=limit)
 
 
 @app.get("/documents/{document_id}", response_model=schemas.Document)

@@ -66,6 +66,57 @@ jobs:
             echo "No tests/test_main.py for ${{ matrix.service }}, skipping tests."
           fi
 
+  python-security-scan:
+    name: Python security scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Run Bandit security scan
+        run: |
+          bandit -r services/ -f json -o bandit-report.json --exit-zero
+          bandit -r services/ -ll
+        continue-on-error: true
+
+      - name: Upload Bandit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bandit-security-report
+          path: bandit-report.json
+
+  dependency-check:
+    name: Dependency vulnerability check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit Python dependencies
+        run: |
+          for svc in services/*/requirements.txt; do
+            echo "=== Checking $svc ==="
+            pip-audit -r "$svc" --desc || true
+          done
+        continue-on-error: true
+
   web-portal-build:
     name: Web portal production build
     runs-on: ubuntu-latest
@@ -87,3 +138,7 @@ jobs:
 
       - name: Build web portal
         run: npm run build
+
+      - name: Security lint check
+        run: npx next lint --max-warnings 0
+        continue-on-error: true

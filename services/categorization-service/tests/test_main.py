@@ -1,13 +1,15 @@
 import os
 import sys
 
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
+
 from fastapi.testclient import TestClient
 from jose import jwt
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from app.main import app  # noqa: E402
 
-TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
+TEST_AUTH_SECRET = "test-secret"
 TEST_AUTH_ALGORITHM = "HS256"
 client = TestClient(app)
 

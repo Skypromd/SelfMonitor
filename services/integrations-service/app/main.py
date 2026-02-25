@@ -12,7 +12,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 INTEGRATIONS_DB_PATH = os.getenv("INTEGRATIONS_DB_PATH", "/tmp/integrations.db")
@@ -112,28 +112,30 @@ def save_submission(
 ) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            INSERT INTO hmrc_submissions (
-                submission_id, user_id, tax_period_start, tax_period_end, tax_due,
-                status, message, provider_reference, submitted_at
+        try:
+            conn.execute(
+                """
+                INSERT INTO hmrc_submissions (
+                    submission_id, user_id, tax_period_start, tax_period_end, tax_due,
+                    status, message, provider_reference, submitted_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(submission_id),
+                    user_id,
+                    request.tax_period_start.isoformat(),
+                    request.tax_period_end.isoformat(),
+                    request.tax_due,
+                    status_value,
+                    message,
+                    None,
+                    datetime.datetime.now(datetime.UTC).isoformat(),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(submission_id),
-                user_id,
-                request.tax_period_start.isoformat(),
-                request.tax_period_end.isoformat(),
-                request.tax_due,
-                status_value,
-                message,
-                None,
-                datetime.datetime.now(datetime.UTC).isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def update_submission(
@@ -144,41 +146,47 @@ def update_submission(
 ) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            UPDATE hmrc_submissions
-            SET status = ?, message = ?, provider_reference = ?
-            WHERE submission_id = ?
-            """,
-            (status_value, message, provider_reference, str(submission_id)),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute(
+                """
+                UPDATE hmrc_submissions
+                SET status = ?, message = ?, provider_reference = ?
+                WHERE submission_id = ?
+                """,
+                (status_value, message, provider_reference, str(submission_id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def get_submission(submission_id: uuid.UUID) -> Optional[sqlite3.Row]:
     with db_lock:
         conn = _connect()
-        row = conn.execute(
-            "SELECT * FROM hmrc_submissions WHERE submission_id = ?",
-            (str(submission_id),),
-        ).fetchone()
-        conn.close()
+        try:
+            row = conn.execute(
+                "SELECT * FROM hmrc_submissions WHERE submission_id = ?",
+                (str(submission_id),),
+            ).fetchone()
+        finally:
+            conn.close()
     return row
 
 
 def list_submissions_for_user(user_id: str) -> List[SubmissionStatus]:
     with db_lock:
         conn = _connect()
-        rows = conn.execute(
-            """
-            SELECT * FROM hmrc_submissions
-            WHERE user_id = ?
-            ORDER BY submitted_at DESC
-            """,
-            (user_id,),
-        ).fetchall()
-        conn.close()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM hmrc_submissions
+                WHERE user_id = ?
+                ORDER BY submitted_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        finally:
+            conn.close()
     return [_row_to_submission(row) for row in rows]
 
 

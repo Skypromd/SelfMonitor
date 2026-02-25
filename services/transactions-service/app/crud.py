@@ -71,12 +71,14 @@ async def get_transactions_by_account(db: AsyncSession, user_id: str, account_id
     )
     return result.scalars().all()
 
-async def get_transactions_by_user(db: AsyncSession, user_id: str):
+async def get_transactions_by_user(db: AsyncSession, user_id: str, skip: int = 0, limit: int = 50):
     """Fetches all transactions for a specific user across all their accounts."""
     result = await db.execute(
         select(models.Transaction)
         .filter(models.Transaction.user_id == user_id)
         .order_by(models.Transaction.date.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return result.scalars().all()
 

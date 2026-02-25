@@ -11,11 +11,13 @@ async def create_document(db: AsyncSession, user_id: str, filename: str, filepat
     await db.refresh(db_document)
     return db_document
 
-async def get_documents_by_user(db: AsyncSession, user_id: str) -> List[models.Document]:
+async def get_documents_by_user(db: AsyncSession, user_id: str, skip: int = 0, limit: int = 50) -> List[models.Document]:
     result = await db.execute(
         select(models.Document)
         .filter(models.Document.user_id == user_id)
         .order_by(models.Document.uploaded_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return result.scalars().all()
 

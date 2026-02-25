@@ -8,6 +8,7 @@ from sqlalchemy.orm import sessionmaker
 # Adjust path to import app and other modules
 import sys
 import os
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 for module_name in list(sys.modules):
     if module_name == "app" or module_name.startswith("app."):
@@ -18,7 +19,7 @@ from app.database import get_db, Base
 
 # --- Test Database Setup ---
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
-TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
+TEST_AUTH_SECRET = "test-secret"
 TEST_AUTH_ALGORITHM = "HS256"
 
 engine = create_async_engine(TEST_DATABASE_URL)

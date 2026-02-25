@@ -22,7 +22,7 @@ async def health_check():
 
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -108,22 +108,24 @@ def _row_to_event(row: sqlite3.Row) -> CalendarEventRecord:
 def create_event(event: CalendarEventRecord) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            INSERT INTO calendar_events (id, user_id, event_title, event_date, notes, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(event.id),
-                event.user_id,
-                event.event_title,
-                event.event_date.isoformat(),
-                event.notes,
-                event.created_at.isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute(
+                """
+                INSERT INTO calendar_events (id, user_id, event_title, event_date, notes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(event.id),
+                    event.user_id,
+                    event.event_title,
+                    event.event_date.isoformat(),
+                    event.notes,
+                    event.created_at.isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def list_events(
@@ -145,8 +147,10 @@ def list_events(
 
     with db_lock:
         conn = _connect()
-        rows = conn.execute(query, tuple(params)).fetchall()
-        conn.close()
+        try:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        finally:
+            conn.close()
     return [_row_to_event(row) for row in rows]
 
 

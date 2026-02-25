@@ -21,7 +21,7 @@ PARTNERS_CATALOG_PATH = Path(
 PARTNER_DB_PATH = os.getenv("PARTNER_DB_PATH", "/tmp/partner_registry.db")
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -137,39 +137,44 @@ def reset_partner_db_for_tests() -> None:
 def save_handoff(handoff: HandoffRecord) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            INSERT INTO partner_handoffs (
-                handoff_id, user_id, partner_id, partner_name, status, audit_event_id, created_at
+        try:
+            conn.execute(
+                """
+                INSERT INTO partner_handoffs (
+                    handoff_id, user_id, partner_id, partner_name, status, audit_event_id, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(handoff.handoff_id),
+                    handoff.user_id,
+                    str(handoff.partner_id),
+                    handoff.partner_name,
+                    handoff.status,
+                    handoff.audit_event_id,
+                    handoff.created_at.isoformat(),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(handoff.handoff_id),
-                handoff.user_id,
-                str(handoff.partner_id),
-                handoff.partner_name,
-                handoff.status,
-                handoff.audit_event_id,
-                handoff.created_at.isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
+            conn.commit()
+        finally:
+            conn.close()
 
 
-def list_handoffs_for_user(user_id: str) -> List[HandoffRecord]:
+def list_handoffs_for_user(user_id: str, skip: int = 0, limit: int = 50) -> List[HandoffRecord]:
     with db_lock:
         conn = _connect()
-        rows = conn.execute(
-            """
-            SELECT * FROM partner_handoffs
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            """,
-            (user_id,),
-        ).fetchall()
-        conn.close()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM partner_handoffs
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (user_id, limit, skip),
+            ).fetchall()
+        finally:
+            conn.close()
 
     return [
         HandoffRecord(
@@ -248,8 +253,12 @@ async def initiate_handoff(
 
 
 @app.get("/handoffs", response_model=List[HandoffRecord])
-async def get_my_handoffs(user_id: str = Depends(get_current_user_id)):
-    return list_handoffs_for_user(user_id)
+async def get_my_handoffs(
+    user_id: str = Depends(get_current_user_id),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    return list_handoffs_for_user(user_id, skip=skip, limit=limit)
 
 
 init_partner_db()

@@ -9,11 +9,12 @@ from jose import jwt
 TEST_DB_PATH = "/tmp/integrations_service_test.db"
 os.environ["INTEGRATIONS_DB_PATH"] = TEST_DB_PATH
 os.environ["INTEGRATIONS_PROCESSING_DELAY_SECONDS"] = "0.01"
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from app.main import app, reset_integrations_db_for_tests  # noqa: E402
 
-TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
+TEST_AUTH_SECRET = "test-secret"
 TEST_AUTH_ALGORITHM = "HS256"
 client = TestClient(app)
 

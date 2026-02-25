@@ -122,6 +122,7 @@ dmypy.json
 .pyre/
 
 # node.js
+node_modules/
 /node_modules
 /apps/mobile/node_modules
 /build
