@@ -18,7 +18,7 @@ from pydantic import BaseModel, EmailStr
 # --- Configuration ---
 # The secret key is now read from an environment variable for better security.
 # A default value is provided for convenience in local development without Docker.
-SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 AUTH_DB_PATH = os.getenv("AUTH_DB_PATH", "/tmp/auth.db")
