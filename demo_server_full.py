@@ -1,7 +1,7 @@
 """SelfMonitor Platform - Full Interactive Demo with 33 Microservices"""
 from typing import Any
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 import json
 
 app = FastAPI(
