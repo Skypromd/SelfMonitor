@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 import uuid
 import datetime
@@ -17,8 +17,7 @@ class Transaction(TransactionBase):
     category: Optional[str] = None
     created_at: datetime.datetime
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
 class TransactionImportRequest(BaseModel):
     account_id: uuid.UUID

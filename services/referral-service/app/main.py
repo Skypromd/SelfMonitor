@@ -155,7 +155,7 @@ async def join_referral_campaign(
     if not campaign or not campaign.is_active:
         raise HTTPException(status_code=404, detail="Campaign not found or inactive")
     
-    if campaign.end_date and campaign.end_date < datetime.datetime.utcnow():
+    if campaign.end_date and campaign.end_date < datetime.datetime.now(datetime.UTC):
         raise HTTPException(status_code=400, detail="Campaign has ended")
     
     # Create/update user's referral code for this campaign

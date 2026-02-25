@@ -85,7 +85,7 @@ class JobStatus(BaseModel):
     user_id: str
     job_type: Literal['run_etl_transactions', 'train_categorization_model']
     status: Literal['pending', 'running', 'completed', 'failed'] = 'pending'
-    created_at: datetime.datetime = Field(default_factory=datetime.datetime.utcnow)
+    created_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     finished_at: Optional[datetime.datetime] = None
     result: Optional[Dict[str, Any]] = None
 
@@ -201,7 +201,7 @@ def run_job_worker(job_id: uuid.UUID):
     time.sleep(ANALYTICS_JOB_DURATION_SECONDS)
 
     job.status = 'completed'
-    job.finished_at = datetime.datetime.utcnow()
+    job.finished_at = datetime.datetime.now(datetime.UTC)
     job.result = {
         "message": f"{job.job_type} finished successfully.",
         "rows_processed": 15000,
