@@ -13,7 +13,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 # --- Configuration ---
 # The secret key is now read from an environment variable for better security.
@@ -66,7 +66,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8, max_length=128)
 
 class User(BaseModel):
     email: EmailStr
@@ -412,18 +412,20 @@ init_auth_db()
 
 @app.post("/organizations")
 async def create_organization(
-    name: str,
-    plan: str = "enterprise", 
+    name: str = Query(min_length=1, max_length=200),
+    plan: str = Query(default="enterprise"),
     current_user: Annotated[User, Depends(get_current_active_user)] = None
 ):
     """Create a new organization (available for Pro+ users)"""
+    if plan not in ("enterprise", "team"):
+        raise HTTPException(status_code=400, detail="Invalid plan. Must be 'enterprise' or 'team'.")
+
     import uuid
     org_id = str(uuid.uuid4())[:8].upper()
     
     with db_lock:
         conn = _connect()
         try:
-            # Create organization table if not exists
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS organizations (
                     id TEXT PRIMARY KEY,
@@ -434,7 +436,6 @@ async def create_organization(
                 )
             """)
             
-            # Create organization
             conn.execute(
                 "INSERT INTO organizations (id, name, subscription_plan, owner_email) VALUES (?, ?, ?, ?)",
                 (org_id, name, plan, current_user.email)
@@ -450,7 +451,7 @@ async def create_organization(
                 "message": f"Enterprise organization '{name}' created! Monthly revenue: £{45 * 10} minimum"
             }
         except Exception as e:
-            pass
+            raise HTTPException(status_code=500, detail=f"Failed to create organization: {e}")
         finally:
             conn.close()
 

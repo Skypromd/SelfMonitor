@@ -1,14 +1,18 @@
+import logging
 from typing import Annotated, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, HttpUrl
+from urllib.parse import urlparse
 import uuid
 import datetime
 import os
 import hvac
 from .celery_app import import_transactions_task
+
+logger = logging.getLogger(__name__)
 
 # --- Vault Client Setup ---
 VAULT_ADDR = os.getenv("VAULT_ADDR")
@@ -21,20 +25,20 @@ if VAULT_ADDR and VAULT_TOKEN:
     try:
         vault_available = vault_client.is_authenticated()
     except Exception as e:
-        print(f"Warning: Vault is not reachable at startup: {e}")
+        logger.warning("Vault is not reachable at startup: %s", e)
 else:
-    print("Warning: Vault is not configured; token persistence is disabled.")
+    logger.warning("Vault is not configured; token persistence is disabled.")
 
 if vault_available:
-    print("Successfully authenticated with Vault.")
+    logger.info("Successfully authenticated with Vault.")
 elif vault_client:
-    print("Warning: Could not authenticate with Vault.")
+    logger.warning("Could not authenticate with Vault.")
 
 
 def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
     """Saves sensitive tokens to Vault."""
     if not vault_available or not vault_client:
-        print("Skipping token persistence because Vault is unavailable.")
+        logger.warning("Skipping token persistence because Vault is unavailable.")
         return
 
     secret_path = f"kv/banking-connections/{connection_id}"
@@ -43,9 +47,9 @@ def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: s
             path=secret_path,
             secret=dict(access_token=access_token, refresh_token=refresh_token),
         )
-        print(f"Tokens for connection {connection_id} securely stored in Vault.")
+        logger.info("Tokens stored in Vault for connection %s", connection_id)
     except Exception as e:
-        print(f"Error storing tokens in Vault: {e}")
+        logger.error("Error storing tokens in Vault: %s", e)
 
 
 # --- Security ---
@@ -98,6 +102,9 @@ class Transaction(BaseModel):
     currency: str
 
 
+ALLOWED_REDIRECT_DOMAINS = {"localhost", "127.0.0.1"}
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
@@ -108,7 +115,11 @@ async def initiate_connection(
     request: InitiateConnectionRequest,
     user_id: str = Depends(get_current_user_id)
 ):
-    print(f"User {user_id} is initiating connection with {request.provider_id}")
+    parsed = urlparse(str(request.redirect_uri))
+    if parsed.hostname not in ALLOWED_REDIRECT_DOMAINS:
+        raise HTTPException(status_code=400, detail="Redirect URI domain not allowed")
+
+    logger.info("User %s is initiating connection with %s", user_id, request.provider_id)
     consent_url = f"https://fake-bank-provider.com/consent?client_id={request.provider_id}&redirect_uri={request.redirect_uri}&scope=transactions"
     return InitiateConnectionResponse(consent_url=consent_url)
 
@@ -122,7 +133,7 @@ async def handle_provider_callback(
     if not code:
         raise HTTPException(status_code=400, detail="Authorization code is missing")
 
-    print(f"Exchanging code '{code}' for an access token. State: {state}")
+    logger.info("Exchanging authorization code for access token")
     connection_id = uuid.uuid4()
 
     # 1. Simulate receiving sensitive tokens from the bank

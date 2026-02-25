@@ -26,7 +26,7 @@ def test_initiate_connection_success():
     response = client.post(
         "/connections/initiate",
         headers=auth_headers(),
-        json={"provider_id": "mock_bank", "redirect_uri": "https://my-app.com/callback"}
+        json={"provider_id": "mock_bank", "redirect_uri": "https://localhost/callback"}
     )
     assert response.status_code == 200
     data = response.json()
