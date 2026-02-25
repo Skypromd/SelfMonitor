@@ -6,11 +6,12 @@ from jose import jwt
 # Adjust path to import app
 import sys
 import os
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.main import app
 
 client = TestClient(app)
-TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
+TEST_AUTH_SECRET = "test-secret"
 TEST_AUTH_ALGORITHM = "HS256"
 
 

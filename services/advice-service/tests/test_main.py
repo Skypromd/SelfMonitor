@@ -1,5 +1,8 @@
 import datetime
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
+
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
 
 import pytest
 from fastapi.testclient import TestClient

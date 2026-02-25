@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 # We need to adjust the path to import the app from the parent directory
 import sys
 import os
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.main import app, get_user_record, reset_auth_db_for_tests, set_user_admin_for_tests
 

@@ -1,6 +1,9 @@
+import os
 import sys
 from unittest.mock import MagicMock, patch
 import numpy as np
+
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
 
 mock_weaviate = MagicMock()
 mock_weaviate.Client.return_value = MagicMock()

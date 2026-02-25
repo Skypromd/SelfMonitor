@@ -18,7 +18,7 @@ UK_PERSONAL_ALLOWANCE = 12570.0
 UK_BASIC_TAX_RATE = 0.20
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 

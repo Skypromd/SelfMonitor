@@ -122,7 +122,7 @@ dmypy.json
 .pyre/
 
 # node.js
-/node_modules
+node_modules/
 /build
 .next/
 npm-debug.log

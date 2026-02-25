@@ -5,11 +5,12 @@ from jose import jwt
 # We need to adjust the path to import the app from the parent directory
 import sys
 import os
+os.environ["AUTH_SECRET_KEY"] = "test-secret"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.main import app, Consent, insert_consent_for_tests, reset_consent_db_for_tests
 
 client = TestClient(app)
-TEST_AUTH_SECRET = "a_very_secret_key_that_should_be_in_an_env_var"
+TEST_AUTH_SECRET = "test-secret"
 TEST_AUTH_ALGORITHM = "HS256"
 
 
