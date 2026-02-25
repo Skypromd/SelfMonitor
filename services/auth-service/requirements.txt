@@ -1,14 +1,14 @@
-fastapi
-uvicorn[standard]
-pydantic[email]
-python-multipart
-python-jose[cryptography]
-passlib[bcrypt]
-bcrypt<4
-prometheus-fastapi-instrumentator
-pyotp
-qrcode[pil]
+fastapi==0.133.0
+uvicorn[standard]==0.41.0
+pydantic[email]==2.12.5
+python-multipart==0.0.22
+python-jose[cryptography]==3.5.0
+passlib[bcrypt]==1.7.4
+bcrypt==3.2.2
+prometheus-fastapi-instrumentator==7.1.0
+pyotp==2.9.0
+qrcode[pil]==8.2
 
 # Dependencies for testing
-pytest
-httpx
+pytest==9.0.2
+httpx==0.28.1

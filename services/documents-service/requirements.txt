@@ -1,18 +1,18 @@
 # Core application dependencies
-fastapi
-uvicorn[standard]
-pydantic
-python-jose[cryptography]
-python-multipart
-sqlalchemy[asyncio]
-asyncpg
-alembic
-boto3
-aiofiles
-celery
-redis
-httpx
+fastapi==0.133.0
+uvicorn[standard]==0.41.0
+pydantic==2.12.5
+python-jose[cryptography]==3.5.0
+python-multipart==0.0.22
+sqlalchemy[asyncio]==2.0.47
+asyncpg==0.31.0
+alembic==1.18.4
+boto3==1.42.56
+aiofiles==25.1.0
+celery==5.6.2
+redis==7.2.0
+httpx==0.28.1
 
 # Dependencies for testing
-pytest
-pytest-asyncio
+pytest==9.0.2
+pytest-asyncio==1.3.0
