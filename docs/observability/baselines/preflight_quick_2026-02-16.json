@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-02-16T14:14:11.451567+00:00",
+  "check_count": 5,
+  "all_passed": true,
+  "total_duration_seconds": 9.3686,
+  "checks": [
+    {
+      "id": "auth_login",
+      "description": "Auth login smoke",
+      "command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "services/auth-service/tests/test_main.py::test_login_and_get_me"
+      ],
+      "cwd": "/workspace",
+      "duration_seconds": 1.5629,
+      "exit_code": 0,
+      "passed": true,
+      "started_at": "2026-02-16T14:14:02.082617+00:00",
+      "finished_at": "2026-02-16T14:14:03.645519+00:00"
+    },
+    {
+      "id": "transactions_import",
+      "description": "Transactions import smoke",
+      "command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "services/transactions-service/tests/test_main.py::test_import_and_get_transactions"
+      ],
+      "cwd": "/workspace",
+      "duration_seconds": 1.0824,
+      "exit_code": 0,
+      "passed": true,
+      "started_at": "2026-02-16T14:14:03.645589+00:00",
+      "finished_at": "2026-02-16T14:14:04.727967+00:00"
+    },
+    {
+      "id": "handoff_audit",
+      "description": "Partner handoff audit smoke",
+      "command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "services/partner-registry/tests/test_main.py::test_handoff_triggers_audit"
+      ],
+      "cwd": "/workspace",
+      "duration_seconds": 0.996,
+      "exit_code": 0,
+      "passed": true,
+      "started_at": "2026-02-16T14:14:04.728058+00:00",
+      "finished_at": "2026-02-16T14:14:05.724109+00:00"
+    },
+    {
+      "id": "invoice_exports",
+      "description": "Invoice PDF and accounting CSV smoke",
+      "command": [
+        "python3",
+        "-m",
+        "pytest",
+        "-q",
+        "services/partner-registry/tests/test_main.py::test_invoice_pdf_and_accounting_exports"
+      ],
+      "cwd": "/workspace",
+      "duration_seconds": 1.035,
+      "exit_code": 0,
+      "passed": true,
+      "started_at": "2026-02-16T14:14:05.724161+00:00",
+      "finished_at": "2026-02-16T14:14:06.759154+00:00"
+    },
+    {
+      "id": "web_build",
+      "description": "Web portal production build",
+      "command": [
+        "npm",
+        "run",
+        "build"
+      ],
+      "cwd": "/workspace/apps/web-portal",
+      "duration_seconds": 4.6923,
+      "exit_code": 0,
+      "passed": true,
+      "started_at": "2026-02-16T14:14:06.759200+00:00",
+      "finished_at": "2026-02-16T14:14:11.451493+00:00"
+    }
+  ]
+}

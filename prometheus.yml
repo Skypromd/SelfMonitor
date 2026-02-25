@@ -2,6 +2,9 @@
 global:
   scrape_interval: 15s # By default, scrape targets every 15 seconds.
 
+rule_files:
+  - "observability/alerts/*.yml"
+
 scrape_configs:
   - job_name: 'prometheus'
     # metrics_path defaults to '/metrics'
@@ -15,6 +18,8 @@ scrape_configs:
       # The hostname (e.g., 'auth-service') is available inside the Docker network.
       - targets:
         - 'auth-service:80'
+        - 'agent-service:80'
+        - 'documents-service:80'
         - 'transactions-service:80'
         - 'tax-engine:80'
         # Add other services that expose a /metrics endpoint

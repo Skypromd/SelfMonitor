@@ -1,21 +1,40 @@
 {
   "expo": {
-    "name": "Self Assessment Assistant",
-    "slug": "self-assessment-assistant",
-    "version": "1.0.0",
+    "name": "SelfMonitor",
+    "slug": "selfmonitor-mobile",
+    "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "selfmonitor",
-    "platforms": ["ios", "android"],
-    "assetBundlePatterns": ["**/*"],
+    "userInterfaceStyle": "automatic",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.selfmonitor.mobile",
       "infoPlist": {
-        "NSCameraUsageDescription": "We use the camera to scan receipts.",
-        "NSPhotoLibraryUsageDescription": "We access your photos to upload receipts."
+        "NSCameraUsageDescription": "SelfMonitor uses camera access for receipt capture.",
+        "NSUserTrackingUsageDescription": "SelfMonitor does not track users across third-party apps.",
+        "NSUserNotificationUsageDescription": "SelfMonitor uses notifications for reminders and filing deadlines."
       }
     },
     "android": {
-      "permissions": ["CAMERA"]
+      "package": "com.selfmonitor.mobile",
+      "permissions": [
+        "POST_NOTIFICATIONS",
+        "CAMERA"
+      ]
     },
-    "plugins": ["expo-notifications"]
+    "extra": {
+      "webPortalUrlEnvVar": "EXPO_PUBLIC_WEB_PORTAL_URL",
+      "authServiceUrlEnvVar": "EXPO_PUBLIC_AUTH_SERVICE_URL",
+      "partnerRegistryUrlEnvVar": "EXPO_PUBLIC_PARTNER_REGISTRY_URL",
+      "easProjectIdEnvVar": "EXPO_PUBLIC_EAS_PROJECT_ID",
+      "mobileRemoteConfigUrlEnvVar": "EXPO_PUBLIC_MOBILE_REMOTE_CONFIG_URL",
+      "mobileAnalyticsUrlEnvVar": "EXPO_PUBLIC_MOBILE_ANALYTICS_URL"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }

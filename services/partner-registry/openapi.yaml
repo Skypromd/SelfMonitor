@@ -1,111 +1,4539 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: Partner Registry Service
-  description: Manages a registry of third-party partners (e.g., financial advisors).
+  description: Manages a registry of third-party partners.
   version: 1.0.0
 paths:
   /partners:
     get:
-      summary: List all available partners
-      tags:
-        - Partners
+      summary: List Partners
+      operationId: list_partners_partners_get
       parameters:
-        - name: service_type
-          in: query
-          required: false
-          schema:
-            type: string
-            example: 'mortgage_advice'
-          description: Filter partners by the type of service they offer.
+      - name: service_type
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Service Type
       responses:
         '200':
-          description: A list of partners.
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/Partner'
+                title: Response List Partners Partners Get
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /partners/{partner_id}:
     get:
-      summary: Get details for a specific partner
-      tags:
-        - Partners
+      summary: Get Partner Details
+      operationId: get_partner_details_partners__partner_id__get
       parameters:
-        - name: partner_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: partner_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Partner Id
       responses:
         '200':
-          description: Partner details.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Partner'
-        '404':
-          description: Partner not found.
-    post:
-      summary: Initiate a handoff to a partner
-      tags:
-        - Partners
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: partner_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '202':
-          description: Handoff process initiated.
+        '422':
+          description: Validation Error
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  message:
-                    type: string
-                    example: "Handoff to SafeFuture Financial Advisors initiated."
-                  audit_event_id:
-                    type: string
-                    format: uuid
-        '404':
-          description: Partner not found.
-
+                $ref: '#/components/schemas/HTTPValidationError'
+  /partners/{partner_id}/pricing:
+    patch:
+      summary: Update Partner Pricing
+      operationId: update_partner_pricing_partners__partner_id__pricing_patch
+      parameters:
+      - name: partner_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Partner Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerPricingUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Partner'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /partners/{partner_id}/handoff:
+    post:
+      summary: Initiate Handoff
+      operationId: initiate_handoff_partners__partner_id__handoff_post
+      parameters:
+      - name: partner_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Partner Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HandoffResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /leads/{lead_id}/status:
+    patch:
+      summary: Update Lead Status
+      operationId: update_lead_status_leads__lead_id__status_patch
+      parameters:
+      - name: lead_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Lead Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadStatusUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadStatusUpdateResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /leads:
+    get:
+      summary: List Leads
+      operationId: list_leads_leads_get
+      parameters:
+      - name: partner_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/LeadStatus'
+          - type: 'null'
+          title: Status
+      - name: user_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoices:
+    post:
+      summary: Create Self Employed Invoice
+      operationId: create_self_employed_invoice_self_employed_invoices_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedInvoiceCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Self Employed Invoices
+      operationId: list_self_employed_invoices_self_employed_invoices_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/SelfEmployedInvoiceStatus'
+          - type: 'null'
+          title: Status
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoices/{invoice_id}:
+    get:
+      summary: Get Self Employed Invoice
+      operationId: get_self_employed_invoice_self_employed_invoices__invoice_id__get
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoices/{invoice_id}/status:
+    patch:
+      summary: Update Self Employed Invoice Status
+      operationId: update_self_employed_invoice_status_self_employed_invoices__invoice_id__status_patch
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedInvoiceStatusUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoices/{invoice_id}/pdf:
+    get:
+      summary: Download Self Employed Invoice Pdf
+      operationId: download_self_employed_invoice_pdf_self_employed_invoices__invoice_id__pdf_get
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoices/{invoice_id}/csv:
+    get:
+      summary: Download Self Employed Invoice Csv
+      operationId: download_self_employed_invoice_csv_self_employed_invoices__invoice_id__csv_get
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/brand:
+    get:
+      summary: Get Self Employed Invoice Brand Profile
+      operationId: get_self_employed_invoice_brand_profile_self_employed_invoicing_brand_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceBrandProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    put:
+      summary: Upsert Self Employed Invoice Brand Profile
+      operationId: upsert_self_employed_invoice_brand_profile_self_employed_invoicing_brand_put
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedInvoiceBrandProfileUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceBrandProfileResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/recurring-plans:
+    post:
+      summary: Create Self Employed Recurring Plan
+      operationId: create_self_employed_recurring_plan_self_employed_invoicing_recurring_plans_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Self Employed Recurring Plans
+      operationId: list_self_employed_recurring_plans_self_employed_invoicing_recurring_plans_get
+      parameters:
+      - name: active_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Active Only
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/recurring-plans/{plan_id}:
+    patch:
+      summary: Update Self Employed Recurring Plan Status
+      operationId: update_self_employed_recurring_plan_status_self_employed_invoicing_recurring_plans__plan_id__patch
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Plan Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanStatusUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanSummary'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/recurring-plans/{plan_id}/run:
+    post:
+      summary: Run Self Employed Recurring Plan Once
+      operationId: run_self_employed_recurring_plan_once_self_employed_invoicing_recurring_plans__plan_id__run_post
+      parameters:
+      - name: plan_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Plan Id
+      - name: force
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Force
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanRunResult'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/recurring-plans/run-due:
+    post:
+      summary: Run Due Self Employed Recurring Plans
+      operationId: run_due_self_employed_recurring_plans_self_employed_invoicing_recurring_plans_run_due_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanRunBatchResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/reminders/readiness:
+    get:
+      summary: Get Self Employed Reminder Delivery Readiness
+      operationId: get_self_employed_reminder_delivery_readiness_self_employed_invoicing_reminders_readiness_get
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedReminderDeliveryReadinessResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/reminders/smoke-check:
+    post:
+      summary: Run Self Employed Reminder Delivery Smoke Check
+      operationId: run_self_employed_reminder_delivery_smoke_check_self_employed_invoicing_reminders_smoke_check_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedReminderSmokeCheckRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedReminderSmokeCheckResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/reminders/run:
+    post:
+      summary: Run Self Employed Invoice Reminders
+      operationId: run_self_employed_invoice_reminders_self_employed_invoicing_reminders_run_post
+      parameters:
+      - name: due_in_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 30
+          minimum: 1
+          default: 3
+          title: Due In Days
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceReminderRunResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/invoicing/reminders:
+    get:
+      summary: List Self Employed Invoice Reminders
+      operationId: list_self_employed_invoice_reminders_self_employed_invoicing_reminders_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedInvoiceReminderListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/events:
+    post:
+      summary: Create Self Employed Calendar Event
+      operationId: create_self_employed_calendar_event_self_employed_calendar_events_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedCalendarEventCreateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarEvent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Self Employed Calendar Events
+      operationId: list_self_employed_calendar_events_self_employed_calendar_events_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/SelfEmployedCalendarEventStatus'
+          - type: 'null'
+          title: Status
+      - name: start_at
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Start At
+      - name: end_before
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: End Before
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarEventListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/events/{event_id}:
+    patch:
+      summary: Update Self Employed Calendar Event
+      operationId: update_self_employed_calendar_event_self_employed_calendar_events__event_id__patch
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Event Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SelfEmployedCalendarEventUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarEvent'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    delete:
+      summary: Delete Self Employed Calendar Event
+      operationId: delete_self_employed_calendar_event_self_employed_calendar_events__event_id__delete
+      parameters:
+      - name: event_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Event Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '204':
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/reminders/run:
+    post:
+      summary: Run Self Employed Calendar Reminders
+      operationId: run_self_employed_calendar_reminders_self_employed_calendar_reminders_run_post
+      parameters:
+      - name: horizon_hours
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 336
+          minimum: 1
+          default: 48
+          title: Horizon Hours
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarReminderRunResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /self-employed/calendar/reminders:
+    get:
+      summary: List Self Employed Calendar Reminders
+      operationId: list_self_employed_calendar_reminders_self_employed_calendar_reminders_get
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SelfEmployedCalendarReminderListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billing/invoices/generate:
+    post:
+      summary: Generate Billing Invoice
+      operationId: generate_billing_invoice_billing_invoices_generate_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingInvoiceGenerateRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingInvoiceDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billing/invoices:
+    get:
+      summary: List Billing Invoices
+      operationId: list_billing_invoices_billing_invoices_get
+      parameters:
+      - name: status
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - $ref: '#/components/schemas/BillingInvoiceStatus'
+          - type: 'null'
+          title: Status
+      - name: partner_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 500
+          minimum: 1
+          default: 50
+          title: Limit
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+          title: Offset
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingInvoiceListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billing/invoices/{invoice_id}:
+    get:
+      summary: Get Billing Invoice
+      operationId: get_billing_invoice_billing_invoices__invoice_id__get
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingInvoiceDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billing/invoices/{invoice_id}/pdf:
+    get:
+      summary: Download Billing Invoice Pdf
+      operationId: download_billing_invoice_pdf_billing_invoices__invoice_id__pdf_get
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billing/invoices/{invoice_id}/accounting.csv:
+    get:
+      summary: Download Billing Invoice Accounting Csv
+      operationId: download_billing_invoice_accounting_csv_billing_invoices__invoice_id__accounting_csv_get
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: target
+        in: query
+        required: false
+        schema:
+          enum:
+          - xero
+          - quickbooks
+          type: string
+          default: xero
+          title: Target
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /billing/invoices/{invoice_id}/status:
+    patch:
+      summary: Update Billing Invoice Status
+      operationId: update_billing_invoice_status_billing_invoices__invoice_id__status_patch
+      parameters:
+      - name: invoice_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Invoice Id
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingInvoiceStatusUpdateRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingInvoiceDetail'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /leads/billing:
+    get:
+      summary: Get Lead Billing Report
+      operationId: get_lead_billing_report_leads_billing_get
+      parameters:
+      - name: format
+        in: query
+        required: false
+        schema:
+          enum:
+          - json
+          - csv
+          type: string
+          default: json
+          title: Format
+      - name: partner_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+      - name: statuses
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              $ref: '#/components/schemas/LeadStatus'
+          - type: 'null'
+          title: Statuses
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingReportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /leads/funnel-summary:
+    get:
+      summary: Get Lead Funnel Summary
+      operationId: get_lead_funnel_summary_leads_funnel_summary_get
+      parameters:
+      - name: partner_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadFunnelSummaryResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/marketing-spend:
+    post:
+      summary: Ingest Marketing Spend
+      operationId: ingest_marketing_spend_investor_marketing_spend_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarketingSpendIngestRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MarketingSpendIngestResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/nps/responses:
+    post:
+      summary: Submit Nps Response
+      operationId: submit_nps_response_investor_nps_responses_post
+      parameters:
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NPSSubmissionRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NPSSubmissionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/nps/trend:
+    get:
+      summary: Get Nps Trend
+      operationId: get_nps_trend_investor_nps_trend_get
+      parameters:
+      - name: period_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Period Months
+      - name: as_of_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: As Of Date
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NPSTrendResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/seed-readiness:
+    get:
+      summary: Get Seed Readiness Snapshot
+      operationId: get_seed_readiness_snapshot_investor_seed_readiness_get
+      parameters:
+      - name: period_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Period Months
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeedReadinessResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/unit-economics:
+    get:
+      summary: Get Unit Economics Snapshot
+      operationId: get_unit_economics_snapshot_investor_unit_economics_get
+      parameters:
+      - name: period_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Period Months
+      - name: as_of_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: As Of Date
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnitEconomicsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/pmf-evidence:
+    get:
+      summary: Get Pmf Evidence Snapshot
+      operationId: get_pmf_evidence_snapshot_investor_pmf_evidence_get
+      parameters:
+      - name: cohort_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Cohort Months
+      - name: activation_window_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 60
+          minimum: 7
+          default: 30
+          title: Activation Window Days
+      - name: as_of_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: As Of Date
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PMFEvidenceResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/pmf-gate:
+    get:
+      summary: Get Pmf Gate Status
+      operationId: get_pmf_gate_status_investor_pmf_gate_get
+      parameters:
+      - name: cohort_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Cohort Months
+      - name: activation_window_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 60
+          minimum: 7
+          default: 30
+          title: Activation Window Days
+      - name: nps_period_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Nps Period Months
+      - name: as_of_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: As Of Date
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PMFGateStatusResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /investor/snapshot/export:
+    get:
+      summary: Export Investor Snapshot
+      operationId: export_investor_snapshot_investor_snapshot_export_get
+      parameters:
+      - name: format
+        in: query
+        required: false
+        schema:
+          enum:
+          - json
+          - csv
+          type: string
+          default: json
+          title: Format
+      - name: seed_period_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Seed Period Months
+      - name: unit_econ_period_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Unit Econ Period Months
+      - name: cohort_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Cohort Months
+      - name: activation_window_days
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 60
+          minimum: 7
+          default: 30
+          title: Activation Window Days
+      - name: nps_period_months
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 24
+          minimum: 3
+          default: 6
+          title: Nps Period Months
+      - name: as_of_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: As Of Date
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvestorSnapshotExportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /leads/billing.csv:
+    get:
+      summary: Export Lead Billing Csv
+      operationId: export_lead_billing_csv_leads_billing_csv_get
+      parameters:
+      - name: partner_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+      - name: statuses
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              $ref: '#/components/schemas/LeadStatus'
+          - type: 'null'
+          title: Statuses
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /leads/report:
+    get:
+      summary: Get Lead Report
+      operationId: get_lead_report_leads_report_get
+      parameters:
+      - name: format
+        in: query
+        required: false
+        schema:
+          enum:
+          - json
+          - csv
+          type: string
+          default: json
+          title: Format
+      - name: partner_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+      - name: statuses
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              $ref: '#/components/schemas/LeadStatus'
+          - type: 'null'
+          title: Statuses
+      - name: billable_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Billable Only
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadReportResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /leads/report.csv:
+    get:
+      summary: Export Lead Report Csv
+      operationId: export_lead_report_csv_leads_report_csv_get
+      parameters:
+      - name: partner_id
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+      - name: start_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+      - name: end_date
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+      - name: statuses
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: array
+            items:
+              $ref: '#/components/schemas/LeadStatus'
+          - type: 'null'
+          title: Statuses
+      - name: billable_only
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: true
+          title: Billable Only
+      - name: authorization
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Authorization
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
-    Partner:
-      type: object
+    BillingInvoiceDetail:
       properties:
         id:
           type: string
           format: uuid
-        name:
+          title: Id
+        invoice_number:
           type: string
-          example: 'SafeFuture Financial Advisors'
-        description:
+          title: Invoice Number
+        period_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period End
+        due_date:
           type: string
-          example: 'Independent financial advisors regulated by the FCA.'
-        services_offered:
+          format: date
+          title: Due Date
+        currency:
+          type: string
+          title: Currency
+        status:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+        total_amount_gbp:
+          type: number
+          title: Total Amount Gbp
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        generated_by_user_id:
+          type: string
+          title: Generated By User Id
+        partner_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+        statuses:
+          items:
+            $ref: '#/components/schemas/LeadStatus'
           type: array
+          title: Statuses
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        lines:
+          items:
+            $ref: '#/components/schemas/BillingInvoiceLine'
+          type: array
+          title: Lines
+      type: object
+      required:
+      - id
+      - invoice_number
+      - due_date
+      - currency
+      - status
+      - total_amount_gbp
+      - created_at
+      - generated_by_user_id
+      - statuses
+      - updated_at
+      - lines
+      title: BillingInvoiceDetail
+    BillingInvoiceGenerateRequest:
+      properties:
+        partner_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Partner Id
+        start_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
+        end_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: End Date
+        statuses:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/LeadStatus'
+            type: array
+          - type: 'null'
+          title: Statuses
+      type: object
+      title: BillingInvoiceGenerateRequest
+    BillingInvoiceLine:
+      properties:
+        partner_id:
+          type: string
+          format: uuid
+          title: Partner Id
+        partner_name:
+          type: string
+          title: Partner Name
+        qualified_leads:
+          type: integer
+          title: Qualified Leads
+        converted_leads:
+          type: integer
+          title: Converted Leads
+        unique_users:
+          type: integer
+          title: Unique Users
+        qualified_lead_fee_gbp:
+          type: number
+          title: Qualified Lead Fee Gbp
+        converted_lead_fee_gbp:
+          type: number
+          title: Converted Lead Fee Gbp
+        amount_gbp:
+          type: number
+          title: Amount Gbp
+      type: object
+      required:
+      - partner_id
+      - partner_name
+      - qualified_leads
+      - converted_leads
+      - unique_users
+      - qualified_lead_fee_gbp
+      - converted_lead_fee_gbp
+      - amount_gbp
+      title: BillingInvoiceLine
+    BillingInvoiceListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/BillingInvoiceSummary'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: BillingInvoiceListResponse
+    BillingInvoiceStatus:
+      type: string
+      enum:
+      - generated
+      - issued
+      - paid
+      - void
+      title: BillingInvoiceStatus
+    BillingInvoiceStatusUpdateRequest:
+      properties:
+        status:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+      type: object
+      required:
+      - status
+      title: BillingInvoiceStatusUpdateRequest
+    BillingInvoiceSummary:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        invoice_number:
+          type: string
+          title: Invoice Number
+        period_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period End
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+        currency:
+          type: string
+          title: Currency
+        status:
+          $ref: '#/components/schemas/BillingInvoiceStatus'
+        total_amount_gbp:
+          type: number
+          title: Total Amount Gbp
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - invoice_number
+      - due_date
+      - currency
+      - status
+      - total_amount_gbp
+      - created_at
+      title: BillingInvoiceSummary
+    BillingReportByPartner:
+      properties:
+        partner_id:
+          type: string
+          format: uuid
+          title: Partner Id
+        partner_name:
+          type: string
+          title: Partner Name
+        qualified_leads:
+          type: integer
+          title: Qualified Leads
+        converted_leads:
+          type: integer
+          title: Converted Leads
+        unique_users:
+          type: integer
+          title: Unique Users
+        qualified_lead_fee_gbp:
+          type: number
+          title: Qualified Lead Fee Gbp
+        converted_lead_fee_gbp:
+          type: number
+          title: Converted Lead Fee Gbp
+        amount_gbp:
+          type: number
+          title: Amount Gbp
+      type: object
+      required:
+      - partner_id
+      - partner_name
+      - qualified_leads
+      - converted_leads
+      - unique_users
+      - qualified_lead_fee_gbp
+      - converted_lead_fee_gbp
+      - amount_gbp
+      title: BillingReportByPartner
+    BillingReportResponse:
+      properties:
+        period_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period End
+        currency:
+          type: string
+          title: Currency
+        total_leads:
+          type: integer
+          title: Total Leads
+        qualified_leads:
+          type: integer
+          title: Qualified Leads
+        converted_leads:
+          type: integer
+          title: Converted Leads
+        unique_users:
+          type: integer
+          title: Unique Users
+        total_amount_gbp:
+          type: number
+          title: Total Amount Gbp
+        by_partner:
+          items:
+            $ref: '#/components/schemas/BillingReportByPartner'
+          type: array
+          title: By Partner
+      type: object
+      required:
+      - currency
+      - total_leads
+      - qualified_leads
+      - converted_leads
+      - unique_users
+      - total_amount_gbp
+      - by_partner
+      title: BillingReportResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HandoffResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        lead_id:
+          type: string
+          format: uuid
+          title: Lead Id
+        audit_event_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Audit Event Id
+        duplicated:
+          type: boolean
+          title: Duplicated
+          default: false
+      type: object
+      required:
+      - message
+      - lead_id
+      title: HandoffResponse
+    InvestorSnapshotExportResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        as_of_date:
+          type: string
+          format: date
+          title: As Of Date
+        seed_readiness:
+          $ref: '#/components/schemas/SeedReadinessResponse'
+        pmf_evidence:
+          $ref: '#/components/schemas/PMFEvidenceResponse'
+        nps_trend:
+          $ref: '#/components/schemas/NPSTrendResponse'
+        pmf_gate:
+          $ref: '#/components/schemas/PMFGateStatusResponse'
+        unit_economics:
+          $ref: '#/components/schemas/UnitEconomicsResponse'
+      type: object
+      required:
+      - generated_at
+      - as_of_date
+      - seed_readiness
+      - pmf_evidence
+      - nps_trend
+      - pmf_gate
+      - unit_economics
+      title: InvestorSnapshotExportResponse
+    LeadFunnelSummaryResponse:
+      properties:
+        period_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period End
+        total_leads:
+          type: integer
+          title: Total Leads
+        qualified_leads:
+          type: integer
+          title: Qualified Leads
+        converted_leads:
+          type: integer
+          title: Converted Leads
+        qualification_rate_percent:
+          type: number
+          title: Qualification Rate Percent
+        conversion_rate_from_qualified_percent:
+          type: number
+          title: Conversion Rate From Qualified Percent
+        overall_conversion_rate_percent:
+          type: number
+          title: Overall Conversion Rate Percent
+      type: object
+      required:
+      - total_leads
+      - qualified_leads
+      - converted_leads
+      - qualification_rate_percent
+      - conversion_rate_from_qualified_percent
+      - overall_conversion_rate_percent
+      title: LeadFunnelSummaryResponse
+    LeadListItem:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        user_id:
+          type: string
+          title: User Id
+        partner_id:
+          type: string
+          format: uuid
+          title: Partner Id
+        partner_name:
+          type: string
+          title: Partner Name
+        status:
+          $ref: '#/components/schemas/LeadStatus'
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - user_id
+      - partner_id
+      - partner_name
+      - status
+      - created_at
+      - updated_at
+      title: LeadListItem
+    LeadListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/LeadListItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: LeadListResponse
+    LeadReportByPartner:
+      properties:
+        partner_id:
+          type: string
+          format: uuid
+          title: Partner Id
+        partner_name:
+          type: string
+          title: Partner Name
+        leads_count:
+          type: integer
+          title: Leads Count
+        unique_users:
+          type: integer
+          title: Unique Users
+      type: object
+      required:
+      - partner_id
+      - partner_name
+      - leads_count
+      - unique_users
+      title: LeadReportByPartner
+    LeadReportResponse:
+      properties:
+        period_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period End
+        total_leads:
+          type: integer
+          title: Total Leads
+        unique_users:
+          type: integer
+          title: Unique Users
+        by_partner:
+          items:
+            $ref: '#/components/schemas/LeadReportByPartner'
+          type: array
+          title: By Partner
+      type: object
+      required:
+      - total_leads
+      - unique_users
+      - by_partner
+      title: LeadReportResponse
+    LeadStatus:
+      type: string
+      enum:
+      - initiated
+      - qualified
+      - rejected
+      - converted
+      title: LeadStatus
+    LeadStatusUpdateRequest:
+      properties:
+        status:
+          $ref: '#/components/schemas/LeadStatus'
+      type: object
+      required:
+      - status
+      title: LeadStatusUpdateRequest
+    LeadStatusUpdateResponse:
+      properties:
+        lead_id:
+          type: string
+          format: uuid
+          title: Lead Id
+        status:
+          $ref: '#/components/schemas/LeadStatus'
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - lead_id
+      - status
+      - updated_at
+      title: LeadStatusUpdateResponse
+    MarketingSpendIngestRequest:
+      properties:
+        month_start:
+          type: string
+          format: date
+          title: Month Start
+        channel:
+          type: string
+          maxLength: 64
+          minLength: 2
+          title: Channel
+        spend_gbp:
+          type: number
+          minimum: 0.0
+          title: Spend Gbp
+        acquired_customers:
+          type: integer
+          minimum: 0.0
+          title: Acquired Customers
+      type: object
+      required:
+      - month_start
+      - channel
+      - spend_gbp
+      - acquired_customers
+      title: MarketingSpendIngestRequest
+    MarketingSpendIngestResponse:
+      properties:
+        entry_id:
+          type: string
+          format: uuid
+          title: Entry Id
+        month_start:
+          type: string
+          format: date
+          title: Month Start
+        channel:
+          type: string
+          title: Channel
+        spend_gbp:
+          type: number
+          title: Spend Gbp
+        acquired_customers:
+          type: integer
+          title: Acquired Customers
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - entry_id
+      - month_start
+      - channel
+      - spend_gbp
+      - acquired_customers
+      - created_at
+      - message
+      title: MarketingSpendIngestResponse
+    NPSMonthlyTrendPoint:
+      properties:
+        month:
+          type: string
+          title: Month
+        responses_count:
+          type: integer
+          title: Responses Count
+        promoters_count:
+          type: integer
+          title: Promoters Count
+        passives_count:
+          type: integer
+          title: Passives Count
+        detractors_count:
+          type: integer
+          title: Detractors Count
+        nps_score:
+          type: number
+          title: Nps Score
+      type: object
+      required:
+      - month
+      - responses_count
+      - promoters_count
+      - passives_count
+      - detractors_count
+      - nps_score
+      title: NPSMonthlyTrendPoint
+    NPSSubmissionRequest:
+      properties:
+        score:
+          type: integer
+          maximum: 10.0
+          minimum: 0.0
+          title: Score
+        feedback:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Feedback
+        context_tag:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Context Tag
+          default: dashboard
+        locale:
+          anyOf:
+          - type: string
+            maxLength: 16
+          - type: 'null'
+          title: Locale
+      type: object
+      required:
+      - score
+      title: NPSSubmissionRequest
+    NPSSubmissionResponse:
+      properties:
+        response_id:
+          type: string
+          format: uuid
+          title: Response Id
+        score_band:
+          type: string
+          enum:
+          - promoter
+          - passive
+          - detractor
+          title: Score Band
+        submitted_at:
+          type: string
+          format: date-time
+          title: Submitted At
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - response_id
+      - score_band
+      - submitted_at
+      - message
+      title: NPSSubmissionResponse
+    NPSTrendResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        period_months:
+          type: integer
+          title: Period Months
+        total_responses:
+          type: integer
+          title: Total Responses
+        promoters_count:
+          type: integer
+          title: Promoters Count
+        passives_count:
+          type: integer
+          title: Passives Count
+        detractors_count:
+          type: integer
+          title: Detractors Count
+        overall_nps_score:
+          type: number
+          title: Overall Nps Score
+        monthly_trend:
+          items:
+            $ref: '#/components/schemas/NPSMonthlyTrendPoint'
+          type: array
+          title: Monthly Trend
+        note:
+          type: string
+          title: Note
+      type: object
+      required:
+      - generated_at
+      - period_months
+      - total_responses
+      - promoters_count
+      - passives_count
+      - detractors_count
+      - overall_nps_score
+      - monthly_trend
+      - note
+      title: NPSTrendResponse
+    PMFEvidenceResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        as_of_date:
+          type: string
+          format: date
+          title: As Of Date
+        cohort_months:
+          type: integer
+          title: Cohort Months
+        activation_window_days:
+          type: integer
+          title: Activation Window Days
+        total_new_users:
+          type: integer
+          title: Total New Users
+        activated_users:
+          type: integer
+          title: Activated Users
+        activation_rate_percent:
+          type: number
+          title: Activation Rate Percent
+        eligible_users_30d:
+          type: integer
+          title: Eligible Users 30D
+        retained_users_30d:
+          type: integer
+          title: Retained Users 30D
+        retention_rate_30d_percent:
+          type: number
+          title: Retention Rate 30D Percent
+        eligible_users_60d:
+          type: integer
+          title: Eligible Users 60D
+        retained_users_60d:
+          type: integer
+          title: Retained Users 60D
+        retention_rate_60d_percent:
+          type: number
+          title: Retention Rate 60D Percent
+        eligible_users_90d:
+          type: integer
+          title: Eligible Users 90D
+        retained_users_90d:
+          type: integer
+          title: Retained Users 90D
+        retention_rate_90d_percent:
+          type: number
+          title: Retention Rate 90D Percent
+        pmf_band:
+          type: string
+          enum:
+          - early
+          - emerging
+          - pmf_confirmed
+          title: Pmf Band
+        notes:
           items:
             type: string
-          example: ['pension_advice', 'investment_management']
+          type: array
+          title: Notes
+        monthly_cohorts:
+          items:
+            $ref: '#/components/schemas/PMFMonthlyCohortPoint'
+          type: array
+          title: Monthly Cohorts
+      type: object
+      required:
+      - generated_at
+      - as_of_date
+      - cohort_months
+      - activation_window_days
+      - total_new_users
+      - activated_users
+      - activation_rate_percent
+      - eligible_users_30d
+      - retained_users_30d
+      - retention_rate_30d_percent
+      - eligible_users_60d
+      - retained_users_60d
+      - retention_rate_60d_percent
+      - eligible_users_90d
+      - retained_users_90d
+      - retention_rate_90d_percent
+      - pmf_band
+      - notes
+      - monthly_cohorts
+      title: PMFEvidenceResponse
+    PMFGateStatusResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        gate_name:
+          type: string
+          const: seed_pmf_gate_v1
+          title: Gate Name
+        activation_rate_percent:
+          type: number
+          title: Activation Rate Percent
+        retention_rate_90d_percent:
+          type: number
+          title: Retention Rate 90D Percent
+        overall_nps_score:
+          type: number
+          title: Overall Nps Score
+        eligible_users_90d:
+          type: integer
+          title: Eligible Users 90D
+        total_nps_responses:
+          type: integer
+          title: Total Nps Responses
+        required_activation_rate_percent:
+          type: number
+          title: Required Activation Rate Percent
+        required_retention_rate_90d_percent:
+          type: number
+          title: Required Retention Rate 90D Percent
+        required_overall_nps_score:
+          type: number
+          title: Required Overall Nps Score
+        required_min_eligible_users_90d:
+          type: integer
+          title: Required Min Eligible Users 90D
+        required_min_nps_responses:
+          type: integer
+          title: Required Min Nps Responses
+        activation_passed:
+          type: boolean
+          title: Activation Passed
+        retention_passed:
+          type: boolean
+          title: Retention Passed
+        nps_passed:
+          type: boolean
+          title: Nps Passed
+        sample_size_passed:
+          type: boolean
+          title: Sample Size Passed
+        gate_passed:
+          type: boolean
+          title: Gate Passed
+        summary:
+          type: string
+          title: Summary
+        next_actions:
+          items:
+            type: string
+          type: array
+          title: Next Actions
+      type: object
+      required:
+      - generated_at
+      - gate_name
+      - activation_rate_percent
+      - retention_rate_90d_percent
+      - overall_nps_score
+      - eligible_users_90d
+      - total_nps_responses
+      - required_activation_rate_percent
+      - required_retention_rate_90d_percent
+      - required_overall_nps_score
+      - required_min_eligible_users_90d
+      - required_min_nps_responses
+      - activation_passed
+      - retention_passed
+      - nps_passed
+      - sample_size_passed
+      - gate_passed
+      - summary
+      - next_actions
+      title: PMFGateStatusResponse
+    PMFMonthlyCohortPoint:
+      properties:
+        cohort_month:
+          type: string
+          title: Cohort Month
+        new_users:
+          type: integer
+          title: New Users
+        activated_users:
+          type: integer
+          title: Activated Users
+        activation_rate_percent:
+          type: number
+          title: Activation Rate Percent
+        eligible_users_30d:
+          type: integer
+          title: Eligible Users 30D
+        retained_users_30d:
+          type: integer
+          title: Retained Users 30D
+        retention_rate_30d_percent:
+          type: number
+          title: Retention Rate 30D Percent
+        eligible_users_60d:
+          type: integer
+          title: Eligible Users 60D
+        retained_users_60d:
+          type: integer
+          title: Retained Users 60D
+        retention_rate_60d_percent:
+          type: number
+          title: Retention Rate 60D Percent
+        eligible_users_90d:
+          type: integer
+          title: Eligible Users 90D
+        retained_users_90d:
+          type: integer
+          title: Retained Users 90D
+        retention_rate_90d_percent:
+          type: number
+          title: Retention Rate 90D Percent
+      type: object
+      required:
+      - cohort_month
+      - new_users
+      - activated_users
+      - activation_rate_percent
+      - eligible_users_30d
+      - retained_users_30d
+      - retention_rate_30d_percent
+      - eligible_users_60d
+      - retained_users_60d
+      - retention_rate_60d_percent
+      - eligible_users_90d
+      - retained_users_90d
+      - retention_rate_90d_percent
+      title: PMFMonthlyCohortPoint
+    Partner:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        name:
+          type: string
+          title: Name
+        description:
+          type: string
+          title: Description
+        services_offered:
+          items:
+            type: string
+          type: array
+          title: Services Offered
         website:
           type: string
+          maxLength: 2083
+          minLength: 1
           format: uri
-          example: 'https://www.safefuture.example.com'
+          title: Website
+        qualified_lead_fee_gbp:
+          type: number
+          title: Qualified Lead Fee Gbp
+        converted_lead_fee_gbp:
+          type: number
+          title: Converted Lead Fee Gbp
+      type: object
       required:
-        - id
-        - name
-        - services_offered
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+      - id
+      - name
+      - description
+      - services_offered
+      - website
+      - qualified_lead_fee_gbp
+      - converted_lead_fee_gbp
+      title: Partner
+    PartnerPricingUpdateRequest:
+      properties:
+        qualified_lead_fee_gbp:
+          type: number
+          minimum: 0.0
+          title: Qualified Lead Fee Gbp
+        converted_lead_fee_gbp:
+          type: number
+          minimum: 0.0
+          title: Converted Lead Fee Gbp
+      type: object
+      required:
+      - qualified_lead_fee_gbp
+      - converted_lead_fee_gbp
+      title: PartnerPricingUpdateRequest
+    SeedMRRPoint:
+      properties:
+        month:
+          type: string
+          title: Month
+        mrr_gbp:
+          type: number
+          title: Mrr Gbp
+      type: object
+      required:
+      - month
+      - mrr_gbp
+      title: SeedMRRPoint
+    SeedReadinessResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        period_months:
+          type: integer
+          title: Period Months
+        current_month_mrr_gbp:
+          type: number
+          title: Current Month Mrr Gbp
+        previous_month_mrr_gbp:
+          type: number
+          title: Previous Month Mrr Gbp
+        mrr_growth_percent:
+          type: number
+          title: Mrr Growth Percent
+        rolling_3_month_avg_mrr_gbp:
+          type: number
+          title: Rolling 3 Month Avg Mrr Gbp
+        paid_invoice_rate_percent:
+          type: number
+          title: Paid Invoice Rate Percent
+        active_invoice_count:
+          type: integer
+          title: Active Invoice Count
+        leads_last_90d:
+          type: integer
+          title: Leads Last 90D
+        qualified_last_90d:
+          type: integer
+          title: Qualified Last 90D
+        converted_last_90d:
+          type: integer
+          title: Converted Last 90D
+        qualification_rate_percent:
+          type: number
+          title: Qualification Rate Percent
+        conversion_rate_percent:
+          type: number
+          title: Conversion Rate Percent
+        readiness_score_percent:
+          type: number
+          title: Readiness Score Percent
+        readiness_band:
+          type: string
+          enum:
+          - early
+          - progressing
+          - investable
+          title: Readiness Band
+        next_actions:
+          items:
+            type: string
+          type: array
+          title: Next Actions
+        monthly_mrr_series:
+          items:
+            $ref: '#/components/schemas/SeedMRRPoint'
+          type: array
+          title: Monthly Mrr Series
+      type: object
+      required:
+      - generated_at
+      - period_months
+      - current_month_mrr_gbp
+      - previous_month_mrr_gbp
+      - mrr_growth_percent
+      - rolling_3_month_avg_mrr_gbp
+      - paid_invoice_rate_percent
+      - active_invoice_count
+      - leads_last_90d
+      - qualified_last_90d
+      - converted_last_90d
+      - qualification_rate_percent
+      - conversion_rate_percent
+      - readiness_score_percent
+      - readiness_band
+      - next_actions
+      - monthly_mrr_series
+      title: SeedReadinessResponse
+    SelfEmployedCalendarEvent:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        title:
+          type: string
+          title: Title
+        starts_at:
+          type: string
+          format: date-time
+          title: Starts At
+        ends_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ends At
+        description:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Description
+        category:
+          type: string
+          title: Category
+        recipient_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Name
+        recipient_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Email
+        recipient_phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Recipient Phone
+        notify_in_app:
+          type: boolean
+          title: Notify In App
+        notify_email:
+          type: boolean
+          title: Notify Email
+        notify_sms:
+          type: boolean
+          title: Notify Sms
+        notify_before_minutes:
+          type: integer
+          title: Notify Before Minutes
+        reminder_last_sent_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reminder Last Sent At
+        status:
+          $ref: '#/components/schemas/SelfEmployedCalendarEventStatus'
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - title
+      - starts_at
+      - category
+      - notify_in_app
+      - notify_email
+      - notify_sms
+      - notify_before_minutes
+      - status
+      - created_at
+      - updated_at
+      title: SelfEmployedCalendarEvent
+    SelfEmployedCalendarEventCreateRequest:
+      properties:
+        title:
+          type: string
+          maxLength: 180
+          minLength: 2
+          title: Title
+        starts_at:
+          type: string
+          format: date-time
+          title: Starts At
+        ends_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ends At
+        description:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Description
+        category:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Category
+          default: general
+        recipient_name:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Recipient Name
+        recipient_email:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Recipient Email
+        recipient_phone:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Recipient Phone
+        notify_in_app:
+          type: boolean
+          title: Notify In App
+          default: true
+        notify_email:
+          type: boolean
+          title: Notify Email
+          default: false
+        notify_sms:
+          type: boolean
+          title: Notify Sms
+          default: false
+        notify_before_minutes:
+          type: integer
+          maximum: 10080.0
+          minimum: 0.0
+          title: Notify Before Minutes
+          default: 1440
+      type: object
+      required:
+      - title
+      - starts_at
+      title: SelfEmployedCalendarEventCreateRequest
+    SelfEmployedCalendarEventListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SelfEmployedCalendarEvent'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SelfEmployedCalendarEventListResponse
+    SelfEmployedCalendarEventStatus:
+      type: string
+      enum:
+      - scheduled
+      - completed
+      - cancelled
+      title: SelfEmployedCalendarEventStatus
+    SelfEmployedCalendarEventUpdateRequest:
+      properties:
+        title:
+          anyOf:
+          - type: string
+            maxLength: 180
+            minLength: 2
+          - type: 'null'
+          title: Title
+        starts_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Starts At
+        ends_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Ends At
+        description:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Description
+        category:
+          anyOf:
+          - type: string
+            maxLength: 64
+          - type: 'null'
+          title: Category
+        recipient_name:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Recipient Name
+        recipient_email:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Recipient Email
+        recipient_phone:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Recipient Phone
+        notify_in_app:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Notify In App
+        notify_email:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Notify Email
+        notify_sms:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Notify Sms
+        notify_before_minutes:
+          anyOf:
+          - type: integer
+            maximum: 10080.0
+            minimum: 0.0
+          - type: 'null'
+          title: Notify Before Minutes
+        status:
+          anyOf:
+          - $ref: '#/components/schemas/SelfEmployedCalendarEventStatus'
+          - type: 'null'
+      type: object
+      title: SelfEmployedCalendarEventUpdateRequest
+    SelfEmployedCalendarReminderEvent:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        event_id:
+          type: string
+          format: uuid
+          title: Event Id
+        reminder_type:
+          type: string
+          enum:
+          - upcoming
+          - overdue
+          title: Reminder Type
+        channel:
+          type: string
+          enum:
+          - email
+          - sms
+          - in_app
+          title: Channel
+        status:
+          type: string
+          enum:
+          - queued
+          - sent
+          - failed
+          title: Status
+        message:
+          type: string
+          title: Message
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        sent_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Sent At
+      type: object
+      required:
+      - id
+      - event_id
+      - reminder_type
+      - channel
+      - status
+      - message
+      - created_at
+      title: SelfEmployedCalendarReminderEvent
+    SelfEmployedCalendarReminderListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SelfEmployedCalendarReminderEvent'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SelfEmployedCalendarReminderListResponse
+    SelfEmployedCalendarReminderRunResponse:
+      properties:
+        reminders_sent_count:
+          type: integer
+          title: Reminders Sent Count
+        reminders:
+          items:
+            $ref: '#/components/schemas/SelfEmployedCalendarReminderEvent'
+          type: array
+          title: Reminders
+        note:
+          type: string
+          title: Note
+      type: object
+      required:
+      - reminders_sent_count
+      - reminders
+      - note
+      title: SelfEmployedCalendarReminderRunResponse
+    SelfEmployedInvoiceBrandProfileResponse:
+      properties:
+        business_name:
+          type: string
+          title: Business Name
+        logo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Logo Url
+        accent_color:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Accent Color
+        payment_terms_note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Payment Terms Note
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - business_name
+      - updated_at
+      - message
+      title: SelfEmployedInvoiceBrandProfileResponse
+    SelfEmployedInvoiceBrandProfileUpdateRequest:
+      properties:
+        business_name:
+          type: string
+          maxLength: 180
+          minLength: 2
+          title: Business Name
+        logo_url:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Logo Url
+        accent_color:
+          anyOf:
+          - type: string
+            maxLength: 16
+          - type: 'null'
+          title: Accent Color
+        payment_terms_note:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Payment Terms Note
+      type: object
+      required:
+      - business_name
+      title: SelfEmployedInvoiceBrandProfileUpdateRequest
+    SelfEmployedInvoiceCreateRequest:
+      properties:
+        customer_name:
+          type: string
+          maxLength: 180
+          minLength: 2
+          title: Customer Name
+        customer_email:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Customer Email
+        customer_phone:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Customer Phone
+        customer_address:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Customer Address
+        issue_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Issue Date
+        due_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Due Date
+        currency:
+          type: string
+          maxLength: 3
+          minLength: 3
+          title: Currency
+          default: GBP
+        tax_rate_percent:
+          type: number
+          maximum: 100.0
+          minimum: 0.0
+          title: Tax Rate Percent
+          default: 0
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Notes
+        brand_business_name:
+          anyOf:
+          - type: string
+            maxLength: 180
+          - type: 'null'
+          title: Brand Business Name
+        brand_logo_url:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Brand Logo Url
+        brand_accent_color:
+          anyOf:
+          - type: string
+            maxLength: 16
+          - type: 'null'
+          title: Brand Accent Color
+        lines:
+          items:
+            $ref: '#/components/schemas/SelfEmployedInvoiceLineInput'
+          type: array
+          minItems: 1
+          title: Lines
+      type: object
+      required:
+      - customer_name
+      - lines
+      title: SelfEmployedInvoiceCreateRequest
+    SelfEmployedInvoiceDetail:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        invoice_number:
+          type: string
+          title: Invoice Number
+        customer_name:
+          type: string
+          title: Customer Name
+        issue_date:
+          type: string
+          format: date
+          title: Issue Date
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+        currency:
+          type: string
+          title: Currency
+        payment_link_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Payment Link Url
+        status:
+          $ref: '#/components/schemas/SelfEmployedInvoiceStatus'
+        total_amount_gbp:
+          type: number
+          title: Total Amount Gbp
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        customer_email:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Customer Email
+        customer_phone:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Customer Phone
+        customer_address:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Customer Address
+        subtotal_gbp:
+          type: number
+          title: Subtotal Gbp
+        tax_rate_percent:
+          type: number
+          title: Tax Rate Percent
+        tax_amount_gbp:
+          type: number
+          title: Tax Amount Gbp
+        payment_link_provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Payment Link Provider
+        recurring_plan_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Recurring Plan Id
+        brand_business_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand Business Name
+        brand_logo_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand Logo Url
+        brand_accent_color:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Brand Accent Color
+        reminder_last_sent_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Reminder Last Sent At
+        notes:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Notes
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+        lines:
+          items:
+            $ref: '#/components/schemas/SelfEmployedInvoiceLine'
+          type: array
+          title: Lines
+      type: object
+      required:
+      - id
+      - invoice_number
+      - customer_name
+      - issue_date
+      - due_date
+      - currency
+      - status
+      - total_amount_gbp
+      - created_at
+      - subtotal_gbp
+      - tax_rate_percent
+      - tax_amount_gbp
+      - updated_at
+      - lines
+      title: SelfEmployedInvoiceDetail
+    SelfEmployedInvoiceLine:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        description:
+          type: string
+          title: Description
+        quantity:
+          type: number
+          title: Quantity
+        unit_price_gbp:
+          type: number
+          title: Unit Price Gbp
+        line_total_gbp:
+          type: number
+          title: Line Total Gbp
+      type: object
+      required:
+      - id
+      - description
+      - quantity
+      - unit_price_gbp
+      - line_total_gbp
+      title: SelfEmployedInvoiceLine
+    SelfEmployedInvoiceLineInput:
+      properties:
+        description:
+          type: string
+          maxLength: 500
+          minLength: 1
+          title: Description
+        quantity:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Quantity
+        unit_price_gbp:
+          type: number
+          minimum: 0.0
+          title: Unit Price Gbp
+      type: object
+      required:
+      - description
+      - quantity
+      - unit_price_gbp
+      title: SelfEmployedInvoiceLineInput
+    SelfEmployedInvoiceListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SelfEmployedInvoiceSummary'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SelfEmployedInvoiceListResponse
+    SelfEmployedInvoiceReminderEvent:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        invoice_id:
+          type: string
+          format: uuid
+          title: Invoice Id
+        reminder_type:
+          type: string
+          enum:
+          - due_soon
+          - overdue
+          title: Reminder Type
+        channel:
+          type: string
+          enum:
+          - email
+          - sms
+          - in_app
+          title: Channel
+        status:
+          type: string
+          enum:
+          - queued
+          - sent
+          - failed
+          title: Status
+        message:
+          type: string
+          title: Message
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        sent_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Sent At
+      type: object
+      required:
+      - id
+      - invoice_id
+      - reminder_type
+      - channel
+      - status
+      - message
+      - created_at
+      title: SelfEmployedInvoiceReminderEvent
+    SelfEmployedInvoiceReminderListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SelfEmployedInvoiceReminderEvent'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SelfEmployedInvoiceReminderListResponse
+    SelfEmployedInvoiceReminderRunResponse:
+      properties:
+        reminders_sent_count:
+          type: integer
+          title: Reminders Sent Count
+        reminders:
+          items:
+            $ref: '#/components/schemas/SelfEmployedInvoiceReminderEvent'
+          type: array
+          title: Reminders
+        note:
+          type: string
+          title: Note
+      type: object
+      required:
+      - reminders_sent_count
+      - reminders
+      - note
+      title: SelfEmployedInvoiceReminderRunResponse
+    SelfEmployedInvoiceStatus:
+      type: string
+      enum:
+      - draft
+      - issued
+      - paid
+      - overdue
+      - void
+      title: SelfEmployedInvoiceStatus
+    SelfEmployedInvoiceStatusUpdateRequest:
+      properties:
+        status:
+          $ref: '#/components/schemas/SelfEmployedInvoiceStatus'
+      type: object
+      required:
+      - status
+      title: SelfEmployedInvoiceStatusUpdateRequest
+    SelfEmployedInvoiceSummary:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        invoice_number:
+          type: string
+          title: Invoice Number
+        customer_name:
+          type: string
+          title: Customer Name
+        issue_date:
+          type: string
+          format: date
+          title: Issue Date
+        due_date:
+          type: string
+          format: date
+          title: Due Date
+        currency:
+          type: string
+          title: Currency
+        payment_link_url:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Payment Link Url
+        status:
+          $ref: '#/components/schemas/SelfEmployedInvoiceStatus'
+        total_amount_gbp:
+          type: number
+          title: Total Amount Gbp
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - invoice_number
+      - customer_name
+      - issue_date
+      - due_date
+      - currency
+      - status
+      - total_amount_gbp
+      - created_at
+      title: SelfEmployedInvoiceSummary
+    SelfEmployedRecurringCadence:
+      type: string
+      enum:
+      - weekly
+      - monthly
+      - quarterly
+      title: SelfEmployedRecurringCadence
+    SelfEmployedRecurringInvoicePlanCreateRequest:
+      properties:
+        customer_name:
+          type: string
+          maxLength: 180
+          minLength: 2
+          title: Customer Name
+        customer_email:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Customer Email
+        customer_phone:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Customer Phone
+        customer_address:
+          anyOf:
+          - type: string
+            maxLength: 500
+          - type: 'null'
+          title: Customer Address
+        currency:
+          type: string
+          maxLength: 3
+          minLength: 3
+          title: Currency
+          default: GBP
+        tax_rate_percent:
+          type: number
+          maximum: 100.0
+          minimum: 0.0
+          title: Tax Rate Percent
+          default: 0
+        notes:
+          anyOf:
+          - type: string
+            maxLength: 1000
+          - type: 'null'
+          title: Notes
+        cadence:
+          $ref: '#/components/schemas/SelfEmployedRecurringCadence'
+          default: monthly
+        next_issue_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Next Issue Date
+        lines:
+          items:
+            $ref: '#/components/schemas/SelfEmployedInvoiceLineInput'
+          type: array
+          minItems: 1
+          title: Lines
+      type: object
+      required:
+      - customer_name
+      - lines
+      title: SelfEmployedRecurringInvoicePlanCreateRequest
+    SelfEmployedRecurringInvoicePlanListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanSummary'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SelfEmployedRecurringInvoicePlanListResponse
+    SelfEmployedRecurringInvoicePlanRunBatchResponse:
+      properties:
+        generated_count:
+          type: integer
+          title: Generated Count
+        generated:
+          items:
+            $ref: '#/components/schemas/SelfEmployedRecurringInvoicePlanRunResult'
+          type: array
+          title: Generated
+        note:
+          type: string
+          title: Note
+      type: object
+      required:
+      - generated_count
+      - generated
+      - note
+      title: SelfEmployedRecurringInvoicePlanRunBatchResponse
+    SelfEmployedRecurringInvoicePlanRunResult:
+      properties:
+        plan_id:
+          type: string
+          format: uuid
+          title: Plan Id
+        invoice_id:
+          type: string
+          format: uuid
+          title: Invoice Id
+        invoice_number:
+          type: string
+          title: Invoice Number
+        next_issue_date:
+          type: string
+          format: date
+          title: Next Issue Date
+        message:
+          type: string
+          title: Message
+      type: object
+      required:
+      - plan_id
+      - invoice_id
+      - invoice_number
+      - next_issue_date
+      - message
+      title: SelfEmployedRecurringInvoicePlanRunResult
+    SelfEmployedRecurringInvoicePlanStatusUpdateRequest:
+      properties:
+        active:
+          type: boolean
+          title: Active
+      type: object
+      required:
+      - active
+      title: SelfEmployedRecurringInvoicePlanStatusUpdateRequest
+    SelfEmployedRecurringInvoicePlanSummary:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        customer_name:
+          type: string
+          title: Customer Name
+        cadence:
+          $ref: '#/components/schemas/SelfEmployedRecurringCadence'
+        next_issue_date:
+          type: string
+          format: date
+          title: Next Issue Date
+        active:
+          type: boolean
+          title: Active
+        last_generated_invoice_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Last Generated Invoice Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        updated_at:
+          type: string
+          format: date-time
+          title: Updated At
+      type: object
+      required:
+      - id
+      - customer_name
+      - cadence
+      - next_issue_date
+      - active
+      - created_at
+      - updated_at
+      title: SelfEmployedRecurringInvoicePlanSummary
+    SelfEmployedReminderChannelReadiness:
+      properties:
+        channel:
+          type: string
+          enum:
+          - email
+          - sms
+          title: Channel
+        provider:
+          type: string
+          title: Provider
+        enabled:
+          type: boolean
+          title: Enabled
+        configured:
+          type: boolean
+          title: Configured
+        can_dispatch:
+          type: boolean
+          title: Can Dispatch
+        checks:
+          items:
+            type: string
+          type: array
+          title: Checks
+        warnings:
+          items:
+            type: string
+          type: array
+          title: Warnings
+      type: object
+      required:
+      - channel
+      - provider
+      - enabled
+      - configured
+      - can_dispatch
+      - checks
+      - warnings
+      title: SelfEmployedReminderChannelReadiness
+    SelfEmployedReminderDeliveryReadinessResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        email:
+          $ref: '#/components/schemas/SelfEmployedReminderChannelReadiness'
+        sms:
+          $ref: '#/components/schemas/SelfEmployedReminderChannelReadiness'
+        overall_ready:
+          type: boolean
+          title: Overall Ready
+        note:
+          type: string
+          title: Note
+      type: object
+      required:
+      - generated_at
+      - email
+      - sms
+      - overall_ready
+      - note
+      title: SelfEmployedReminderDeliveryReadinessResponse
+    SelfEmployedReminderSmokeCheckChannelResult:
+      properties:
+        channel:
+          type: string
+          enum:
+          - email
+          - sms
+          title: Channel
+        provider:
+          type: string
+          title: Provider
+        enabled:
+          type: boolean
+          title: Enabled
+        configured:
+          type: boolean
+          title: Configured
+        network_check_performed:
+          type: boolean
+          title: Network Check Performed
+        delivery_status:
+          type: string
+          enum:
+          - sent
+          - failed
+          - skipped
+          title: Delivery Status
+        detail:
+          type: string
+          title: Detail
+      type: object
+      required:
+      - channel
+      - provider
+      - enabled
+      - configured
+      - network_check_performed
+      - delivery_status
+      - detail
+      title: SelfEmployedReminderSmokeCheckChannelResult
+    SelfEmployedReminderSmokeCheckRequest:
+      properties:
+        channel:
+          type: string
+          enum:
+          - email
+          - sms
+          - both
+          title: Channel
+          default: both
+        perform_network_check:
+          type: boolean
+          title: Perform Network Check
+          default: false
+        test_recipient_email:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: Test Recipient Email
+        test_recipient_phone:
+          anyOf:
+          - type: string
+            maxLength: 32
+          - type: 'null'
+          title: Test Recipient Phone
+        reminder_type:
+          type: string
+          enum:
+          - due_soon
+          - overdue
+          title: Reminder Type
+          default: due_soon
+      type: object
+      title: SelfEmployedReminderSmokeCheckRequest
+    SelfEmployedReminderSmokeCheckResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        requested_channel:
+          type: string
+          enum:
+          - email
+          - sms
+          - both
+          title: Requested Channel
+        perform_network_check:
+          type: boolean
+          title: Perform Network Check
+        results:
+          items:
+            $ref: '#/components/schemas/SelfEmployedReminderSmokeCheckChannelResult'
+          type: array
+          title: Results
+        passed:
+          type: boolean
+          title: Passed
+      type: object
+      required:
+      - generated_at
+      - requested_channel
+      - perform_network_check
+      - results
+      - passed
+      title: SelfEmployedReminderSmokeCheckResponse
+    UnitEconomicsMonthlyPoint:
+      properties:
+        month:
+          type: string
+          title: Month
+        mrr_gbp:
+          type: number
+          title: Mrr Gbp
+        previous_month_mrr_gbp:
+          type: number
+          title: Previous Month Mrr Gbp
+        churn_rate_percent:
+          type: number
+          title: Churn Rate Percent
+        expansion_rate_percent:
+          type: number
+          title: Expansion Rate Percent
+        marketing_spend_gbp:
+          type: number
+          title: Marketing Spend Gbp
+        acquired_customers:
+          type: integer
+          title: Acquired Customers
+        cac_gbp:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Cac Gbp
+      type: object
+      required:
+      - month
+      - mrr_gbp
+      - previous_month_mrr_gbp
+      - churn_rate_percent
+      - expansion_rate_percent
+      - marketing_spend_gbp
+      - acquired_customers
+      title: UnitEconomicsMonthlyPoint
+    UnitEconomicsResponse:
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          title: Generated At
+        as_of_date:
+          type: string
+          format: date
+          title: As Of Date
+        period_months:
+          type: integer
+          title: Period Months
+        current_month_mrr_gbp:
+          type: number
+          title: Current Month Mrr Gbp
+        rolling_3_month_avg_mrr_gbp:
+          type: number
+          title: Rolling 3 Month Avg Mrr Gbp
+        mrr_growth_percent:
+          type: number
+          title: Mrr Growth Percent
+        mrr_stability_percent:
+          type: number
+          title: Mrr Stability Percent
+        mrr_stability_band:
+          type: string
+          enum:
+          - stable
+          - variable
+          - volatile
+          title: Mrr Stability Band
+        monthly_churn_rate_percent:
+          type: number
+          title: Monthly Churn Rate Percent
+        monthly_expansion_rate_percent:
+          type: number
+          title: Monthly Expansion Rate Percent
+        average_cac_gbp:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Average Cac Gbp
+        estimated_ltv_gbp:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Estimated Ltv Gbp
+        ltv_cac_ratio:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Ltv Cac Ratio
+        required_mrr_gbp:
+          type: number
+          title: Required Mrr Gbp
+        required_max_monthly_churn_percent:
+          type: number
+          title: Required Max Monthly Churn Percent
+        required_min_ltv_cac_ratio:
+          type: number
+          title: Required Min Ltv Cac Ratio
+        mrr_gate_passed:
+          type: boolean
+          title: Mrr Gate Passed
+        churn_gate_passed:
+          type: boolean
+          title: Churn Gate Passed
+        ltv_cac_gate_passed:
+          type: boolean
+          title: Ltv Cac Gate Passed
+        seed_gate_passed:
+          type: boolean
+          title: Seed Gate Passed
+        next_actions:
+          items:
+            type: string
+          type: array
+          title: Next Actions
+        monthly_points:
+          items:
+            $ref: '#/components/schemas/UnitEconomicsMonthlyPoint'
+          type: array
+          title: Monthly Points
+      type: object
+      required:
+      - generated_at
+      - as_of_date
+      - period_months
+      - current_month_mrr_gbp
+      - rolling_3_month_avg_mrr_gbp
+      - mrr_growth_percent
+      - mrr_stability_percent
+      - mrr_stability_band
+      - monthly_churn_rate_percent
+      - monthly_expansion_rate_percent
+      - required_mrr_gbp
+      - required_max_monthly_churn_percent
+      - required_min_ltv_cac_ratio
+      - mrr_gate_passed
+      - churn_gate_passed
+      - ltv_cac_gate_passed
+      - seed_gate_passed
+      - next_actions
+      - monthly_points
+      title: UnitEconomicsResponse
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError

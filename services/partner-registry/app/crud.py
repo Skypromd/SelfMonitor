@@ -1,0 +1,1176 @@
+import datetime
+import hashlib
+from typing import List, Optional
+
+from sqlalchemy import Select, case, distinct, func, text
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from . import models
+
+INVOICE_SEQUENCE_LOCK_KEY = 6_217_650_042_184_901_117
+SELF_EMPLOYED_INVOICE_SEQUENCE_LOCK_KEY = 2_961_144_028_593_640_553
+
+SEED_PARTNERS = [
+    {
+        "id": "1a8a8f69-a1b7-4c13-9a16-9e9f9a2e3f5d",
+        "name": "SafeFuture Financial Advisors",
+        "description": "Independent financial advisors regulated by the FCA.",
+        "services_offered": ["pension_advice", "investment_management", "income_protection"],
+        "website": "https://www.safefuture.example.com",
+        "qualified_lead_fee_gbp": 18.0,
+        "converted_lead_fee_gbp": 55.0,
+    },
+    {
+        "id": "b4f1f2d5-9c9a-4e1e-b8d4-5b4d7f6c3a1b",
+        "name": "HomePath Mortgages",
+        "description": "Specialist mortgage brokers for first-time buyers.",
+        "services_offered": ["mortgage_advice"],
+        "website": "https://www.homepath.example.com",
+        "qualified_lead_fee_gbp": 26.0,
+        "converted_lead_fee_gbp": 95.0,
+    },
+    {
+        "id": "c5e3e1d4-8d8a-3d0d-a7c3-4c3d6f5b2a0a",
+        "name": "TaxSolve Accountants",
+        "description": "Chartered accountants specializing in self-assessment for freelancers.",
+        "services_offered": ["accounting", "tax_filing"],
+        "website": "https://www.taxsolve.example.com",
+        "qualified_lead_fee_gbp": 14.0,
+        "converted_lead_fee_gbp": 45.0,
+    },
+]
+
+
+async def seed_partners_if_empty(db: AsyncSession) -> None:
+    result = await db.execute(select(func.count()).select_from(models.Partner))
+    partners_count = result.scalar_one()
+    if partners_count > 0:
+        return
+
+    db.add_all([models.Partner(**partner_data) for partner_data in SEED_PARTNERS])
+    await db.commit()
+
+
+async def list_partners(db: AsyncSession, service_type: Optional[str] = None) -> List[models.Partner]:
+    result = await db.execute(select(models.Partner).order_by(models.Partner.name.asc()))
+    partners = result.scalars().all()
+    if not service_type:
+        return partners
+    return [partner for partner in partners if service_type in (partner.services_offered or [])]
+
+
+async def get_partner_by_id(db: AsyncSession, partner_id: str) -> models.Partner | None:
+    result = await db.execute(select(models.Partner).filter(models.Partner.id == partner_id))
+    return result.scalars().first()
+
+
+async def update_partner_pricing(
+    db: AsyncSession,
+    partner: models.Partner,
+    *,
+    qualified_lead_fee_gbp: float,
+    converted_lead_fee_gbp: float,
+) -> models.Partner:
+    partner.qualified_lead_fee_gbp = qualified_lead_fee_gbp
+    partner.converted_lead_fee_gbp = converted_lead_fee_gbp
+    await db.commit()
+    await db.refresh(partner)
+    return partner
+
+
+async def get_recent_handoff_lead(
+    db: AsyncSession,
+    user_id: str,
+    partner_id: str,
+    dedupe_window_hours: int = 24,
+) -> models.HandoffLead | None:
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=dedupe_window_hours)
+    result = await db.execute(
+        select(models.HandoffLead)
+        .filter(
+            models.HandoffLead.user_id == user_id,
+            models.HandoffLead.partner_id == partner_id,
+            models.HandoffLead.created_at >= cutoff,
+        )
+        .order_by(models.HandoffLead.created_at.desc())
+    )
+    return result.scalars().first()
+
+
+async def create_handoff_lead(db: AsyncSession, user_id: str, partner_id: str) -> models.HandoffLead:
+    lead = models.HandoffLead(user_id=user_id, partner_id=partner_id, status="initiated")
+    db.add(lead)
+    await db.commit()
+    await db.refresh(lead)
+    return lead
+
+
+def _dedupe_lock_key(user_id: str, partner_id: str) -> int:
+    digest = hashlib.blake2b(f"{user_id}:{partner_id}".encode("utf-8"), digest_size=8).digest()
+    return int.from_bytes(digest, byteorder="big", signed=False) & 0x7FFF_FFFF_FFFF_FFFF
+
+
+async def _acquire_dedupe_lock_if_postgres(db: AsyncSession, user_id: str, partner_id: str) -> None:
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": _dedupe_lock_key(user_id=user_id, partner_id=partner_id)},
+    )
+
+
+async def _acquire_invoice_sequence_lock_if_postgres(db: AsyncSession) -> None:
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": INVOICE_SEQUENCE_LOCK_KEY},
+    )
+
+
+async def _acquire_self_employed_invoice_sequence_lock_if_postgres(db: AsyncSession) -> None:
+    bind = db.get_bind()
+    if not bind or bind.dialect.name != "postgresql":
+        return
+
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(:lock_key)"),
+        {"lock_key": SELF_EMPLOYED_INVOICE_SEQUENCE_LOCK_KEY},
+    )
+
+
+def _invoice_prefix_for_date(invoice_date: datetime.date) -> str:
+    return f"INV-{invoice_date.strftime('%Y%m')}"
+
+
+def _self_employed_invoice_prefix_for_date(invoice_date: datetime.date) -> str:
+    return f"SEI-{invoice_date.strftime('%Y%m')}"
+
+
+async def _next_invoice_number(db: AsyncSession, *, invoice_date: datetime.date) -> str:
+    prefix = _invoice_prefix_for_date(invoice_date)
+    like_prefix = f"{prefix}-%"
+    result = await db.execute(
+        select(models.BillingInvoice.invoice_number).filter(models.BillingInvoice.invoice_number.like(like_prefix))
+    )
+    existing_numbers = [str(item) for item in result.scalars().all() if item]
+
+    max_sequence = 0
+    for invoice_number in existing_numbers:
+        suffix = invoice_number.removeprefix(f"{prefix}-")
+        if suffix.isdigit():
+            max_sequence = max(max_sequence, int(suffix))
+
+    return f"{prefix}-{max_sequence + 1:06d}"
+
+
+async def _next_self_employed_invoice_number(db: AsyncSession, *, invoice_date: datetime.date) -> str:
+    prefix = _self_employed_invoice_prefix_for_date(invoice_date)
+    like_prefix = f"{prefix}-%"
+    result = await db.execute(
+        select(models.SelfEmployedInvoice.invoice_number).filter(models.SelfEmployedInvoice.invoice_number.like(like_prefix))
+    )
+    existing_numbers = [str(item) for item in result.scalars().all() if item]
+
+    max_sequence = 0
+    for invoice_number in existing_numbers:
+        suffix = invoice_number.removeprefix(f"{prefix}-")
+        if suffix.isdigit():
+            max_sequence = max(max_sequence, int(suffix))
+
+    return f"{prefix}-{max_sequence + 1:06d}"
+
+
+async def create_or_get_handoff_lead(
+    db: AsyncSession,
+    user_id: str,
+    partner_id: str,
+    dedupe_window_hours: int = 24,
+) -> tuple[models.HandoffLead, bool]:
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(hours=dedupe_window_hours)
+
+    await _acquire_dedupe_lock_if_postgres(db, user_id=user_id, partner_id=partner_id)
+
+    recent_lead_query = (
+        select(models.HandoffLead)
+        .filter(
+            models.HandoffLead.user_id == user_id,
+            models.HandoffLead.partner_id == partner_id,
+            models.HandoffLead.created_at >= cutoff,
+        )
+        .order_by(models.HandoffLead.created_at.desc())
+    )
+
+    bind = db.get_bind()
+    if bind and bind.dialect.name == "postgresql":
+        recent_lead_query = recent_lead_query.with_for_update()
+
+    result = await db.execute(recent_lead_query)
+    existing_lead = result.scalars().first()
+    if existing_lead:
+        await db.commit()
+        await db.refresh(existing_lead)
+        return existing_lead, True
+
+    lead = models.HandoffLead(user_id=user_id, partner_id=partner_id, status="initiated")
+    db.add(lead)
+    await db.commit()
+    await db.refresh(lead)
+    return lead, False
+
+
+async def get_handoff_lead_by_id(db: AsyncSession, lead_id: str) -> models.HandoffLead | None:
+    result = await db.execute(select(models.HandoffLead).filter(models.HandoffLead.id == lead_id))
+    return result.scalars().first()
+
+
+async def update_handoff_lead_status(
+    db: AsyncSession,
+    lead: models.HandoffLead,
+    status: str,
+) -> models.HandoffLead:
+    lead.status = status
+    lead.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(lead)
+    return lead
+
+
+async def list_handoff_leads(
+    db: AsyncSession,
+    *,
+    partner_id: str | None = None,
+    status: str | None = None,
+    user_id: str | None = None,
+    start_at: datetime.datetime | None = None,
+    end_before: datetime.datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[tuple[str, str, str, str, str, datetime.datetime, datetime.datetime]]]:
+    count_query = select(func.count(models.HandoffLead.id))
+    if partner_id:
+        count_query = count_query.filter(models.HandoffLead.partner_id == partner_id)
+    if status:
+        count_query = count_query.filter(models.HandoffLead.status == status)
+    if user_id:
+        count_query = count_query.filter(models.HandoffLead.user_id == user_id)
+    if start_at:
+        count_query = count_query.filter(models.HandoffLead.created_at >= start_at)
+    if end_before:
+        count_query = count_query.filter(models.HandoffLead.created_at < end_before)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+
+    query = (
+        select(
+            models.HandoffLead.id,
+            models.HandoffLead.user_id,
+            models.HandoffLead.partner_id,
+            models.Partner.name,
+            models.HandoffLead.status,
+            models.HandoffLead.created_at,
+            models.HandoffLead.updated_at,
+        )
+        .join(models.Partner, models.Partner.id == models.HandoffLead.partner_id)
+        .order_by(models.HandoffLead.created_at.desc(), models.HandoffLead.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if partner_id:
+        query = query.filter(models.HandoffLead.partner_id == partner_id)
+    if status:
+        query = query.filter(models.HandoffLead.status == status)
+    if user_id:
+        query = query.filter(models.HandoffLead.user_id == user_id)
+    if start_at:
+        query = query.filter(models.HandoffLead.created_at >= start_at)
+    if end_before:
+        query = query.filter(models.HandoffLead.created_at < end_before)
+
+    rows = (await db.execute(query)).all()
+    return (
+        total,
+        [
+            (
+                str(lead_id),
+                str(lead_user_id),
+                str(lead_partner_id),
+                str(partner_name),
+                str(lead_status),
+                created_at,
+                updated_at,
+            )
+            for (
+                lead_id,
+                lead_user_id,
+                lead_partner_id,
+                partner_name,
+                lead_status,
+                created_at,
+                updated_at,
+            ) in rows
+        ],
+    )
+
+
+def _apply_lead_filters(
+    query: Select,
+    partner_id: str | None,
+    start_at: datetime.datetime | None,
+    end_before: datetime.datetime | None,
+    statuses: list[str] | None,
+) -> Select:
+    if partner_id:
+        query = query.filter(models.HandoffLead.partner_id == partner_id)
+    if start_at:
+        query = query.filter(models.HandoffLead.created_at >= start_at)
+    if end_before:
+        query = query.filter(models.HandoffLead.created_at < end_before)
+    if statuses:
+        query = query.filter(models.HandoffLead.status.in_(statuses))
+    return query
+
+
+async def get_lead_report(
+    db: AsyncSession,
+    partner_id: str | None = None,
+    start_at: datetime.datetime | None = None,
+    end_before: datetime.datetime | None = None,
+    statuses: list[str] | None = None,
+) -> tuple[int, int, list[tuple[str, str, int, int]]]:
+    totals_query = select(
+        func.count(models.HandoffLead.id),
+        func.count(distinct(models.HandoffLead.user_id)),
+    )
+    totals_query = _apply_lead_filters(totals_query, partner_id, start_at, end_before, statuses)
+    totals_result = await db.execute(totals_query)
+    total_leads, unique_users = totals_result.one()
+
+    by_partner_query = (
+        select(
+            models.HandoffLead.partner_id,
+            models.Partner.name,
+            func.count(models.HandoffLead.id),
+            func.count(distinct(models.HandoffLead.user_id)),
+        )
+        .join(models.Partner, models.Partner.id == models.HandoffLead.partner_id)
+        .group_by(models.HandoffLead.partner_id, models.Partner.name)
+        .order_by(func.count(models.HandoffLead.id).desc(), models.Partner.name.asc())
+    )
+    by_partner_query = _apply_lead_filters(by_partner_query, partner_id, start_at, end_before, statuses)
+    by_partner_result = await db.execute(by_partner_query)
+    by_partner_rows = by_partner_result.all()
+
+    return (
+        int(total_leads or 0),
+        int(unique_users or 0),
+        [(str(pid), str(name), int(count or 0), int(users or 0)) for pid, name, count, users in by_partner_rows],
+    )
+
+
+async def get_billing_report(
+    db: AsyncSession,
+    partner_id: str | None = None,
+    start_at: datetime.datetime | None = None,
+    end_before: datetime.datetime | None = None,
+    statuses: list[str] | None = None,
+) -> tuple[int, int, int, int, list[tuple[str, str, float, float, int, int, int]]]:
+    totals_query = select(
+        func.count(models.HandoffLead.id),
+        func.count(distinct(models.HandoffLead.user_id)),
+        func.sum(case((models.HandoffLead.status == "qualified", 1), else_=0)),
+        func.sum(case((models.HandoffLead.status == "converted", 1), else_=0)),
+    )
+    totals_query = _apply_lead_filters(totals_query, partner_id, start_at, end_before, statuses)
+    totals_result = await db.execute(totals_query)
+    total_leads, unique_users, qualified_leads, converted_leads = totals_result.one()
+
+    by_partner_query = (
+        select(
+            models.HandoffLead.partner_id,
+            models.Partner.name,
+            models.Partner.qualified_lead_fee_gbp,
+            models.Partner.converted_lead_fee_gbp,
+            func.sum(case((models.HandoffLead.status == "qualified", 1), else_=0)),
+            func.sum(case((models.HandoffLead.status == "converted", 1), else_=0)),
+            func.count(distinct(models.HandoffLead.user_id)),
+        )
+        .join(models.Partner, models.Partner.id == models.HandoffLead.partner_id)
+        .group_by(
+            models.HandoffLead.partner_id,
+            models.Partner.name,
+            models.Partner.qualified_lead_fee_gbp,
+            models.Partner.converted_lead_fee_gbp,
+        )
+        .order_by(models.Partner.name.asc())
+    )
+    by_partner_query = _apply_lead_filters(by_partner_query, partner_id, start_at, end_before, statuses)
+    by_partner_result = await db.execute(by_partner_query)
+    by_partner_rows = by_partner_result.all()
+
+    normalized_rows: list[tuple[str, str, float, float, int, int, int]] = []
+    for (
+        partner_id_value,
+        partner_name,
+        qualified_fee,
+        converted_fee,
+        qualified_count,
+        converted_count,
+        partner_unique_users,
+    ) in by_partner_rows:
+        normalized_rows.append(
+            (
+                str(partner_id_value),
+                str(partner_name),
+                float(qualified_fee or 0.0),
+                float(converted_fee or 0.0),
+                int(qualified_count or 0),
+                int(converted_count or 0),
+                int(partner_unique_users or 0),
+            )
+        )
+
+    return (
+        int(total_leads or 0),
+        int(unique_users or 0),
+        int(qualified_leads or 0),
+        int(converted_leads or 0),
+        normalized_rows,
+    )
+
+
+async def create_billing_invoice(
+    db: AsyncSession,
+    *,
+    generated_by_user_id: str,
+    partner_id: str | None,
+    period_start: datetime.date | None,
+    period_end: datetime.date | None,
+    statuses: list[str],
+    currency: str,
+    total_amount_gbp: float,
+    lines: list[dict[str, object]],
+    due_days: int = 14,
+) -> models.BillingInvoice:
+    issue_date = datetime.datetime.now(datetime.UTC).date()
+    due_date = issue_date + datetime.timedelta(days=max(due_days, 1))
+    await _acquire_invoice_sequence_lock_if_postgres(db)
+    invoice_number = await _next_invoice_number(db, invoice_date=issue_date)
+
+    invoice = models.BillingInvoice(
+        invoice_number=invoice_number,
+        generated_by_user_id=generated_by_user_id,
+        partner_id=partner_id,
+        period_start=period_start,
+        period_end=period_end,
+        due_date=due_date,
+        statuses=statuses,
+        currency=currency,
+        total_amount_gbp=total_amount_gbp,
+        status="generated",
+    )
+    db.add(invoice)
+    await db.flush()
+
+    for line in lines:
+        db.add(
+            models.BillingInvoiceLine(
+                invoice_id=str(invoice.id),
+                partner_id=str(line["partner_id"]),
+                partner_name=str(line["partner_name"]),
+                qualified_leads=int(line["qualified_leads"]),
+                converted_leads=int(line["converted_leads"]),
+                unique_users=int(line["unique_users"]),
+                qualified_lead_fee_gbp=float(line["qualified_lead_fee_gbp"]),
+                converted_lead_fee_gbp=float(line["converted_lead_fee_gbp"]),
+                amount_gbp=float(line["amount_gbp"]),
+            )
+        )
+
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def list_billing_invoices(
+    db: AsyncSession,
+    *,
+    status: str | None = None,
+    partner_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.BillingInvoice]]:
+    count_query = select(func.count(models.BillingInvoice.id))
+    if status:
+        count_query = count_query.filter(models.BillingInvoice.status == status)
+    if partner_id:
+        count_query = count_query.filter(models.BillingInvoice.partner_id == partner_id)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+
+    query = (
+        select(models.BillingInvoice)
+        .order_by(models.BillingInvoice.created_at.desc(), models.BillingInvoice.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if status:
+        query = query.filter(models.BillingInvoice.status == status)
+    if partner_id:
+        query = query.filter(models.BillingInvoice.partner_id == partner_id)
+
+    invoices = (await db.execute(query)).scalars().all()
+    return total, list(invoices)
+
+
+async def get_billing_invoice_by_id(db: AsyncSession, invoice_id: str) -> models.BillingInvoice | None:
+    result = await db.execute(select(models.BillingInvoice).filter(models.BillingInvoice.id == invoice_id))
+    return result.scalars().first()
+
+
+async def get_billing_invoice_lines(db: AsyncSession, invoice_id: str) -> list[models.BillingInvoiceLine]:
+    result = await db.execute(
+        select(models.BillingInvoiceLine)
+        .filter(models.BillingInvoiceLine.invoice_id == invoice_id)
+        .order_by(models.BillingInvoiceLine.partner_name.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def update_billing_invoice_status(
+    db: AsyncSession,
+    invoice: models.BillingInvoice,
+    *,
+    status: str,
+) -> models.BillingInvoice:
+    invoice.status = status
+    invoice.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def create_self_employed_invoice(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    customer_name: str,
+    customer_email: str | None,
+    customer_phone: str | None,
+    customer_address: str | None,
+    issue_date: datetime.date,
+    due_date: datetime.date,
+    currency: str,
+    tax_rate_percent: float,
+    notes: str | None,
+    payment_link_url: str | None,
+    payment_link_provider: str | None,
+    recurring_plan_id: str | None,
+    brand_business_name: str | None,
+    brand_logo_url: str | None,
+    brand_accent_color: str | None,
+    lines: list[dict[str, object]],
+) -> models.SelfEmployedInvoice:
+    subtotal_gbp = round(
+        sum(float(item["quantity"]) * float(item["unit_price_gbp"]) for item in lines),
+        2,
+    )
+    tax_amount_gbp = round(subtotal_gbp * (max(tax_rate_percent, 0.0) / 100.0), 2)
+    total_amount_gbp = round(subtotal_gbp + tax_amount_gbp, 2)
+
+    await _acquire_self_employed_invoice_sequence_lock_if_postgres(db)
+    invoice_number = await _next_self_employed_invoice_number(db, invoice_date=issue_date)
+
+    invoice = models.SelfEmployedInvoice(
+        user_id=user_id,
+        invoice_number=invoice_number,
+        customer_name=customer_name,
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        customer_address=customer_address,
+        issue_date=issue_date,
+        due_date=due_date,
+        currency=currency,
+        subtotal_gbp=subtotal_gbp,
+        tax_rate_percent=tax_rate_percent,
+        tax_amount_gbp=tax_amount_gbp,
+        total_amount_gbp=total_amount_gbp,
+        payment_link_url=payment_link_url,
+        payment_link_provider=payment_link_provider,
+        recurring_plan_id=recurring_plan_id,
+        brand_business_name=brand_business_name,
+        brand_logo_url=brand_logo_url,
+        brand_accent_color=brand_accent_color,
+        status="draft",
+        notes=notes,
+    )
+    db.add(invoice)
+    await db.flush()
+
+    for item in lines:
+        quantity = float(item["quantity"])
+        unit_price_gbp = float(item["unit_price_gbp"])
+        line_total_gbp = round(quantity * unit_price_gbp, 2)
+        db.add(
+            models.SelfEmployedInvoiceLine(
+                invoice_id=str(invoice.id),
+                description=str(item["description"]),
+                quantity=quantity,
+                unit_price_gbp=unit_price_gbp,
+                line_total_gbp=line_total_gbp,
+            )
+        )
+
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def list_self_employed_invoices_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedInvoice]]:
+    count_query = select(func.count(models.SelfEmployedInvoice.id)).filter(models.SelfEmployedInvoice.user_id == user_id)
+    if status:
+        count_query = count_query.filter(models.SelfEmployedInvoice.status == status)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+
+    query = (
+        select(models.SelfEmployedInvoice)
+        .filter(models.SelfEmployedInvoice.user_id == user_id)
+        .order_by(models.SelfEmployedInvoice.created_at.desc(), models.SelfEmployedInvoice.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if status:
+        query = query.filter(models.SelfEmployedInvoice.status == status)
+    rows = (await db.execute(query)).scalars().all()
+    return total, list(rows)
+
+
+async def get_self_employed_invoice_by_id_for_user(
+    db: AsyncSession,
+    *,
+    invoice_id: str,
+    user_id: str,
+) -> models.SelfEmployedInvoice | None:
+    result = await db.execute(
+        select(models.SelfEmployedInvoice).filter(
+            models.SelfEmployedInvoice.id == invoice_id,
+            models.SelfEmployedInvoice.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def get_self_employed_invoice_lines(
+    db: AsyncSession,
+    *,
+    invoice_id: str,
+) -> list[models.SelfEmployedInvoiceLine]:
+    result = await db.execute(
+        select(models.SelfEmployedInvoiceLine)
+        .filter(models.SelfEmployedInvoiceLine.invoice_id == invoice_id)
+        .order_by(models.SelfEmployedInvoiceLine.id.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def update_self_employed_invoice_status(
+    db: AsyncSession,
+    invoice: models.SelfEmployedInvoice,
+    *,
+    status: str,
+) -> models.SelfEmployedInvoice:
+    invoice.status = status
+    invoice.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def update_self_employed_invoice_payment_link(
+    db: AsyncSession,
+    invoice: models.SelfEmployedInvoice,
+    *,
+    payment_link_url: str,
+    payment_link_provider: str,
+) -> models.SelfEmployedInvoice:
+    invoice.payment_link_url = payment_link_url
+    invoice.payment_link_provider = payment_link_provider
+    invoice.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def mark_self_employed_invoice_reminder_sent(
+    db: AsyncSession,
+    invoice: models.SelfEmployedInvoice,
+    *,
+    reminder_at: datetime.datetime,
+) -> models.SelfEmployedInvoice:
+    invoice.reminder_last_sent_at = reminder_at
+    invoice.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice
+
+
+async def mark_overdue_self_employed_invoices_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    as_of_date: datetime.date,
+) -> int:
+    result = await db.execute(
+        select(models.SelfEmployedInvoice).filter(
+            models.SelfEmployedInvoice.user_id == user_id,
+            models.SelfEmployedInvoice.status == "issued",
+            models.SelfEmployedInvoice.due_date < as_of_date,
+        )
+    )
+    rows = list(result.scalars().all())
+    if not rows:
+        return 0
+    for item in rows:
+        item.status = "overdue"
+        item.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    return len(rows)
+
+
+async def get_brand_profile_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+) -> models.SelfEmployedInvoiceBrandProfile | None:
+    result = await db.execute(
+        select(models.SelfEmployedInvoiceBrandProfile).filter(
+            models.SelfEmployedInvoiceBrandProfile.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def upsert_brand_profile_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    business_name: str,
+    logo_url: str | None,
+    accent_color: str | None,
+    payment_terms_note: str | None,
+) -> models.SelfEmployedInvoiceBrandProfile:
+    profile = await get_brand_profile_for_user(db, user_id=user_id)
+    if profile is None:
+        profile = models.SelfEmployedInvoiceBrandProfile(
+            user_id=user_id,
+            business_name=business_name,
+            logo_url=logo_url,
+            accent_color=accent_color,
+            payment_terms_note=payment_terms_note,
+        )
+        db.add(profile)
+    else:
+        profile.business_name = business_name
+        profile.logo_url = logo_url
+        profile.accent_color = accent_color
+        profile.payment_terms_note = payment_terms_note
+        profile.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(profile)
+    return profile
+
+
+async def create_recurring_invoice_plan(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    customer_name: str,
+    customer_email: str | None,
+    customer_phone: str | None,
+    customer_address: str | None,
+    currency: str,
+    tax_rate_percent: float,
+    notes: str | None,
+    line_items: list[dict[str, object]],
+    cadence: str,
+    next_issue_date: datetime.date,
+) -> models.SelfEmployedRecurringInvoicePlan:
+    plan = models.SelfEmployedRecurringInvoicePlan(
+        user_id=user_id,
+        customer_name=customer_name,
+        customer_email=customer_email,
+        customer_phone=customer_phone,
+        customer_address=customer_address,
+        currency=currency,
+        tax_rate_percent=tax_rate_percent,
+        notes=notes,
+        line_items=line_items,
+        cadence=cadence,
+        next_issue_date=next_issue_date,
+        active=1,
+    )
+    db.add(plan)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+async def list_recurring_invoice_plans_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    active_only: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedRecurringInvoicePlan]]:
+    count_query = select(func.count(models.SelfEmployedRecurringInvoicePlan.id)).filter(
+        models.SelfEmployedRecurringInvoicePlan.user_id == user_id
+    )
+    query = (
+        select(models.SelfEmployedRecurringInvoicePlan)
+        .filter(models.SelfEmployedRecurringInvoicePlan.user_id == user_id)
+        .order_by(
+            models.SelfEmployedRecurringInvoicePlan.next_issue_date.asc(),
+            models.SelfEmployedRecurringInvoicePlan.created_at.desc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    if active_only:
+        count_query = count_query.filter(models.SelfEmployedRecurringInvoicePlan.active == 1)
+        query = query.filter(models.SelfEmployedRecurringInvoicePlan.active == 1)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
+
+
+async def get_recurring_invoice_plan_for_user(
+    db: AsyncSession,
+    *,
+    plan_id: str,
+    user_id: str,
+) -> models.SelfEmployedRecurringInvoicePlan | None:
+    result = await db.execute(
+        select(models.SelfEmployedRecurringInvoicePlan).filter(
+            models.SelfEmployedRecurringInvoicePlan.id == plan_id,
+            models.SelfEmployedRecurringInvoicePlan.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def update_recurring_invoice_plan_activity(
+    db: AsyncSession,
+    plan: models.SelfEmployedRecurringInvoicePlan,
+    *,
+    active: bool,
+) -> models.SelfEmployedRecurringInvoicePlan:
+    plan.active = 1 if active else 0
+    plan.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+async def list_due_recurring_invoice_plans_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    as_of_date: datetime.date,
+) -> list[models.SelfEmployedRecurringInvoicePlan]:
+    result = await db.execute(
+        select(models.SelfEmployedRecurringInvoicePlan).filter(
+            models.SelfEmployedRecurringInvoicePlan.user_id == user_id,
+            models.SelfEmployedRecurringInvoicePlan.active == 1,
+            models.SelfEmployedRecurringInvoicePlan.next_issue_date <= as_of_date,
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def mark_recurring_plan_generated(
+    db: AsyncSession,
+    plan: models.SelfEmployedRecurringInvoicePlan,
+    *,
+    next_issue_date: datetime.date,
+    last_generated_invoice_id: str,
+) -> models.SelfEmployedRecurringInvoicePlan:
+    plan.next_issue_date = next_issue_date
+    plan.last_generated_invoice_id = last_generated_invoice_id
+    plan.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(plan)
+    return plan
+
+
+async def create_invoice_reminder_event(
+    db: AsyncSession,
+    *,
+    invoice_id: str,
+    user_id: str,
+    reminder_type: str,
+    channel: str,
+    status: str,
+    message: str,
+    sent_at: datetime.datetime | None,
+) -> models.SelfEmployedInvoiceReminder:
+    event = models.SelfEmployedInvoiceReminder(
+        invoice_id=invoice_id,
+        user_id=user_id,
+        reminder_type=reminder_type,
+        channel=channel,
+        status=status,
+        message=message,
+        sent_at=sent_at,
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def list_invoice_reminder_events_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedInvoiceReminder]]:
+    count_query = select(func.count(models.SelfEmployedInvoiceReminder.id)).filter(
+        models.SelfEmployedInvoiceReminder.user_id == user_id
+    )
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+    query = (
+        select(models.SelfEmployedInvoiceReminder)
+        .filter(models.SelfEmployedInvoiceReminder.user_id == user_id)
+        .order_by(models.SelfEmployedInvoiceReminder.created_at.desc(), models.SelfEmployedInvoiceReminder.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
+
+
+async def create_calendar_event(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    title: str,
+    starts_at: datetime.datetime,
+    ends_at: datetime.datetime | None,
+    description: str | None,
+    category: str,
+    recipient_name: str | None,
+    recipient_email: str | None,
+    recipient_phone: str | None,
+    notify_in_app: bool,
+    notify_email: bool,
+    notify_sms: bool,
+    notify_before_minutes: int,
+) -> models.SelfEmployedCalendarEvent:
+    event = models.SelfEmployedCalendarEvent(
+        user_id=user_id,
+        title=title,
+        starts_at=starts_at,
+        ends_at=ends_at,
+        description=description,
+        category=category,
+        recipient_name=recipient_name,
+        recipient_email=recipient_email,
+        recipient_phone=recipient_phone,
+        notify_in_app=1 if notify_in_app else 0,
+        notify_email=1 if notify_email else 0,
+        notify_sms=1 if notify_sms else 0,
+        notify_before_minutes=notify_before_minutes,
+        status="scheduled",
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def list_calendar_events_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    status: str | None = None,
+    start_at: datetime.datetime | None = None,
+    end_before: datetime.datetime | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedCalendarEvent]]:
+    count_query = select(func.count(models.SelfEmployedCalendarEvent.id)).filter(
+        models.SelfEmployedCalendarEvent.user_id == user_id
+    )
+    if status:
+        count_query = count_query.filter(models.SelfEmployedCalendarEvent.status == status)
+    if start_at:
+        count_query = count_query.filter(models.SelfEmployedCalendarEvent.starts_at >= start_at)
+    if end_before:
+        count_query = count_query.filter(models.SelfEmployedCalendarEvent.starts_at < end_before)
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+
+    query = (
+        select(models.SelfEmployedCalendarEvent)
+        .filter(models.SelfEmployedCalendarEvent.user_id == user_id)
+        .order_by(
+            models.SelfEmployedCalendarEvent.starts_at.asc(),
+            models.SelfEmployedCalendarEvent.created_at.desc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+    if status:
+        query = query.filter(models.SelfEmployedCalendarEvent.status == status)
+    if start_at:
+        query = query.filter(models.SelfEmployedCalendarEvent.starts_at >= start_at)
+    if end_before:
+        query = query.filter(models.SelfEmployedCalendarEvent.starts_at < end_before)
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
+
+
+async def get_calendar_event_by_id_for_user(
+    db: AsyncSession,
+    *,
+    event_id: str,
+    user_id: str,
+) -> models.SelfEmployedCalendarEvent | None:
+    result = await db.execute(
+        select(models.SelfEmployedCalendarEvent).filter(
+            models.SelfEmployedCalendarEvent.id == event_id,
+            models.SelfEmployedCalendarEvent.user_id == user_id,
+        )
+    )
+    return result.scalars().first()
+
+
+async def update_calendar_event(
+    db: AsyncSession,
+    event: models.SelfEmployedCalendarEvent,
+    *,
+    updates: dict[str, object],
+) -> models.SelfEmployedCalendarEvent:
+    for field_name, field_value in updates.items():
+        setattr(event, field_name, field_value)
+    event.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def delete_calendar_event(
+    db: AsyncSession,
+    event: models.SelfEmployedCalendarEvent,
+) -> None:
+    await db.delete(event)
+    await db.commit()
+
+
+async def list_calendar_events_due_for_reminders(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    horizon_end: datetime.datetime,
+    limit: int = 500,
+) -> list[models.SelfEmployedCalendarEvent]:
+    query = (
+        select(models.SelfEmployedCalendarEvent)
+        .filter(
+            models.SelfEmployedCalendarEvent.user_id == user_id,
+            models.SelfEmployedCalendarEvent.status == "scheduled",
+            models.SelfEmployedCalendarEvent.starts_at <= horizon_end,
+        )
+        .order_by(models.SelfEmployedCalendarEvent.starts_at.asc())
+        .limit(limit)
+    )
+    rows = (await db.execute(query)).scalars().all()
+    return list(rows)
+
+
+async def list_calendar_users_with_scheduled_events(
+    db: AsyncSession,
+    *,
+    limit: int = 500,
+) -> list[str]:
+    query = (
+        select(distinct(models.SelfEmployedCalendarEvent.user_id))
+        .filter(models.SelfEmployedCalendarEvent.status == "scheduled")
+        .order_by(models.SelfEmployedCalendarEvent.user_id.asc())
+        .limit(limit)
+    )
+    rows = (await db.execute(query)).scalars().all()
+    return [str(item) for item in rows if item]
+
+
+async def mark_calendar_event_reminder_sent(
+    db: AsyncSession,
+    event: models.SelfEmployedCalendarEvent,
+    *,
+    reminder_at: datetime.datetime,
+) -> models.SelfEmployedCalendarEvent:
+    event.reminder_last_sent_at = reminder_at
+    event.updated_at = datetime.datetime.now(datetime.UTC)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+async def create_calendar_reminder_event(
+    db: AsyncSession,
+    *,
+    event_id: str,
+    user_id: str,
+    reminder_type: str,
+    channel: str,
+    status: str,
+    message: str,
+    sent_at: datetime.datetime | None,
+) -> models.SelfEmployedCalendarReminder:
+    reminder = models.SelfEmployedCalendarReminder(
+        event_id=event_id,
+        user_id=user_id,
+        reminder_type=reminder_type,
+        channel=channel,
+        status=status,
+        message=message,
+        sent_at=sent_at,
+    )
+    db.add(reminder)
+    await db.commit()
+    await db.refresh(reminder)
+    return reminder
+
+
+async def list_calendar_reminder_events_for_user(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> tuple[int, list[models.SelfEmployedCalendarReminder]]:
+    count_query = select(func.count(models.SelfEmployedCalendarReminder.id)).filter(
+        models.SelfEmployedCalendarReminder.user_id == user_id
+    )
+    total = int((await db.execute(count_query)).scalar_one() or 0)
+    query = (
+        select(models.SelfEmployedCalendarReminder)
+        .filter(models.SelfEmployedCalendarReminder.user_id == user_id)
+        .order_by(models.SelfEmployedCalendarReminder.created_at.desc(), models.SelfEmployedCalendarReminder.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = list((await db.execute(query)).scalars().all())
+    return total, rows
+

@@ -7,13 +7,25 @@ import pytest
 # URL'ы наших сервисов, как они доступны снаружи Docker через API Gateway
 API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:8000/api")
 
-def _ensure_integration_ready():
-    if os.getenv("RUN_INTEGRATION_TESTS") != "1":
-        pytest.skip("Integration tests disabled. Set RUN_INTEGRATION_TESTS=1 to run.")
-    try:
-        httpx.get(API_GATEWAY_URL, timeout=2.0)
-    except Exception:
-        pytest.skip("API Gateway not reachable.")
+
+def register_and_login_user() -> tuple[str, str]:
+    """Registers a unique user and returns (email, bearer_token)."""
+    unique_email = f"testuser_{uuid.uuid4()}@example.com"
+    password = "a_strong_password"
+
+    reg_response = httpx.post(
+        f"{API_GATEWAY_URL}/auth/register",
+        data={"username": unique_email, "password": password}
+    )
+    assert reg_response.status_code == 201
+
+    login_response = httpx.post(
+        f"{API_GATEWAY_URL}/auth/token",
+        data={"username": unique_email, "password": password}
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    return unique_email, token
 
 def test_user_registration_and_profile_creation():
     """
@@ -21,25 +33,9 @@ def test_user_registration_and_profile_creation():
     auth-service and user-profile-service via the API Gateway.
     It assumes the services are running (via docker-compose).
     """
-    unique_email = f"testuser_{uuid.uuid4()}@example.com"
-    password = "a_strong_password"
-
-    # 1. Register a new user in auth-service
-    _ensure_integration_ready()
-    reg_response = httpx.post(
-        f"{API_GATEWAY_URL}/auth/register",
-        data={"username": unique_email, "password": password}
-    )
-    assert reg_response.status_code == 201
+    # 1. Register and log in
+    unique_email, token = register_and_login_user()
     print(f"User {unique_email} registered successfully.")
-
-    # 2. Log in to get a JWT token
-    login_response = httpx.post(
-        f"{API_GATEWAY_URL}/auth/token",
-        data={"username": unique_email, "password": password}
-    )
-    assert login_response.status_code == 200
-    token = login_response.json()["access_token"]
     auth_headers = {"Authorization": f"Bearer {token}"}
     print("Login successful, token received.")
 
@@ -78,10 +74,22 @@ def test_full_transaction_import_flow():
     4. The worker calls transactions-service, which calls categorization-service.
     5. The final, categorized data is written to the database.
     """
+    _, token = register_and_login_user()
+    auth_headers = {"Authorization": f"Bearer {token}"}
+
+    # 0. Initiate banking connection as authenticated user
+    initiate_response = httpx.post(
+        f"{API_GATEWAY_URL}/banking/connections/initiate",
+        headers=auth_headers,
+        json={"provider_id": "mock_bank", "redirect_uri": "http://localhost:3000"},
+    )
+    assert initiate_response.status_code == 200
+
     # 1. Trigger the flow by calling the banking-connector callback
     _ensure_integration_ready()
     callback_response = httpx.get(
-        f"{API_GATEWAY_URL}/banking/connections/callback?code=integration-test-code"
+        f"{API_GATEWAY_URL}/banking/connections/callback?code=integration-test-code",
+        headers=auth_headers,
     )
     assert callback_response.status_code == 200
     callback_data = callback_response.json()
@@ -95,11 +103,9 @@ def test_full_transaction_import_flow():
     time.sleep(8) # Give enough time for Celery task (mocked 2s) + network calls
 
     # 3. Verify the final result in the transactions-service
-    # We need auth for this, but our fake_auth_check uses a static user_id,
-    # so we don't need a real token for this specific test.
     get_trans_response = httpx.get(
         f"{API_GATEWAY_URL}/transactions/accounts/{account_id}/transactions",
-        headers={"Authorization": "Bearer fake-token"} # This is for passing the auth check
+        headers=auth_headers
     )
 
     assert get_trans_response.status_code == 200

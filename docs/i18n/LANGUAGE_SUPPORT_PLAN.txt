@@ -1,0 +1,49 @@
+Language Support Plan (Future-proof i18n)
+Last updated: 2026-02-12
+
+Required product languages
+- English (UK): en-GB
+- Russian: ru-RU
+- Ukrainian: uk-UA
+- Polish: pl-PL
+- Moldovan (Romanian Moldova): ro-MD
+- Turkish: tr-TR
+- Hungarian: hu-HU
+
+Scalability requirements
+1) Locale registry
+   - Keep centralized locale list in localization-service and web config.
+   - Expose /translations/locales to drive UI selectors dynamically.
+
+2) Fallback strategy
+   - Default fallback: en-GB.
+   - Locale can launch in fallback mode and get translated incrementally.
+   - Never break UI when locale has partial coverage.
+
+3) Namespace-based translation loading
+   - Keep namespaces (common, nav, reports, documents, etc.).
+   - Support partial namespace overrides per locale.
+
+4) Operational visibility
+   - Track missing keys, fallback-hit rate, and untranslated namespace counts.
+   - Add telemetry dashboard for translation health per locale.
+
+5) Content workflow
+   - Move from in-code dictionaries to external translation source (TMS/JSON catalogs).
+   - Add translation versioning and deployment-safe cache invalidation.
+
+6) UX and formatting
+   - Add locale-aware formatting for dates, numbers, and currency.
+   - Add pluralization/message format support (ICU-style).
+
+Current implementation status
+- Locale registry implemented in localization-service.
+- Fallback-by-default implemented for non-translated locales.
+- Web locale config includes required language list.
+- Translation health telemetry endpoint implemented: `GET /translations/health`
+  with per-locale missing keys, estimated fallback hit-rate, and untranslated namespace metrics.
+- Translation catalogs externalized to JSON files (`services/localization-service/catalogs/*`)
+  and loaded at runtime via `LOCALIZATION_CATALOG_DIR` (with safe in-code fallback).
+- ICU/pluralization enabled in web i18n hook via `intl-messageformat`, with locale-aware
+  formatting helpers for date/time/number/currency sourced from
+  `GET /translations/{locale}/format-standards`.

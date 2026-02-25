@@ -19,7 +19,7 @@ celery = Celery(
 )
 
 @celery.task
-def import_transactions_task(account_id: str, transactions_data: List[dict], auth_token: str):
+def import_transactions_task(account_id: str, user_id: str, bearer_token: str, transactions_data: List[dict]):
     """
     A Celery task to import transactions by calling the transactions-service.
     This runs in a separate worker process.
@@ -28,7 +28,7 @@ def import_transactions_task(account_id: str, transactions_data: List[dict], aut
         with httpx.Client() as client: # Use synchronous client inside Celery task
             response = client.post(
                 TRANSACTIONS_SERVICE_URL,
-                headers={"Authorization": f"Bearer {auth_token}"},
+                headers={"Authorization": f"Bearer {bearer_token}"},
                 json={
                     "account_id": account_id,
                     "transactions": transactions_data

@@ -1,5 +1,12 @@
-from fastapi import FastAPI, HTTPException, status, Path
-from typing import Dict
+from copy import deepcopy
+import datetime
+import json
+import os
+from pathlib import Path as FsPath
+from typing import Dict, Literal, Optional
+
+from fastapi import FastAPI, HTTPException, Path, status
+from pydantic import BaseModel
 
 app = FastAPI(
     title="Localization Service",
@@ -111,87 +118,18 @@ fake_translations_db = {
             "col_status": "Status",
             "col_vendor": "Vendor",
             "col_amount": "Amount",
+            "col_category": "Category",
+            "col_expense_article": "Expense Article",
+            "col_deductible": "Deductible",
+            "col_receipt_draft": "Draft Transaction",
             "col_uploaded_at": "Uploaded At",
             "search_title": "Semantic Document Search",
             "search_description": "Ask a question about your documents in natural language.",
             "search_placeholder": "e.g., 'where did I buy coffee last month?'",
             "search_button": "Search",
-            "search_results_title": "Search Results",
-            "search_similarity_label": "Similarity score:",
             "all_documents_title": "All Uploaded Documents",
-            "select_file_error": "Please select a file first.",
-            "upload_success_prefix": "File uploaded:"
-        },
-        "reports": {
-            "description": "Generate custom reports based on your financial data.",
-            "cadence_title": "Reporting cadence",
-            "cadence_description": "Based on turnover, determine whether quarterly reporting is required.",
-            "cadence_turnover_label": "Turnover (last 12 months)",
-            "cadence_threshold_label": "Quarterly threshold",
-            "cadence_quarterly_required": "Quarterly reporting required.",
-            "cadence_monthly_ok": "Monthly reporting is sufficient.",
-            "monthly_title": "Monthly summary",
-            "monthly_description": "Get a month-by-month profit summary.",
-            "monthly_button": "Generate monthly summary",
-            "quarterly_title": "Quarterly summary (Pro)",
-            "quarterly_description": "Generate a quarterly summary if required.",
-            "quarterly_button": "Generate quarterly summary",
-            "profit_loss_title": "Profit & Loss (Pro)",
-            "profit_loss_description": "Generate a profit & loss statement for the last quarter.",
-            "profit_loss_button": "Generate profit & loss",
-            "tax_year_title": "Tax year summary (Pro)",
-            "tax_year_description": "Summary for the UK tax year.",
-            "tax_year_button": "Generate tax year summary",
-            "mortgage_title": "Mortgage Readiness Report",
-            "mortgage_description": "Generate a PDF summary of your income over the last 12 months. This can be useful when applying for a mortgage.",
-            "generate_button": "Generate Report",
-            "generating_button": "Generating...",
-            "pro_required": "Pro subscription required.",
-            "error_generic": "Failed to generate report."
-        },
-        "marketplace": {
-            "description": "Discover our marketplace of trusted partners for accounting, insurance, and more.",
-            "request_button": "Request Contact",
-            "handoff_confirmation": "Your request has been sent to"
-        },
-        "submission": {
-            "description": "Calculate and submit your tax return to HMRC.",
-            "form_title": "New UK Tax Submission",
-            "submit_button": "Calculate & Submit to HMRC",
-            "success_title": "Submission Successfully Initiated",
-            "submitting": "Submitting...",
-            "status_label": "Submission Status",
-            "id_label": "HMRC Submission ID",
-            "reminder_note": "We've added a calendar reminder for the 31 January payment deadline."
-        },
-        "profile": {
-            "title": "Your Profile",
-            "description": "Review and update your profile details.",
-            "empty_profile": "No profile found. Create one by saving.",
-            "saved_message": "Profile saved successfully!",
-            "first_name": "First Name",
-            "last_name": "Last Name",
-            "date_of_birth": "Date of Birth"
-        },
-        "subscription": {
-            "title": "Subscription",
-            "description": "Manage your plan and monthly close day.",
-            "plan_label": "Plan",
-            "plan_free": "Free",
-            "plan_pro": "Pro",
-            "close_day_label": "Monthly close day (1-28)",
-            "status_label": "Status",
-            "cycle_label": "Billing cycle",
-            "period_label": "Current period",
-            "update_button": "Update subscription",
-            "updated_message": "Subscription updated."
-        },
-        "admin": {
-            "description": "Manage users and system settings.",
-            "form_title": "Deactivate a User",
-            "deactivate_button": "Deactivate User",
-            "email_placeholder": "user.email@example.com",
-            "deactivated_message": "User deactivated:"
+            "uploaded_documents_count": "{count, plural, =0 {No uploaded documents yet.} one {# uploaded document} other {# uploaded documents}}",
+            "review_queue_count": "{count, plural, =0 {No documents currently require manual OCR review.} one {# document requires manual OCR review.} other {# documents require manual OCR review.}}"
         }
     },
     "de-DE": {
@@ -294,824 +232,502 @@ fake_translations_db = {
             "col_status": "Status",
             "col_vendor": "Anbieter",
             "col_amount": "Betrag",
+            "col_category": "Kategorie",
+            "col_expense_article": "Kostenart",
+            "col_deductible": "Absetzbar",
+            "col_receipt_draft": "Entwurfstransaktion",
             "col_uploaded_at": "Hochgeladen am",
             "search_title": "Semantische Dokumentsuche",
             "search_description": "Stellen Sie eine Frage zu Ihren Dokumenten in natürlicher Sprache.",
             "search_placeholder": "z.B. 'wo habe ich letzten monat kaffee gekauft?'",
             "search_button": "Suchen",
-            "search_results_title": "Suchergebnisse",
-            "search_similarity_label": "Ähnlichkeitswert:",
             "all_documents_title": "Alle hochgeladenen Dokumente",
-            "select_file_error": "Bitte wählen Sie zuerst eine Datei aus.",
-            "upload_success_prefix": "Datei hochgeladen:"
-        },
-        "reports": {
-            "description": "Erstellen Sie benutzerdefinierte Berichte basierend auf Ihren Finanzdaten.",
-            "cadence_title": "Meldezyklus",
-            "cadence_description": "Bestimmt, ob eine quartalsweise Meldung erforderlich ist.",
-            "cadence_turnover_label": "Umsatz (letzte 12 Monate)",
-            "cadence_threshold_label": "Quartals-Schwelle",
-            "cadence_quarterly_required": "Quartalsweise Berichte erforderlich.",
-            "cadence_monthly_ok": "Monatliche Berichte reichen aus.",
-            "monthly_title": "Monatsübersicht",
-            "monthly_description": "Monatliche Gewinnübersicht abrufen.",
-            "monthly_button": "Monatsübersicht erstellen",
-            "quarterly_title": "Quartalsübersicht (Pro)",
-            "quarterly_description": "Quartalsbericht erstellen, falls erforderlich.",
-            "quarterly_button": "Quartalsübersicht erstellen",
-            "profit_loss_title": "Gewinn & Verlust (Pro)",
-            "profit_loss_description": "GuV für das letzte Quartal erstellen.",
-            "profit_loss_button": "GuV erstellen",
-            "tax_year_title": "Steuerjahresübersicht (Pro)",
-            "tax_year_description": "Zusammenfassung für das UK-Steuerjahr.",
-            "tax_year_button": "Steuerjahresübersicht erstellen",
-            "mortgage_title": "Bericht zur Hypothekenbereitschaft",
-            "mortgage_description": "Erstellen Sie eine PDF-Zusammenfassung Ihres Einkommens der letzten 12 Monate. Dies kann bei der Beantragung einer Hypothek nützlich sein.",
-            "generate_button": "Bericht erstellen",
-            "generating_button": "Wird erstellt...",
-            "pro_required": "Pro-Abonnement erforderlich.",
-            "error_generic": "Bericht konnte nicht erstellt werden."
-        },
-        "marketplace": {
-            "description": "Entdecken Sie unseren Marktplatz mit vertrauenswürdigen Partnern für Buchhaltung, Versicherungen und mehr.",
-            "request_button": "Kontakt anfragen",
-            "handoff_confirmation": "Ihre Anfrage wurde gesendet an"
-        },
-        "submission": {
-            "description": "Berechnen und übermitteln Sie hier Ihre Steuererklärung an HMRC.",
-            "form_title": "Neue Steuererklärung für Großbritannien",
-            "submit_button": "Berechnen & an HMRC senden",
-            "success_title": "Übermittlung erfolgreich eingeleitet",
-            "submitting": "Wird gesendet...",
-            "status_label": "Übermittlungsstatus",
-            "id_label": "HMRC-Übermittlungs-ID",
-            "reminder_note": "Wir haben eine Kalendereinladung für die Zahlungsfrist am 31. Januar hinzugefügt."
-        },
-        "profile": {
-            "title": "Ihr Profil",
-            "description": "Überprüfen und aktualisieren Sie Ihre Profildaten.",
-            "empty_profile": "Kein Profil gefunden. Speichern Sie, um eines zu erstellen.",
-            "saved_message": "Profil erfolgreich gespeichert!",
-            "first_name": "Vorname",
-            "last_name": "Nachname",
-            "date_of_birth": "Geburtsdatum"
-        },
-        "subscription": {
-            "title": "Abonnement",
-            "description": "Plan und monatlichen Abschluss verwalten.",
-            "plan_label": "Plan",
-            "plan_free": "Free",
-            "plan_pro": "Pro",
-            "close_day_label": "Monatlicher Abschlusstag (1-28)",
-            "status_label": "Status",
-            "cycle_label": "Abrechnungszyklus",
-            "period_label": "Aktueller Zeitraum",
-            "update_button": "Abonnement aktualisieren",
-            "updated_message": "Abonnement aktualisiert."
-        },
-        "admin": {
-            "description": "Benutzer und Systemeinstellungen verwalten.",
-            "form_title": "Einen Benutzer deaktivieren",
-            "deactivate_button": "Benutzer deaktivieren",
-            "email_placeholder": "user.email@example.com",
-            "deactivated_message": "Benutzer deaktiviert:"
-        }
-    },
-    "ru-RU": {
-        "common": {
-            "submit": "Отправить",
-            "cancel": "Отмена",
-            "logout": "Выйти",
-            "save": "Сохранить",
-            "loading": "Загрузка..."
-        },
-        "login": {
-            "title": "Помощник по Self-Assessment",
-            "description": "Зарегистрируйтесь или войдите, чтобы продолжить",
-            "register_button": "Регистрация",
-            "login_button": "Войти",
-            "email_placeholder": "Email",
-            "password_placeholder": "Пароль",
-            "register_success": "Регистрация успешна. Теперь можно войти."
-        },
-        "nav": {
-            "dashboard": "Дашборд",
-            "activity": "Активность",
-            "transactions": "Транзакции",
-            "documents": "Документы",
-            "reports": "Отчеты",
-            "marketplace": "Маркетплейс",
-            "submission": "Подача налогов",
-            "profile": "Профиль",
-            "admin": "Админ"
-        },
-        "dashboard": {
-            "title": "Главная панель",
-            "description": "Добро пожаловать в ваш Self-Assessment.",
-            "tax_estimator_title": "Оценка налога (UK)",
-            "tax_estimator_button": "Рассчитать налог",
-            "tax_estimator_result_title": "Оценка налога за",
-            "total_income_label": "Общий доход",
-            "allowable_expenses_label": "Допустимые расходы",
-            "disallowable_expenses_label": "Недопустимые расходы",
-            "taxable_profit_label": "Налогооблагаемая прибыль",
-            "income_tax_due_label": "Подоходный налог",
-            "class2_nic_label": "Class 2 NIC",
-            "class4_nic_label": "Class 4 NIC",
-            "estimated_tax_due_label": "Итого к уплате",
-            "cashflow_title": "Прогноз денежного потока (30 дней)",
-            "cashflow_loading": "Формируем прогноз...",
-            "readiness_title": "Готовность к сдаче",
-            "readiness_description": "Показывает готовность данных к Self-Assessment.",
-            "readiness_score_label": "Индекс готовности",
-            "readiness_missing_categories": "Без категории:",
-            "readiness_missing_business_use": "Нет процента бизнес-использования:",
-            "readiness_actions_title": "Следующие шаги",
-            "readiness_action_categories": "Категоризируйте оставшиеся транзакции.",
-            "readiness_action_business_use": "Укажите бизнес-долю для смешанных расходов.",
-            "readiness_no_transactions": "Транзакции еще не импортированы.",
-            "readiness_low": "Низкая готовность",
-            "readiness_medium": "Средняя готовность",
-            "readiness_high": "Высокая готовность",
-            "readiness_loading": "Считаем готовность...",
-            "action_next_title": "Что дальше?",
-            "action_next_description": "Посмотрите маркетплейс с проверенными партнерами для страховки, бухгалтерии и другого.",
-            "action_next_button": "Перейти к партнерам"
-        },
-        "activity": {
-            "description": "Журнал последних событий в вашем аккаунте.",
-            "col_date": "Дата",
-            "col_action": "Действие",
-            "col_details": "Детали"
-        },
-        "transactions": {
-            "title": "Транзакции",
-            "description": "Подключите банк, чтобы импортировать и категоризировать транзакции.",
-            "bank_connections_title": "Банковские подключения",
-            "connect_button": "Подключить банк",
-            "consent_prompt": "Нажмите ссылку, чтобы дать доступ банку:",
-            "loading": "Загружаем транзакции...",
-            "recent_title": "Последние транзакции",
-            "col_date": "Дата",
-            "col_description": "Описание",
-            "col_amount": "Сумма",
-            "col_category": "Категория",
-            "select_placeholder": "Выбрать...",
-            "csv_title": "CSV импорт",
-            "csv_description": "Загрузите CSV, если банк не поддерживается.",
-            "csv_account_label": "Account ID",
-            "csv_account_placeholder": "Вставьте UUID счета",
-            "csv_upload_button": "Загрузить CSV",
-            "csv_uploading": "Загружаем...",
-            "csv_success": "CSV импорт принят. Импортировано:",
-            "csv_skipped_label": "Пропущено:",
-            "csv_select_error": "Выберите CSV файл.",
-            "csv_account_error": "Нужен Account ID."
-        },
-        "documents": {
-            "description": "Загружайте и храните чеки и счета.",
-            "upload_title": "Загрузить документ",
-            "upload_button": "Загрузить",
-            "uploading_button": "Загрузка...",
-            "col_filename": "Файл",
-            "col_status": "Статус",
-            "col_vendor": "Поставщик",
-            "col_amount": "Сумма",
-            "col_uploaded_at": "Загружено",
-            "search_title": "Семантический поиск документов",
-            "search_description": "Задайте вопрос к вашим документам на естественном языке.",
-            "search_placeholder": "например, «где я купил кофе в прошлом месяце?»",
-            "search_button": "Искать",
-            "search_results_title": "Результаты поиска",
-            "search_similarity_label": "Схожесть:",
-            "all_documents_title": "Все документы",
-            "select_file_error": "Сначала выберите файл.",
-            "upload_success_prefix": "Файл загружен:"
-        },
-        "reports": {
-            "description": "Создавайте отчеты на основе финансовых данных.",
-            "cadence_title": "Периодичность отчётности",
-            "cadence_description": "Определяет необходимость квартальной отчетности.",
-            "cadence_turnover_label": "Оборот за 12 месяцев",
-            "cadence_threshold_label": "Порог квартальной отчетности",
-            "cadence_quarterly_required": "Нужна квартальная отчетность.",
-            "cadence_monthly_ok": "Достаточно ежемесячной отчетности.",
-            "monthly_title": "Ежемесячный отчет",
-            "monthly_description": "Сводка прибыли за месяц.",
-            "monthly_button": "Сформировать месяц",
-            "quarterly_title": "Квартальный отчет (Pro)",
-            "quarterly_description": "Квартальная сводка при необходимости.",
-            "quarterly_button": "Сформировать квартал",
-            "profit_loss_title": "Прибыли и убытки (Pro)",
-            "profit_loss_description": "Отчет P&L за последний квартал.",
-            "profit_loss_button": "Сформировать P&L",
-            "tax_year_title": "Отчет за налоговый год (Pro)",
-            "tax_year_description": "Сводка по налоговому году UK.",
-            "tax_year_button": "Сформировать налоговый год",
-            "mortgage_title": "Отчет для ипотеки",
-            "mortgage_description": "PDF-сводка доходов за 12 месяцев.",
-            "generate_button": "Сформировать отчет",
-            "generating_button": "Формируется...",
-            "pro_required": "Нужна подписка Pro.",
-            "error_generic": "Не удалось сформировать отчет."
-        },
-        "marketplace": {
-            "description": "Партнеры для бухгалтерии, страховки и прочего.",
-            "request_button": "Запросить контакт",
-            "handoff_confirmation": "Запрос отправлен партнеру"
-        },
-        "submission": {
-            "description": "Рассчитать и отправить декларацию в HMRC.",
-            "form_title": "Новая подача UK Self-Assessment",
-            "submit_button": "Рассчитать и отправить в HMRC",
-            "success_title": "Подача начата",
-            "submitting": "Отправляем...",
-            "status_label": "Статус подачи",
-            "id_label": "ID подачи HMRC",
-            "reminder_note": "Мы добавили напоминание в календарь о платеже до 31 января."
-        },
-        "profile": {
-            "title": "Профиль",
-            "description": "Обновите свои персональные данные.",
-            "empty_profile": "Профиль не найден. Создайте его, сохранив данные.",
-            "saved_message": "Профиль сохранен.",
-            "first_name": "Имя",
-            "last_name": "Фамилия",
-            "date_of_birth": "Дата рождения"
-        },
-        "subscription": {
-            "title": "Подписка",
-            "description": "Управляйте планом и датой месячного закрытия.",
-            "plan_label": "План",
-            "plan_free": "Free",
-            "plan_pro": "Pro",
-            "close_day_label": "День закрытия месяца (1-28)",
-            "status_label": "Статус",
-            "cycle_label": "Период оплаты",
-            "period_label": "Текущий период",
-            "update_button": "Обновить подписку",
-            "updated_message": "Подписка обновлена."
-        },
-        "admin": {
-            "description": "Управление пользователями и настройками.",
-            "form_title": "Деактивация пользователя",
-            "deactivate_button": "Деактивировать",
-            "email_placeholder": "user.email@example.com",
-            "deactivated_message": "Пользователь деактивирован:"
-        }
-    },
-    "ro-MD": {
-        "common": {
-            "submit": "Trimite",
-            "cancel": "Anulează",
-            "logout": "Deconectare",
-            "save": "Salvează",
-            "loading": "Se încarcă..."
-        },
-        "login": {
-            "title": "Asistent Self Assessment",
-            "description": "Înregistrează-te sau autentifică-te pentru a continua",
-            "register_button": "Înregistrează-te",
-            "login_button": "Autentificare",
-            "email_placeholder": "Email",
-            "password_placeholder": "Parolă",
-            "register_success": "Înregistrare reușită. Te poți autentifica."
-        },
-        "nav": {
-            "dashboard": "Panou",
-            "activity": "Activitate",
-            "transactions": "Tranzacții",
-            "documents": "Documente",
-            "reports": "Rapoarte",
-            "marketplace": "Marketplace",
-            "submission": "Depunere taxe",
-            "profile": "Profil",
-            "admin": "Admin"
-        },
-        "dashboard": {
-            "title": "Panou principal",
-            "description": "Bun venit în spațiul tău Self Assessment.",
-            "tax_estimator_title": "Estimator taxe (UK)",
-            "tax_estimator_button": "Calculează taxele",
-            "tax_estimator_result_title": "Taxă estimată pentru",
-            "total_income_label": "Venit total",
-            "allowable_expenses_label": "Cheltuieli deductibile",
-            "disallowable_expenses_label": "Cheltuieli nedeductibile",
-            "taxable_profit_label": "Profit impozabil",
-            "income_tax_due_label": "Impozit pe venit",
-            "class2_nic_label": "NIC clasa 2",
-            "class4_nic_label": "NIC clasa 4",
-            "estimated_tax_due_label": "Taxă estimată",
-            "cashflow_title": "Previziune flux de numerar (următoarele 30 de zile)",
-            "cashflow_loading": "Se generează prognoza...",
-            "readiness_title": "Scor de pregătire fiscală",
-            "readiness_description": "Arată cât de pregătite sunt datele pentru Self Assessment.",
-            "readiness_score_label": "Scor de pregătire",
-            "readiness_missing_categories": "Tranzacții necategorizate:",
-            "readiness_missing_business_use": "Lipsă procent business la cheltuieli:",
-            "readiness_actions_title": "Următorii pași",
-            "readiness_action_categories": "Categorisește tranzacțiile rămase.",
-            "readiness_action_business_use": "Adaugă % business pentru cheltuieli mixte.",
-            "readiness_no_transactions": "Nu există încă tranzacții importate.",
-            "readiness_low": "Pregătire scăzută",
-            "readiness_medium": "Pregătire medie",
-            "readiness_high": "Pregătire ridicată",
-            "readiness_loading": "Se calculează pregătirea...",
-            "action_next_title": "Ce urmează?",
-            "action_next_description": "Explorează marketplace-ul nostru de parteneri pentru asigurări, contabilitate și altele.",
-            "action_next_button": "Explorează servicii partenere"
-        },
-        "activity": {
-            "description": "Iată o înregistrare a activităților recente din contul tău.",
-            "col_date": "Data",
-            "col_action": "Acțiune",
-            "col_details": "Detalii"
-        },
-        "transactions": {
-            "title": "Tranzacții",
-            "description": "Conectează contul bancar pentru a importa și categorisi tranzacțiile.",
-            "bank_connections_title": "Conexiuni bancare",
-            "connect_button": "Conectează un cont bancar",
-            "consent_prompt": "Apasă linkul pentru a acorda acces la banca ta:",
-            "loading": "Se încarcă tranzacțiile...",
-            "recent_title": "Tranzacții recente",
-            "col_date": "Data",
-            "col_description": "Descriere",
-            "col_amount": "Sumă",
-            "col_category": "Categorie",
-            "select_placeholder": "Selectează...",
-            "csv_title": "Import CSV",
-            "csv_description": "Încarcă un fișier CSV dacă banca nu este suportată.",
-            "csv_account_label": "ID cont",
-            "csv_account_placeholder": "Lipește UUID-ul contului",
-            "csv_upload_button": "Încarcă CSV",
-            "csv_uploading": "Se încarcă...",
-            "csv_success": "Import CSV acceptat. Importate:",
-            "csv_skipped_label": "Omise:",
-            "csv_select_error": "Selectează un fișier CSV.",
-            "csv_account_error": "ID-ul contului este obligatoriu."
-        },
-        "documents": {
-            "description": "Încarcă și gestionează chitanțe și facturi.",
-            "upload_title": "Încarcă un document",
-            "upload_button": "Încarcă",
-            "uploading_button": "Se încarcă...",
-            "col_filename": "Nume fișier",
-            "col_status": "Stare",
-            "col_vendor": "Furnizor",
-            "col_amount": "Sumă",
-            "col_uploaded_at": "Încărcat la",
-            "search_title": "Căutare semantică în documente",
-            "search_description": "Pune o întrebare despre documentele tale în limbaj natural.",
-            "search_placeholder": "ex: 'unde am cumpărat cafea luna trecută?'",
-            "search_button": "Caută",
-            "search_results_title": "Rezultate căutare",
-            "search_similarity_label": "Scor similaritate:",
-            "all_documents_title": "Toate documentele încărcate",
-            "select_file_error": "Te rugăm să selectezi mai întâi un fișier.",
-            "upload_success_prefix": "Fișier încărcat:"
-        },
-        "reports": {
-            "description": "Generează rapoarte personalizate pe baza datelor tale.",
-            "cadence_title": "Cadență de raportare",
-            "cadence_description": "Pe baza cifrei de afaceri, determină dacă este necesară raportarea trimestrială.",
-            "cadence_turnover_label": "Cifră de afaceri (ultimele 12 luni)",
-            "cadence_threshold_label": "Prag trimestrial",
-            "cadence_quarterly_required": "Raportare trimestrială necesară.",
-            "cadence_monthly_ok": "Raportarea lunară este suficientă.",
-            "monthly_title": "Sumar lunar",
-            "monthly_description": "Obține un sumar lunar al profitului.",
-            "monthly_button": "Generează sumar lunar",
-            "quarterly_title": "Sumar trimestrial (Pro)",
-            "quarterly_description": "Generează sumar trimestrial dacă este necesar.",
-            "quarterly_button": "Generează sumar trimestrial",
-            "profit_loss_title": "Profit & pierdere (Pro)",
-            "profit_loss_description": "Generează P&L pentru ultimul trimestru.",
-            "profit_loss_button": "Generează profit & pierdere",
-            "tax_year_title": "Sumar an fiscal (Pro)",
-            "tax_year_description": "Sumar pentru anul fiscal UK.",
-            "tax_year_button": "Generează sumar an fiscal",
-            "mortgage_title": "Raport pregătire ipotecă",
-            "mortgage_description": "Generează un PDF al veniturilor din ultimele 12 luni. Util pentru aplicații de ipotecă.",
-            "generate_button": "Generează raport",
-            "generating_button": "Se generează...",
-            "pro_required": "Este necesar abonament Pro.",
-            "error_generic": "Nu s-a putut genera raportul."
-        },
-        "marketplace": {
-            "description": "Descoperă marketplace-ul nostru de parteneri pentru contabilitate, asigurări și altele.",
-            "request_button": "Solicită contact",
-            "handoff_confirmation": "Cererea ta a fost trimisă către"
-        },
-        "submission": {
-            "description": "Calculează și trimite declarația fiscală către HMRC.",
-            "form_title": "Depunere nouă Self Assessment UK",
-            "submit_button": "Calculează și trimite către HMRC",
-            "success_title": "Depunere inițiată cu succes",
-            "submitting": "Se trimite...",
-            "status_label": "Stare depunere",
-            "id_label": "ID depunere HMRC",
-            "reminder_note": "Am adăugat un reminder în calendar pentru termenul de plată 31 ianuarie."
-        },
-        "profile": {
-            "title": "Profilul tău",
-            "description": "Revizuiește și actualizează datele profilului.",
-            "empty_profile": "Nu s-a găsit profil. Salvează pentru a crea unul.",
-            "saved_message": "Profil salvat cu succes!",
-            "first_name": "Prenume",
-            "last_name": "Nume",
-            "date_of_birth": "Data nașterii"
-        },
-        "subscription": {
-            "title": "Abonament",
-            "description": "Gestionează planul și ziua de închidere lunară.",
-            "plan_label": "Plan",
-            "plan_free": "Gratuit",
-            "plan_pro": "Pro",
-            "close_day_label": "Zi de închidere lunară (1-28)",
-            "status_label": "Stare",
-            "cycle_label": "Ciclu de facturare",
-            "period_label": "Perioadă curentă",
-            "update_button": "Actualizează abonamentul",
-            "updated_message": "Abonament actualizat."
-        },
-        "admin": {
-            "description": "Gestionează utilizatori și setări de sistem.",
-            "form_title": "Dezactivează un utilizator",
-            "deactivate_button": "Dezactivează utilizator",
-            "email_placeholder": "user.email@example.com",
-            "deactivated_message": "Utilizator dezactivat:"
-        }
-    },
-    "uk-UA": {
-        "common": {
-            "submit": "Надіслати",
-            "cancel": "Скасувати",
-            "logout": "Вийти",
-            "save": "Зберегти",
-            "loading": "Завантаження..."
-        },
-        "login": {
-            "title": "Асистент Self Assessment",
-            "description": "Зареєструйтесь або увійдіть, щоб продовжити",
-            "register_button": "Зареєструватися",
-            "login_button": "Увійти",
-            "email_placeholder": "Email",
-            "password_placeholder": "Пароль",
-            "register_success": "Реєстрація успішна. Тепер можна увійти."
-        },
-        "nav": {
-            "dashboard": "Панель",
-            "activity": "Активність",
-            "transactions": "Транзакції",
-            "documents": "Документи",
-            "reports": "Звіти",
-            "marketplace": "Маркетплейс",
-            "submission": "Подання податків",
-            "profile": "Профіль",
-            "admin": "Адмін"
-        },
-        "dashboard": {
-            "title": "Головна панель",
-            "description": "Ласкаво просимо до вашого Self Assessment.",
-            "tax_estimator_title": "Оцінка податку (UK)",
-            "tax_estimator_button": "Розрахувати податок",
-            "tax_estimator_result_title": "Оціночний податок за",
-            "total_income_label": "Загальний дохід",
-            "allowable_expenses_label": "Допустимі витрати",
-            "disallowable_expenses_label": "Недопустимі витрати",
-            "taxable_profit_label": "Оподатковуваний прибуток",
-            "income_tax_due_label": "Податок на дохід",
-            "class2_nic_label": "NIC клас 2",
-            "class4_nic_label": "NIC клас 4",
-            "estimated_tax_due_label": "Оціночний податок",
-            "cashflow_title": "Прогноз грошового потоку (наступні 30 днів)",
-            "cashflow_loading": "Формується прогноз...",
-            "readiness_title": "Оцінка готовності",
-            "readiness_description": "Показує, наскільки підготовлені ваші дані для Self Assessment.",
-            "readiness_score_label": "Оцінка готовності",
-            "readiness_missing_categories": "Некатегоризовані транзакції:",
-            "readiness_missing_business_use": "Відсутній бізнес-відсоток у витрат:",
-            "readiness_actions_title": "Наступні кроки",
-            "readiness_action_categories": "Категоризуйте решту транзакцій.",
-            "readiness_action_business_use": "Додайте бізнес-відсоток для змішаних витрат.",
-            "readiness_no_transactions": "Транзакції ще не імпортовані.",
-            "readiness_low": "Низька готовність",
-            "readiness_medium": "Середня готовність",
-            "readiness_high": "Висока готовність",
-            "readiness_loading": "Обчислення готовності...",
-            "action_next_title": "Що далі?",
-            "action_next_description": "Дослідіть наш маркетплейс перевірених партнерів для страхування, бухгалтерії тощо.",
-            "action_next_button": "Переглянути партнерські сервіси"
-        },
-        "activity": {
-            "description": "Ось запис останніх подій у вашому акаунті.",
-            "col_date": "Дата",
-            "col_action": "Дія",
-            "col_details": "Деталі"
-        },
-        "transactions": {
-            "title": "Транзакції",
-            "description": "Підключіть банк, щоб імпортувати та категоризувати транзакції.",
-            "bank_connections_title": "Банківські підключення",
-            "connect_button": "Підключити банківський рахунок",
-            "consent_prompt": "Натисніть посилання, щоб надати доступ у вашому банку:",
-            "loading": "Завантаження транзакцій...",
-            "recent_title": "Останні транзакції",
-            "col_date": "Дата",
-            "col_description": "Опис",
-            "col_amount": "Сума",
-            "col_category": "Категорія",
-            "select_placeholder": "Виберіть...",
-            "csv_title": "Імпорт CSV",
-            "csv_description": "Завантажте CSV, якщо ваша банка не підтримується.",
-            "csv_account_label": "ID рахунку",
-            "csv_account_placeholder": "Вставте UUID рахунку",
-            "csv_upload_button": "Завантажити CSV",
-            "csv_uploading": "Завантаження...",
-            "csv_success": "Імпорт CSV прийнято. Імпортовано:",
-            "csv_skipped_label": "Пропущено:",
-            "csv_select_error": "Виберіть CSV файл.",
-            "csv_account_error": "ID рахунку обов'язковий."
-        },
-        "documents": {
-            "description": "Завантажуйте та керуйте чеками й рахунками.",
-            "upload_title": "Завантажити документ",
-            "upload_button": "Завантажити",
-            "uploading_button": "Завантаження...",
-            "col_filename": "Назва файлу",
-            "col_status": "Статус",
-            "col_vendor": "Постачальник",
-            "col_amount": "Сума",
-            "col_uploaded_at": "Завантажено",
-            "search_title": "Семантичний пошук документів",
-            "search_description": "Поставте питання про документи природною мовою.",
-            "search_placeholder": "наприклад, 'де я купив каву минулого місяця?'",
-            "search_button": "Пошук",
-            "search_results_title": "Результати пошуку",
-            "search_similarity_label": "Показник схожості:",
-            "all_documents_title": "Усі завантажені документи",
-            "select_file_error": "Спочатку виберіть файл.",
-            "upload_success_prefix": "Файл завантажено:"
-        },
-        "reports": {
-            "description": "Створюйте кастомні звіти на основі фінансових даних.",
-            "cadence_title": "Періодичність звітів",
-            "cadence_description": "На основі обороту визначається, чи потрібна квартальна звітність.",
-            "cadence_turnover_label": "Оборот (останні 12 місяців)",
-            "cadence_threshold_label": "Квартальний поріг",
-            "cadence_quarterly_required": "Потрібна квартальна звітність.",
-            "cadence_monthly_ok": "Місячної звітності достатньо.",
-            "monthly_title": "Місячний підсумок",
-            "monthly_description": "Отримайте місячний підсумок прибутку.",
-            "monthly_button": "Згенерувати місячний підсумок",
-            "quarterly_title": "Квартальний підсумок (Pro)",
-            "quarterly_description": "Згенерувати квартальний підсумок за потреби.",
-            "quarterly_button": "Згенерувати квартальний підсумок",
-            "profit_loss_title": "Прибуток і збитки (Pro)",
-            "profit_loss_description": "Згенерувати P&L за останній квартал.",
-            "profit_loss_button": "Згенерувати P&L",
-            "tax_year_title": "Підсумок податкового року (Pro)",
-            "tax_year_description": "Підсумок для податкового року UK.",
-            "tax_year_button": "Згенерувати підсумок року",
-            "mortgage_title": "Звіт для іпотеки",
-            "mortgage_description": "Згенеруйте PDF-підсумок доходів за 12 місяців. Корисно для іпотеки.",
-            "generate_button": "Згенерувати звіт",
-            "generating_button": "Генерується...",
-            "pro_required": "Потрібна підписка Pro.",
-            "error_generic": "Не вдалося згенерувати звіт."
-        },
-        "marketplace": {
-            "description": "Відкрийте наш маркетплейс партнерів з бухгалтерії, страхування та іншого.",
-            "request_button": "Запросити контакт",
-            "handoff_confirmation": "Ваш запит надіслано"
-        },
-        "submission": {
-            "description": "Розрахуйте та подайте декларацію до HMRC.",
-            "form_title": "Нова подача Self Assessment UK",
-            "submit_button": "Розрахувати й подати до HMRC",
-            "success_title": "Подача успішно ініційована",
-            "submitting": "Відправляємо...",
-            "status_label": "Статус подачі",
-            "id_label": "ID подачі HMRC",
-            "reminder_note": "Ми додали нагадування в календар про платіж до 31 січня."
-        },
-        "profile": {
-            "title": "Ваш профіль",
-            "description": "Перегляньте та оновіть дані профілю.",
-            "empty_profile": "Профіль не знайдено. Створіть його, зберігши дані.",
-            "saved_message": "Профіль успішно збережено!",
-            "first_name": "Ім'я",
-            "last_name": "Прізвище",
-            "date_of_birth": "Дата народження"
-        },
-        "subscription": {
-            "title": "Підписка",
-            "description": "Керуйте планом і днем місячного закриття.",
-            "plan_label": "План",
-            "plan_free": "Безкоштовно",
-            "plan_pro": "Pro",
-            "close_day_label": "День місячного закриття (1-28)",
-            "status_label": "Статус",
-            "cycle_label": "Платіжний цикл",
-            "period_label": "Поточний період",
-            "update_button": "Оновити підписку",
-            "updated_message": "Підписку оновлено."
-        },
-        "admin": {
-            "description": "Керування користувачами та системними налаштуваннями.",
-            "form_title": "Деактивація користувача",
-            "deactivate_button": "Деактивувати користувача",
-            "email_placeholder": "user.email@example.com",
-            "deactivated_message": "Користувача деактивовано:"
-        }
-    },
-    "pl-PL": {
-        "common": {
-            "submit": "Wyślij",
-            "cancel": "Anuluj",
-            "logout": "Wyloguj",
-            "save": "Zapisz",
-            "loading": "Ładowanie..."
-        },
-        "login": {
-            "title": "Asystent Self Assessment",
-            "description": "Zarejestruj się lub zaloguj, aby kontynuować",
-            "register_button": "Zarejestruj się",
-            "login_button": "Zaloguj się",
-            "email_placeholder": "Email",
-            "password_placeholder": "Hasło",
-            "register_success": "Rejestracja zakończona. Możesz się zalogować."
-        },
-        "nav": {
-            "dashboard": "Panel",
-            "activity": "Aktywność",
-            "transactions": "Transakcje",
-            "documents": "Dokumenty",
-            "reports": "Raporty",
-            "marketplace": "Marketplace",
-            "submission": "Wysyłka podatków",
-            "profile": "Profil",
-            "admin": "Admin"
-        },
-        "dashboard": {
-            "title": "Główny panel",
-            "description": "Witamy w Twoim Self Assessment.",
-            "tax_estimator_title": "Kalkulator podatku (UK)",
-            "tax_estimator_button": "Oblicz podatek",
-            "tax_estimator_result_title": "Szacowany podatek za",
-            "total_income_label": "Łączny dochód",
-            "allowable_expenses_label": "Koszty dopuszczalne",
-            "disallowable_expenses_label": "Koszty niedopuszczalne",
-            "taxable_profit_label": "Dochód do opodatkowania",
-            "income_tax_due_label": "Podatek dochodowy",
-            "class2_nic_label": "NIC klasa 2",
-            "class4_nic_label": "NIC klasa 4",
-            "estimated_tax_due_label": "Szacowany podatek",
-            "cashflow_title": "Prognoza przepływów (następne 30 dni)",
-            "cashflow_loading": "Generowanie prognozy...",
-            "readiness_title": "Gotowość podatkowa",
-            "readiness_description": "Pokazuje, jak przygotowane są dane do Self Assessment.",
-            "readiness_score_label": "Wynik gotowości",
-            "readiness_missing_categories": "Nieskategoryzowane transakcje:",
-            "readiness_missing_business_use": "Brak % użycia biznesowego w wydatkach:",
-            "readiness_actions_title": "Następne działania",
-            "readiness_action_categories": "Skategoryzuj pozostałe transakcje.",
-            "readiness_action_business_use": "Dodaj % użycia biznesowego dla wydatków mieszanych.",
-            "readiness_no_transactions": "Brak zaimportowanych transakcji.",
-            "readiness_low": "Niska gotowość",
-            "readiness_medium": "Średnia gotowość",
-            "readiness_high": "Wysoka gotowość",
-            "readiness_loading": "Obliczanie gotowości...",
-            "action_next_title": "Co dalej?",
-            "action_next_description": "Poznaj marketplace z zaufanymi partnerami od ubezpieczeń, księgowości i nie tylko.",
-            "action_next_button": "Poznaj usługi partnerskie"
-        },
-        "activity": {
-            "description": "Poniżej zapis ostatnich zdarzeń na koncie.",
-            "col_date": "Data",
-            "col_action": "Akcja",
-            "col_details": "Szczegóły"
-        },
-        "transactions": {
-            "title": "Transakcje",
-            "description": "Połącz konto bankowe, aby importować i kategoryzować transakcje.",
-            "bank_connections_title": "Połączenia bankowe",
-            "connect_button": "Połącz konto bankowe",
-            "consent_prompt": "Kliknij link, aby udzielić dostępu w banku:",
-            "loading": "Ładowanie transakcji...",
-            "recent_title": "Ostatnie transakcje",
-            "col_date": "Data",
-            "col_description": "Opis",
-            "col_amount": "Kwota",
-            "col_category": "Kategoria",
-            "select_placeholder": "Wybierz...",
-            "csv_title": "Import CSV",
-            "csv_description": "Załaduj plik CSV, jeśli bank nie jest wspierany.",
-            "csv_account_label": "ID konta",
-            "csv_account_placeholder": "Wklej UUID konta",
-            "csv_upload_button": "Wyślij CSV",
-            "csv_uploading": "Wysyłanie...",
-            "csv_success": "Import CSV zaakceptowany. Zaimportowano:",
-            "csv_skipped_label": "Pominięto:",
-            "csv_select_error": "Wybierz plik CSV.",
-            "csv_account_error": "ID konta jest wymagane."
-        },
-        "documents": {
-            "description": "Prześlij i zarządzaj paragonami oraz fakturami.",
-            "upload_title": "Prześlij dokument",
-            "upload_button": "Prześlij",
-            "uploading_button": "Wysyłanie...",
-            "col_filename": "Nazwa pliku",
-            "col_status": "Status",
-            "col_vendor": "Dostawca",
-            "col_amount": "Kwota",
-            "col_uploaded_at": "Data przesłania",
-            "search_title": "Semantyczne wyszukiwanie dokumentów",
-            "search_description": "Zadaj pytanie o dokumenty w języku naturalnym.",
-            "search_placeholder": "np. 'gdzie kupiłem kawę w zeszłym miesiącu?'",
-            "search_button": "Szukaj",
-            "search_results_title": "Wyniki wyszukiwania",
-            "search_similarity_label": "Wskaźnik podobieństwa:",
-            "all_documents_title": "Wszystkie przesłane dokumenty",
-            "select_file_error": "Najpierw wybierz plik.",
-            "upload_success_prefix": "Plik przesłany:"
-        },
-        "reports": {
-            "description": "Twórz raporty na podstawie danych finansowych.",
-            "cadence_title": "Częstotliwość raportowania",
-            "cadence_description": "Na podstawie obrotu ustal, czy potrzebne są raporty kwartalne.",
-            "cadence_turnover_label": "Obrót (ostatnie 12 miesięcy)",
-            "cadence_threshold_label": "Próg kwartalny",
-            "cadence_quarterly_required": "Wymagane raportowanie kwartalne.",
-            "cadence_monthly_ok": "Wystarczy raportowanie miesięczne.",
-            "monthly_title": "Podsumowanie miesięczne",
-            "monthly_description": "Miesięczne podsumowanie zysku.",
-            "monthly_button": "Generuj podsumowanie miesięczne",
-            "quarterly_title": "Podsumowanie kwartalne (Pro)",
-            "quarterly_description": "Generuj podsumowanie kwartalne, jeśli wymagane.",
-            "quarterly_button": "Generuj podsumowanie kwartalne",
-            "profit_loss_title": "Zysk i strata (Pro)",
-            "profit_loss_description": "Generuj P&L za ostatni kwartał.",
-            "profit_loss_button": "Generuj P&L",
-            "tax_year_title": "Podsumowanie roku podatkowego (Pro)",
-            "tax_year_description": "Podsumowanie dla roku podatkowego UK.",
-            "tax_year_button": "Generuj podsumowanie roku",
-            "mortgage_title": "Raport hipoteczny",
-            "mortgage_description": "Generuj PDF z dochodami z ostatnich 12 miesięcy. Przydatne przy kredycie.",
-            "generate_button": "Generuj raport",
-            "generating_button": "Generowanie...",
-            "pro_required": "Wymagana subskrypcja Pro.",
-            "error_generic": "Nie udało się wygenerować raportu."
-        },
-        "marketplace": {
-            "description": "Poznaj marketplace z zaufanymi partnerami w księgowości, ubezpieczeniach i więcej.",
-            "request_button": "Poproś o kontakt",
-            "handoff_confirmation": "Twoja prośba została wysłana do"
-        },
-        "submission": {
-            "description": "Oblicz i wyślij deklarację podatkową do HMRC.",
-            "form_title": "Nowa deklaracja Self Assessment UK",
-            "submit_button": "Oblicz i wyślij do HMRC",
-            "success_title": "Wysyłka zainicjowana pomyślnie",
-            "submitting": "Wysyłanie...",
-            "status_label": "Status wysyłki",
-            "id_label": "ID wysyłki HMRC",
-            "reminder_note": "Dodaliśmy przypomnienie w kalendarzu o terminie płatności 31 stycznia."
-        },
-        "profile": {
-            "title": "Twój profil",
-            "description": "Sprawdź i zaktualizuj dane profilu.",
-            "empty_profile": "Nie znaleziono profilu. Zapisz, aby go utworzyć.",
-            "saved_message": "Profil zapisany pomyślnie!",
-            "first_name": "Imię",
-            "last_name": "Nazwisko",
-            "date_of_birth": "Data urodzenia"
-        },
-        "subscription": {
-            "title": "Subskrypcja",
-            "description": "Zarządzaj planem i dniem zamknięcia miesiąca.",
-            "plan_label": "Plan",
-            "plan_free": "Bezpłatny",
-            "plan_pro": "Pro",
-            "close_day_label": "Dzień zamknięcia miesiąca (1-28)",
-            "status_label": "Status",
-            "cycle_label": "Cykl rozliczeniowy",
-            "period_label": "Bieżący okres",
-            "update_button": "Aktualizuj subskrypcję",
-            "updated_message": "Subskrypcja zaktualizowana."
-        },
-        "admin": {
-            "description": "Zarządzaj użytkownikami i ustawieniami systemu.",
-            "form_title": "Dezaktywacja użytkownika",
-            "deactivate_button": "Dezaktywuj użytkownika",
-            "email_placeholder": "user.email@example.com",
-            "deactivated_message": "Użytkownik dezaktywowany:"
+            "uploaded_documents_count": "{count, plural, =0 {Noch keine hochgeladenen Dokumente.} one {# hochgeladenes Dokument} other {# hochgeladene Dokumente}}",
+            "review_queue_count": "{count, plural, =0 {Aktuell sind keine Dokumente zur manuellen OCR-Prüfung offen.} one {# Dokument benötigt eine manuelle OCR-Prüfung.} other {# Dokumente benötigen eine manuelle OCR-Prüfung.}}"
         }
     }
 }
 
+DEFAULT_LOCALE = "en-GB"
+SUPPORTED_LOCALE_METADATA: dict[str, dict[str, Optional[str]]] = {
+    "en-GB": {"native_name": "English (UK)", "fallback_locale": None, "status": "translated"},
+    "de-DE": {"native_name": "Deutsch (Deutschland)", "fallback_locale": DEFAULT_LOCALE, "status": "translated"},
+    "ru-RU": {"native_name": "Русский", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "uk-UA": {"native_name": "Українська", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "pl-PL": {"native_name": "Polski", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "ro-MD": {"native_name": "Română (Moldova)", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "tr-TR": {"native_name": "Türkçe", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "hu-HU": {"native_name": "Magyar", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+}
+
+LOCALE_FORMAT_STANDARDS: dict[str, dict[str, object]] = {
+    "en-GB": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/London",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "de-DE": {
+        "default_currency": "EUR",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Berlin",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "ru-RU": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/London",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "uk-UA": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/London",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "pl-PL": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Warsaw",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "ro-MD": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Chisinau",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "tr-TR": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Istanbul",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+    "hu-HU": {
+        "default_currency": "GBP",
+        "date_style": "medium",
+        "time_style": "short",
+        "time_zone": "Europe/Budapest",
+        "number_min_fraction_digits": 0,
+        "number_max_fraction_digits": 2,
+    },
+}
+
+DEFAULT_CATALOG_ROOT = FsPath(__file__).resolve().parents[1] / "catalogs"
+CATALOG_ROOT = FsPath(os.getenv("LOCALIZATION_CATALOG_DIR", str(DEFAULT_CATALOG_ROOT)))
+
+
+def _normalize_translation_namespaces(payload: dict[str, object]) -> dict[str, dict[str, str]]:
+    normalized: dict[str, dict[str, str]] = {}
+    for namespace, namespace_values in payload.items():
+        if not isinstance(namespace, str) or not isinstance(namespace_values, dict):
+            continue
+        key_values: dict[str, str] = {}
+        for key, value in namespace_values.items():
+            if isinstance(key, str) and isinstance(value, str):
+                key_values[key] = value
+        if key_values:
+            normalized[namespace] = key_values
+    return normalized
+
+
+def _load_catalog_json(path: FsPath) -> dict[str, object] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _load_catalog_configuration(
+    catalog_root: FsPath,
+) -> tuple[str, dict[str, dict[str, Optional[str]]], dict[str, dict[str, dict[str, str]]]] | None:
+    locales_payload = _load_catalog_json(catalog_root / "locales.json")
+    if locales_payload is None:
+        return None
+
+    default_locale_raw = locales_payload.get("default_locale")
+    locales_metadata_raw = locales_payload.get("locales")
+    if not isinstance(default_locale_raw, str) or not isinstance(locales_metadata_raw, dict):
+        return None
+
+    locales_metadata: dict[str, dict[str, Optional[str]]] = {}
+    for locale_code, metadata in locales_metadata_raw.items():
+        if not isinstance(locale_code, str) or not isinstance(metadata, dict):
+            continue
+        fallback_locale_raw = metadata.get("fallback_locale")
+        fallback_locale = fallback_locale_raw if isinstance(fallback_locale_raw, str) else None
+        locales_metadata[locale_code] = {
+            "native_name": str(metadata.get("native_name") or locale_code),
+            "fallback_locale": fallback_locale,
+            "status": str(metadata.get("status") or "fallback_en_gb"),
+        }
+
+    if default_locale_raw not in locales_metadata:
+        return None
+
+    translations: dict[str, dict[str, dict[str, str]]] = {}
+    translations_dir = catalog_root / "translations"
+    for locale_code in locales_metadata:
+        locale_payload = _load_catalog_json(translations_dir / f"{locale_code}.json")
+        if locale_payload is None:
+            continue
+        translations[locale_code] = _normalize_translation_namespaces(locale_payload)
+
+    if default_locale_raw not in translations:
+        return None
+
+    return default_locale_raw, locales_metadata, translations
+
+
+if catalog_config := _load_catalog_configuration(CATALOG_ROOT):
+    DEFAULT_LOCALE, SUPPORTED_LOCALE_METADATA, fake_translations_db = catalog_config
+
+
+class SupportedLocale(BaseModel):
+    code: str
+    native_name: str
+    fallback_locale: Optional[str] = None
+    status: str
+
+
+class LocaleFormatStandards(BaseModel):
+    locale: str
+    default_currency: str
+    date_style: str
+    time_style: str
+    time_zone: str
+    number_min_fraction_digits: int
+    number_max_fraction_digits: int
+
+
+class TranslationLocaleHealth(BaseModel):
+    code: str
+    status: str
+    total_reference_keys: int
+    localized_keys: int
+    fallback_keys: int
+    estimated_fallback_hit_rate_percent: float
+    fully_untranslated_namespaces_count: int
+    partially_translated_namespaces_count: int
+    missing_key_count: int
+    missing_key_samples: list[str]
+
+
+class TranslationHealthSummary(BaseModel):
+    total_locales: int
+    locales_with_fallback: int
+    average_fallback_hit_rate_percent: float
+    highest_fallback_locale: Optional[str] = None
+    highest_fallback_hit_rate_percent: float
+
+
+class TranslationHealthResponse(BaseModel):
+    generated_at: datetime.datetime
+    default_locale: str
+    reference_total_keys: int
+    locales: list[TranslationLocaleHealth]
+    summary: TranslationHealthSummary
+
+
+class LocaleRoadmapItem(BaseModel):
+    code: str
+    native_name: str
+    status: str
+    fallback_locale: Optional[str] = None
+    translation_coverage_percent: float
+    rollout_stage: Literal["production_ready", "beta", "planning"]
+    default_currency: str
+    time_zone: str
+    recommended_next_step: str
+
+
+class LocaleRoadmapResponse(BaseModel):
+    generated_at: datetime.datetime
+    default_locale: str
+    items: list[LocaleRoadmapItem]
+
+
+def _merge_locale_data(base: Dict[str, Dict[str, str]], override: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+    merged = deepcopy(base)
+    for namespace, namespace_values in override.items():
+        if namespace not in merged:
+            merged[namespace] = {}
+        merged[namespace].update(namespace_values)
+    return merged
+
+
+def _resolve_locale_data(locale: str) -> Dict[str, Dict[str, str]] | None:
+    locale_metadata = SUPPORTED_LOCALE_METADATA.get(locale)
+    if locale_metadata is None:
+        return None
+
+    base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
+    resolved = deepcopy(base_locale_data)
+    locale_specific = fake_translations_db.get(locale)
+    if locale_specific:
+        resolved = _merge_locale_data(resolved, locale_specific)
+    return resolved
+
+
+def _collect_namespace_key_map(data: Dict[str, Dict[str, str]]) -> dict[str, set[str]]:
+    namespace_map: dict[str, set[str]] = {}
+    for namespace, namespace_values in data.items():
+        if not isinstance(namespace_values, dict):
+            continue
+        namespace_map[namespace] = set(namespace_values.keys())
+    return namespace_map
+
+
+def _flatten_keys(namespace_map: dict[str, set[str]]) -> set[str]:
+    flattened: set[str] = set()
+    for namespace, keys in namespace_map.items():
+        for key in keys:
+            flattened.add(f"{namespace}.{key}")
+    return flattened
+
+
+def _build_locale_health(
+    *,
+    locale: str,
+    base_namespace_map: dict[str, set[str]],
+    reference_keys: set[str],
+) -> TranslationLocaleHealth:
+    locale_metadata = SUPPORTED_LOCALE_METADATA.get(locale, {})
+    locale_specific_data = fake_translations_db.get(locale, {})
+    locale_namespace_map = _collect_namespace_key_map(locale_specific_data)
+    locale_specific_keys = _flatten_keys(locale_namespace_map)
+    localized_reference_keys = reference_keys.intersection(locale_specific_keys)
+    missing_reference_keys = sorted(reference_keys - localized_reference_keys)
+    total_reference_keys = len(reference_keys)
+    fallback_keys = len(missing_reference_keys)
+    fallback_hit_rate = round((fallback_keys / total_reference_keys) * 100, 1) if total_reference_keys else 0.0
+
+    fully_untranslated_namespaces_count = sum(
+        1 for namespace in base_namespace_map if namespace not in locale_namespace_map
+    )
+    partially_translated_namespaces_count = 0
+    for namespace, base_keys in base_namespace_map.items():
+        locale_keys = locale_namespace_map.get(namespace, set())
+        if locale_keys and not base_keys.issubset(locale_keys):
+            partially_translated_namespaces_count += 1
+
+    return TranslationLocaleHealth(
+        code=locale,
+        status=str(locale_metadata.get("status") or "fallback_en_gb"),
+        total_reference_keys=total_reference_keys,
+        localized_keys=len(localized_reference_keys),
+        fallback_keys=fallback_keys,
+        estimated_fallback_hit_rate_percent=fallback_hit_rate,
+        fully_untranslated_namespaces_count=fully_untranslated_namespaces_count,
+        partially_translated_namespaces_count=partially_translated_namespaces_count,
+        missing_key_count=fallback_keys,
+        missing_key_samples=missing_reference_keys[:25],
+    )
+
+
+def _resolve_locale_format_standards(locale: str) -> LocaleFormatStandards | None:
+    if locale not in SUPPORTED_LOCALE_METADATA:
+        return None
+    standards = LOCALE_FORMAT_STANDARDS.get(locale) or LOCALE_FORMAT_STANDARDS.get(DEFAULT_LOCALE)
+    if standards is None:
+        return None
+    return LocaleFormatStandards(
+        locale=locale,
+        default_currency=str(standards.get("default_currency") or "GBP"),
+        date_style=str(standards.get("date_style") or "medium"),
+        time_style=str(standards.get("time_style") or "short"),
+        time_zone=str(standards.get("time_zone") or "Europe/London"),
+        number_min_fraction_digits=int(standards.get("number_min_fraction_digits") or 0),
+        number_max_fraction_digits=int(standards.get("number_max_fraction_digits") or 2),
+    )
+
+
+def _build_locale_roadmap_item(
+    *,
+    locale: str,
+    locale_health: TranslationLocaleHealth,
+) -> LocaleRoadmapItem:
+    metadata = SUPPORTED_LOCALE_METADATA.get(locale, {})
+    native_name = str(metadata.get("native_name") or locale)
+    fallback_locale = metadata.get("fallback_locale")
+    standards = _resolve_locale_format_standards(locale) or _resolve_locale_format_standards(DEFAULT_LOCALE)
+    default_currency = standards.default_currency if standards else "GBP"
+    time_zone = standards.time_zone if standards else "Europe/London"
+    coverage_percent = (
+        round((locale_health.localized_keys / locale_health.total_reference_keys) * 100, 1)
+        if locale_health.total_reference_keys
+        else 100.0
+    )
+    if locale_health.fallback_keys == 0 and str(metadata.get("status")) == "translated":
+        rollout_stage = "production_ready"
+        next_step = "Maintain translation freshness and monitor fallback hit-rate drift."
+    elif coverage_percent >= 60.0:
+        rollout_stage = "beta"
+        next_step = "Complete remaining high-traffic namespaces before production rollout."
+    else:
+        rollout_stage = "planning"
+        next_step = "Prioritize core onboarding, dashboard, and submission namespaces first."
+
+    return LocaleRoadmapItem(
+        code=locale,
+        native_name=native_name,
+        status=str(metadata.get("status") or "fallback_en_gb"),
+        fallback_locale=fallback_locale,
+        translation_coverage_percent=coverage_percent,
+        rollout_stage=rollout_stage,
+        default_currency=default_currency,
+        time_zone=time_zone,
+        recommended_next_step=next_step,
+    )
+
 # --- Endpoints ---
+
+@app.get(
+    "/translations/locales",
+    response_model=list[SupportedLocale],
+    summary="List supported locales and fallback policy"
+)
+async def list_supported_locales():
+    return [
+        SupportedLocale(
+            code=code,
+            native_name=str(metadata.get("native_name") or code),
+            fallback_locale=metadata.get("fallback_locale"),
+            status=str(metadata.get("status") or "fallback_en_gb"),
+        )
+        for code, metadata in SUPPORTED_LOCALE_METADATA.items()
+    ]
+
+
+@app.get(
+    "/translations/health",
+    response_model=TranslationHealthResponse,
+    summary="Get translation health telemetry across locales"
+)
+async def get_translation_health():
+    base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
+    base_namespace_map = _collect_namespace_key_map(base_locale_data)
+    reference_keys = _flatten_keys(base_namespace_map)
+    locale_health_rows = [
+        _build_locale_health(
+            locale=locale_code,
+            base_namespace_map=base_namespace_map,
+            reference_keys=reference_keys,
+        )
+        for locale_code in SUPPORTED_LOCALE_METADATA
+    ]
+    locale_health_rows.sort(key=lambda item: item.code)
+
+    total_locales = len(locale_health_rows)
+    locales_with_fallback = sum(1 for row in locale_health_rows if row.fallback_keys > 0)
+    average_fallback = (
+        round(
+            sum(row.estimated_fallback_hit_rate_percent for row in locale_health_rows) / total_locales,
+            1,
+        )
+        if total_locales
+        else 0.0
+    )
+    highest = max(
+        locale_health_rows,
+        key=lambda row: row.estimated_fallback_hit_rate_percent,
+        default=None,
+    )
+
+    return TranslationHealthResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        default_locale=DEFAULT_LOCALE,
+        reference_total_keys=len(reference_keys),
+        locales=locale_health_rows,
+        summary=TranslationHealthSummary(
+            total_locales=total_locales,
+            locales_with_fallback=locales_with_fallback,
+            average_fallback_hit_rate_percent=average_fallback,
+            highest_fallback_locale=highest.code if highest else None,
+            highest_fallback_hit_rate_percent=highest.estimated_fallback_hit_rate_percent if highest else 0.0,
+        ),
+    )
+
+
+@app.get(
+    "/translations/locales/roadmap",
+    response_model=LocaleRoadmapResponse,
+    summary="Get locale rollout roadmap for international expansion"
+)
+async def get_locale_rollout_roadmap():
+    base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
+    base_namespace_map = _collect_namespace_key_map(base_locale_data)
+    reference_keys = _flatten_keys(base_namespace_map)
+    locale_rows = [
+        _build_locale_health(
+            locale=locale_code,
+            base_namespace_map=base_namespace_map,
+            reference_keys=reference_keys,
+        )
+        for locale_code in SUPPORTED_LOCALE_METADATA
+    ]
+    roadmap_items = [
+        _build_locale_roadmap_item(locale=row.code, locale_health=row)
+        for row in sorted(locale_rows, key=lambda item: item.code)
+    ]
+    return LocaleRoadmapResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        default_locale=DEFAULT_LOCALE,
+        items=roadmap_items,
+    )
+
+
+@app.get(
+    "/translations/{locale}/format-standards",
+    response_model=LocaleFormatStandards,
+    summary="Get ICU/pluralization formatting standards for locale"
+)
+async def get_locale_format_standards(locale: str = Path(..., example="en-GB")):
+    if standards := _resolve_locale_format_standards(locale):
+        return standards
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Formatting standards for locale '{locale}' not found."
+    )
+
+
+@app.get(
+    "/translations/{locale}/all",
+    response_model=Dict[str, Dict[str, str]],
+    summary="Get all translations for a locale"
+)
+async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB")):
+    """
+    Retrieves all translation namespaces for a given locale.
+    This is useful for loading all strings for a single-page application.
+    """
+    if locale_data := _resolve_locale_data(locale):
+        return locale_data
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Translations for locale '{locale}' not found."
+    )
+
 
 @app.get(
     "/translations/{locale}/{component}",
@@ -1126,29 +742,11 @@ async def get_translations_by_component(
     """
     Retrieves a key-value map for a given locale and component.
     """
-    if locale_data := fake_translations_db.get(locale):
-        if component_data := locale_data.get(component):
-            return component_data
+    locale_data = _resolve_locale_data(locale)
+    if locale_data and (component_data := locale_data.get(component)):
+        return component_data
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Translations for locale '{locale}' and component '{component}' not found."
-    )
-
-@app.get(
-    "/translations/{locale}/all",
-    response_model=Dict[str, Dict[str, str]],
-    summary="Get all translations for a locale"
-)
-async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB")):
-    """
-    Retrieves all translation namespaces for a given locale.
-    This is useful for loading all strings for a single-page application.
-    """
-    if locale_data := fake_translations_db.get(locale):
-        return locale_data
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Translations for locale '{locale}' not found."
     )

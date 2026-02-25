@@ -1,97 +1,42 @@
-from typing import Annotated, Any, Dict, List, Literal, Optional, Union
-from enum import Enum
-from datetime import datetime, timedelta, timezone
-import os
-import json
-import uuid
-import time
-import threading
-import asyncio
-from collections import defaultdict
-
-from fastapi import Depends, FastAPI, HTTPException, status, Header, BackgroundTasks
-from fastapi.security import OAuth2PasswordBearer
-from fastapi.responses import StreamingResponse, FileResponse
-from jose import JWTError, jwt
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
+from typing import Literal, Optional, Dict, Any, List
+import uuid
+import datetime
+import os
+import sys
+import csv
+from pathlib import Path
+import httpx
+from collections import defaultdict, deque
+from fastapi.responses import StreamingResponse
+from fpdf import FPDF
+import io
 
-# Optional ML and data processing imports
-try:
-    import pandas as pd
-    import numpy as np
-    PANDAS_AVAILABLE = True
-except ImportError:
-    PANDAS_AVAILABLE = False
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
-try:
-    import sqlite3
-    SQLITE_AVAILABLE = True
-except ImportError:
-    SQLITE_AVAILABLE = False
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import get_json_with_retry
+from .mortgage_requirements import (
+    EMPLOYMENT_PROFILE_METADATA,
+    LENDER_PROFILE_METADATA,
+    MORTGAGE_TYPE_METADATA,
+    build_mortgage_evidence_quality_checks,
+    build_mortgage_document_checklist,
+    build_mortgage_lender_fit_snapshot,
+    build_mortgage_pack_index,
+    build_mortgage_refresh_reminders,
+    build_mortgage_readiness_assessment,
+    build_mortgage_readiness_matrix,
+    build_mortgage_submission_gate,
+)
 
-try:
-    import httpx
-    HTTPX_AVAILABLE = True
-except ImportError:
-    HTTPX_AVAILABLE = False
-
-try:
-    from fpdf import FPDF
-    import io
-    PDF_AVAILABLE = True
-except ImportError:
-    PDF_AVAILABLE = False
-
-# --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
-ANALYTICS_DB_PATH = os.getenv("ANALYTICS_DB_PATH", "/tmp/analytics.db")
-ANALYTICS_JOB_DURATION_SECONDS = float(os.getenv("ANALYTICS_JOB_DURATION_SECONDS", "0.2"))
-
-# --- API Marketplace Configuration ---
-API_MARKETPLACE_ENABLED = os.getenv("API_MARKETPLACE_ENABLED", "true").lower() == "true"
-
-# --- Valid API keys for marketplace partners ---
-API_MARKETPLACE_KEYS = {
-    "fintech_partner_1": {
-        "name": "MoneyFlow Analytics Ltd",
-        "tier": "premium",
-        "rate_limit": 1000,  # requests per hour
-        "allowed_endpoints": ["cash_flow", "insights", "forecasting"],
-        "monthly_fee": 299.0
-    },
-    "accounting_firm_2": {
-        "name": "TaxPro Solutions",
-        "tier": "enterprise", 
-        "rate_limit": 5000,
-        "allowed_endpoints": ["*"],  # All endpoints
-        "monthly_fee": 899.0
-    },
-    "bank_integration_3": {
-        "name": "OpenBanking Aggregator Co",
-        "tier": "standard",
-        "rate_limit": 500,
-        "allowed_endpoints": ["basic_insights"],
-        "monthly_fee": 149.0
-    }
-}
-
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-    return user_id
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 app = FastAPI(
     title="SelfMonitor Advanced Analytics & ML Pipeline",
@@ -99,7 +44,96 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# --- Enhanced ML & Analytics Models ---
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        return default
+    return parsed_value if parsed_value > 0 else default
+
+
+def _parse_non_negative_float_env(name: str, default: float) -> float:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        parsed_value = float(raw_value)
+    except ValueError:
+        return default
+    return parsed_value if parsed_value >= 0 else default
+
+
+def _parse_bool_env(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _parse_percentage_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return max(0, min(100, default))
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        return max(0, min(100, default))
+    return max(0, min(100, parsed_value))
+
+
+def _parse_csv_set_env(name: str, default: str) -> set[str]:
+    raw_value = os.getenv(name, default)
+    return {item.strip() for item in raw_value.split(",") if item.strip()}
+
+
+DOCUMENTS_SERVICE_URL = os.getenv("DOCUMENTS_SERVICE_URL", "http://documents-service/documents")
+USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://user-profile-service/profiles/me")
+MOBILE_ANALYTICS_INGEST_API_KEY = os.getenv("MOBILE_ANALYTICS_INGEST_API_KEY", "").strip()
+MOBILE_ANALYTICS_MAX_EVENTS = max(100, _parse_positive_int_env("MOBILE_ANALYTICS_MAX_EVENTS", 5000))
+MOBILE_ONBOARDING_EXPERIMENT_ID = os.getenv("MOBILE_ONBOARDING_EXPERIMENT_ID", "mobile-onboarding-v1")
+MOBILE_ONBOARDING_FORCE_VARIANT_ID = os.getenv("MOBILE_ONBOARDING_FORCE_VARIANT_ID", "").strip() or None
+MOBILE_ONBOARDING_EXPERIMENT_ENABLED = _parse_bool_env("MOBILE_ONBOARDING_EXPERIMENT_ENABLED", True)
+MOBILE_ONBOARDING_ROLLBACK_TO_CONTROL = _parse_bool_env("MOBILE_ONBOARDING_ROLLBACK_TO_CONTROL", False)
+MOBILE_ONBOARDING_ROLLOUT_PERCENT = _parse_percentage_int_env("MOBILE_ONBOARDING_ROLLOUT_PERCENT", 100)
+MOBILE_SPLASH_TITLE = os.getenv("MOBILE_SPLASH_TITLE", "SelfMonitor")
+MOBILE_SPLASH_SUBTITLE = os.getenv(
+    "MOBILE_SPLASH_SUBTITLE",
+    "World-class finance copilot for UK self-employed.",
+)
+MOBILE_SPLASH_GRADIENT = os.getenv(
+    "MOBILE_SPLASH_GRADIENT",
+    "#0b1120,#1e3a8a,#3b82f6",
+)
+MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT",
+    99.5,
+)
+MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT",
+    65.0,
+)
+MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT",
+    80.0,
+)
+MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT = _parse_non_negative_float_env(
+    "MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT",
+    45.0,
+)
+MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS = _parse_positive_int_env(
+    "MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS",
+    20,
+)
+MOBILE_GO_LIVE_CRASH_EVENT_NAMES = _parse_csv_set_env(
+    "MOBILE_GO_LIVE_CRASH_EVENT_NAMES",
+    "mobile.app.crash,mobile.runtime.fatal,mobile.runtime.crash",
+)
+
+# --- Models ---
 
 class MLModelType(str, Enum):
     """Supported ML model types for enterprise analytics"""
@@ -268,9 +302,558 @@ class JobStatus(BaseModel):
     finished_at: Optional[datetime.datetime] = None
     result: Optional[Dict[str, Any]] = None
 
-# --- Database for jobs ---
-db_lock = threading.Lock()
 
+DEFAULT_MOBILE_ONBOARDING_VARIANTS: list[dict[str, Any]] = [
+    {
+        "id": "velocity",
+        "title": "Start in minutes",
+        "subtitle": "Connect finances, scan receipts, and stay ahead of tax/reporting deadlines.",
+        "ctaLabel": "Start now",
+        "features": [
+            "Fast receipt scan and smart categorisation",
+            "HMRC and invoice reminder push alerts",
+            "Mobile-first control center for your business",
+        ],
+        "gradient": ["#1d4ed8", "#312e81", "#020617"],
+        "weight": 1,
+    },
+    {
+        "id": "security",
+        "title": "Fintech-grade security",
+        "subtitle": "Secure sessions and biometric unlock by default for account protection.",
+        "ctaLabel": "Enable protection",
+        "features": [
+            "Face/Touch/Fingerprint unlock support",
+            "Secure session storage on device",
+            "Controlled push deep-link routing",
+        ],
+        "gradient": ["#0f172a", "#1e3a8a", "#1d4ed8"],
+        "weight": 1,
+    },
+    {
+        "id": "investor",
+        "title": "Clarity for growth",
+        "subtitle": "Track billing, costs, and readiness metrics in one premium mobile experience.",
+        "ctaLabel": "Open dashboard",
+        "features": [
+            "Recurring invoices and reminder operations",
+            "Mortgage/readiness document workflows",
+            "KPI-focused operating cadence",
+        ],
+        "gradient": ["#1e3a8a", "#1d4ed8", "#0f172a"],
+        "weight": 1,
+    },
+]
+
+
+class MobileAnalyticsEventIngestRequest(BaseModel):
+    event: str = Field(min_length=1, max_length=120)
+    source: str = Field(default="mobile-app", min_length=1, max_length=40)
+    platform: str = Field(default="unknown", min_length=2, max_length=32)
+    occurred_at: Optional[datetime.datetime] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileAnalyticsEventRecord(BaseModel):
+    event_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    event: str
+    source: str
+    platform: str
+    occurred_at: datetime.datetime
+    received_at: datetime.datetime
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class MobileAnalyticsIngestResponse(BaseModel):
+    accepted: bool
+    stored_events: int
+
+
+class MobileOnboardingVariantConfig(BaseModel):
+    id: str
+    title: str
+    subtitle: str
+    ctaLabel: str
+    features: list[str]
+    gradient: list[str]
+    weight: int = 1
+
+
+class MobileOnboardingExperimentConfig(BaseModel):
+    experimentId: str
+    enabled: bool = True
+    rollbackToControl: bool = False
+    rolloutPercent: int = Field(default=100, ge=0, le=100)
+    controlVariantId: Optional[str] = None
+    forceVariantId: Optional[str] = None
+    variants: list[MobileOnboardingVariantConfig]
+
+
+class MobileSplashConfig(BaseModel):
+    title: str
+    subtitle: str
+    gradient: list[str]
+
+
+class MobileRemoteConfigResponse(BaseModel):
+    generated_at: datetime.datetime
+    splash: MobileSplashConfig
+    onboardingExperiment: MobileOnboardingExperimentConfig
+
+
+class MobileVariantFunnelPoint(BaseModel):
+    variant_id: str
+    impressions: int
+    cta_taps: int
+    completions: int
+    completion_rate_percent: Optional[float] = None
+
+
+class MobileAnalyticsFunnelResponse(BaseModel):
+    window_days: int
+    generated_at: datetime.datetime
+    total_events: int
+    splash_impressions: int
+    splash_dismissed: int
+    onboarding_impressions: int
+    onboarding_cta_taps: int
+    onboarding_completions: int
+    biometric_gate_shown: int
+    biometric_successes: int
+    push_permission_prompted: int
+    push_permission_granted: int
+    push_deep_link_opened: int
+    splash_to_onboarding_rate_percent: Optional[float] = None
+    onboarding_completion_rate_percent: Optional[float] = None
+    cta_to_completion_rate_percent: Optional[float] = None
+    biometric_success_rate_percent: Optional[float] = None
+    push_opt_in_rate_percent: Optional[float] = None
+    variants: list[MobileVariantFunnelPoint] = Field(default_factory=list)
+
+
+class MobileWeeklyKpiChecklistItem(BaseModel):
+    id: str
+    description: str
+    status: Literal["healthy", "attention_needed"]
+    owner: str
+
+
+class MobileAnalyticsWeeklySnapshot(BaseModel):
+    snapshot_id: uuid.UUID = Field(default_factory=uuid.uuid4)
+    generated_at: datetime.datetime
+    window_days: int
+    funnel: MobileAnalyticsFunnelResponse
+    recommended_actions: list[str]
+    checklist: list[MobileWeeklyKpiChecklistItem]
+
+
+class MobileAnalyticsWeeklySnapshotListResponse(BaseModel):
+    total_snapshots: int
+    items: list[MobileAnalyticsWeeklySnapshot]
+
+
+class MobileAnalyticsWeeklyCadenceResponse(BaseModel):
+    generated_at: datetime.datetime
+    window_days: int
+    funnel: MobileAnalyticsFunnelResponse
+    recommended_actions: list[str]
+    checklist: list[MobileWeeklyKpiChecklistItem]
+
+
+class MobileGoLiveGateResponse(BaseModel):
+    generated_at: datetime.datetime
+    window_days: int
+    unique_active_installations: int
+    crashing_installations: int
+    crash_events: int
+    crash_free_rate_percent: Optional[float] = None
+    required_crash_free_rate_percent: float
+    onboarding_completion_rate_percent: Optional[float] = None
+    required_onboarding_completion_rate_percent: float
+    biometric_success_rate_percent: Optional[float] = None
+    required_biometric_success_rate_percent: float
+    push_opt_in_rate_percent: Optional[float] = None
+    required_push_opt_in_rate_percent: float
+    onboarding_impressions: int
+    minimum_onboarding_impressions: int
+    sample_size_passed: bool
+    crash_free_passed: bool
+    onboarding_passed: bool
+    biometric_passed: bool
+    push_opt_in_passed: bool
+    gate_passed: bool
+    blockers: list[str]
+    recommended_actions: list[str]
+
+
+def _normalize_gradient_triplet(raw_gradient: str) -> list[str]:
+    colors = [item.strip() for item in raw_gradient.split(",") if item.strip()]
+    if len(colors) < 3:
+        return ["#0b1120", "#1e3a8a", "#3b82f6"]
+    return colors[:3]
+
+
+def _build_mobile_remote_config_payload() -> MobileRemoteConfigResponse:
+    variants = [
+        MobileOnboardingVariantConfig(
+            id=str(item["id"]),
+            title=str(item["title"]),
+            subtitle=str(item["subtitle"]),
+            ctaLabel=str(item["ctaLabel"]),
+            features=[str(feature) for feature in item.get("features", [])],
+            gradient=[str(color) for color in item.get("gradient", [])][:3],
+            weight=int(item.get("weight", 1)),
+        )
+        for item in DEFAULT_MOBILE_ONBOARDING_VARIANTS
+    ]
+    control_variant_id = variants[0].id if variants else None
+    return MobileRemoteConfigResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        splash=MobileSplashConfig(
+            title=MOBILE_SPLASH_TITLE,
+            subtitle=MOBILE_SPLASH_SUBTITLE,
+            gradient=_normalize_gradient_triplet(MOBILE_SPLASH_GRADIENT),
+        ),
+        onboardingExperiment=MobileOnboardingExperimentConfig(
+            experimentId=MOBILE_ONBOARDING_EXPERIMENT_ID,
+            enabled=MOBILE_ONBOARDING_EXPERIMENT_ENABLED,
+            rollbackToControl=MOBILE_ONBOARDING_ROLLBACK_TO_CONTROL,
+            rolloutPercent=MOBILE_ONBOARDING_ROLLOUT_PERCENT,
+            controlVariantId=control_variant_id,
+            forceVariantId=MOBILE_ONBOARDING_FORCE_VARIANT_ID,
+            variants=variants,
+        ),
+    )
+
+
+def _require_mobile_analytics_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> None:
+    if MOBILE_ANALYTICS_INGEST_API_KEY and x_api_key != MOBILE_ANALYTICS_INGEST_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid analytics API key",
+        )
+
+
+def _safe_percent(numerator: int, denominator: int) -> Optional[float]:
+    if denominator <= 0:
+        return None
+    return round((numerator / denominator) * 100, 2)
+
+
+def _extract_variant_id(metadata: Dict[str, Any]) -> Optional[str]:
+    candidate = metadata.get("onboarding_variant")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate.strip()
+    return None
+
+
+def _extract_installation_id(metadata: Dict[str, Any]) -> Optional[str]:
+    candidate = metadata.get("installation_id")
+    if isinstance(candidate, str) and candidate.strip():
+        return candidate.strip()
+    return None
+
+
+def _collect_mobile_window_events(
+    *,
+    days: int,
+    now_utc: Optional[datetime.datetime] = None,
+) -> tuple[datetime.datetime, list[MobileAnalyticsEventRecord]]:
+    reference_now = now_utc or datetime.datetime.now(datetime.UTC)
+    cutoff = reference_now - datetime.timedelta(days=days)
+    return reference_now, [event for event in mobile_analytics_events if event.occurred_at >= cutoff]
+
+
+def _build_mobile_funnel_response(
+    *,
+    days: int,
+    now_utc: Optional[datetime.datetime] = None,
+) -> MobileAnalyticsFunnelResponse:
+    generated_at, window_events = _collect_mobile_window_events(days=days, now_utc=now_utc)
+
+    def count(event_name: str) -> int:
+        return sum(1 for item in window_events if item.event == event_name)
+
+    splash_impressions = count("mobile.splash.impression")
+    splash_dismissed = count("mobile.splash.dismissed")
+    onboarding_impressions = count("mobile.onboarding.impression")
+    onboarding_cta_taps = count("mobile.onboarding.cta_tapped")
+    onboarding_completions = count("mobile.onboarding.completed")
+    biometric_gate_shown = count("mobile.biometric.gate_shown")
+    biometric_successes = count("mobile.biometric.challenge_succeeded")
+    push_permission_prompted = count("mobile.push.permission_prompted")
+    push_permission_granted = count("mobile.push.permission_granted")
+    push_deep_link_opened = count("mobile.push.deep_link_opened") + count("mobile.push.deep_link_cold_start")
+
+    variant_buckets: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"impressions": 0, "cta_taps": 0, "completions": 0}
+    )
+    for item in window_events:
+        variant_id = _extract_variant_id(item.metadata)
+        if not variant_id:
+            continue
+        if item.event == "mobile.onboarding.impression":
+            variant_buckets[variant_id]["impressions"] += 1
+        elif item.event == "mobile.onboarding.cta_tapped":
+            variant_buckets[variant_id]["cta_taps"] += 1
+        elif item.event == "mobile.onboarding.completed":
+            variant_buckets[variant_id]["completions"] += 1
+
+    variant_points = [
+        MobileVariantFunnelPoint(
+            variant_id=variant_id,
+            impressions=bucket["impressions"],
+            cta_taps=bucket["cta_taps"],
+            completions=bucket["completions"],
+            completion_rate_percent=_safe_percent(bucket["completions"], bucket["impressions"]),
+        )
+        for variant_id, bucket in sorted(
+            variant_buckets.items(),
+            key=lambda item: item[1]["impressions"],
+            reverse=True,
+        )
+    ]
+
+    return MobileAnalyticsFunnelResponse(
+        window_days=days,
+        generated_at=generated_at,
+        total_events=len(window_events),
+        splash_impressions=splash_impressions,
+        splash_dismissed=splash_dismissed,
+        onboarding_impressions=onboarding_impressions,
+        onboarding_cta_taps=onboarding_cta_taps,
+        onboarding_completions=onboarding_completions,
+        biometric_gate_shown=biometric_gate_shown,
+        biometric_successes=biometric_successes,
+        push_permission_prompted=push_permission_prompted,
+        push_permission_granted=push_permission_granted,
+        push_deep_link_opened=push_deep_link_opened,
+        splash_to_onboarding_rate_percent=_safe_percent(onboarding_impressions, splash_impressions),
+        onboarding_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_impressions),
+        cta_to_completion_rate_percent=_safe_percent(onboarding_completions, onboarding_cta_taps),
+        biometric_success_rate_percent=_safe_percent(biometric_successes, biometric_gate_shown),
+        push_opt_in_rate_percent=_safe_percent(push_permission_granted, push_permission_prompted),
+        variants=variant_points,
+    )
+
+
+def _build_mobile_go_live_gate_response(
+    *,
+    days: int,
+    now_utc: Optional[datetime.datetime] = None,
+) -> MobileGoLiveGateResponse:
+    generated_at, window_events = _collect_mobile_window_events(days=days, now_utc=now_utc)
+    funnel = _build_mobile_funnel_response(days=days, now_utc=generated_at)
+
+    active_installations: set[str] = set()
+    crashing_installations: set[str] = set()
+    crash_events = 0
+    for item in window_events:
+        installation_id = _extract_installation_id(item.metadata)
+        if installation_id:
+            active_installations.add(installation_id)
+        if item.event in MOBILE_GO_LIVE_CRASH_EVENT_NAMES:
+            crash_events += 1
+            if installation_id:
+                crashing_installations.add(installation_id)
+
+    unique_active_installations = len(active_installations)
+    if unique_active_installations > 0:
+        crash_installations_count = len(crashing_installations)
+        if crash_installations_count == 0 and crash_events > 0:
+            crash_installations_count = min(crash_events, unique_active_installations)
+        crash_free_rate_percent = round(
+            max(0.0, 100.0 - ((crash_installations_count / unique_active_installations) * 100.0)),
+            2,
+        )
+    else:
+        crash_installations_count = 0
+        crash_free_rate_percent = None
+
+    onboarding_completion = funnel.onboarding_completion_rate_percent
+    biometric_success = funnel.biometric_success_rate_percent
+    push_opt_in = funnel.push_opt_in_rate_percent
+
+    sample_size_passed = funnel.onboarding_impressions >= MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS
+    crash_free_passed = (
+        crash_free_rate_percent is not None
+        and crash_free_rate_percent >= MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT
+    )
+    onboarding_passed = (
+        onboarding_completion is not None
+        and onboarding_completion >= MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT
+    )
+    biometric_passed = (
+        biometric_success is not None
+        and biometric_success >= MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT
+    )
+    push_opt_in_passed = (
+        push_opt_in is not None
+        and push_opt_in >= MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT
+    )
+
+    blockers: list[str] = []
+    if not sample_size_passed:
+        blockers.append(
+            "Insufficient onboarding sample size for go-live decision "
+            f"({funnel.onboarding_impressions}/{MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS})."
+        )
+    if not crash_free_passed:
+        if crash_free_rate_percent is None:
+            blockers.append("No installation baseline found to evaluate crash-free rate.")
+        else:
+            blockers.append(
+                f"Crash-free rate below threshold ({crash_free_rate_percent:.2f}%/"
+                f"{MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT:.2f}%)."
+            )
+    if not onboarding_passed:
+        blockers.append(
+            "Onboarding completion rate below threshold "
+            f"({onboarding_completion if onboarding_completion is not None else 'n/a'}%/"
+            f"{MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT:.2f}%)."
+        )
+    if not biometric_passed:
+        blockers.append(
+            "Biometric success rate below threshold "
+            f"({biometric_success if biometric_success is not None else 'n/a'}%/"
+            f"{MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT:.2f}%)."
+        )
+    if not push_opt_in_passed:
+        blockers.append(
+            "Push opt-in rate below threshold "
+            f"({push_opt_in if push_opt_in is not None else 'n/a'}%/"
+            f"{MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT:.2f}%)."
+        )
+
+    gate_passed = all(
+        [
+            sample_size_passed,
+            crash_free_passed,
+            onboarding_passed,
+            biometric_passed,
+            push_opt_in_passed,
+        ]
+    )
+    recommended_actions = _build_mobile_weekly_recommended_actions(funnel)
+    if not gate_passed:
+        recommended_actions = [*blockers, *recommended_actions]
+
+    return MobileGoLiveGateResponse(
+        generated_at=generated_at,
+        window_days=days,
+        unique_active_installations=unique_active_installations,
+        crashing_installations=crash_installations_count,
+        crash_events=crash_events,
+        crash_free_rate_percent=crash_free_rate_percent,
+        required_crash_free_rate_percent=MOBILE_GO_LIVE_REQUIRED_CRASH_FREE_RATE_PERCENT,
+        onboarding_completion_rate_percent=onboarding_completion,
+        required_onboarding_completion_rate_percent=MOBILE_GO_LIVE_REQUIRED_ONBOARDING_COMPLETION_RATE_PERCENT,
+        biometric_success_rate_percent=biometric_success,
+        required_biometric_success_rate_percent=MOBILE_GO_LIVE_REQUIRED_BIOMETRIC_SUCCESS_RATE_PERCENT,
+        push_opt_in_rate_percent=push_opt_in,
+        required_push_opt_in_rate_percent=MOBILE_GO_LIVE_REQUIRED_PUSH_OPT_IN_RATE_PERCENT,
+        onboarding_impressions=funnel.onboarding_impressions,
+        minimum_onboarding_impressions=MOBILE_GO_LIVE_MIN_ONBOARDING_IMPRESSIONS,
+        sample_size_passed=sample_size_passed,
+        crash_free_passed=crash_free_passed,
+        onboarding_passed=onboarding_passed,
+        biometric_passed=biometric_passed,
+        push_opt_in_passed=push_opt_in_passed,
+        gate_passed=gate_passed,
+        blockers=blockers,
+        recommended_actions=recommended_actions,
+    )
+
+
+def _build_mobile_weekly_recommended_actions(funnel: MobileAnalyticsFunnelResponse) -> list[str]:
+    actions: list[str] = []
+    onboarding_completion = funnel.onboarding_completion_rate_percent
+    biometric_success = funnel.biometric_success_rate_percent
+    push_opt_in = funnel.push_opt_in_rate_percent
+    if onboarding_completion is None or onboarding_completion < 65:
+        actions.append(
+            "Onboarding completion below target (65%): review splash -> onboarding transition and CTA clarity."
+        )
+    if biometric_success is None or biometric_success < 80:
+        actions.append(
+            "Biometric success below target (80%): analyze device compatibility/errors and simplify unlock guidance."
+        )
+    if push_opt_in is None or push_opt_in < 45:
+        actions.append(
+            "Push opt-in below target (45%): tune permission timing and value messaging before prompt."
+        )
+    if not actions:
+        actions.append("Mobile funnel KPI targets are currently healthy for this window.")
+    return actions
+
+
+def _build_mobile_weekly_checklist(funnel: MobileAnalyticsFunnelResponse) -> list[MobileWeeklyKpiChecklistItem]:
+    onboarding_completion = funnel.onboarding_completion_rate_percent
+    biometric_success = funnel.biometric_success_rate_percent
+    push_opt_in = funnel.push_opt_in_rate_percent
+    return [
+        MobileWeeklyKpiChecklistItem(
+            id="onboarding_completion",
+            description="Onboarding completion rate >= 65%",
+            status="healthy" if onboarding_completion is not None and onboarding_completion >= 65 else "attention_needed",
+            owner="Product lead",
+        ),
+        MobileWeeklyKpiChecklistItem(
+            id="biometric_success",
+            description="Biometric challenge success rate >= 80%",
+            status="healthy" if biometric_success is not None and biometric_success >= 80 else "attention_needed",
+            owner="Security/Engineering owner",
+        ),
+        MobileWeeklyKpiChecklistItem(
+            id="push_opt_in",
+            description="Push permission opt-in rate >= 45%",
+            status="healthy" if push_opt_in is not None and push_opt_in >= 45 else "attention_needed",
+            owner="Growth owner",
+        ),
+    ]
+
+
+def _build_mobile_funnel_csv_payload(funnel: MobileAnalyticsFunnelResponse) -> str:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["metric", "value"])
+    writer.writerow(["window_days", funnel.window_days])
+    writer.writerow(["generated_at", funnel.generated_at.isoformat()])
+    writer.writerow(["total_events", funnel.total_events])
+    writer.writerow(["splash_impressions", funnel.splash_impressions])
+    writer.writerow(["splash_dismissed", funnel.splash_dismissed])
+    writer.writerow(["onboarding_impressions", funnel.onboarding_impressions])
+    writer.writerow(["onboarding_cta_taps", funnel.onboarding_cta_taps])
+    writer.writerow(["onboarding_completions", funnel.onboarding_completions])
+    writer.writerow(["biometric_gate_shown", funnel.biometric_gate_shown])
+    writer.writerow(["biometric_successes", funnel.biometric_successes])
+    writer.writerow(["push_permission_prompted", funnel.push_permission_prompted])
+    writer.writerow(["push_permission_granted", funnel.push_permission_granted])
+    writer.writerow(["push_deep_link_opened", funnel.push_deep_link_opened])
+    writer.writerow(["splash_to_onboarding_rate_percent", funnel.splash_to_onboarding_rate_percent])
+    writer.writerow(["onboarding_completion_rate_percent", funnel.onboarding_completion_rate_percent])
+    writer.writerow(["cta_to_completion_rate_percent", funnel.cta_to_completion_rate_percent])
+    writer.writerow(["biometric_success_rate_percent", funnel.biometric_success_rate_percent])
+    writer.writerow(["push_opt_in_rate_percent", funnel.push_opt_in_rate_percent])
+    writer.writerow([])
+    writer.writerow(["variant_id", "impressions", "cta_taps", "completions", "completion_rate_percent"])
+    for variant in funnel.variants:
+        writer.writerow(
+            [
+                variant.variant_id,
+                variant.impressions,
+                variant.cta_taps,
+                variant.completions,
+                variant.completion_rate_percent,
+            ]
+        )
+    return output.getvalue()
+
+# --- "Database" for jobs ---
+
+fake_jobs_db = {}
+mobile_analytics_events: deque[MobileAnalyticsEventRecord] = deque(maxlen=MOBILE_ANALYTICS_MAX_EVENTS)
+mobile_weekly_snapshots: deque[MobileAnalyticsWeeklySnapshot] = deque(maxlen=104)
 
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(ANALYTICS_DB_PATH, check_same_thread=False)
@@ -390,10 +973,7 @@ def run_job_worker(job_id: uuid.UUID):
 # --- Endpoints ---
 
 @app.post("/jobs", response_model=JobStatus, status_code=status.HTTP_202_ACCEPTED)
-async def trigger_job(
-    request: JobRequest,
-    user_id: str = Depends(get_current_user_id),
-):
+async def trigger_job(request: JobRequest, _user_id: str = Depends(get_current_user_id)):
     """
     Accepts a new job request and puts it into a 'pending' state.
     """
@@ -403,10 +983,7 @@ async def trigger_job(
     return new_job
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
-async def get_job_status(
-    job_id: uuid.UUID,
-    user_id: str = Depends(get_current_user_id),
-):
+async def get_job_status(job_id: uuid.UUID, _user_id: str = Depends(get_current_user_id)):
     """
     Retrieves the status of a specific job.
     """
@@ -417,6 +994,140 @@ async def get_job_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     return job
+
+
+@app.get("/mobile/config", response_model=MobileRemoteConfigResponse)
+async def get_mobile_remote_config():
+    """
+    Returns remote configuration payload for branded splash and onboarding experiments.
+    """
+    return _build_mobile_remote_config_payload()
+
+
+@app.post("/mobile/analytics/events", response_model=MobileAnalyticsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_mobile_analytics_event(
+    request: MobileAnalyticsEventIngestRequest,
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Accepts a mobile analytics event for funnel analysis.
+    """
+    occurred_at = request.occurred_at or datetime.datetime.now(datetime.UTC)
+    if occurred_at.tzinfo is None:
+        occurred_at = occurred_at.replace(tzinfo=datetime.UTC)
+    else:
+        occurred_at = occurred_at.astimezone(datetime.UTC)
+
+    mobile_analytics_events.append(
+        MobileAnalyticsEventRecord(
+            event=request.event.strip(),
+            source=request.source.strip(),
+            platform=request.platform.strip().lower(),
+            occurred_at=occurred_at,
+            received_at=datetime.datetime.now(datetime.UTC),
+            metadata=request.metadata,
+        )
+    )
+    return MobileAnalyticsIngestResponse(accepted=True, stored_events=len(mobile_analytics_events))
+
+
+@app.get("/mobile/analytics/funnel", response_model=MobileAnalyticsFunnelResponse)
+async def get_mobile_analytics_funnel(
+    days: int = Query(default=14, ge=1, le=90),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Returns aggregate onboarding/security funnel metrics for the selected lookback window.
+    """
+    return _build_mobile_funnel_response(days=days)
+
+
+@app.get("/mobile/analytics/funnel/export")
+async def export_mobile_analytics_funnel(
+    days: int = Query(default=14, ge=1, le=90),
+    format: Literal["json", "csv"] = Query(default="json"),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Exports mobile funnel metrics for BI tooling (JSON or CSV).
+    """
+    funnel = _build_mobile_funnel_response(days=days)
+    if format == "json":
+        return funnel
+    csv_payload = _build_mobile_funnel_csv_payload(funnel)
+    filename = f"mobile_funnel_{funnel.generated_at.date().isoformat()}.csv"
+    return StreamingResponse(
+        io.BytesIO(csv_payload.encode("utf-8")),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+        },
+    )
+
+
+@app.post("/mobile/analytics/weekly-snapshot", response_model=MobileAnalyticsWeeklySnapshot)
+async def create_mobile_weekly_snapshot(
+    days: int = Query(default=7, ge=7, le=90),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Captures a weekly mobile funnel snapshot and stores it for operating cadence review.
+    """
+    funnel = _build_mobile_funnel_response(days=days)
+    snapshot = MobileAnalyticsWeeklySnapshot(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        window_days=days,
+        funnel=funnel,
+        recommended_actions=_build_mobile_weekly_recommended_actions(funnel),
+        checklist=_build_mobile_weekly_checklist(funnel),
+    )
+    mobile_weekly_snapshots.append(snapshot)
+    return snapshot
+
+
+@app.get("/mobile/analytics/weekly-snapshots", response_model=MobileAnalyticsWeeklySnapshotListResponse)
+async def list_mobile_weekly_snapshots(
+    limit: int = Query(default=12, ge=1, le=52),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Returns the most recent weekly mobile KPI snapshots.
+    """
+    items = list(mobile_weekly_snapshots)[-limit:]
+    items.reverse()
+    return MobileAnalyticsWeeklySnapshotListResponse(
+        total_snapshots=len(mobile_weekly_snapshots),
+        items=items,
+    )
+
+
+@app.get("/mobile/analytics/weekly-cadence", response_model=MobileAnalyticsWeeklyCadenceResponse)
+async def get_mobile_weekly_cadence_snapshot(
+    days: int = Query(default=7, ge=7, le=90),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Returns current-week mobile KPI cadence payload without persisting a snapshot.
+    """
+    funnel = _build_mobile_funnel_response(days=days)
+    return MobileAnalyticsWeeklyCadenceResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        window_days=days,
+        funnel=funnel,
+        recommended_actions=_build_mobile_weekly_recommended_actions(funnel),
+        checklist=_build_mobile_weekly_checklist(funnel),
+    )
+
+
+@app.get("/mobile/analytics/go-live-gate", response_model=MobileGoLiveGateResponse)
+async def get_mobile_go_live_gate(
+    days: int = Query(default=7, ge=7, le=30),
+    _api_guard: None = Depends(_require_mobile_analytics_api_key),
+):
+    """
+    Evaluates 7-day (or configured window) go-live gate readiness for mobile launch.
+    """
+    return _build_mobile_go_live_gate_response(days=days)
 
 # --- Models for Forecasting ---
 class ForecastRequest(BaseModel):
@@ -433,6 +1144,245 @@ class Transaction(BaseModel):
     date: datetime.date
     amount: float
 
+
+class MortgageTypeSummary(BaseModel):
+    code: str
+    label: str
+    description: str
+
+
+class LenderProfileSummary(BaseModel):
+    code: str
+    label: str
+    description: str
+
+
+class MortgageChecklistRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
+
+
+class MortgageDocumentItem(BaseModel):
+    code: str
+    title: str
+    reason: str
+
+
+class MortgageEvidenceQualityIssue(BaseModel):
+    check_type: Literal["staleness", "name_mismatch", "period_mismatch", "unreadable_ocr"]
+    severity: Literal["critical", "warning", "info"]
+    document_filename: str
+    document_code: Optional[str] = None
+    message: str
+    suggested_action: str
+
+
+class MortgageEvidenceQualitySummary(BaseModel):
+    total_issues: int
+    critical_count: int
+    warning_count: int
+    info_count: int
+    has_blockers: bool
+
+
+class MortgageSubmissionGate(BaseModel):
+    compliance_disclaimer: str
+    advisor_review_required: bool
+    advisor_review_confirmed: bool
+    broker_submission_allowed: bool
+    broker_submission_blockers: list[str]
+
+
+class MortgageRefreshReminderSummary(BaseModel):
+    total_reminders: int
+    due_now_count: int
+    upcoming_count: int
+    has_due_now: bool
+    next_due_date: Optional[datetime.date] = None
+
+
+class MortgageRefreshReminder(BaseModel):
+    reminder_type: Literal["statement_refresh", "id_validity_check"]
+    document_code: str
+    title: str
+    cadence_days: int
+    due_date: datetime.date
+    status: Literal["due_now", "upcoming"]
+    document_filename: str
+    message: str
+    suggested_action: str
+
+
+class MortgageChecklistResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    mortgage_description: str
+    lender_profile: str
+    lender_profile_label: str
+    employment_profile: str
+    required_documents: list[MortgageDocumentItem]
+    conditional_documents: list[MortgageDocumentItem]
+    lender_notes: list[str]
+    next_steps: list[str]
+
+
+class MortgageReadinessRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+    advisor_review_confirmed: bool = False
+
+
+class MortgageReadinessResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    mortgage_description: str
+    lender_profile: str
+    lender_profile_label: str
+    employment_profile: str
+    required_documents: list[MortgageDocumentItem]
+    conditional_documents: list[MortgageDocumentItem]
+    lender_notes: list[str]
+    next_steps: list[str]
+    next_actions: list[str]
+    uploaded_document_count: int
+    detected_document_codes: list[str]
+    matched_required_documents: list[MortgageDocumentItem]
+    missing_required_documents: list[MortgageDocumentItem]
+    missing_conditional_documents: list[MortgageDocumentItem]
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    readiness_summary: str
+    evidence_quality_summary: MortgageEvidenceQualitySummary
+    evidence_quality_issues: list[MortgageEvidenceQualityIssue]
+    refresh_reminder_summary: MortgageRefreshReminderSummary
+    refresh_reminders: list[MortgageRefreshReminder]
+    submission_gate: MortgageSubmissionGate
+
+
+class MortgageReadinessMatrixRequest(BaseModel):
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+
+
+class MortgageReadinessMatrixItem(BaseModel):
+    mortgage_type: str
+    mortgage_label: str
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    missing_required_count: int
+    missing_required_documents: list[MortgageDocumentItem]
+    next_actions: list[str]
+
+
+class MortgageReadinessMatrixResponse(BaseModel):
+    jurisdiction: str
+    employment_profile: str
+    lender_profile: str
+    lender_profile_label: str
+    include_adverse_credit_pack: bool
+    uploaded_document_count: int
+    total_mortgage_types: int
+    ready_for_broker_review_count: int
+    almost_ready_count: int
+    not_ready_count: int
+    average_required_completion_percent: float
+    average_overall_completion_percent: float
+    overall_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    items: list[MortgageReadinessMatrixItem]
+
+
+class MortgageLenderFitRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+
+
+class MortgageLenderFitItem(BaseModel):
+    lender_profile: str
+    lender_profile_label: str
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    missing_required_count: int
+    top_missing_required_titles: list[str]
+    lender_notes: list[str]
+    next_actions: list[str]
+
+
+class MortgageLenderFitResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    employment_profile: str
+    include_adverse_credit_pack: bool
+    uploaded_document_count: int
+    total_lender_profiles: int
+    recommended_lender_profile: str | None = None
+    recommended_lender_profile_label: str | None = None
+    recommendation_reason: str
+    items: list[MortgageLenderFitItem]
+
+
+class MortgagePackIndexRequest(BaseModel):
+    mortgage_type: str
+    employment_profile: str = "sole_trader"
+    include_adverse_credit_pack: bool = False
+    lender_profile: str = "high_street_mainstream"
+    max_documents_scan: int = Field(default=300, ge=10, le=2000)
+    advisor_review_confirmed: bool = False
+
+
+class MortgageDocumentEvidenceItem(BaseModel):
+    code: str
+    title: str
+    reason: str
+    match_status: Literal["matched", "missing"]
+    matched_filenames: list[str]
+
+
+class MortgagePackIndexResponse(BaseModel):
+    jurisdiction: str
+    mortgage_type: str
+    mortgage_label: str
+    mortgage_description: str
+    lender_profile: str
+    lender_profile_label: str
+    employment_profile: str
+    required_documents: list[MortgageDocumentItem]
+    conditional_documents: list[MortgageDocumentItem]
+    lender_notes: list[str]
+    next_steps: list[str]
+    uploaded_document_count: int
+    detected_document_codes: list[str]
+    readiness_status: Literal["not_ready", "almost_ready", "ready_for_broker_review"]
+    required_completion_percent: float
+    overall_completion_percent: float
+    readiness_summary: str
+    next_actions: list[str]
+    matched_required_documents: list[MortgageDocumentItem]
+    missing_required_documents: list[MortgageDocumentItem]
+    missing_conditional_documents: list[MortgageDocumentItem]
+    required_document_evidence: list[MortgageDocumentEvidenceItem]
+    conditional_document_evidence: list[MortgageDocumentEvidenceItem]
+    evidence_quality_summary: MortgageEvidenceQualitySummary
+    evidence_quality_issues: list[MortgageEvidenceQualityIssue]
+    refresh_reminder_summary: MortgageRefreshReminderSummary
+    refresh_reminders: list[MortgageRefreshReminder]
+    submission_gate: MortgageSubmissionGate
+    generated_at: datetime.datetime
+
 # --- Forecasting Endpoint ---
 @app.get("/health")
 async def health_check():
@@ -443,7 +1393,7 @@ async def health_check():
 async def get_cash_flow_forecast(
     request: ForecastRequest,
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
     if not TRANSACTIONS_SERVICE_URL:
@@ -451,13 +1401,15 @@ async def get_cash_flow_forecast(
 
     # 1. Fetch transactions
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {auth_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {exc}") from exc
 
     if not transactions:
         return CashFlowResponse(forecast=[])
@@ -486,124 +1438,563 @@ async def get_cash_flow_forecast(
 
     return CashFlowResponse(forecast=forecast_points)
 
+
+@app.get("/mortgage/types", response_model=list[MortgageTypeSummary])
+async def list_supported_mortgage_types(_user_id: str = Depends(get_current_user_id)):
+    return [
+        MortgageTypeSummary(
+            code=code,
+            label=metadata["label"],
+            description=metadata["description"],
+        )
+        for code, metadata in MORTGAGE_TYPE_METADATA.items()
+    ]
+
+
+@app.get("/mortgage/lender-profiles", response_model=list[LenderProfileSummary])
+async def list_supported_lender_profiles(_user_id: str = Depends(get_current_user_id)):
+    return [
+        LenderProfileSummary(
+            code=code,
+            label=metadata["label"],
+            description=metadata["description"],
+        )
+        for code, metadata in LENDER_PROFILE_METADATA.items()
+    ]
+
+
+@app.post("/mortgage/checklist", response_model=MortgageChecklistResponse)
+async def generate_mortgage_document_checklist(
+    request: MortgageChecklistRequest,
+    _user_id: str = Depends(get_current_user_id),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+    )
+    return MortgageChecklistResponse(**checklist)
+
+
+def _extract_document_filenames(documents: list[dict[str, object]]) -> list[str]:
+    filenames: list[str] = []
+    for item in documents:
+        filename = item.get("filename")
+        if isinstance(filename, str) and filename.strip():
+            filenames.append(filename.strip())
+    return filenames
+
+
+async def _load_user_uploaded_documents(
+    *,
+    bearer_token: str,
+    max_documents_scan: int,
+) -> list[dict[str, object]]:
+    headers = {"Authorization": f"Bearer {bearer_token}"}
+    try:
+        payload = await get_json_with_retry(
+            DOCUMENTS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to documents-service: {exc}",
+        ) from exc
+
+    if not isinstance(payload, list):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Invalid documents-service response format",
+        )
+    documents: list[dict[str, object]] = []
+    for item in payload[:max_documents_scan]:
+        if not isinstance(item, dict):
+            continue
+        filename = item.get("filename")
+        if not isinstance(filename, str) or not filename.strip():
+            continue
+        documents.append(item)
+    return documents
+
+
+async def _load_user_profile_name(
+    *,
+    bearer_token: str,
+) -> tuple[str | None, str | None]:
+    headers = {"Authorization": f"Bearer {bearer_token}"}
+    try:
+        payload = await get_json_with_retry(
+            USER_PROFILE_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == status.HTTP_404_NOT_FOUND:
+            return None, None
+        return None, None
+    except httpx.HTTPError:
+        return None, None
+
+    if not isinstance(payload, dict):
+        return None, None
+    first_name = payload.get("first_name")
+    last_name = payload.get("last_name")
+    return (
+        first_name.strip() if isinstance(first_name, str) and first_name.strip() else None,
+        last_name.strip() if isinstance(last_name, str) and last_name.strip() else None,
+    )
+
+
+def _validate_mortgage_selector_inputs(
+    *,
+    mortgage_type: str | None,
+    employment_profile: str,
+    lender_profile: str,
+) -> None:
+    if mortgage_type is not None and mortgage_type not in MORTGAGE_TYPE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported mortgage_type '{mortgage_type}'",
+        )
+    if employment_profile not in EMPLOYMENT_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported employment_profile '{employment_profile}'",
+        )
+    if lender_profile not in LENDER_PROFILE_METADATA:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported lender_profile '{lender_profile}'",
+        )
+
+
+def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes:
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, "Mortgage Pack Index", 0, 1, "C")
+    pdf.set_font("Helvetica", "", 11)
+    generated_at = str(pack_index.get("generated_at", ""))
+    pdf.cell(0, 7, f"Generated at: {generated_at}", 0, 1)
+    pdf.cell(0, 7, f"Mortgage type: {pack_index.get('mortgage_label', '')}", 0, 1)
+    pdf.cell(0, 7, f"Lender profile: {pack_index.get('lender_profile_label', '')}", 0, 1)
+    pdf.cell(0, 7, f"Employment profile: {pack_index.get('employment_profile', '')}", 0, 1)
+    pdf.ln(4)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Readiness summary", 0, 1)
+    pdf.set_font("Helvetica", "", 11)
+    pdf.multi_cell(0, 7, str(pack_index.get("readiness_summary", "")))
+    pdf.cell(0, 7, f"Required completion: {pack_index.get('required_completion_percent', 0)}%", 0, 1)
+    pdf.cell(0, 7, f"Overall completion: {pack_index.get('overall_completion_percent', 0)}%", 0, 1)
+    pdf.cell(0, 7, f"Status: {pack_index.get('readiness_status', '')}", 0, 1)
+    pdf.ln(3)
+
+    quality_summary = pack_index.get("evidence_quality_summary", {})
+    if isinstance(quality_summary, dict):
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Evidence quality checks", 0, 1)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, f"Total issues: {quality_summary.get('total_issues', 0)}", 0, 1)
+        pdf.cell(
+            0,
+            7,
+            (
+                "Critical / Warning / Info: "
+                f"{quality_summary.get('critical_count', 0)} / "
+                f"{quality_summary.get('warning_count', 0)} / "
+                f"{quality_summary.get('info_count', 0)}"
+            ),
+            0,
+            1,
+        )
+        pdf.ln(2)
+        quality_issues = pack_index.get("evidence_quality_issues", [])
+        if isinstance(quality_issues, list):
+            for issue in quality_issues[:6]:
+                if not isinstance(issue, dict):
+                    continue
+                severity = str(issue.get("severity", "info")).upper()
+                filename = str(issue.get("document_filename", ""))
+                message = str(issue.get("message", ""))
+                pdf.multi_cell(0, 6, f"[{severity}] {filename}: {message}")
+            pdf.ln(2)
+
+    submission_gate = pack_index.get("submission_gate", {})
+    if isinstance(submission_gate, dict):
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Compliance and submission gate", 0, 1)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.multi_cell(0, 7, str(submission_gate.get("compliance_disclaimer", "")))
+        pdf.cell(
+            0,
+            7,
+            f"Advisor review confirmed: {'yes' if submission_gate.get('advisor_review_confirmed') else 'no'}",
+            0,
+            1,
+        )
+        pdf.cell(
+            0,
+            7,
+            f"Broker submission allowed: {'yes' if submission_gate.get('broker_submission_allowed') else 'no'}",
+            0,
+            1,
+        )
+        blockers = submission_gate.get("broker_submission_blockers", [])
+        if isinstance(blockers, list) and blockers:
+            pdf.multi_cell(0, 7, "Blockers:")
+            for blocker in blockers[:5]:
+                pdf.multi_cell(0, 6, f"- {blocker}")
+        pdf.ln(2)
+
+    refresh_summary = pack_index.get("refresh_reminder_summary", {})
+    if isinstance(refresh_summary, dict):
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, "Monthly refresh reminders", 0, 1)
+        pdf.set_font("Helvetica", "", 11)
+        pdf.cell(0, 7, f"Total reminders: {refresh_summary.get('total_reminders', 0)}", 0, 1)
+        pdf.cell(
+            0,
+            7,
+            (
+                "Due now / Upcoming: "
+                f"{refresh_summary.get('due_now_count', 0)} / {refresh_summary.get('upcoming_count', 0)}"
+            ),
+            0,
+            1,
+        )
+        refresh_reminders = pack_index.get("refresh_reminders", [])
+        if isinstance(refresh_reminders, list):
+            for reminder in refresh_reminders[:6]:
+                if not isinstance(reminder, dict):
+                    continue
+                title = str(reminder.get("title", ""))
+                due_date = str(reminder.get("due_date", ""))
+                status = str(reminder.get("status", "upcoming"))
+                message = str(reminder.get("message", ""))
+                pdf.multi_cell(0, 6, f"[{status}] {title} (due: {due_date})")
+                pdf.multi_cell(0, 6, message)
+        pdf.ln(2)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Required document evidence", 0, 1)
+    pdf.set_font("Helvetica", "", 10)
+    required_evidence = pack_index.get("required_document_evidence", [])
+    if isinstance(required_evidence, list):
+        for item in required_evidence:
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("code", ""))
+            title = str(item.get("title", ""))
+            status_value = str(item.get("match_status", "missing"))
+            matched_files = item.get("matched_filenames", [])
+            matched_files_text = ", ".join(str(name) for name in matched_files[:4]) if isinstance(matched_files, list) else ""
+            if not matched_files_text:
+                matched_files_text = "not detected"
+            pdf.multi_cell(0, 6, f"[{status_value}] {title} ({code})")
+            pdf.multi_cell(0, 6, f"Evidence: {matched_files_text}")
+            pdf.ln(1)
+
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 8, "Immediate actions", 0, 1)
+    pdf.set_font("Helvetica", "", 10)
+    next_actions = pack_index.get("next_actions", [])
+    if isinstance(next_actions, list) and next_actions:
+        for action in next_actions:
+            pdf.multi_cell(0, 6, f"- {action}")
+    else:
+        pdf.multi_cell(0, 6, "- No immediate actions")
+
+    return pdf.output(dest="S").encode("latin1")
+
+
+@app.post("/mortgage/readiness", response_model=MortgageReadinessResponse)
+async def evaluate_mortgage_readiness(
+    request: MortgageReadinessRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+    )
+    uploaded_documents = await _load_user_uploaded_documents(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    filenames = _extract_document_filenames(uploaded_documents)
+    readiness = build_mortgage_readiness_assessment(
+        checklist=checklist,
+        uploaded_filenames=filenames,
+    )
+    first_name, last_name = await _load_user_profile_name(bearer_token=bearer_token)
+    quality_checks = build_mortgage_evidence_quality_checks(
+        uploaded_documents=uploaded_documents,
+        applicant_first_name=first_name,
+        applicant_last_name=last_name,
+    )
+    readiness.update(quality_checks)
+    refresh_reminders = build_mortgage_refresh_reminders(uploaded_documents=uploaded_documents)
+    readiness.update(refresh_reminders)
+    submission_gate = build_mortgage_submission_gate(
+        readiness_status=str(readiness.get("readiness_status", "")),
+        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
+        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
+        else None,
+        advisor_review_confirmed=request.advisor_review_confirmed,
+    )
+    readiness["submission_gate"] = submission_gate
+    quality_summary = quality_checks.get("evidence_quality_summary")
+    if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
+        next_actions = list(readiness.get("next_actions", []))
+        blocker_action = "Resolve critical evidence-quality blockers before broker submission."
+        if blocker_action not in next_actions:
+            readiness["next_actions"] = [blocker_action, *next_actions]
+    if not request.advisor_review_confirmed:
+        next_actions = list(readiness.get("next_actions", []))
+        advisor_action = "Get a qualified mortgage adviser review before broker submission."
+        if advisor_action not in next_actions:
+            readiness["next_actions"] = [advisor_action, *next_actions]
+    refresh_summary = refresh_reminders.get("refresh_reminder_summary")
+    if isinstance(refresh_summary, dict) and int(refresh_summary.get("due_now_count", 0)) > 0:
+        next_actions = list(readiness.get("next_actions", []))
+        due_now_count = int(refresh_summary.get("due_now_count", 0))
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions:
+            readiness["next_actions"] = [refresh_action, *next_actions]
+    return MortgageReadinessResponse(**readiness)
+
+
+@app.post("/mortgage/readiness-matrix", response_model=MortgageReadinessMatrixResponse)
+async def evaluate_mortgage_readiness_matrix(
+    request: MortgageReadinessMatrixRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=None,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
+    uploaded_documents = await _load_user_uploaded_documents(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    filenames = _extract_document_filenames(uploaded_documents)
+    matrix = build_mortgage_readiness_matrix(
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+        uploaded_filenames=filenames,
+    )
+    return MortgageReadinessMatrixResponse(**matrix)
+
+
+@app.post("/mortgage/lender-fit", response_model=MortgageLenderFitResponse)
+async def evaluate_mortgage_lender_fit(
+    request: MortgageLenderFitRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile="high_street_mainstream",
+    )
+    uploaded_documents = await _load_user_uploaded_documents(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    filenames = _extract_document_filenames(uploaded_documents)
+    lender_fit = build_mortgage_lender_fit_snapshot(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        uploaded_filenames=filenames,
+    )
+    return MortgageLenderFitResponse(**lender_fit)
+
+
+@app.post("/mortgage/pack-index", response_model=MortgagePackIndexResponse)
+async def generate_mortgage_pack_index(
+    request: MortgagePackIndexRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+    )
+    uploaded_documents = await _load_user_uploaded_documents(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    filenames = _extract_document_filenames(uploaded_documents)
+    pack_index = build_mortgage_pack_index(
+        checklist=checklist,
+        uploaded_filenames=filenames,
+    )
+    first_name, last_name = await _load_user_profile_name(bearer_token=bearer_token)
+    quality_checks = build_mortgage_evidence_quality_checks(
+        uploaded_documents=uploaded_documents,
+        applicant_first_name=first_name,
+        applicant_last_name=last_name,
+    )
+    pack_index.update(quality_checks)
+    refresh_reminders = build_mortgage_refresh_reminders(uploaded_documents=uploaded_documents)
+    pack_index.update(refresh_reminders)
+    submission_gate = build_mortgage_submission_gate(
+        readiness_status=str(pack_index.get("readiness_status", "")),
+        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
+        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
+        else None,
+        advisor_review_confirmed=request.advisor_review_confirmed,
+    )
+    pack_index["submission_gate"] = submission_gate
+    quality_summary = quality_checks.get("evidence_quality_summary")
+    if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
+        next_actions = list(pack_index.get("next_actions", []))
+        blocker_action = "Resolve critical evidence-quality blockers before broker submission."
+        if blocker_action not in next_actions:
+            pack_index["next_actions"] = [blocker_action, *next_actions]
+    if not request.advisor_review_confirmed:
+        next_actions = list(pack_index.get("next_actions", []))
+        advisor_action = "Get a qualified mortgage adviser review before broker submission."
+        if advisor_action not in next_actions:
+            pack_index["next_actions"] = [advisor_action, *next_actions]
+    refresh_summary = refresh_reminders.get("refresh_reminder_summary")
+    if isinstance(refresh_summary, dict) and int(refresh_summary.get("due_now_count", 0)) > 0:
+        next_actions = list(pack_index.get("next_actions", []))
+        due_now_count = int(refresh_summary.get("due_now_count", 0))
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions:
+            pack_index["next_actions"] = [refresh_action, *next_actions]
+    pack_index["generated_at"] = datetime.datetime.now(datetime.UTC)
+    return MortgagePackIndexResponse(**pack_index)
+
+
+@app.post("/mortgage/pack-index.pdf")
+async def generate_mortgage_pack_index_pdf(
+    request: MortgagePackIndexRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    _validate_mortgage_selector_inputs(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        lender_profile=request.lender_profile,
+    )
+    checklist = build_mortgage_document_checklist(
+        mortgage_type=request.mortgage_type,
+        employment_profile=request.employment_profile,
+        include_adverse_credit_pack=request.include_adverse_credit_pack,
+        lender_profile=request.lender_profile,
+    )
+    uploaded_documents = await _load_user_uploaded_documents(
+        bearer_token=bearer_token,
+        max_documents_scan=request.max_documents_scan,
+    )
+    filenames = _extract_document_filenames(uploaded_documents)
+    pack_index = build_mortgage_pack_index(
+        checklist=checklist,
+        uploaded_filenames=filenames,
+    )
+    first_name, last_name = await _load_user_profile_name(bearer_token=bearer_token)
+    quality_checks = build_mortgage_evidence_quality_checks(
+        uploaded_documents=uploaded_documents,
+        applicant_first_name=first_name,
+        applicant_last_name=last_name,
+    )
+    pack_index.update(quality_checks)
+    refresh_reminders = build_mortgage_refresh_reminders(uploaded_documents=uploaded_documents)
+    pack_index.update(refresh_reminders)
+    submission_gate = build_mortgage_submission_gate(
+        readiness_status=str(pack_index.get("readiness_status", "")),
+        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
+        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
+        else None,
+        advisor_review_confirmed=request.advisor_review_confirmed,
+    )
+    pack_index["submission_gate"] = submission_gate
+    quality_summary = quality_checks.get("evidence_quality_summary")
+    if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
+        next_actions = list(pack_index.get("next_actions", []))
+        blocker_action = "Resolve critical evidence-quality blockers before broker submission."
+        if blocker_action not in next_actions:
+            pack_index["next_actions"] = [blocker_action, *next_actions]
+    if not request.advisor_review_confirmed:
+        next_actions = list(pack_index.get("next_actions", []))
+        advisor_action = "Get a qualified mortgage adviser review before broker submission."
+        if advisor_action not in next_actions:
+            pack_index["next_actions"] = [advisor_action, *next_actions]
+    refresh_summary = refresh_reminders.get("refresh_reminder_summary")
+    if isinstance(refresh_summary, dict) and int(refresh_summary.get("due_now_count", 0)) > 0:
+        next_actions = list(pack_index.get("next_actions", []))
+        due_now_count = int(refresh_summary.get("due_now_count", 0))
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions:
+            pack_index["next_actions"] = [refresh_action, *next_actions]
+    generated_at = datetime.datetime.now(datetime.UTC)
+    pack_index["generated_at"] = generated_at.isoformat()
+    pdf_bytes = _build_mortgage_pack_index_pdf_bytes(pack_index)
+    filename_safe_type = request.mortgage_type.replace(" ", "_")
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                "attachment; "
+                f"filename=mortgage_pack_index_{filename_safe_type}_{generated_at.date().isoformat()}.pdf"
+            )
+        },
+    )
+
 # --- PDF Report Generation ---
 @app.get("/reports/mortgage-readiness", response_class=StreamingResponse)
 async def get_mortgage_readiness_report(
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
-    enhanced: bool = False
+    bearer_token: str = Depends(get_bearer_token),
 ):
-    """Generate mortgage readiness report with optional invoice integration"""
-    
-    if enhanced:
-        # Use enhanced version with invoice integration
-        from .mortgage_enhanced import MortgageReadinessEnhanced
-        
-        try:
-            mortgage_service = MortgageReadinessEnhanced(auth_token)
-            comprehensive_data = await mortgage_service.get_comprehensive_income_report(user_id)
-            
-            # Generate enhanced PDF
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Helvetica", "B", 18)
-            pdf.cell(0, 15, "Enhanced Mortgage Readiness Report", 0, 1, "C")
-            pdf.set_font("Helvetica", "", 10)
-            pdf.cell(0, 8, f"Generated for User: {user_id}", 0, 1)
-            pdf.cell(0, 8, f"Report Date: {datetime.date.today().isoformat()}", 0, 1)
-            pdf.ln(8)
-            
-            # Mortgage readiness score
-            score_data = comprehensive_data['mortgage_readiness_score']
-            pdf.set_font("Helvetica", "B", 16)
-            pdf.set_fill_color(46, 204, 113) if score_data['score'] >= 70 else pdf.set_fill_color(231, 76, 60)
-            pdf.cell(0, 12, f"Mortgage Readiness Score: {score_data['score']}/100 - {score_data['rating']}", 1, 1, "C", True)
-            pdf.set_fill_color(255, 255, 255)
-            pdf.ln(5)
-            
-            # Income summary
-            income_data = comprehensive_data['combined_income']
-            pdf.set_font("Helvetica", "B", 14)
-            pdf.cell(0, 10, "Income Summary (12 Months)", 0, 1)
-            pdf.set_font("Helvetica", "", 11)
-            pdf.cell(0, 8, f"Total Annual Income: £{income_data['total_income']:,.2f}", 0, 1)
-            pdf.cell(0, 8, f"Average Monthly Income: £{income_data['average_monthly']:,.2f}", 0, 1)
-            
-            if comprehensive_data['is_self_employed']:
-                prof_income = comprehensive_data['income_sources']['professional_income']
-                pdf.set_text_color(46, 125, 50)
-                pdf.cell(0, 8, f"✓ Self-Employed Professional: {prof_income['invoice_count']} invoices", 0, 1)
-                pdf.cell(0, 8, f"Professional Income: £{prof_income['total']:,.2f} ({(prof_income['total']/income_data['total_income']*100):.1f}%)", 0, 1)
-                pdf.set_text_color(0, 0, 0)
-            pdf.ln(5)
-            
-            # Monthly breakdown table
-            pdf.set_font("Helvetica", "B", 12)
-            pdf.cell(0, 10, "Monthly Income Breakdown", 0, 1)
-            pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(30, 8, 'Month', 1)
-            if comprehensive_data['is_self_employed']:
-                pdf.cell(35, 8, 'Professional', 1)
-                pdf.cell(35, 8, 'Other Income', 1)
-            pdf.cell(35, 8, 'Total Income', 1)
-            pdf.ln()
-            
-            pdf.set_font("Helvetica", "", 9)
-            for month in sorted(income_data['monthly_breakdown'].keys()):
-                month_data = income_data['monthly_breakdown'][month]
-                pdf.cell(30, 8, month, 1)
-                if comprehensive_data['is_self_employed']:
-                    pdf.cell(35, 8, f"£{month_data['invoice_income']:,.0f}", 1)
-                    pdf.cell(35, 8, f"£{month_data['transaction_income']:,.0f}", 1)
-                pdf.cell(35, 8, f"£{month_data['total_income']:,.0f}", 1)
-                pdf.ln()
-            
-            pdf.ln(8)
-            
-            # Recommendations
-            pdf.set_font("Helvetica", "B", 14)
-            pdf.cell(0, 10, "Mortgage Application Recommendations", 0, 1)
-            pdf.set_font("Helvetica", "", 10)
-            
-            for i, rec in enumerate(comprehensive_data['recommendations'], 1):
-                pdf.cell(8, 6, f"{i}.", 0, 0)
-                # Handle long recommendations
-                lines = [rec[j:j+85] for j in range(0, len(rec), 85)]
-                for k, line in enumerate(lines):
-                    if k == 0:
-                        pdf.cell(0, 6, line, 0, 1)
-                    else:
-                        pdf.cell(8, 6, "", 0, 0)
-                        pdf.cell(0, 6, line, 0, 1)
-            
-            # Footer
-            pdf.ln(10)
-            pdf.set_font("Helvetica", "", 8)
-            pdf.cell(0, 6, "This enhanced report includes professional invoicing data to provide comprehensive income documentation", 0, 1)
-            pdf.cell(0, 6, "for UK mortgage applications. Generated by SelfMonitor Professional FinTech Platform", 0, 1)
-            
-        except Exception as e:
-            # Fallback to traditional report if enhanced fails
-            comprehensive_data = {"error": str(e)}
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Helvetica", "B", 16)
-            pdf.cell(0, 10, "Enhanced Report Unavailable", 0, 1, "C")
-            pdf.set_font("Helvetica", "", 12)
-            pdf.cell(0, 10, f"Error: {str(e)}", 0, 1)
-            pdf.cell(0, 10, "Falling back to basic mortgage readiness report...", 0, 1)
-    
-    else:
-        # Original implementation for backward compatibility
-        TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
-        try:
-            async with httpx.AsyncClient() as client:
-                headers = {"Authorization": f"Bearer {auth_token}"}
-                response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-                response.raise_for_status()
-                transactions = [Transaction(**t) for t in response.json()]
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+    TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
+    # 1. Fetch transactions (similar to cash flow)
+    try:
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {exc}") from exc
 
         # 2. Analyze income over the last 12 months
         twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)

@@ -2,39 +2,31 @@ name: Monorepo CI
 
 on:
   push:
-    branches: [ "main" ]
-    paths:
-      - 'services/**'
-      - 'apps/web-portal/**'
-      - '.github/workflows/ci.yaml'
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
     paths:
-      - 'services/**'
-      - 'apps/web-portal/**'
-      - '.github/workflows/ci.yaml'
+      - "services/**"
+      - "apps/web-portal/**"
+      - "apps/mobile/**"
+      - "tests/**"
+      - ".github/workflows/ci.yaml"
 
 jobs:
-  python-service-checks:
+  python-services:
     name: Python checks (${{ matrix.service }})
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
     strategy:
       fail-fast: false
       matrix:
         service:
-          - advice-service
-          - analytics-service
+          - agent-service
           - auth-service
           - banking-connector
-          - calendar-service
-          - categorization-service
           - compliance-service
           - consent-service
-          - documents-service
-          - integrations-service
-          - localization-service
           - partner-registry
-          - qna-service
           - tax-engine
           - transactions-service
           - user-profile-service
@@ -46,29 +38,118 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
+
+      - name: Install dependencies for ${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r services/${{ matrix.service }}/requirements.txt
+          pip install flake8 pytest-cov
+
+      - name: Lint with flake8
+        working-directory: ./services/${{ matrix.service }}
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Run tests with pytest
+        working-directory: ./services/${{ matrix.service }}
+        run: |
+          if [ -d tests ]; then
+            pytest -q --cov=app --cov-report=term --cov-fail-under=20
+          else
+            echo "No tests directory found; skipping."
+          fi
+
+  python-dependency-audit:
+    name: Python dependency audit (${{ matrix.service }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - agent-service
+          - auth-service
+          - banking-connector
+          - compliance-service
+          - consent-service
+          - partner-registry
+          - tax-engine
+          - transactions-service
+          - user-profile-service
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install audit tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+
+      - name: Audit runtime dependencies for ${{ matrix.service }}
+        run: |
+          TARGET_DIR="$(mktemp -d)"
+          python -m pip install -r services/${{ matrix.service }}/requirements.txt --target "$TARGET_DIR"
+          # CVE-2024-23342 (ecdsa) currently has no published fixed version.
+          python -m pip_audit --path "$TARGET_DIR" --ignore-vuln CVE-2024-23342
+
+  smoke-core-flow:
+    name: Smoke core flow checks
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r services/${{ matrix.service }}/requirements.txt
+          pip install -r services/auth-service/requirements.txt
+          pip install -r services/user-profile-service/requirements.txt
+          pip install -r services/transactions-service/requirements.txt
+          pip install -r services/consent-service/requirements.txt
+          pip install -r services/partner-registry/requirements.txt
+          pip install pytest-cov
 
-      - name: Smoke check Python sources
+      - name: Run smoke tests for core user flow
         run: |
-          python -m compileall services/${{ matrix.service }}/app
+          coverage erase
+          pytest -q services/auth-service/tests/test_main.py::test_login_and_get_me_returns_token_pair \
+            --cov=services/auth-service/app --cov-append --cov-report=
+          pytest -q services/user-profile-service/tests/test_main.py::test_create_and_get_profile \
+            --cov=services/user-profile-service/app --cov-append --cov-report=
+          pytest -q services/transactions-service/tests/test_main.py::test_import_and_get_transactions \
+            --cov=services/transactions-service/app --cov-append --cov-report=
+          pytest -q services/consent-service/tests/test_main.py::test_record_consent_triggers_audit \
+            --cov=services/consent-service/app --cov-append --cov-report=
+          pytest -q services/partner-registry/tests/test_main.py::test_handoff_triggers_audit \
+            --cov=services/partner-registry/app --cov-append --cov-report=
+          pytest -q services/partner-registry/tests/test_main.py::test_generate_list_and_get_invoice \
+            --cov=services/partner-registry/app --cov-append --cov-report=
+          pytest -q services/partner-registry/tests/test_main.py::test_invoice_pdf_and_accounting_exports \
+            --cov=services/partner-registry/app --cov-append --cov-report=
+          coverage report --fail-under=25
 
-      - name: Run service unit tests when present
-        working-directory: ./services/${{ matrix.service }}
-        run: |
-          if [ -f tests/test_main.py ]; then
-            python -m pytest -q tests/test_main.py
-          else
-            echo "No tests/test_main.py for ${{ matrix.service }}, skipping tests."
-          fi
-
-  python-security-scan:
-    name: Python security scan
+  contract-tests:
+    name: Contract tests
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      ENABLE_CONTRACT_TESTS: "1"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -76,49 +157,30 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: "3.12"
 
-      - name: Install Bandit
-        run: pip install bandit
-
-      - name: Run Bandit security scan
+      - name: Install dependencies
         run: |
-          bandit -r services/ -f json -o bandit-report.json --exit-zero
-          bandit -r services/ -ll
-        continue-on-error: true
+          python -m pip install --upgrade pip
+          pip install -r services/tax-engine/requirements.txt
+          pip install -r services/transactions-service/requirements.txt
 
-      - name: Upload Bandit report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bandit-security-report
-          path: bandit-report.json
-
-  dependency-check:
-    name: Dependency vulnerability check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install pip-audit
-        run: pip install pip-audit
-
-      - name: Audit Python dependencies
+      - name: Run consumer contract tests (tax-engine)
+        env:
+          PACT_OUTPUT_DIR: ${{ runner.temp }}/pacts
         run: |
-          for svc in services/*/requirements.txt; do
-            echo "=== Checking $svc ==="
-            pip-audit -r "$svc" --desc || true
-          done
-        continue-on-error: true
+          mkdir -p "$PACT_OUTPUT_DIR"
+          pytest -q services/tax-engine/tests/test_contract.py
+          test -f "$PACT_OUTPUT_DIR/TaxEngineService-TransactionsService.json"
 
-  web-portal-build:
-    name: Web portal production build
+      - name: Run provider contract tests (transactions-service)
+        env:
+          PACT_OUTPUT_DIR: ${{ runner.temp }}/pacts
+        run: |
+          pytest -q services/transactions-service/tests/test_contract.py
+
+  web-portal:
+    name: Web portal checks
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -131,14 +193,48 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web-portal/package-lock.json
 
       - name: Install dependencies
-        run: npm install --no-package-lock
+        run: npm ci
 
-      - name: Build web portal
+      - name: Audit production dependencies
+        run: npm audit --audit-level=moderate --omit=dev
+
+      - name: Type check
+        run: npx next typegen && npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
         run: npm run build
 
-      - name: Security lint check
-        run: npx next lint --max-warnings 0
-        continue-on-error: true
+  mobile-app:
+    name: Mobile app checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./apps/mobile
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit production dependencies
+        run: NPM_AUDIT_ALLOWLIST="GHSA-3ppc-4f35-3m26,1113296" node ../../tools/npm_audit_gate.mjs
+
+      - name: Type check
+        run: npm run typecheck

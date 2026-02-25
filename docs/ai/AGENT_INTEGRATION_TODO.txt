@@ -1,0 +1,96 @@
+AI Agent Integration TODO (Self-Assessment Copilot)
+Last updated: 2026-02-12
+Owner: Product + Platform
+
+GOAL
+- Integrate a secure AI agent that helps UK self-employed users finish yearly submission workflows:
+  OCR review -> transaction reconciliation -> tax calculation -> HMRC submission.
+
+PHASE 0 - Foundation and Security (P0)
+[x] P0.1 Lock down qna-service with JWT auth and server-side user scoping.
+[x] P0.2 Remove client-provided user_id from semantic search requests in web portal.
+[x] P0.3 Sign qna index requests from documents-service (service-to-service auth via existing JWT).
+[x] P0.4 Add qna-service tests for auth and user isolation behavior.
+[x] P0.5 Add minimal qna-service OpenAPI contract file.
+
+PHASE 1 - Agent Service MVP (Read-Only + Guided Actions) (P0/P1)
+[x] P1.1 Create services/agent-service (FastAPI) with POST /agent/chat.
+[x] P1.2 Implement intent router for:
+      - readiness_check
+      - ocr_review_assist
+      - reconciliation_assist
+      - tax_pre_submit
+[x] P1.3 Add read-only tools:
+      - documents: GET /documents/review-queue
+      - transactions: GET /transactions/receipt-drafts/unmatched
+      - transactions: GET /transactions/me
+      - tax-engine: POST /calculate
+[x] P1.4 Add response format with:
+      - answer
+      - evidence (source endpoint + ids)
+      - suggested_actions (no execution yet)
+[x] P1.5 Add agent session memory (Redis, TTL 24h, per user/session id).
+
+PHASE 2 - Safe Action Mode (P0)
+[x] P2.1 Add confirmation token flow for write actions.
+[x] P2.2 Implement confirmed actions:
+      - PATCH /documents/{id}/review
+      - POST /transactions/receipt-drafts/{id}/reconcile
+      - POST /transactions/receipt-drafts/{id}/ignore
+      - POST /calculate-and-submit
+[x] P2.3 Add policy gate:
+      - default deny for write tools
+      - explicit allowlist per action
+[x] P2.4 Add full audit logging of:
+      - prompt hash
+      - tool calls
+      - payload summary
+      - action result
+
+PHASE 3 - UX Integration (P1)
+[x] P3.1 Add web portal "AI Copilot" panel.
+[x] P3.2 Render suggested action cards with explicit Confirm buttons.
+[x] P3.3 Add "why this suggestion" view (evidence + confidence).
+[x] P3.4 Add fallback UX when tool/service unavailable.
+
+PHASE 4 - Quality, Compliance, and Operations (P0/P1)
+[x] P4.1 Add prompt-injection protection for OCR/document text context.
+[x] P4.2 Add guardrail tests for unauthorized cross-user data access.
+[x] P4.3 Add dashboards:
+      - agent action success rate
+      - human override rate
+      - OCR review completion time
+      - tax submission conversion rate
+[x] P4.4 Add runbook section:
+      - agent safe mode
+      - rollback and feature flag procedure
+
+IMPLEMENTATION ORDER FOR NEXT ITERATIONS
+1) Execute PHASE 0 fully.
+2) Build PHASE 1 with read-only tools.
+3) Enable PHASE 2 for confirmed writes.
+4) Polish PHASE 3 UX and PHASE 4 operations.
+
+CURRENT EXECUTION STATUS
+- In progress: Phase 4 complete; ready for next planning cycle.
+
+MORTGAGE AGENT TRACK (ENGLAND) - CRITICAL PRODUCT REQUIREMENT
+[x] M1.1 Define mortgage type catalog for England (core + specialist mortgage journeys).
+[x] M1.2 Add backend checklist generator for required/conditional lender documents per mortgage type.
+[x] M1.3 Add employment profile variants (sole trader / ltd director / contractor / employed / mixed).
+[x] M1.4 Add adverse-credit support pack option in checklist generation.
+[x] M2.1 Build agent workflow: "prepare my mortgage pack" -> gather missing docs -> produce completion score.
+[x] M2.2 Add lender profile presets (high street banks, specialist lenders, BTL-focused lenders).
+[x] M2.3 Add all-mortgage-type readiness matrix in UI (coverage dashboard across mortgage types).
+[x] M2.4 Export final mortgage pack index (PDF + JSON manifest + evidence map).
+[x] M3.1 Add evidence quality checks (staleness, name mismatch, period mismatch, unreadable OCR).
+[x] M3.2 Add compliance disclaimer and "advisor review required" gates before submission to brokers.
+[x] M3.3 Add monthly refresh reminders for expiring statements and IDs.
+
+LANGUAGE SUPPORT TRACK (SCALABLE)
+[x] L1.1 Register required locales: en-GB, ru-RU, uk-UA, pl-PL, ro-MD, tr-TR, hu-HU.
+[x] L1.2 Add locale fallback model (launch-ready even with partial translations).
+[x] L1.3 Add supported locales endpoint for dynamic UI and agent prompts.
+[x] L2.1 Add translation health telemetry (missing keys, fallback hit-rate).
+[x] L2.2 Externalize translations into scalable catalog/TMS pipeline.
+[x] L2.3 Add ICU/pluralization and locale-aware formatting standards.

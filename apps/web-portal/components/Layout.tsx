@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import type { ReactNode } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Layout.module.css';
 
@@ -9,17 +10,22 @@ type UserSummary = {
 };
 
 type LayoutProps = {
-  children: React.ReactNode;
+  children: ReactNode;
+  isDarkMode: boolean;
   onLogout: () => void;
-  user: UserSummary;
+  onToggleTheme: () => void;
+  userEmail?: string;
 };
 
-export default function Layout({ children, onLogout, user }: LayoutProps) {
+export default function Layout({ children, isDarkMode, onLogout, onToggleTheme, userEmail }: LayoutProps) {
   const router = useRouter();
   const { t } = useTranslation();
   const { locales, locale: activeLocale } = router;
 
-  const isAdmin = user.is_admin === true;
+  // This is a placeholder for a real admin check.
+  // We assume the first user registered is the admin, so we hardcode it here.
+  // In a real app, this should come from user roles/permissions.
+  const isAdmin = userEmail === 'admin@example.com';
 
   const navItems = [
     { href: '/dashboard', label: t('nav.dashboard') },
@@ -29,6 +35,8 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
     { href: '/reports', label: t('nav.reports') },
     { href: '/marketplace', label: t('nav.marketplace') },
     { href: '/submission', label: t('nav.submission') },
+    { href: '/security', label: 'Security' },
+    { href: '/terms', label: 'Legal' },
     { href: '/profile', label: t('nav.profile') },
   ];
 
@@ -42,14 +50,18 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
         <h1 className={styles.logo}>FinTech</h1>
         <nav className={styles.nav}>
           {navItems.map(({ href, label }) => (
-            <Link href={href} key={href} locale={router.locale}>
-              <span className={router.pathname === href ? styles.active : ''}>
+            <Link href={href} key={href} locale={router.locale} className={styles.navLink}>
+              <span className={`${styles.navLabel} ${router.pathname === href ? styles.active : ''}`}>
                 {label}
               </span>
             </Link>
           ))}
         </nav>
         <div className={styles.sidebarFooter}>
+          {userEmail && <p className={styles.userEmail}>{userEmail}</p>}
+          <button className={styles.themeToggleButton} onClick={onToggleTheme} type="button">
+            {isDarkMode ? 'Switch to Light' : 'Switch to Dark'}
+          </button>
           <div className={styles.langSwitcher}>
             {locales?.map(locale => (
               <Link href={router.pathname} key={locale} locale={locale}>

@@ -1,0 +1,668 @@
+import datetime
+import uuid
+from enum import Enum
+from typing import List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+
+
+class LeadStatus(str, Enum):
+    initiated = "initiated"
+    qualified = "qualified"
+    rejected = "rejected"
+    converted = "converted"
+
+
+class BillingInvoiceStatus(str, Enum):
+    generated = "generated"
+    issued = "issued"
+    paid = "paid"
+    void = "void"
+
+
+class SelfEmployedInvoiceStatus(str, Enum):
+    draft = "draft"
+    issued = "issued"
+    paid = "paid"
+    overdue = "overdue"
+    void = "void"
+
+
+class SelfEmployedRecurringCadence(str, Enum):
+    weekly = "weekly"
+    monthly = "monthly"
+    quarterly = "quarterly"
+
+
+class SelfEmployedCalendarEventStatus(str, Enum):
+    scheduled = "scheduled"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
+class Partner(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str
+    services_offered: List[str]
+    website: HttpUrl
+    qualified_lead_fee_gbp: float
+    converted_lead_fee_gbp: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class HandoffResponse(BaseModel):
+    message: str
+    lead_id: uuid.UUID
+    audit_event_id: Optional[str] = None
+    duplicated: bool = False
+
+
+class LeadReportByPartner(BaseModel):
+    partner_id: uuid.UUID
+    partner_name: str
+    leads_count: int
+    unique_users: int
+
+
+class LeadReportResponse(BaseModel):
+    period_start: Optional[datetime.date] = None
+    period_end: Optional[datetime.date] = None
+    total_leads: int
+    unique_users: int
+    by_partner: List[LeadReportByPartner]
+
+
+class LeadStatusUpdateRequest(BaseModel):
+    status: LeadStatus
+
+
+class LeadStatusUpdateResponse(BaseModel):
+    lead_id: uuid.UUID
+    status: LeadStatus
+    updated_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BillingReportByPartner(BaseModel):
+    partner_id: uuid.UUID
+    partner_name: str
+    qualified_leads: int
+    converted_leads: int
+    unique_users: int
+    qualified_lead_fee_gbp: float
+    converted_lead_fee_gbp: float
+    amount_gbp: float
+
+
+class BillingReportResponse(BaseModel):
+    period_start: Optional[datetime.date] = None
+    period_end: Optional[datetime.date] = None
+    currency: str
+    total_leads: int
+    qualified_leads: int
+    converted_leads: int
+    unique_users: int
+    total_amount_gbp: float
+    by_partner: List[BillingReportByPartner]
+
+
+class LeadFunnelSummaryResponse(BaseModel):
+    period_start: Optional[datetime.date] = None
+    period_end: Optional[datetime.date] = None
+    total_leads: int
+    qualified_leads: int
+    converted_leads: int
+    qualification_rate_percent: float
+    conversion_rate_from_qualified_percent: float
+    overall_conversion_rate_percent: float
+
+
+class SeedMRRPoint(BaseModel):
+    month: str
+    mrr_gbp: float
+
+
+class SeedReadinessResponse(BaseModel):
+    generated_at: datetime.datetime
+    period_months: int
+    current_month_mrr_gbp: float
+    previous_month_mrr_gbp: float
+    mrr_growth_percent: float
+    rolling_3_month_avg_mrr_gbp: float
+    paid_invoice_rate_percent: float
+    active_invoice_count: int
+    leads_last_90d: int
+    qualified_last_90d: int
+    converted_last_90d: int
+    qualification_rate_percent: float
+    conversion_rate_percent: float
+    readiness_score_percent: float
+    readiness_band: Literal["early", "progressing", "investable"]
+    next_actions: List[str]
+    monthly_mrr_series: List[SeedMRRPoint]
+
+
+class PMFMonthlyCohortPoint(BaseModel):
+    cohort_month: str
+    new_users: int
+    activated_users: int
+    activation_rate_percent: float
+    eligible_users_30d: int
+    retained_users_30d: int
+    retention_rate_30d_percent: float
+    eligible_users_60d: int
+    retained_users_60d: int
+    retention_rate_60d_percent: float
+    eligible_users_90d: int
+    retained_users_90d: int
+    retention_rate_90d_percent: float
+
+
+class PMFEvidenceResponse(BaseModel):
+    generated_at: datetime.datetime
+    as_of_date: datetime.date
+    cohort_months: int
+    activation_window_days: int
+    total_new_users: int
+    activated_users: int
+    activation_rate_percent: float
+    eligible_users_30d: int
+    retained_users_30d: int
+    retention_rate_30d_percent: float
+    eligible_users_60d: int
+    retained_users_60d: int
+    retention_rate_60d_percent: float
+    eligible_users_90d: int
+    retained_users_90d: int
+    retention_rate_90d_percent: float
+    pmf_band: Literal["early", "emerging", "pmf_confirmed"]
+    notes: List[str]
+    monthly_cohorts: List[PMFMonthlyCohortPoint]
+
+
+class PMFGateStatusResponse(BaseModel):
+    generated_at: datetime.datetime
+    gate_name: Literal["seed_pmf_gate_v1"]
+    activation_rate_percent: float
+    retention_rate_90d_percent: float
+    overall_nps_score: float
+    eligible_users_90d: int
+    total_nps_responses: int
+    required_activation_rate_percent: float
+    required_retention_rate_90d_percent: float
+    required_overall_nps_score: float
+    required_min_eligible_users_90d: int
+    required_min_nps_responses: int
+    activation_passed: bool
+    retention_passed: bool
+    nps_passed: bool
+    sample_size_passed: bool
+    gate_passed: bool
+    summary: str
+    next_actions: List[str]
+
+
+class MarketingSpendIngestRequest(BaseModel):
+    month_start: datetime.date
+    channel: str = Field(min_length=2, max_length=64)
+    spend_gbp: float = Field(ge=0)
+    acquired_customers: int = Field(ge=0)
+
+
+class MarketingSpendIngestResponse(BaseModel):
+    entry_id: uuid.UUID
+    month_start: datetime.date
+    channel: str
+    spend_gbp: float
+    acquired_customers: int
+    created_at: datetime.datetime
+    message: str
+
+
+class UnitEconomicsMonthlyPoint(BaseModel):
+    month: str
+    mrr_gbp: float
+    previous_month_mrr_gbp: float
+    churn_rate_percent: float
+    expansion_rate_percent: float
+    marketing_spend_gbp: float
+    acquired_customers: int
+    cac_gbp: Optional[float] = None
+
+
+class UnitEconomicsResponse(BaseModel):
+    generated_at: datetime.datetime
+    as_of_date: datetime.date
+    period_months: int
+    current_month_mrr_gbp: float
+    rolling_3_month_avg_mrr_gbp: float
+    mrr_growth_percent: float
+    mrr_stability_percent: float
+    mrr_stability_band: Literal["stable", "variable", "volatile"]
+    monthly_churn_rate_percent: float
+    monthly_expansion_rate_percent: float
+    average_cac_gbp: Optional[float] = None
+    estimated_ltv_gbp: Optional[float] = None
+    ltv_cac_ratio: Optional[float] = None
+    required_mrr_gbp: float
+    required_max_monthly_churn_percent: float
+    required_min_ltv_cac_ratio: float
+    mrr_gate_passed: bool
+    churn_gate_passed: bool
+    ltv_cac_gate_passed: bool
+    seed_gate_passed: bool
+    next_actions: List[str]
+    monthly_points: List[UnitEconomicsMonthlyPoint]
+
+
+class InvestorSnapshotExportResponse(BaseModel):
+    generated_at: datetime.datetime
+    as_of_date: datetime.date
+    seed_readiness: SeedReadinessResponse
+    pmf_evidence: PMFEvidenceResponse
+    nps_trend: "NPSTrendResponse"
+    pmf_gate: PMFGateStatusResponse
+    unit_economics: UnitEconomicsResponse
+
+
+class NPSSubmissionRequest(BaseModel):
+    score: int = Field(ge=0, le=10)
+    feedback: Optional[str] = Field(default=None, max_length=1000)
+    context_tag: Optional[str] = Field(default="dashboard", max_length=64)
+    locale: Optional[str] = Field(default=None, max_length=16)
+
+
+class NPSSubmissionResponse(BaseModel):
+    response_id: uuid.UUID
+    score_band: Literal["promoter", "passive", "detractor"]
+    submitted_at: datetime.datetime
+    message: str
+
+
+class NPSMonthlyTrendPoint(BaseModel):
+    month: str
+    responses_count: int
+    promoters_count: int
+    passives_count: int
+    detractors_count: int
+    nps_score: float
+
+
+class NPSTrendResponse(BaseModel):
+    generated_at: datetime.datetime
+    period_months: int
+    total_responses: int
+    promoters_count: int
+    passives_count: int
+    detractors_count: int
+    overall_nps_score: float
+    monthly_trend: List[NPSMonthlyTrendPoint]
+    note: str
+
+
+class PartnerPricingUpdateRequest(BaseModel):
+    qualified_lead_fee_gbp: float = Field(ge=0)
+    converted_lead_fee_gbp: float = Field(ge=0)
+
+
+class LeadListItem(BaseModel):
+    id: uuid.UUID
+    user_id: str
+    partner_id: uuid.UUID
+    partner_name: str
+    status: LeadStatus
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class LeadListResponse(BaseModel):
+    total: int
+    items: List[LeadListItem]
+
+
+class BillingInvoiceGenerateRequest(BaseModel):
+    partner_id: Optional[uuid.UUID] = None
+    start_date: Optional[datetime.date] = None
+    end_date: Optional[datetime.date] = None
+    statuses: Optional[List[LeadStatus]] = None
+
+
+class BillingInvoiceLine(BaseModel):
+    partner_id: uuid.UUID
+    partner_name: str
+    qualified_leads: int
+    converted_leads: int
+    unique_users: int
+    qualified_lead_fee_gbp: float
+    converted_lead_fee_gbp: float
+    amount_gbp: float
+
+
+class BillingInvoiceSummary(BaseModel):
+    id: uuid.UUID
+    invoice_number: str
+    period_start: Optional[datetime.date] = None
+    period_end: Optional[datetime.date] = None
+    due_date: datetime.date
+    currency: str
+    status: BillingInvoiceStatus
+    total_amount_gbp: float
+    created_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BillingInvoiceDetail(BillingInvoiceSummary):
+    generated_by_user_id: str
+    partner_id: Optional[uuid.UUID] = None
+    statuses: List[LeadStatus]
+    updated_at: datetime.datetime
+    lines: List[BillingInvoiceLine]
+
+
+class BillingInvoiceListResponse(BaseModel):
+    total: int
+    items: List[BillingInvoiceSummary]
+
+
+class BillingInvoiceStatusUpdateRequest(BaseModel):
+    status: BillingInvoiceStatus
+
+
+class SelfEmployedInvoiceLineInput(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    quantity: float = Field(gt=0)
+    unit_price_gbp: float = Field(ge=0)
+
+
+class SelfEmployedInvoiceCreateRequest(BaseModel):
+    customer_name: str = Field(min_length=2, max_length=180)
+    customer_email: Optional[str] = Field(default=None, max_length=255)
+    customer_phone: Optional[str] = Field(default=None, max_length=32)
+    customer_address: Optional[str] = Field(default=None, max_length=500)
+    issue_date: Optional[datetime.date] = None
+    due_date: Optional[datetime.date] = None
+    currency: str = Field(default="GBP", min_length=3, max_length=3)
+    tax_rate_percent: float = Field(default=0, ge=0, le=100)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    brand_business_name: Optional[str] = Field(default=None, max_length=180)
+    brand_logo_url: Optional[str] = Field(default=None, max_length=500)
+    brand_accent_color: Optional[str] = Field(default=None, max_length=16)
+    lines: List[SelfEmployedInvoiceLineInput] = Field(min_length=1)
+
+
+class SelfEmployedInvoiceLine(BaseModel):
+    id: uuid.UUID
+    description: str
+    quantity: float
+    unit_price_gbp: float
+    line_total_gbp: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SelfEmployedInvoiceSummary(BaseModel):
+    id: uuid.UUID
+    invoice_number: str
+    customer_name: str
+    issue_date: datetime.date
+    due_date: datetime.date
+    currency: str
+    payment_link_url: Optional[str] = None
+    status: SelfEmployedInvoiceStatus
+    total_amount_gbp: float
+    created_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SelfEmployedInvoiceDetail(SelfEmployedInvoiceSummary):
+    customer_email: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_address: Optional[str] = None
+    subtotal_gbp: float
+    tax_rate_percent: float
+    tax_amount_gbp: float
+    payment_link_provider: Optional[str] = None
+    recurring_plan_id: Optional[uuid.UUID] = None
+    brand_business_name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    brand_accent_color: Optional[str] = None
+    reminder_last_sent_at: Optional[datetime.datetime] = None
+    notes: Optional[str] = None
+    updated_at: datetime.datetime
+    lines: List[SelfEmployedInvoiceLine]
+
+
+class SelfEmployedInvoiceListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedInvoiceSummary]
+
+
+class SelfEmployedInvoiceStatusUpdateRequest(BaseModel):
+    status: SelfEmployedInvoiceStatus
+
+
+class SelfEmployedInvoiceBrandProfileUpdateRequest(BaseModel):
+    business_name: str = Field(min_length=2, max_length=180)
+    logo_url: Optional[str] = Field(default=None, max_length=500)
+    accent_color: Optional[str] = Field(default=None, max_length=16)
+    payment_terms_note: Optional[str] = Field(default=None, max_length=500)
+
+
+class SelfEmployedInvoiceBrandProfileResponse(BaseModel):
+    business_name: str
+    logo_url: Optional[str] = None
+    accent_color: Optional[str] = None
+    payment_terms_note: Optional[str] = None
+    updated_at: datetime.datetime
+    message: str
+
+
+class SelfEmployedRecurringInvoicePlanCreateRequest(BaseModel):
+    customer_name: str = Field(min_length=2, max_length=180)
+    customer_email: Optional[str] = Field(default=None, max_length=255)
+    customer_phone: Optional[str] = Field(default=None, max_length=32)
+    customer_address: Optional[str] = Field(default=None, max_length=500)
+    currency: str = Field(default="GBP", min_length=3, max_length=3)
+    tax_rate_percent: float = Field(default=0, ge=0, le=100)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    cadence: SelfEmployedRecurringCadence = SelfEmployedRecurringCadence.monthly
+    next_issue_date: Optional[datetime.date] = None
+    lines: List[SelfEmployedInvoiceLineInput] = Field(min_length=1)
+
+
+class SelfEmployedRecurringInvoicePlanSummary(BaseModel):
+    id: uuid.UUID
+    customer_name: str
+    cadence: SelfEmployedRecurringCadence
+    next_issue_date: datetime.date
+    active: bool
+    last_generated_invoice_id: Optional[uuid.UUID] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class SelfEmployedRecurringInvoicePlanListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedRecurringInvoicePlanSummary]
+
+
+class SelfEmployedRecurringInvoicePlanRunResult(BaseModel):
+    plan_id: uuid.UUID
+    invoice_id: uuid.UUID
+    invoice_number: str
+    next_issue_date: datetime.date
+    message: str
+
+
+class SelfEmployedRecurringInvoicePlanRunBatchResponse(BaseModel):
+    generated_count: int
+    generated: List[SelfEmployedRecurringInvoicePlanRunResult]
+    note: str
+
+
+class SelfEmployedRecurringInvoicePlanStatusUpdateRequest(BaseModel):
+    active: bool
+
+
+class SelfEmployedInvoiceReminderEvent(BaseModel):
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    reminder_type: Literal["due_soon", "overdue"]
+    channel: Literal["email", "sms", "in_app"]
+    status: Literal["queued", "sent", "failed"]
+    message: str
+    created_at: datetime.datetime
+    sent_at: Optional[datetime.datetime] = None
+
+
+class SelfEmployedInvoiceReminderRunResponse(BaseModel):
+    reminders_sent_count: int
+    reminders: List[SelfEmployedInvoiceReminderEvent]
+    note: str
+
+
+class SelfEmployedInvoiceReminderListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedInvoiceReminderEvent]
+
+
+class SelfEmployedReminderChannelReadiness(BaseModel):
+    channel: Literal["email", "sms"]
+    provider: str
+    enabled: bool
+    configured: bool
+    can_dispatch: bool
+    checks: List[str]
+    warnings: List[str]
+
+
+class SelfEmployedReminderDeliveryReadinessResponse(BaseModel):
+    generated_at: datetime.datetime
+    email: SelfEmployedReminderChannelReadiness
+    sms: SelfEmployedReminderChannelReadiness
+    overall_ready: bool
+    note: str
+
+
+class SelfEmployedReminderSmokeCheckRequest(BaseModel):
+    channel: Literal["email", "sms", "both"] = "both"
+    perform_network_check: bool = False
+    test_recipient_email: Optional[str] = Field(default=None, max_length=255)
+    test_recipient_phone: Optional[str] = Field(default=None, max_length=32)
+    reminder_type: Literal["due_soon", "overdue"] = "due_soon"
+
+
+class SelfEmployedReminderSmokeCheckChannelResult(BaseModel):
+    channel: Literal["email", "sms"]
+    provider: str
+    enabled: bool
+    configured: bool
+    network_check_performed: bool
+    delivery_status: Literal["sent", "failed", "skipped"]
+    detail: str
+
+
+class SelfEmployedReminderSmokeCheckResponse(BaseModel):
+    generated_at: datetime.datetime
+    requested_channel: Literal["email", "sms", "both"]
+    perform_network_check: bool
+    results: List[SelfEmployedReminderSmokeCheckChannelResult]
+    passed: bool
+
+
+class SelfEmployedCalendarEventCreateRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=180)
+    starts_at: datetime.datetime
+    ends_at: Optional[datetime.datetime] = None
+    description: Optional[str] = Field(default=None, max_length=1000)
+    category: Optional[str] = Field(default="general", max_length=64)
+    recipient_name: Optional[str] = Field(default=None, max_length=180)
+    recipient_email: Optional[str] = Field(default=None, max_length=255)
+    recipient_phone: Optional[str] = Field(default=None, max_length=32)
+    notify_in_app: bool = True
+    notify_email: bool = False
+    notify_sms: bool = False
+    notify_before_minutes: int = Field(default=1440, ge=0, le=10080)
+
+    @model_validator(mode="after")
+    def validate_time_window(self) -> "SelfEmployedCalendarEventCreateRequest":
+        if self.ends_at and self.ends_at < self.starts_at:
+            raise ValueError("ends_at cannot be earlier than starts_at")
+        return self
+
+
+class SelfEmployedCalendarEventUpdateRequest(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=2, max_length=180)
+    starts_at: Optional[datetime.datetime] = None
+    ends_at: Optional[datetime.datetime] = None
+    description: Optional[str] = Field(default=None, max_length=1000)
+    category: Optional[str] = Field(default=None, max_length=64)
+    recipient_name: Optional[str] = Field(default=None, max_length=180)
+    recipient_email: Optional[str] = Field(default=None, max_length=255)
+    recipient_phone: Optional[str] = Field(default=None, max_length=32)
+    notify_in_app: Optional[bool] = None
+    notify_email: Optional[bool] = None
+    notify_sms: Optional[bool] = None
+    notify_before_minutes: Optional[int] = Field(default=None, ge=0, le=10080)
+    status: Optional[SelfEmployedCalendarEventStatus] = None
+
+    @model_validator(mode="after")
+    def validate_time_window(self) -> "SelfEmployedCalendarEventUpdateRequest":
+        if self.starts_at and self.ends_at and self.ends_at < self.starts_at:
+            raise ValueError("ends_at cannot be earlier than starts_at")
+        return self
+
+
+class SelfEmployedCalendarEvent(BaseModel):
+    id: uuid.UUID
+    title: str
+    starts_at: datetime.datetime
+    ends_at: Optional[datetime.datetime] = None
+    description: Optional[str] = None
+    category: str
+    recipient_name: Optional[str] = None
+    recipient_email: Optional[str] = None
+    recipient_phone: Optional[str] = None
+    notify_in_app: bool
+    notify_email: bool
+    notify_sms: bool
+    notify_before_minutes: int
+    reminder_last_sent_at: Optional[datetime.datetime] = None
+    status: SelfEmployedCalendarEventStatus
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SelfEmployedCalendarEventListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedCalendarEvent]
+
+
+class SelfEmployedCalendarReminderEvent(BaseModel):
+    id: uuid.UUID
+    event_id: uuid.UUID
+    reminder_type: Literal["upcoming", "overdue"]
+    channel: Literal["email", "sms", "in_app"]
+    status: Literal["queued", "sent", "failed"]
+    message: str
+    created_at: datetime.datetime
+    sent_at: Optional[datetime.datetime] = None
+
+
+class SelfEmployedCalendarReminderRunResponse(BaseModel):
+    reminders_sent_count: int
+    reminders: List[SelfEmployedCalendarReminderEvent]
+    note: str
+
+
+class SelfEmployedCalendarReminderListResponse(BaseModel):
+    total: int
+    items: List[SelfEmployedCalendarReminderEvent]
+

@@ -1,0 +1,78 @@
+# Execution List: Stabilization to Release Readiness
+
+_Last updated: 2026-02-13_
+
+## Sprint 1 (Weeks 1-2) - Build and CI Stabilization
+
+- [x] Create execution list and start implementation
+- [x] Fix broken Next.js/TypeScript pages in `apps/web-portal/pages/*`
+- [x] Ensure `npx tsc --noEmit` passes in `apps/web-portal`
+- [x] Resolve auth-service dependency/runtime break in local test setup
+- [x] Replace CI test placeholder with real `pytest` execution
+- [x] Expand CI coverage beyond 3 hardcoded services
+- [x] Add frontend checks (`typecheck`, `lint`, `build`) to CI
+- [x] Move dev secrets from hardcoded compose values to env-based setup
+
+## Sprint 2 (Weeks 3-4) - Auth/Security Hardening
+
+- [x] Replace `fake_auth_check` in critical services
+- [x] Centralize JWT validation in shared library
+- [x] Propagate real user identity across inter-service requests
+- [x] Migrate critical in-memory stores to persistent storage
+- [x] Standardize error handling/retries for inter-service calls
+
+## Sprint 3 (Weeks 5-6) - Release Readiness
+
+- [x] Add stable smoke/integration pipeline in CI
+- [x] Enforce quality gates (coverage + required checks)
+- [x] Define observability SLO dashboards and alerts
+- [x] Add release checklist (migration, rollback, dependency security)
+
+## Current focus
+
+1. Add optional full docker-compose end-to-end nightly workflow
+2. Expand broker-based Pact publishing/verification strategy
+3. [x] Enforce RBAC on monetization lead reports (`billing:read` scope / admin role)
+4. [x] Make lead deduplication race-safe in PostgreSQL (advisory lock + transactional insert)
+5. [x] Introduce Alembic baseline for `partner-registry` and migration-ready schema checks
+6. [x] Add lead lifecycle statuses (`initiated/qualified/rejected/converted`) and billable-first reports
+7. [x] Surface monetization billing tools in web admin panel (status updates + billing export)
+8. [x] Add pricing ops, lead feed, and invoice lifecycle in monetization admin workflows
+9. [x] Add invoice numbering policy, PDF export, and Xero/QuickBooks CSV mappings
+10. [x] Add go-live runbook, rollback drill, and monetization smoke gate expansion
+11. [x] Close security pass: upgrade web dependencies and lock reproducible npm install
+12. [x] Restore receipt scanning output for expense article and deductible hints
+13. [x] Bridge OCR receipts into draft categorized transactions for tax workflows
+14. [x] Add auto-reconciliation of receipt drafts during bank transaction import
+15. [x] Add manual receipt-draft matching workflow when auto-reconciliation misses
+16. [x] Add ignore/search controls for manual receipt reconciliation fallback
+17. [x] Replace simulated receipt OCR with production Textract-based extraction pipeline
+18. [x] Add OCR quality loop with confidence scoring and manual review queue
+19. [x] Add OCR review diff audit trail and UI highlight of manual corrections
+20. [x] Add feedback loop to reuse manual OCR categorization fixes for future receipts
+21. [x] Add England mortgage document checklist engine for all major mortgage types
+22. [x] Add mortgage readiness scoring from uploaded docs with missing-pack guidance
+23. [x] Add lender-profile presets for mortgage checklist/readiness (high-street/specialist/BTL/adverse)
+24. [x] Add all-types mortgage readiness matrix dashboard for coverage tracking
+25. [x] Add scalable locale registry and fallback support for RU/UA/EN/PL/RO-MD/TR/HU
+26. [x] Add mortgage pack index export (JSON manifest + PDF evidence map)
+27. [x] Add mortgage evidence quality checks (staleness, name mismatch, period mismatch, unreadable OCR)
+28. [x] Add compliance disclaimer and advisor-review submission gate for broker handoff
+29. [x] Add monthly refresh reminders for expiring statements and ID documents
+30. [x] Add localization translation-health telemetry (missing keys + fallback hit-rate)
+31. [x] Externalize localization dictionaries into JSON catalogs for scalable i18n pipeline
+32. [x] Add ICU/pluralization support and locale-aware formatting standards in localization + web i18n
+33. [x] Add agent-service MVP with intent router and read-only evidence-backed guidance API
+34. [x] Add agent session memory with Redis-backed TTL and session continuity
+35. [x] Add confirmation token flow for agent write actions (safe mode foundation)
+36. [x] Add confirmed safe-action execution with allowlisted policy gate in agent-service
+37. [x] Add structured agent audit logging (prompt hash, tool calls, payload summary, action result)
+38. [x] Add dashboard AI Copilot panel wired to agent-service chat endpoint
+39. [x] Add suggested action cards with explicit confirmation flow in dashboard
+40. [x] Add "why this suggestion" drill-down in AI Copilot action cards
+41. [x] Add fallback UX for Copilot outages with manual workflow shortcuts
+42. [x] Add OCR/document prompt-injection guardrails in agent context handling
+43. [x] Add cross-user guardrail tests for session, token, and audit isolation
+44. [x] Add agent/documents/tax Prometheus metrics for quality and conversion KPIs
+45. [x] Add Grafana dashboard provisioning for agent quality operations KPIs
+46. [x] Add runbook guidance for agent safe mode and feature-flag rollback path

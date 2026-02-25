@@ -1,9 +1,75 @@
+:root {
+  --color-bg: #f4f7ff;
+  --color-bg-accent: #eef3ff;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8faff;
+  --color-border: #d9e2f2;
+  --color-text-primary: #1e293b;
+  --color-text-muted: #5b6b84;
+  --color-primary: #2f6df6;
+  --color-primary-hover: #2558c6;
+  --color-primary-soft: rgba(47, 109, 246, 0.16);
+  --color-danger: #d23f57;
+  --color-danger-bg: #fff1f4;
+  --color-success: #1c8f5f;
+  --color-success-bg: #ecfdf5;
+  --color-nav-bg-start: #0f172a;
+  --color-nav-bg-end: #172f55;
+  --color-nav-link: #d4dff2;
+  --color-nav-link-active: #ffffff;
+  --color-nav-chip-bg: rgba(255, 255, 255, 0.1);
+  --color-bg-radial-a: #eef3ff;
+  --color-bg-radial-b: #edf8ff;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --shadow-sm: 0 8px 18px rgba(28, 54, 113, 0.08);
+  --shadow-md: 0 18px 40px rgba(28, 54, 113, 0.12);
+}
+
+[data-theme='dark'] {
+  --color-bg: #090f1d;
+  --color-bg-accent: #101a30;
+  --color-surface: #121b2f;
+  --color-surface-muted: #17233c;
+  --color-border: #263451;
+  --color-text-primary: #e4edff;
+  --color-text-muted: #9fb0cf;
+  --color-primary: #5d8dff;
+  --color-primary-hover: #4878ea;
+  --color-primary-soft: rgba(93, 141, 255, 0.24);
+  --color-danger: #ff8fa4;
+  --color-danger-bg: #3b1f2d;
+  --color-success: #7de4b8;
+  --color-success-bg: #13332b;
+  --color-nav-bg-start: #0a1225;
+  --color-nav-bg-end: #101d36;
+  --color-nav-link: #bccbe8;
+  --color-nav-link-active: #f3f7ff;
+  --color-nav-chip-bg: rgba(255, 255, 255, 0.08);
+  --color-bg-radial-a: #162640;
+  --color-bg-radial-b: #0f203a;
+  --shadow-sm: 0 10px 20px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 18px 36px rgba(0, 0, 0, 0.38);
+}
+
 html,
 body {
-  padding: 0;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
-    Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
+  padding: 0;
+  min-height: 100%;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  color: var(--color-text-primary);
+  background:
+    radial-gradient(circle at 10% 0%, var(--color-bg-radial-a) 0%, transparent 48%),
+    radial-gradient(circle at 90% 100%, var(--color-bg-radial-b) 0%, transparent 52%),
+    var(--color-bg);
+  transition: background-color 0.22s ease, color 0.22s ease;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 a {
@@ -11,6 +77,8 @@ a {
   text-decoration: none;
 }
 
-* {
-  box-sizing: border-box;
+button,
+input,
+select {
+  font: inherit;
 }

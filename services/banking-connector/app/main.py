@@ -1,38 +1,25 @@
-import logging
-from typing import Annotated, List, Optional
-
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from pydantic import BaseModel, HttpUrl
-from urllib.parse import urlparse
-import uuid
 import datetime
 import os
+import sys
+import uuid
+from pathlib import Path
+from typing import List, Optional
+
 import hvac
+from fastapi import Depends, FastAPI, HTTPException, status
+from pydantic import BaseModel, HttpUrl
 from .celery_app import import_transactions_task
 
 logger = logging.getLogger(__name__)
 
-# --- Vault Client Setup ---
-VAULT_ADDR = os.getenv("VAULT_ADDR")
-VAULT_TOKEN = os.getenv("VAULT_TOKEN")
-
-vault_client = None
-vault_available = False
-if VAULT_ADDR and VAULT_TOKEN:
-    vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
-    try:
-        vault_available = vault_client.is_authenticated()
-    except Exception as e:
-        logger.warning("Vault is not reachable at startup: %s", e)
-else:
-    logger.warning("Vault is not configured; token persistence is disabled.")
-
-if vault_available:
-    logger.info("Successfully authenticated with Vault.")
-elif vault_client:
-    logger.warning("Could not authenticate with Vault.")
+vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
+try:
+    if vault_client.is_authenticated():
+        print("Successfully authenticated with Vault.")
+    else:
+        print("Error: Could not authenticate with Vault.")
+except Exception as exc:
+    print(f"Warning: Vault authentication check failed during startup: {exc}")
 
 
 def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
@@ -52,27 +39,16 @@ def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: s
         logger.error("Error storing tokens in Vault: %s", e)
 
 
-# --- Security ---
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-    return user_id
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 app = FastAPI(
     title="Banking Connector Service",
@@ -115,11 +91,7 @@ async def initiate_connection(
     request: InitiateConnectionRequest,
     user_id: str = Depends(get_current_user_id)
 ):
-    parsed = urlparse(str(request.redirect_uri))
-    if parsed.hostname not in ALLOWED_REDIRECT_DOMAINS:
-        raise HTTPException(status_code=400, detail="Redirect URI domain not allowed")
-
-    logger.info("User %s is initiating connection with %s", user_id, request.provider_id)
+    print(f"User {user_id} is initiating connection with {request.provider_id}")
     consent_url = f"https://fake-bank-provider.com/consent?client_id={request.provider_id}&redirect_uri={request.redirect_uri}&scope=transactions"
     return InitiateConnectionResponse(consent_url=consent_url)
 
@@ -129,6 +101,8 @@ async def handle_provider_callback(
     user_id: str = Depends(get_current_user_id),
     auth_token: str = Depends(oauth2_scheme),
     state: Optional[str] = None,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     if not code:
         raise HTTPException(status_code=400, detail="Authorization code is missing")
@@ -150,11 +124,12 @@ async def handle_provider_callback(
     ]
 
     # Dispatch the task to the Celery queue.
-    # We forward the caller's token so transactions-service can keep user ownership.
+    # We convert Pydantic models to dicts as Celery works best with simple data types.
     task = import_transactions_task.delay(
         str(connection_id),
+        user_id,
+        bearer_token,
         [t.model_dump() for t in mock_transactions],
-        auth_token,
     )
 
     return CallbackResponse(

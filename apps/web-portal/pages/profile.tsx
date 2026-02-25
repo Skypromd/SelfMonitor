@@ -1,6 +1,6 @@
-import { useState, FormEvent, useEffect, ChangeEvent } from 'react';
-import styles from '../styles/Home.module.css';
+import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import styles from '../styles/Home.module.css';
 
 const PROFILE_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_PROFILE_SERVICE_URL || 'http://localhost:8001';
 
@@ -8,133 +8,113 @@ type ProfilePageProps = {
   token: string;
 };
 
+type ProfileState = {
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+};
+
 export default function ProfilePage({ token }: ProfilePageProps) {
-  const [profile, setProfile] = useState({ first_name: '', last_name: '', date_of_birth: '' });
-  const [subscription, setSubscription] = useState({
-    subscription_plan: 'free',
-    subscription_status: 'active',
-    billing_cycle: 'monthly',
-    current_period_start: '',
-    current_period_end: '',
-    monthly_close_day: 1,
+  const [profile, setProfile] = useState<ProfileState>({
+    first_name: '',
+    last_name: '',
+    date_of_birth: '',
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const { t } = useTranslation();
 
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     setMessage('');
     setError('');
     try {
       const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 404) {
         setMessage(t('profile.empty_profile'));
         setProfile({ first_name: '', last_name: '', date_of_birth: '' });
         return;
       }
-      if (!response.ok) throw new Error('Failed to fetch profile');
-      const data = await response.json();
-      setProfile({ first_name: data.first_name || '', last_name: data.last_name || '', date_of_birth: data.date_of_birth || '' });
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
+      if (!response.ok) {
+        throw new Error('Failed to fetch profile');
+      }
 
-  const fetchSubscription = async () => {
-    try {
-      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/subscriptions/me`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error('Failed to fetch subscription');
       const data = await response.json();
-      setSubscription({
-        subscription_plan: data.subscription_plan || 'free',
-        subscription_status: data.subscription_status || 'active',
-        billing_cycle: data.billing_cycle || 'monthly',
-        current_period_start: data.current_period_start || '',
-        current_period_end: data.current_period_end || '',
-        monthly_close_day: data.monthly_close_day || 1,
+      setProfile({
+        first_name: data.first_name || '',
+        last_name: data.last_name || '',
+        date_of_birth: data.date_of_birth || '',
       });
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
     }
-  };
+  }, [token]);
 
   useEffect(() => {
     fetchProfile();
-    fetchSubscription();
-  }, [token]);
+  }, [fetchProfile]);
 
-  const handleProfileChange = (e: ChangeEvent<HTMLInputElement>) => setProfile({ ...profile, [e.target.name]: e.target.value });
+  const handleProfileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setProfile((current) => ({ ...current, [event.target.name]: event.target.value }));
+  };
 
-  const handleSaveProfile = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSaveProfile = async (event: FormEvent) => {
+    event.preventDefault();
     setMessage('');
     setError('');
+
     try {
       const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me`, {
+        body: JSON.stringify({ ...profile, date_of_birth: profile.date_of_birth || null }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ...profile, date_of_birth: profile.date_of_birth || null })
       });
-      if (!response.ok) throw new Error('Failed to save profile');
-      setMessage(t('profile.saved_message'));
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  const handleSubscriptionChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setSubscription(prev => ({
-      ...prev,
-      [name]: name === 'monthly_close_day' ? Number(value) : value,
-    }));
-  };
-
-  const handleSaveSubscription = async (e: FormEvent) => {
-    e.preventDefault();
-    setMessage('');
-    setError('');
-    try {
-      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/subscriptions/me`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          subscription_plan: subscription.subscription_plan,
-          subscription_status: subscription.subscription_status,
-          billing_cycle: subscription.billing_cycle,
-          monthly_close_day: subscription.monthly_close_day,
-        })
-      });
-      if (!response.ok) throw new Error('Failed to update subscription');
-      const data = await response.json();
-      setSubscription({
-        subscription_plan: data.subscription_plan || 'free',
-        subscription_status: data.subscription_status || 'active',
-        billing_cycle: data.billing_cycle || 'monthly',
-        current_period_start: data.current_period_start || '',
-        current_period_end: data.current_period_end || '',
-        monthly_close_day: data.monthly_close_day || 1,
-      });
-      setMessage(t('subscription.updated_message'));
-    } catch (err: any) {
-      setError(err.message);
+      if (!response.ok) {
+        throw new Error('Failed to save profile');
+      }
+      setMessage('Profile saved successfully!');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
     }
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('profile.title')}</h1>
-      <p>{t('profile.description')}</p>
+      <p>Fetch and update your profile data from a protected endpoint.</p>
       <div className={styles.subContainer}>
         <form onSubmit={handleSaveProfile}>
-          <input type="text" name="first_name" placeholder={t('profile.first_name')} value={profile.first_name} onChange={handleProfileChange} className={styles.input} />
-          <input type="text" name="last_name" placeholder={t('profile.last_name')} value={profile.last_name} onChange={handleProfileChange} className={styles.input} />
-          <input type="date" name="date_of_birth" placeholder={t('profile.date_of_birth')} value={profile.date_of_birth} onChange={handleProfileChange} className={styles.input} />
-          <button type="submit" className={styles.button}>{t('common.save')}</button>
+          <input
+            className={styles.input}
+            name="first_name"
+            onChange={handleProfileChange}
+            placeholder="First Name"
+            type="text"
+            value={profile.first_name}
+          />
+          <input
+            className={styles.input}
+            name="last_name"
+            onChange={handleProfileChange}
+            placeholder="Last Name"
+            type="text"
+            value={profile.last_name}
+          />
+          <input
+            className={styles.input}
+            name="date_of_birth"
+            onChange={handleProfileChange}
+            placeholder="Date of Birth"
+            type="date"
+            value={profile.date_of_birth}
+          />
+          <button className={styles.button} type="submit">
+            {t('common.save')}
+          </button>
         </form>
         {message && <p className={styles.message}>{message}</p>}
         {error && <p className={styles.error}>{error}</p>}

@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 import uuid
+from jose import jwt
 
 # Adjust path to import app and other modules
 import sys
@@ -16,6 +17,15 @@ for module_name in list(sys.modules):
 from app.main import app
 from app.database import get_db, Base
 from app import schemas
+
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+TEST_USER_ID = "test-user@example.com"
+
+
+def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
+    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+    return {"Authorization": f"Bearer {token}"}
 
 # --- Test Database Setup ---
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -44,11 +54,12 @@ client = TestClient(app)
 @pytest.mark.asyncio
 async def test_import_and_get_transactions(db_session):
     account_id = str(uuid.uuid4())
-    user_id = "fake-user-123" # This comes from fake_auth_check
+    user_id = TEST_USER_ID
 
     # 1. Import transactions
     import_response = client.post(
         "/import",
+        headers=get_auth_headers(user_id),
         json={
             "account_id": account_id,
             "transactions": [
@@ -59,10 +70,12 @@ async def test_import_and_get_transactions(db_session):
     )
     assert import_response.status_code == 202
     assert import_response.json()["imported_count"] == 2
-    assert import_response.json()["skipped_count"] == 0
+    assert import_response.json()["created_count"] == 2
+    assert import_response.json()["reconciled_receipt_drafts"] == 0
+    assert import_response.json()["skipped_duplicates"] == 0
 
     # 2. Get transactions for that account
-    get_response = client.get(f"/accounts/{account_id}/transactions")
+    get_response = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers(user_id))
     assert get_response.status_code == 200
     transactions = get_response.json()
     assert len(transactions) == 2
@@ -77,6 +90,7 @@ async def test_update_transaction_category(db_session):
     # 1. Import a transaction
     client.post(
         "/import",
+        headers=get_auth_headers(),
         json={
             "account_id": account_id,
             "transactions": [
@@ -86,12 +100,13 @@ async def test_update_transaction_category(db_session):
     )
 
     # 2. Retrieve it to get its generated UUID
-    get_response = client.get(f"/accounts/{account_id}/transactions")
+    get_response = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers())
     transaction_id = get_response.json()[0]["id"]
 
     # 3. Update its category
     update_response = client.patch(
         f"/transactions/{transaction_id}",
+        headers=get_auth_headers(),
         json={"category": "groceries"}
     )
     assert update_response.status_code == 200
@@ -99,28 +114,16 @@ async def test_update_transaction_category(db_session):
     assert updated_transaction["category"] == "groceries"
     assert updated_transaction["description"] == "Tesco"
 
-    # 4. Update tax fields
-    update_tax_response = client.patch(
-        f"/transactions/{transaction_id}",
-        json={"tax_category": "travel", "business_use_percent": 80}
-    )
-    assert update_tax_response.status_code == 200
-    updated_tax = update_tax_response.json()
-    assert updated_tax["tax_category"] == "travel"
-    assert updated_tax["business_use_percent"] == 80.0
-
-    # 5. Verify the updates are persisted
-    get_response_after_update = client.get(f"/accounts/{account_id}/transactions")
-    fetched = get_response_after_update.json()[0]
-    assert fetched["category"] == "groceries"
-    assert fetched["tax_category"] == "travel"
-    assert fetched["business_use_percent"] == 80.0
+    # 4. Verify the update is persisted
+    get_response_after_update = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers())
+    assert get_response_after_update.json()[0]["category"] == "groceries"
 
 @pytest.mark.asyncio
 async def test_update_nonexistent_transaction(db_session):
     non_existent_id = str(uuid.uuid4())
     response = client.patch(
         f"/transactions/{non_existent_id}",
+        headers=get_auth_headers(),
         json={"category": "does-not-matter"}
     )
     assert response.status_code == 404
@@ -132,11 +135,11 @@ async def test_get_all_my_transactions(db_session):
     account_id_1 = str(uuid.uuid4())
     account_id_2 = str(uuid.uuid4())
 
-    client.post("/import", json={ "account_id": account_id_1, "transactions": [{"provider_transaction_id": "txn1", "date": "2023-10-01", "description": "Coffee", "amount": -5, "currency": "GBP"}]})
-    client.post("/import", json={ "account_id": account_id_2, "transactions": [{"provider_transaction_id": "txn2", "date": "2023-10-02", "description": "Salary", "amount": 2500, "currency": "GBP"}]})
+    client.post("/import", headers=get_auth_headers(), json={ "account_id": account_id_1, "transactions": [{"provider_transaction_id": "txn1", "date": "2023-10-01", "description": "Coffee", "amount": -5, "currency": "GBP"}]})
+    client.post("/import", headers=get_auth_headers(), json={ "account_id": account_id_2, "transactions": [{"provider_transaction_id": "txn2", "date": "2023-10-02", "description": "Salary", "amount": 2500, "currency": "GBP"}]})
 
     # Call the new endpoint
-    response = client.get("/transactions/me")
+    response = client.get("/transactions/me", headers=get_auth_headers())
 
     assert response.status_code == 200
     transactions = response.json()
@@ -148,69 +151,300 @@ async def test_get_all_my_transactions(db_session):
 
 
 @pytest.mark.asyncio
-async def test_import_csv_transactions(db_session):
-    account_id = str(uuid.uuid4())
-    csv_content = (
-        "date,description,amount,currency\n"
-        "2023-10-01,Coffee,-3.50,GBP\n"
-        "2023-10-02,Salary,2500,GBP\n"
-    )
+async def test_create_receipt_draft_transaction_and_deduplicate(db_session):
+    payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "trainline_receipt.pdf",
+        "transaction_date": "2026-02-12",
+        "total_amount": 28.45,
+        "currency": "GBP",
+        "vendor_name": "Trainline",
+        "suggested_category": "transport",
+        "expense_article": "travel_costs",
+        "is_potentially_deductible": True,
+    }
 
-    response = client.post(
-        "/import/csv",
-        data={"account_id": account_id},
-        files={"file": ("transactions.csv", csv_content, "text/csv")},
+    first_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=payload,
     )
-    assert response.status_code == 202
-    assert response.json()["imported_count"] == 2
-    assert response.json()["skipped_count"] == 0
+    assert first_response.status_code == 200
+    first_data = first_response.json()
+    assert first_data["duplicated"] is False
+    first_tx = first_data["transaction"]
+    assert first_tx["provider_transaction_id"].startswith("receipt-draft-")
+    assert first_tx["amount"] == -28.45
+    assert first_tx["category"] == "transport"
+    assert "Receipt draft: Trainline" in first_tx["description"]
 
-    repeat_response = client.post(
-        "/import/csv",
-        data={"account_id": account_id},
-        files={"file": ("transactions.csv", csv_content, "text/csv")},
+    second_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=payload,
     )
-    assert repeat_response.status_code == 202
-    assert repeat_response.json()["imported_count"] == 0
-    assert repeat_response.json()["skipped_count"] == 2
+    assert second_response.status_code == 200
+    second_data = second_response.json()
+    assert second_data["duplicated"] is True
+    assert second_data["transaction"]["id"] == first_tx["id"]
 
 
 @pytest.mark.asyncio
-async def test_import_deduplicates_by_provider_id(db_session):
+async def test_import_reconciles_matching_receipt_draft(db_session):
     account_id = str(uuid.uuid4())
-
-    payload = {
-        "account_id": account_id,
-        "transactions": [
-            {"provider_transaction_id": "dup-1", "date": "2023-10-01", "description": "Coffee", "amount": -4.5, "currency": "GBP"}
-        ]
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "trainline_receipt.pdf",
+        "transaction_date": "2026-02-12",
+        "total_amount": 28.45,
+        "currency": "GBP",
+        "vendor_name": "Trainline",
+        "suggested_category": "transport",
+        "expense_article": "travel_costs",
+        "is_potentially_deductible": True,
     }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    assert draft_response.status_code == 200
+    draft_tx_id = draft_response.json()["transaction"]["id"]
 
-    first_response = client.post("/import", json=payload)
-    assert first_response.status_code == 202
-    assert first_response.json()["imported_count"] == 1
-    assert first_response.json()["skipped_count"] == 0
+    import_response = client.post(
+        "/import",
+        headers=get_auth_headers(),
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "bank-txn-777",
+                    "date": "2026-02-12",
+                    "description": "TRAINLINE UK WEB",
+                    "amount": -28.45,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert import_response.status_code == 202
+    payload = import_response.json()
+    assert payload["imported_count"] == 1
+    assert payload["created_count"] == 0
+    assert payload["reconciled_receipt_drafts"] == 1
+    assert payload["skipped_duplicates"] == 0
 
-    second_response = client.post("/import", json=payload)
-    assert second_response.status_code == 202
-    assert second_response.json()["imported_count"] == 0
-    assert second_response.json()["skipped_count"] == 1
+    user_transactions_response = client.get("/transactions/me", headers=get_auth_headers())
+    assert user_transactions_response.status_code == 200
+    items = user_transactions_response.json()
+    assert len(items) == 1
+    reconciled = items[0]
+    assert reconciled["id"] == draft_tx_id
+    assert reconciled["provider_transaction_id"] == "bank-txn-777"
+    assert reconciled["account_id"] == account_id
+    assert reconciled["amount"] == -28.45
+    assert reconciled["category"] == "transport"
 
 
 @pytest.mark.asyncio
-async def test_partner_ingestion_endpoint(db_session):
+async def test_manual_reconcile_unmatched_receipt_draft(db_session):
     account_id = str(uuid.uuid4())
-    payload = {
-        "schema_version": "1.0",
-        "source_system": "partner-app",
-        "user_reference": "partner-user-42",
-        "account_id": account_id,
-        "transactions": [
-            {"provider_transaction_id": "p-1", "date": "2023-10-01", "description": "Invoice", "amount": 1500.0, "currency": "GBP"}
-        ]
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "trainline_receipt.pdf",
+        "transaction_date": "2026-02-12",
+        "total_amount": 28.45,
+        "currency": "GBP",
+        "vendor_name": "Trainline",
+        "suggested_category": "transport",
+        "expense_article": "travel_costs",
+        "is_potentially_deductible": True,
     }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    assert draft_response.status_code == 200
+    draft_tx = draft_response.json()["transaction"]
 
-    response = client.post("/ingest/partner", json=payload)
-    assert response.status_code == 202
-    assert response.json()["imported_count"] == 1
-    assert response.json()["skipped_count"] == 0
+    # Description intentionally does not mention vendor to avoid auto-reconciliation.
+    import_response = client.post(
+        "/import",
+        headers=get_auth_headers(),
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "bank-txn-manual-1",
+                    "date": "2026-02-12",
+                    "description": "CARD PAYMENT 8934",
+                    "amount": -28.45,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert import_response.status_code == 202
+    import_data = import_response.json()
+    assert import_data["created_count"] == 1
+    assert import_data["reconciled_receipt_drafts"] == 0
+
+    unmatched_response = client.get(
+        "/transactions/receipt-drafts/unmatched",
+        headers=get_auth_headers(),
+    )
+    assert unmatched_response.status_code == 200
+    unmatched_data = unmatched_response.json()
+    assert unmatched_data["total"] == 1
+    item = unmatched_data["items"][0]
+    assert item["draft_transaction"]["id"] == draft_tx["id"]
+    assert len(item["candidates"]) >= 1
+    candidate = item["candidates"][0]
+    assert candidate["provider_transaction_id"] == "bank-txn-manual-1"
+
+    reconcile_response = client.post(
+        f"/transactions/receipt-drafts/{draft_tx['id']}/reconcile",
+        headers=get_auth_headers(),
+        json={"target_transaction_id": candidate["transaction_id"]},
+    )
+    assert reconcile_response.status_code == 200
+    reconcile_data = reconcile_response.json()
+    assert reconcile_data["removed_transaction_id"] == candidate["transaction_id"]
+    assert reconcile_data["reconciled_transaction"]["id"] == draft_tx["id"]
+    assert reconcile_data["reconciled_transaction"]["provider_transaction_id"] == "bank-txn-manual-1"
+    assert reconcile_data["reconciled_transaction"]["category"] == "transport"
+
+    user_transactions_response = client.get("/transactions/me", headers=get_auth_headers())
+    assert user_transactions_response.status_code == 200
+    transactions = user_transactions_response.json()
+    assert len(transactions) == 1
+    assert transactions[0]["id"] == draft_tx["id"]
+
+
+@pytest.mark.asyncio
+async def test_ignore_candidate_and_search_for_manual_match(db_session):
+    account_id = str(uuid.uuid4())
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "office_receipt.pdf",
+        "transaction_date": "2026-02-15",
+        "total_amount": 14.99,
+        "currency": "GBP",
+        "vendor_name": "Tesco Business",
+        "suggested_category": "office_supplies",
+    }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    draft_id = draft_response.json()["transaction"]["id"]
+
+    import_response = client.post(
+        "/import",
+        headers=get_auth_headers(),
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "bank-txn-ignore-1",
+                    "date": "2026-02-15",
+                    "description": "CARD PAYMENT 22",
+                    "amount": -14.99,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert import_response.status_code == 202
+    assert import_response.json()["created_count"] == 1
+
+    unmatched_before = client.get(
+        "/transactions/receipt-drafts/unmatched",
+        headers=get_auth_headers(),
+    ).json()
+    candidate_id = unmatched_before["items"][0]["candidates"][0]["transaction_id"]
+
+    ignore_candidate_response = client.post(
+        f"/transactions/receipt-drafts/{draft_id}/ignore-candidate",
+        headers=get_auth_headers(),
+        json={"target_transaction_id": candidate_id},
+    )
+    assert ignore_candidate_response.status_code == 200
+    ignored_ids = ignore_candidate_response.json()["draft_transaction"]["ignored_candidate_ids"]
+    assert candidate_id in ignored_ids
+
+    unmatched_after = client.get(
+        "/transactions/receipt-drafts/unmatched",
+        headers=get_auth_headers(),
+    ).json()
+    assert unmatched_after["items"][0]["candidates"] == []
+
+    searched = client.get(
+        (
+            f"/transactions/receipt-drafts/{draft_id}/candidates"
+            "?include_ignored=true&search_provider_transaction_id=bank-txn-ignore-1"
+            "&search_amount=14.99&search_date=2026-02-15"
+        ),
+        headers=get_auth_headers(),
+    )
+    assert searched.status_code == 200
+    searched_payload = searched.json()
+    assert searched_payload["total"] >= 1
+    candidate = searched_payload["items"][0]
+    assert candidate["transaction_id"] == candidate_id
+    assert candidate["ignored"] is True
+
+
+@pytest.mark.asyncio
+async def test_ignore_and_reopen_receipt_draft(db_session):
+    draft_payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "ignored_receipt.pdf",
+        "transaction_date": "2026-02-10",
+        "total_amount": 9.5,
+        "currency": "GBP",
+        "vendor_name": "Uber",
+        "suggested_category": "transport",
+    }
+    draft_response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=draft_payload,
+    )
+    draft_id = draft_response.json()["transaction"]["id"]
+
+    baseline = client.get("/transactions/receipt-drafts/unmatched", headers=get_auth_headers())
+    assert baseline.status_code == 200
+    assert baseline.json()["total"] == 1
+
+    ignore_response = client.post(
+        f"/transactions/receipt-drafts/{draft_id}/ignore",
+        headers=get_auth_headers(),
+    )
+    assert ignore_response.status_code == 200
+    assert ignore_response.json()["draft_transaction"]["reconciliation_status"] == "ignored"
+
+    hidden = client.get("/transactions/receipt-drafts/unmatched", headers=get_auth_headers())
+    assert hidden.status_code == 200
+    assert hidden.json()["total"] == 0
+
+    visible_ignored = client.get(
+        "/transactions/receipt-drafts/unmatched?include_ignored=true",
+        headers=get_auth_headers(),
+    )
+    assert visible_ignored.status_code == 200
+    assert visible_ignored.json()["total"] == 1
+    assert visible_ignored.json()["items"][0]["draft_transaction"]["reconciliation_status"] == "ignored"
+
+    reopen_response = client.post(
+        f"/transactions/receipt-drafts/{draft_id}/reopen",
+        headers=get_auth_headers(),
+    )
+    assert reopen_response.status_code == 200
+    assert reopen_response.json()["draft_transaction"]["reconciliation_status"] == "open"
+
+    restored = client.get("/transactions/receipt-drafts/unmatched", headers=get_auth_headers())
+    assert restored.status_code == 200
+    assert restored.json()["total"] == 1

@@ -1,10 +1,11 @@
+import datetime
 import os
-import re
+import sys
 import uuid
-from typing import Annotated, List
-from fastapi import FastAPI, Depends, HTTPException, Query, status, UploadFile, File
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from pathlib import Path
+from typing import List
+from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile, status
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy.ext.asyncio import AsyncSession
 import boto3
 from botocore.client import Config
@@ -43,41 +44,31 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# --- Security ---
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
+
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+OCR_REVIEW_COMPLETION_SECONDS = Histogram(
+    "ocr_review_completion_seconds",
+    "Time from document upload to review completion.",
+    buckets=(60, 120, 300, 600, 1800, 3600, 7200, 21600, 43200, 86400, float("inf")),
+)
+OCR_MANUAL_OVERRIDES_TOTAL = Counter(
+    "ocr_manual_overrides_total",
+    "Total OCR manual overrides by review status.",
+    labelnames=("review_status",),
+)
 
 
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-    return user_id
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
-
-
-def _sanitize_filename(filename: str) -> str:
-    """Sanitize a filename by stripping path components and dangerous characters."""
-    safe = os.path.basename(filename)
-    safe = re.sub(r'[^\w\s\-.]', '', safe)
-    safe = safe.strip()
-    return safe
-
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.post("/documents/upload", response_model=schemas.Document, status_code=status.HTTP_201_CREATED)
 async def upload_document(
@@ -126,20 +117,39 @@ async def upload_document(
 
     db_document = await crud.create_document(db, user_id=user_id, filename=safe_filename, filepath=s3_key)
 
-    # Trigger the background task for OCR processing.
-    ocr_processing_task.delay(str(db_document.id), db_document.user_id, db_document.filename)
+    # Trigger background OCR task with persisted file key.
+    ocr_processing_task.delay(
+        str(db_document.id),
+        db_document.user_id,
+        db_document.filename,
+        db_document.filepath,
+    )
 
     return db_document
 
 @app.get("/documents", response_model=List[schemas.Document])
 async def list_documents(
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db)
 ):
     """Lists all documents for the authenticated user from the database."""
     return await crud.get_documents_by_user(db, user_id=user_id, skip=skip, limit=limit)
+
+
+@app.get("/documents/review-queue", response_model=schemas.DocumentReviewQueueResponse)
+async def list_documents_review_queue(
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, items = await crud.list_documents_requiring_review(
+        db,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+    )
+    return schemas.DocumentReviewQueueResponse(total=total, items=items)
 
 
 @app.get("/documents/{document_id}", response_model=schemas.Document)
@@ -153,3 +163,34 @@ async def get_document(
     if db_document is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
     return db_document
+
+
+@app.patch("/documents/{document_id}/review", response_model=schemas.Document)
+async def review_document(
+    document_id: uuid.UUID,
+    payload: schemas.DocumentReviewUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    updated = await crud.update_document_review(
+        db,
+        user_id=user_id,
+        doc_id=document_id,
+        payload=payload,
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    uploaded_at = getattr(updated, "uploaded_at", None)
+    if isinstance(uploaded_at, datetime.datetime):
+        elapsed_seconds = (datetime.datetime.now(datetime.UTC) - uploaded_at).total_seconds()
+        if elapsed_seconds >= 0:
+            OCR_REVIEW_COMPLETION_SECONDS.observe(elapsed_seconds)
+
+    extracted_data_raw = getattr(updated, "extracted_data", None)
+    extracted_data = extracted_data_raw if isinstance(extracted_data_raw, dict) else {}
+    review_status = str(extracted_data.get("review_status") or "").strip().lower()
+    if review_status in {"corrected", "ignored"}:
+        OCR_MANUAL_OVERRIDES_TOTAL.labels(review_status=review_status).inc()
+
+    return updated

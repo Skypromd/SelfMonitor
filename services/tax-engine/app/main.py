@@ -1,13 +1,14 @@
-import logging
-from typing import Annotated, List, Optional
-
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from pydantic import BaseModel
 import datetime
 import os
+import sys
+import json
+from pathlib import Path
+from typing import Any, List, Optional, Literal
+
 import httpx
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
+from pydantic import BaseModel
 from .telemetry import setup_telemetry
 
 logger = logging.getLogger(__name__)
@@ -15,32 +16,61 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
 INTEGRATIONS_SERVICE_URL = os.getenv("INTEGRATIONS_SERVICE_URL", "http://localhost:8010/integrations/hmrc/submit-tax-return")
+MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL = os.getenv(
+    "MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL",
+    "http://localhost:8010/integrations/hmrc/mtd/quarterly-update",
+)
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
 DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"}
 UK_PERSONAL_ALLOWANCE = 12570.0
 UK_BASIC_TAX_RATE = 0.20
+UK_CLASS4_NIC_LOWER_PROFITS_LIMIT = 12570.0
+UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT = 50270.0
+UK_CLASS4_NIC_MAIN_RATE = 0.06
+UK_CLASS4_NIC_ADDITIONAL_RATE = 0.02
+DEFAULT_MTD_ITSA_RULES: list[dict[str, Any]] = [
+    {
+        "policy_code": "UK_MTD_ITSA_2026",
+        "effective_from": "2026-04-06",
+        "threshold": 50000.0,
+        "reporting_cadence": "quarterly_updates_plus_final_declaration",
+    },
+    {
+        "policy_code": "UK_MTD_ITSA_2027",
+        "effective_from": "2027-04-06",
+        "threshold": 30000.0,
+        "reporting_cadence": "quarterly_updates_plus_final_declaration",
+    },
+    {
+        "policy_code": "UK_MTD_ITSA_2028",
+        "effective_from": "2028-04-06",
+        "threshold": 20000.0,
+        "reporting_cadence": "quarterly_updates_plus_final_declaration",
+    },
+]
+MTD_ITSA_RULES_ENV = os.getenv("TAX_MTD_ITSA_RULES_JSON")
+TAX_CALCULATIONS_TOTAL = Counter(
+    "tax_calculations_total",
+    "Total tax calculation attempts grouped by result.",
+    labelnames=("result",),
+)
+TAX_SUBMISSIONS_TOTAL = Counter(
+    "tax_submissions_total",
+    "Total tax submission attempts grouped by result.",
+    labelnames=("result",),
+)
 
-# --- Security ---
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import get_json_with_retry, post_json_with_retry
 
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-    return user_id
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 app = FastAPI(
     title="Tax Engine Service",
@@ -73,36 +103,333 @@ class TaxCalculationResult(BaseModel):
     end_date: datetime.date
     total_income: float
     total_expenses: float
+    taxable_profit: float
+    personal_allowance_used: float
+    taxable_amount_after_allowance: float
+    estimated_income_tax_due: float
+    estimated_class4_nic_due: float
+    estimated_effective_tax_rate: float
     estimated_tax_due: float
+    mtd_obligation: dict[str, Any]
     summary_by_category: List[TaxSummaryItem]
 
+
+def _parse_iso_date(value: Any) -> datetime.date | None:
+    if isinstance(value, datetime.date):
+        return value
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            return datetime.date.fromisoformat(stripped)
+        except ValueError:
+            return None
+    return None
+
+
+def _load_mtd_itsa_rules() -> list[dict[str, Any]]:
+    if not MTD_ITSA_RULES_ENV:
+        return list(DEFAULT_MTD_ITSA_RULES)
+    try:
+        payload = json.loads(MTD_ITSA_RULES_ENV)
+    except json.JSONDecodeError:
+        return list(DEFAULT_MTD_ITSA_RULES)
+    if not isinstance(payload, list):
+        return list(DEFAULT_MTD_ITSA_RULES)
+
+    normalized: list[dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        policy_code = str(item.get("policy_code") or "").strip()
+        effective_from = _parse_iso_date(item.get("effective_from"))
+        threshold_value = item.get("threshold")
+        cadence = str(item.get("reporting_cadence") or "").strip()
+        if not policy_code or effective_from is None or cadence != "quarterly_updates_plus_final_declaration":
+            continue
+        try:
+            threshold = float(threshold_value)
+        except (TypeError, ValueError):
+            continue
+        if threshold <= 0:
+            continue
+        normalized.append(
+            {
+                "policy_code": policy_code,
+                "effective_from": effective_from.isoformat(),
+                "threshold": threshold,
+                "reporting_cadence": cadence,
+            }
+        )
+    return normalized if normalized else list(DEFAULT_MTD_ITSA_RULES)
+
+
+def _uk_tax_year_bounds(reference_date: datetime.date) -> tuple[datetime.date, datetime.date]:
+    if (reference_date.month, reference_date.day) >= (4, 6):
+        start_year = reference_date.year
+    else:
+        start_year = reference_date.year - 1
+    tax_year_start = datetime.date(start_year, 4, 6)
+    tax_year_end = datetime.date(start_year + 1, 4, 5)
+    return tax_year_start, tax_year_end
+
+
+def _next_month_same_day(date_value: datetime.date) -> datetime.date:
+    if date_value.month == 12:
+        return datetime.date(date_value.year + 1, 1, date_value.day)
+    return datetime.date(date_value.year, date_value.month + 1, date_value.day)
+
+
+def _resolve_active_mtd_rule(tax_year_start: datetime.date) -> dict[str, Any] | None:
+    rules = _load_mtd_itsa_rules()
+    active_rule: dict[str, Any] | None = None
+    for rule in rules:
+        effective_from = _parse_iso_date(rule.get("effective_from"))
+        if effective_from is None:
+            continue
+        if effective_from <= tax_year_start:
+            if active_rule is None:
+                active_rule = rule
+                continue
+            previous_effective = _parse_iso_date(active_rule.get("effective_from"))
+            if previous_effective is None or effective_from > previous_effective:
+                active_rule = rule
+    return active_rule
+
+
+def _build_quarterly_windows(
+    tax_year_start: datetime.date,
+    *,
+    today: datetime.date,
+) -> list[dict[str, str]]:
+    year = tax_year_start.year
+    quarter_rows = [
+        ("Q1", datetime.date(year, 4, 6), datetime.date(year, 7, 5)),
+        ("Q2", datetime.date(year, 7, 6), datetime.date(year, 10, 5)),
+        ("Q3", datetime.date(year, 10, 6), datetime.date(year + 1, 1, 5)),
+        ("Q4", datetime.date(year + 1, 1, 6), datetime.date(year + 1, 4, 5)),
+    ]
+    result: list[dict[str, str]] = []
+    for label, period_start, period_end in quarter_rows:
+        due_date = _next_month_same_day(period_end)
+        if today > due_date:
+            status_value = "overdue"
+        elif today >= period_end:
+            status_value = "due_now"
+        else:
+            status_value = "upcoming"
+        result.append(
+            {
+                "quarter": label,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "due_date": due_date.isoformat(),
+                "status": status_value,
+            }
+        )
+    return result
+
+
+def _build_mtd_obligation(
+    *,
+    period_start: datetime.date,
+    period_end: datetime.date,
+    total_income: float,
+    today: datetime.date,
+) -> dict[str, Any]:
+    tax_year_start, tax_year_end = _uk_tax_year_bounds(period_end)
+    active_rule = _resolve_active_mtd_rule(tax_year_start)
+    period_days = max((period_end - period_start).days + 1, 1)
+    annualized_income_estimate = round((total_income * 365.0) / period_days, 2)
+    notes: list[str] = []
+    if period_days < 330:
+        notes.append(
+            "MTD threshold assessment is annualized because the selected period is shorter than a full tax year."
+        )
+    else:
+        notes.append("MTD threshold assessment uses selected period income totals.")
+
+    if active_rule is None:
+        notes.append("No quarterly MTD ITSA policy is active for the selected tax year.")
+        return {
+            "tax_year_start": tax_year_start.isoformat(),
+            "tax_year_end": tax_year_end.isoformat(),
+            "policy_code": "UK_SELF_ASSESSMENT_ANNUAL_ONLY",
+            "threshold": None,
+            "qualifying_income_estimate": annualized_income_estimate,
+            "reporting_required": False,
+            "reporting_cadence": "annual_only",
+            "quarterly_updates": [],
+            "final_declaration_required": True,
+            "next_deadline": None,
+            "notes": notes,
+        }
+
+    threshold = float(active_rule.get("threshold") or 0.0)
+    reporting_required = annualized_income_estimate > threshold
+    quarterly_updates = (
+        _build_quarterly_windows(tax_year_start, today=today)
+        if reporting_required
+        else []
+    )
+    next_deadline = None
+    for row in quarterly_updates:
+        due_date = _parse_iso_date(row.get("due_date"))
+        if due_date is None:
+            continue
+        if due_date >= today:
+            next_deadline = due_date.isoformat()
+            break
+    if reporting_required:
+        notes.append(
+            f"Estimated qualifying income {annualized_income_estimate:.2f} exceeds active threshold {threshold:.2f}."
+        )
+    else:
+        notes.append(
+            f"Estimated qualifying income {annualized_income_estimate:.2f} does not exceed active threshold {threshold:.2f}."
+        )
+
+    return {
+        "tax_year_start": tax_year_start.isoformat(),
+        "tax_year_end": tax_year_end.isoformat(),
+        "policy_code": str(active_rule.get("policy_code") or "UK_MTD_ITSA"),
+        "threshold": threshold,
+        "qualifying_income_estimate": annualized_income_estimate,
+        "reporting_required": reporting_required,
+        "reporting_cadence": (
+            "quarterly_updates_plus_final_declaration"
+            if reporting_required
+            else "annual_only"
+        ),
+        "quarterly_updates": quarterly_updates,
+        "final_declaration_required": True,
+        "next_deadline": next_deadline,
+        "notes": notes,
+    }
+
+
+def _resolve_matching_mtd_quarter(
+    *,
+    period_start: datetime.date,
+    period_end: datetime.date,
+    mtd_obligation: dict[str, Any],
+) -> dict[str, Any] | None:
+    quarterly_updates = mtd_obligation.get("quarterly_updates")
+    if not isinstance(quarterly_updates, list):
+        return None
+    for quarter in quarterly_updates:
+        if not isinstance(quarter, dict):
+            continue
+        quarter_start = _parse_iso_date(quarter.get("period_start"))
+        quarter_end = _parse_iso_date(quarter.get("period_end"))
+        if quarter_start == period_start and quarter_end == period_end:
+            return quarter
+    return None
+
+
+def _is_full_mtd_tax_year_submission(
+    *,
+    period_start: datetime.date,
+    period_end: datetime.date,
+    mtd_obligation: dict[str, Any],
+) -> bool:
+    tax_year_start = _parse_iso_date(mtd_obligation.get("tax_year_start"))
+    tax_year_end = _parse_iso_date(mtd_obligation.get("tax_year_end"))
+    return tax_year_start == period_start and tax_year_end == period_end
+
+
+def _build_mtd_quarterly_submission_payload(
+    *,
+    user_id: str,
+    request: "TaxCalculationRequest",
+    calculation_result: "TaxCalculationResult",
+    mtd_obligation: dict[str, Any],
+    quarter_window: dict[str, Any],
+) -> dict[str, Any]:
+    category_summary = [
+        item.model_dump() for item in calculation_result.summary_by_category
+    ]
+    return {
+        "submission_channel": "api",
+        "correlation_id": f"tax-engine-{user_id}-{request.start_date.isoformat()}-{request.end_date.isoformat()}",
+        "report": {
+            "schema_version": "hmrc-mtd-itsa-quarterly-v1",
+            "jurisdiction": "UK",
+            "policy_code": str(mtd_obligation.get("policy_code") or "UK_MTD_ITSA"),
+            "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "business": {
+                "taxpayer_ref": user_id,
+                "business_name": f"Sole trader account {user_id}",
+                "accounting_method": "cash",
+            },
+            "period": {
+                "tax_year_start": str(mtd_obligation.get("tax_year_start")),
+                "tax_year_end": str(mtd_obligation.get("tax_year_end")),
+                "quarter": str(quarter_window.get("quarter")),
+                "period_start": request.start_date.isoformat(),
+                "period_end": request.end_date.isoformat(),
+                "due_date": str(quarter_window.get("due_date")),
+            },
+            "financials": {
+                "turnover": round(calculation_result.total_income, 2),
+                "allowable_expenses": round(calculation_result.total_expenses, 2),
+                "taxable_profit": round(calculation_result.taxable_profit, 2),
+                "estimated_tax_due": round(calculation_result.estimated_tax_due, 2),
+                "currency": "GBP",
+            },
+            "category_summary": category_summary,
+            "declaration": "true_and_complete",
+        },
+    }
+
+
+def _calculate_class4_nic(taxable_profit: float) -> float:
+    if taxable_profit <= UK_CLASS4_NIC_LOWER_PROFITS_LIMIT:
+        return 0.0
+    main_band_taxable = max(
+        min(taxable_profit, UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT) - UK_CLASS4_NIC_LOWER_PROFITS_LIMIT,
+        0.0,
+    )
+    additional_band_taxable = max(taxable_profit - UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT, 0.0)
+    return (main_band_taxable * UK_CLASS4_NIC_MAIN_RATE) + (
+        additional_band_taxable * UK_CLASS4_NIC_ADDITIONAL_RATE
+    )
+
 # --- Endpoints ---
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+@app.get("/metrics")
+async def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.post("/calculate", response_model=TaxCalculationResult)
 async def calculate_tax(
     request: TaxCalculationRequest, 
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     if request.start_date > request.end_date:
+        TAX_CALCULATIONS_TOTAL.labels(result="validation_error").inc()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End date cannot be before start date.")
     if request.jurisdiction != "UK":
+        TAX_CALCULATIONS_TOTAL.labels(result="validation_error").inc()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only 'UK' jurisdiction is supported.")
 
     # 1. Fetch all transactions for the user from the transactions-service
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {auth_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions_data = response.json()
-            transactions = [Transaction(**t) for t in transactions_data]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not connect to transactions-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        TAX_CALCULATIONS_TOTAL.labels(result="upstream_error").inc()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to transactions-service: {exc}",
+        ) from exc
 
     # 2. Filter transactions by date and calculate totals
     total_income = 0.0
@@ -121,9 +448,13 @@ async def calculate_tax(
             summary_map[category] += t.amount
 
     # 3. Apply simplified UK tax rules
-    taxable_profit = total_income - total_expenses
+    taxable_profit = max(total_income - total_expenses, 0.0)
+    personal_allowance_used = min(taxable_profit, UK_PERSONAL_ALLOWANCE)
     taxable_amount_after_allowance = max(0, taxable_profit - UK_PERSONAL_ALLOWANCE)
-    estimated_tax = taxable_amount_after_allowance * UK_BASIC_TAX_RATE
+    estimated_income_tax = taxable_amount_after_allowance * UK_BASIC_TAX_RATE
+    estimated_class4_nic = _calculate_class4_nic(taxable_profit)
+    estimated_tax = estimated_income_tax + estimated_class4_nic
+    effective_tax_rate = (estimated_tax / taxable_profit) if taxable_profit > 0 else 0.0
 
     # 4. Prepare summary
     summary_by_category = [
@@ -131,13 +462,27 @@ async def calculate_tax(
         for cat, amount in summary_map.items()
     ]
 
+    mtd_obligation = _build_mtd_obligation(
+        period_start=request.start_date,
+        period_end=request.end_date,
+        total_income=total_income,
+        today=datetime.date.today(),
+    )
+    TAX_CALCULATIONS_TOTAL.labels(result="success").inc()
     return TaxCalculationResult(
         user_id=user_id,
         start_date=request.start_date,
         end_date=request.end_date,
         total_income=round(total_income, 2),
         total_expenses=round(total_expenses, 2),
+        taxable_profit=round(taxable_profit, 2),
+        personal_allowance_used=round(personal_allowance_used, 2),
+        taxable_amount_after_allowance=round(taxable_amount_after_allowance, 2),
+        estimated_income_tax_due=round(estimated_income_tax, 2),
+        estimated_class4_nic_due=round(estimated_class4_nic, 2),
+        estimated_effective_tax_rate=round(effective_tax_rate, 4),
         estimated_tax_due=round(estimated_tax, 2),
+        mtd_obligation=mtd_obligation,
         summary_by_category=summary_by_category,
     )
 
@@ -145,47 +490,127 @@ async def calculate_tax(
 async def calculate_and_submit_tax(
     request: TaxCalculationRequest,
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
+    bearer_token: str = Depends(get_bearer_token),
 ):
-    calculation_result = await calculate_tax(request, user_id, auth_token)
+    # This re-uses the logic from the calculate endpoint.
+    # In a real app, this logic would be in a shared function.
+    calculation_result = await calculate_tax(request, user_id, bearer_token)
 
-    # 5. Submit the calculated tax to the integrations service
+    # 5. Submit the calculated tax to the integrations service.
+    # For compliant MTD quarterly windows we use a dedicated direct HMRC endpoint.
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {auth_token}"}
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        mtd_obligation = (
+            calculation_result.mtd_obligation
+            if isinstance(calculation_result.mtd_obligation, dict)
+            else {}
+        )
+        submission_payload: dict[str, Any]
+        submission_url = INTEGRATIONS_SERVICE_URL
+        submission_mode = "annual_tax_return"
+        is_mtd_reporting = bool(mtd_obligation.get("reporting_required"))
+        quarter_window = _resolve_matching_mtd_quarter(
+            period_start=request.start_date,
+            period_end=request.end_date,
+            mtd_obligation=mtd_obligation,
+        )
+        if is_mtd_reporting and quarter_window is not None:
+            submission_payload = _build_mtd_quarterly_submission_payload(
+                user_id=user_id,
+                request=request,
+                calculation_result=calculation_result,
+                mtd_obligation=mtd_obligation,
+                quarter_window=quarter_window,
+            )
+            submission_url = MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL
+            submission_mode = "mtd_quarterly_update"
+        else:
+            if is_mtd_reporting and not _is_full_mtd_tax_year_submission(
+                period_start=request.start_date,
+                period_end=request.end_date,
+                mtd_obligation=mtd_obligation,
+            ):
+                TAX_SUBMISSIONS_TOTAL.labels(result="validation_error").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "For MTD quarterly reporting, submission period must match an HMRC quarter "
+                        "or the full tax year for final declaration."
+                    ),
+                )
             submission_payload = {
                 "tax_period_start": request.start_date.isoformat(),
                 "tax_period_end": request.end_date.isoformat(),
                 "tax_due": calculation_result.estimated_tax_due,
             }
-            response = await client.post(INTEGRATIONS_SERVICE_URL, headers=headers, json=submission_payload, timeout=15.0)
-            response.raise_for_status()
-            submission_data = response.json()
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not connect to integrations-service: {e}")
+        submission_data = await post_json_with_retry(
+            submission_url,
+            headers=headers,
+            json_body=submission_payload,
+            timeout=15.0,
+        )
+    except httpx.HTTPError as exc:
+        TAX_SUBMISSIONS_TOTAL.labels(result="upstream_error").inc()
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not connect to integrations-service: {exc}",
+        ) from exc
 
     # 6. Create a calendar event for the payment deadline
     try:
-        async with httpx.AsyncClient() as client:
-            # UK Self Assessment payment deadline is 31st Jan of the next year
-            deadline_year = request.end_date.year + 1
-            deadline = datetime.date(deadline_year, 1, 31)
-            await client.post(
-                CALENDAR_SERVICE_URL,
-                headers={"Authorization": f"Bearer {auth_token}"},
-                json={
-                    "user_id": user_id,
-                    "event_title": "UK Self Assessment Tax Payment Due",
-                    "event_date": deadline.isoformat(),
-                    "notes": f"Estimated tax due: £{calculation_result.estimated_tax_due}. Submission ID: {submission_data.get('submission_id')}",
-                },
-            )
-    except httpx.RequestError:
+        # UK Self Assessment payment deadline is 31st Jan of the next year
+        deadline_year = request.end_date.year + 1
+        deadline = datetime.date(deadline_year, 1, 31)
+        await post_json_with_retry(
+            CALENDAR_SERVICE_URL,
+            json_body={
+                "user_id": user_id,
+                "event_title": "UK Self Assessment Tax Payment Due",
+                "event_date": deadline.isoformat(),
+                "notes": (
+                    f"Estimated tax due: £{calculation_result.estimated_tax_due}. "
+                    f"Submission ID: {submission_data.get('submission_id')}"
+                ),
+            },
+            expect_json=False,
+        )
+    except httpx.HTTPError:
         # This is a non-critical step, so we don't fail the whole request if it fails.
         logger.warning("Could not create calendar event.")
 
+    # 7. Create quarterly MTD reminder events when quarterly updates are required.
+    if bool(mtd_obligation.get("reporting_required")):
+        quarterly_updates = mtd_obligation.get("quarterly_updates")
+        if isinstance(quarterly_updates, list):
+            for quarter in quarterly_updates:
+                if not isinstance(quarter, dict):
+                    continue
+                quarter_label = str(quarter.get("quarter") or "").strip()
+                due_date = str(quarter.get("due_date") or "").strip()
+                if not quarter_label or not due_date:
+                    continue
+                try:
+                    await post_json_with_retry(
+                        CALENDAR_SERVICE_URL,
+                        json_body={
+                            "user_id": user_id,
+                            "event_title": f"MTD ITSA quarterly update due ({quarter_label})",
+                            "event_date": due_date,
+                            "notes": (
+                                f"Prepare and submit {quarter_label} quarterly update. "
+                                f"Policy: {mtd_obligation.get('policy_code')}"
+                            ),
+                        },
+                        expect_json=False,
+                    )
+                except httpx.HTTPError:
+                    print(f"Warning: Could not create MTD calendar event for {quarter_label}.")
 
+
+    TAX_SUBMISSIONS_TOTAL.labels(result="success").inc()
     return {
         "submission_id": submission_data.get("submission_id"),
-        "message": "Tax return submission has been successfully initiated via integrations service."
+        "message": "Tax return submission has been successfully initiated via integrations service.",
+        "submission_mode": submission_mode,
+        "mtd_obligation": calculation_result.mtd_obligation,
     }

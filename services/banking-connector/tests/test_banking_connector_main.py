@@ -11,12 +11,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app.main import app, import_transactions_task
 
 client = TestClient(app)
-TEST_AUTH_SECRET = "test-secret"
-TEST_AUTH_ALGORITHM = "HS256"
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_ALGORITHM = "HS256"
+TEST_USER_ID = "test-user@example.com"
 
 
-def auth_headers(user_id: str = "fake-user-123") -> dict[str, str]:
-    token = jwt.encode({"sub": user_id}, TEST_AUTH_SECRET, algorithm=TEST_AUTH_ALGORITHM)
+def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
+    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
 
 def test_initiate_connection_success():
@@ -25,8 +26,8 @@ def test_initiate_connection_success():
     """
     response = client.post(
         "/connections/initiate",
-        headers=auth_headers(),
-        json={"provider_id": "mock_bank", "redirect_uri": "https://localhost/callback"}
+        headers=get_auth_headers(),
+        json={"provider_id": "mock_bank", "redirect_uri": "https://my-app.com/callback"}
     )
     assert response.status_code == 200
     data = response.json()
@@ -41,17 +42,17 @@ async def test_callback_schedules_celery_task(mocker):
     """
     # Mock the .delay() method of our Celery task
     mock_delay = mocker.patch.object(import_transactions_task, 'delay')
-    mock_delay.return_value.id = "test-task-id"
-    headers = auth_headers()
+    mock_delay.return_value.id = "task-123"
 
     # Use a dummy code to trigger the endpoint
     auth_code = "test-auth-code"
-    response = client.get(f"/connections/callback?code={auth_code}", headers=headers)
+    response = client.get(f"/connections/callback?code={auth_code}", headers=get_auth_headers())
 
     assert response.status_code == 200
     data = response.json()
     assert data['status'] == 'processing'
     assert 'task_id' in data
+    assert data['task_id'] == "task-123"
 
     # Check that our mock was called
     mock_delay.assert_called_once()
@@ -59,11 +60,16 @@ async def test_callback_schedules_celery_task(mocker):
     # Verify the contents of the call
     call_args = mock_delay.call_args.args
     account_id_str = call_args[0]
-    transactions_data = call_args[1]
-    auth_token = call_args[2]
+    task_user_id = call_args[1]
+    task_token = call_args[2]
+    transactions_data = call_args[3]
 
     # Check that a valid UUID string is passed
     assert isinstance(uuid.UUID(account_id_str), uuid.UUID)
+
+    assert task_user_id == TEST_USER_ID
+    assert isinstance(task_token, str)
+    assert len(task_token) > 10
 
     assert isinstance(transactions_data, list)
     assert len(transactions_data) == 2

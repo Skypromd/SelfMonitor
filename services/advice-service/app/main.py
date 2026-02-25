@@ -1,13 +1,13 @@
 import datetime
 import logging
 import os
+import sys
 from collections import defaultdict
-from typing import Annotated, Literal, Optional
+from pathlib import Path
+from typing import Literal, Optional
 
 import httpx
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -15,27 +15,17 @@ logger = logging.getLogger(__name__)
 # --- Configuration ---
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
 
-# --- Security ---
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import get_json_with_retry
 
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    credentials_exception = HTTPException(
-        status_code=401,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-    return user_id
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 app = FastAPI(
     title="Advice Service",
@@ -69,19 +59,21 @@ async def health_check():
 async def generate_advice(
     request: AdviceRequest, 
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     logger.info("Generating advice for user %s on topic: %s", user_id, request.topic)
 
     # --- Fetch transactions once for all topics that need them ---
     try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {auth_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+        headers = {"Authorization": f"Bearer {bearer_token}"}
+        transactions_data = await get_json_with_retry(
+            TRANSACTIONS_SERVICE_URL,
+            headers=headers,
+            timeout=10.0,
+        )
+        transactions = [Transaction(**t) for t in transactions_data]
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {exc}") from exc
 
     # --- Topic-specific logic ---
     if request.topic == 'income_protection':

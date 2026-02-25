@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Date, DateTime, Float, ForeignKey
+from sqlalchemy import Column, Date, DateTime, Float, JSON, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -18,7 +18,7 @@ class Transaction(Base):
     currency = Column(String(3), nullable=False)
 
     category = Column(String, nullable=True)
-    tax_category = Column(String, nullable=True)
-    business_use_percent = Column(Float, nullable=True)
+    reconciliation_status = Column(String, nullable=True)
+    ignored_candidate_ids = Column(JSON, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

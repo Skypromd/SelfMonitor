@@ -1,9 +1,14 @@
-fastapi==0.133.0
-uvicorn[standard]==0.41.0
-pydantic==2.12.5
-python-jose[cryptography]==3.5.0
-httpx==0.28.1
+fastapi
+uvicorn[standard]
+pydantic
+python-jose[cryptography]
+sqlalchemy[asyncio]
+asyncpg
+httpx
+alembic
 
 # Dependencies for testing
-pytest==9.0.2
-pytest-mock==3.15.1
+pytest
+pytest-asyncio
+pytest-mock
+aiosqlite

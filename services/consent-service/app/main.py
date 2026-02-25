@@ -1,291 +1,117 @@
-import logging
-from typing import Annotated, Any, Dict, List, Literal
-
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from pydantic import BaseModel, Field
-import uuid
-import datetime
-import httpx
 import os
-import sqlite3
-import threading
-import json
+import sys
+import uuid
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-# --- Configuration ---
-# The URL for the compliance service is now read from an environment variable.
+from . import crud, schemas
+from .database import Base, engine, get_db
+
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8003/audit-events")
 CONSENT_DB_PATH = os.getenv("CONSENT_DB_PATH", "/tmp/consent.db")
 
-# --- Security ---
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
+
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_http.retry import post_json_with_retry
+
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-    return user_id
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    yield
 
 
 app = FastAPI(
     title="Consent Service",
     description="Manages user consents for data access.",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan,
 )
 
-# --- Models ---
 
-class ConsentCreate(BaseModel):
-    connection_id: uuid.UUID
-    provider: str
-    scopes: List[str]
-
-class Consent(BaseModel):
-    id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    user_id: str
-    connection_id: uuid.UUID
-    status: Literal['active', 'revoked'] = 'active'
-    provider: str
-    scopes: List[str]
-    created_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
-    updated_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
-
-# --- Database ---
-db_lock = threading.Lock()
-
-
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(CONSENT_DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _row_to_consent(row: sqlite3.Row) -> Consent:
-    return Consent(
-        id=uuid.UUID(row["id"]),
-        user_id=row["user_id"],
-        connection_id=uuid.UUID(row["connection_id"]),
-        status=row["status"],
-        provider=row["provider"],
-        scopes=json.loads(row["scopes_json"]),
-        created_at=datetime.datetime.fromisoformat(row["created_at"]),
-        updated_at=datetime.datetime.fromisoformat(row["updated_at"]),
-    )
-
-
-def init_consent_db() -> None:
-    with db_lock:
-        conn = _connect()
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS consents (
-                id TEXT PRIMARY KEY,
-                user_id TEXT NOT NULL,
-                connection_id TEXT NOT NULL,
-                status TEXT NOT NULL,
-                provider TEXT NOT NULL,
-                scopes_json TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
-        conn.close()
-
-
-def reset_consent_db_for_tests() -> None:
-    with db_lock:
-        conn = _connect()
-        conn.execute("DELETE FROM consents")
-        conn.commit()
-        conn.close()
-
-
-def insert_consent_for_tests(consent: Consent) -> None:
-    with db_lock:
-        conn = _connect()
-        try:
-            conn.execute(
-                """
-                INSERT INTO consents (id, user_id, connection_id, status, provider, scopes_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(consent.id),
-                    consent.user_id,
-                    str(consent.connection_id),
-                    consent.status,
-                    consent.provider,
-                    json.dumps(consent.scopes),
-                    consent.created_at.isoformat(),
-                    consent.updated_at.isoformat(),
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-
-def create_consent(consent: Consent) -> None:
-    insert_consent_for_tests(consent)
-
-
-def get_consent_by_id(consent_id: uuid.UUID) -> Consent | None:
-    with db_lock:
-        conn = _connect()
-        try:
-            row = conn.execute("SELECT * FROM consents WHERE id = ?", (str(consent_id),)).fetchone()
-        finally:
-            conn.close()
-    return _row_to_consent(row) if row else None
-
-
-def get_active_consents_for_user(user_id: str, skip: int = 0, limit: int = 50) -> List[Consent]:
-    with db_lock:
-        conn = _connect()
-        try:
-            rows = conn.execute(
-                "SELECT * FROM consents WHERE user_id = ? AND status = 'active' LIMIT ? OFFSET ?",
-                (user_id, limit, skip),
-            ).fetchall()
-        finally:
-            conn.close()
-    return [_row_to_consent(row) for row in rows]
-
-
-def update_consent(consent: Consent) -> None:
-    with db_lock:
-        conn = _connect()
-        try:
-            conn.execute(
-                """
-                UPDATE consents
-                SET status = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (consent.status, consent.updated_at.isoformat(), str(consent.id)),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-# --- Service Communication ---
-
-async def log_audit_event(user_id: str, action: str, details: Dict[str, Any], auth_token: str):
-    """Sends an event to the compliance service."""
+async def log_audit_event(user_id: str, action: str, details: Dict[str, Any]):
     try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                COMPLIANCE_SERVICE_URL,
-                headers={"Authorization": f"Bearer {auth_token}"},
-                json={"user_id": user_id, "action": action, "details": details},
-                timeout=5.0
-            )
-        logger.info("Successfully logged audit event: %s", action)
-    except httpx.RequestError as e:
-        # In a production system, you'd have more robust error handling,
-        # like a dead-letter queue or retries with exponential backoff.
-        logger.error("Could not log audit event to compliance service: %s", e)
+        await post_json_with_retry(
+            COMPLIANCE_SERVICE_URL,
+            json_body={"user_id": user_id, "action": action, "details": details},
+            timeout=5.0,
+            expect_json=False,
+        )
+    except httpx.HTTPError as exc:
+        print(f"Error: Could not log audit event to compliance service: {exc}")
 
-# --- Endpoints ---
 
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
-
-@app.post("/consents", response_model=Consent, status_code=status.HTTP_201_CREATED)
+@app.post("/consents", response_model=schemas.Consent, status_code=status.HTTP_201_CREATED)
 async def record_consent(
-    consent_in: ConsentCreate,
+    consent_in: schemas.ConsentCreate,
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Records that a user has given consent for a specific connection.
-    """
-    new_consent = Consent(user_id=user_id, **consent_in.model_dump())
-    create_consent(new_consent)
+    new_consent = await crud.create_consent(db, user_id=user_id, consent_in=consent_in)
 
-    # Log the auditable event
     await log_audit_event(
         user_id=user_id,
         action="consent.granted",
         details={
             "consent_id": str(new_consent.id),
             "provider": new_consent.provider,
-            "scopes": new_consent.scopes
+            "scopes": new_consent.scopes,
         },
-        auth_token=auth_token,
     )
-
     return new_consent
 
-@app.get("/consents", response_model=List[Consent])
+
+@app.get("/consents", response_model=List[schemas.Consent])
 async def list_active_consents(
     user_id: str = Depends(get_current_user_id),
-    skip: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Lists all active consents for the authenticated user.
-    """
-    return get_active_consents_for_user(user_id, skip=skip, limit=limit)
+    return await crud.list_active_consents(db, user_id=user_id)
 
-@app.get("/consents/{consent_id}", response_model=Consent)
-async def get_consent(consent_id: uuid.UUID, user_id: str = Depends(get_current_user_id)):
-    """
-    Retrieves a specific consent by its ID.
-    """
-    consent = get_consent_by_id(consent_id)
-    if not consent or consent.user_id != user_id:
+
+@app.get("/consents/{consent_id}", response_model=schemas.Consent)
+async def get_consent(
+    consent_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    consent = await crud.get_consent_by_id(db, user_id=user_id, consent_id=consent_id)
+    if not consent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consent not found")
     return consent
+
 
 @app.delete("/consents/{consent_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_consent(
     consent_id: uuid.UUID,
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
 ):
-    """
-    Revokes a user's consent.
-    """
-    consent = get_consent_by_id(consent_id)
-    if not consent or consent.user_id != user_id:
+    consent = await crud.get_consent_by_id(db, user_id=user_id, consent_id=consent_id)
+    if not consent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Consent not found")
 
-    if consent.status == 'revoked':
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-    consent.status = 'revoked'
-    consent.updated_at = datetime.datetime.now(datetime.UTC)
-    update_consent(consent)
-
-    # Log the auditable event
-    await log_audit_event(
-        user_id=user_id,
-        action="consent.revoked",
-        details={"consent_id": str(consent.id)},
-        auth_token=auth_token,
-    )
+    if consent.status != "revoked":
+        consent = await crud.revoke_consent(db, consent=consent)
+        await log_audit_event(
+            user_id=user_id,
+            action="consent.revoked",
+            details={"consent_id": str(consent.id)},
+        )
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
-
-init_consent_db()

@@ -1,59 +1,28 @@
-import os
-import uuid
-from typing import Annotated
-from contextlib import asynccontextmanager
-import logging
+import sys
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
 from .database import get_db
 
-# Import Kafka event streaming
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'libs'))
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
-try:
-    from event_streaming.kafka_integration import EventStreamingMixin
-    KAFKA_ENABLED = True
-except ImportError:
-    KAFKA_ENABLED = False
-    logging.warning("Kafka event streaming not available")
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
-logger = logging.getLogger(__name__)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    if KAFKA_ENABLED and hasattr(app, 'init_event_streaming'):
-        await app.init_event_streaming()
-        logger.info("Kafka event streaming initialized")
-    
-    yield
-    
-    # Shutdown
-    if KAFKA_ENABLED and hasattr(app, 'cleanup_event_streaming'):
-        await app.cleanup_event_streaming()
-        logger.info("Kafka event streaming cleaned up")
-
-class UserProfileServiceApp(FastAPI, EventStreamingMixin if KAFKA_ENABLED else object):
-    """Enhanced User Profile Service with Kafka event streaming"""
-    pass
-
-app = UserProfileServiceApp(
-    title="SelfMonitor User Profile Service",
-    description="Manage user profiles with real-time event streaming",
-    version="1.0.0",
-    lifespan=lifespan
+app = FastAPI(
+    title="User Profile Service",
+    description="Manages user profile data.",
+    version="1.0.0"
 )
 
-# --- Security ---
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 
 def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
@@ -80,7 +49,7 @@ async def health_check():
 
 @app.get("/profiles/me", response_model=schemas.UserProfile)
 async def get_my_profile(
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id), 
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves the profile for the currently authenticated user from the database."""

@@ -1,82 +1,122 @@
-import { useState, FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import styles from '../styles/Home.module.css';
-import { useTranslation } from '../hooks/useTranslation';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
 
-type HomePageProps = {
-  onLoginSuccess: (token: string) => void;
+type LoginPageProps = {
+  onLoginSuccess?: (token: string, email?: string, refreshToken?: string) => void;
 };
 
-export default function HomePage({ onLoginSuccess }: HomePageProps) {
+export default function HomePage({ onLoginSuccess }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const { t } = useTranslation();
+  const [isLoading, setIsLoading] = useState(false);
 
   const clearMessages = () => {
     setMessage('');
     setError('');
   };
 
-  const handleRegister = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleRegister = async (event: FormEvent) => {
+    event.preventDefault();
     clearMessages();
+    setIsLoading(true);
+
     try {
       const formData = new URLSearchParams();
       formData.append('username', email);
       formData.append('password', password);
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+
+      const response = await fetch(`${AUTH_SERVICE_BASE_URL}/register`, {
         body: formData,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        method: 'POST',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Registration failed');
-      setMessage(t('login.register_success'));
-    } catch (err: any) {
-      setError(err.message);
+      if (!response.ok) {
+        throw new Error(data.detail || 'Registration failed');
+      }
+
+      setMessage(`User ${data.email} registered successfully. You can now log in.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleLogin = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (event: FormEvent) => {
+    event.preventDefault();
     clearMessages();
+    setIsLoading(true);
+
     try {
       const formData = new URLSearchParams();
       formData.append('username', email);
       formData.append('password', password);
-      const response = await fetch(`${API_BASE_URL}/auth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+
+      const response = await fetch(`${AUTH_SERVICE_BASE_URL}/token`, {
         body: formData,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        method: 'POST',
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || 'Login failed');
-      onLoginSuccess(data.access_token);
-    } catch (err: any) {
-      setError(err.message);
+      if (!response.ok) {
+        throw new Error(data.detail || 'Login failed');
+      }
+
+      if (onLoginSuccess) {
+        onLoginSuccess(data.access_token, email, data.refresh_token);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
     <div className={styles.container}>
       <main className={styles.main}>
-        <h1 className={styles.title}>{t('login.title')}</h1>
-        <p className={styles.description}>{t('login.description')}</p>
+        <h1 className={styles.title}>Welcome!</h1>
+        <p className={styles.description}>Register or log in to continue</p>
+
         <div className={styles.formContainer}>
           <form>
-            <input type="email" placeholder={t('login.email_placeholder')} value={email} onChange={(e) => setEmail(e.target.value)} className={styles.input} />
-            <input type="password" placeholder={t('login.password_placeholder')} value={password} onChange={(e) => setPassword(e.target.value)} className={styles.input} />
+            <input
+              className={styles.input}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="Email"
+              type="email"
+              value={email}
+            />
+            <input
+              className={styles.input}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Password"
+              type="password"
+              value={password}
+            />
             <div className={styles.buttonGroup}>
-              <button onClick={handleRegister} className={styles.button}>{t('login.register_button')}</button>
-              <button onClick={handleLogin} className={styles.button}>{t('login.login_button')}</button>
+              <button className={`${styles.button} ${styles.secondaryButton}`} disabled={isLoading} onClick={handleRegister}>
+                Register
+              </button>
+              <button className={styles.button} disabled={isLoading} onClick={handleLogin}>
+                Login
+              </button>
             </div>
           </form>
         </div>
+
         {message && <p className={styles.message}>{message}</p>}
         {error && <p className={styles.error}>{error}</p>}
+        <p className={styles.tableCaption}>
+          By continuing you agree to our <Link className={styles.link} href="/terms">Terms</Link> and{' '}
+          <Link className={styles.link} href="/eula">EULA</Link>.
+        </p>
       </main>
     </div>
   );

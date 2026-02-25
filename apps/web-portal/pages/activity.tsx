@@ -1,73 +1,105 @@
-import { useState, useEffect } from 'react';
-import styles from '../styles/Home.module.css';
+import { useEffect, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import styles from '../styles/Home.module.css';
 
 const COMPLIANCE_SERVICE_URL = process.env.NEXT_PUBLIC_COMPLIANCE_SERVICE_URL || 'http://localhost:8003';
+const FALLBACK_USER_ID = 'fake-user-123';
 
 type ActivityPageProps = {
   token: string;
-  userId?: string;
+  userEmail?: string | null;
 };
 
-export default function ActivityPage({ token, userId }: ActivityPageProps) {
-  const [events, setEvents] = useState<any[]>([]);
+type AuditEvent = {
+  id: string;
+  action: string;
+  details: Record<string, unknown>;
+  timestamp: string;
+};
+
+export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
+  const [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const { t } = useTranslation();
   const effectiveUserId = userId || 'fake-user-123';
 
   useEffect(() => {
     const fetchActivity = async () => {
+      setIsLoading(true);
       try {
-        const response = await fetch(`${COMPLIANCE_SERVICE_URL}/audit-events?user_id=${effectiveUserId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        if (!response.ok) throw new Error('Failed to fetch activity log');
-        const data = await response.json();
-        setEvents(data);
-      } catch (err: any) {
-        setError(err.message);
+        const userId = userEmail || FALLBACK_USER_ID;
+        const response = await fetch(
+          `${COMPLIANCE_SERVICE_URL}/audit-events?user_id=${encodeURIComponent(userId)}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!response.ok) {
+          throw new Error('Failed to fetch activity log');
+        }
+        setEvents(await response.json());
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unexpected error');
+      } finally {
+        setIsLoading(false);
       }
     };
-    fetchActivity();
-  }, [token, effectiveUserId]);
 
-  const formatEventDetails = (event: any) => {
-    switch (event.action) {
-      case 'consent.granted':
-        return `Consent granted for provider '${event.details.provider}' with scopes: ${event.details.scopes.join(', ')}`;
-      case 'consent.revoked':
-        return 'Consent revoked.';
-      case 'partner.handoff.initiated':
-        return `Handoff initiated to partner '${event.details.partner_name}'`;
-      default:
-        return JSON.stringify(event.details);
+    fetchActivity();
+  }, [token, userEmail]);
+
+  const formatEventDetails = (event: AuditEvent) => {
+    if (event.action === 'consent.granted') {
+      const provider = String(event.details.provider ?? 'unknown');
+      const scopes = Array.isArray(event.details.scopes) ? event.details.scopes.join(', ') : '';
+      return `Consent granted for provider '${provider}' with scopes: ${scopes}`;
     }
+    if (event.action === 'consent.revoked') {
+      return 'Consent revoked.';
+    }
+    if (event.action === 'partner.handoff.initiated') {
+      return `Handoff initiated to partner '${String(event.details.partner_name ?? 'unknown')}'`;
+    }
+    return JSON.stringify(event.details);
   };
 
   return (
-    <div>
+    <div className={styles.dashboard}>
       <h1>{t('nav.activity')}</h1>
       <p>{t('activity.description')}</p>
       {error && <p className={styles.error}>{error}</p>}
       <div className={styles.subContainer}>
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>{t('activity.col_date')}</th>
-              <th>{t('activity.col_action')}</th>
-              <th>{t('activity.col_details')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {events.map(event => (
-              <tr key={event.id}>
-                <td>{new Date(event.timestamp).toLocaleString()}</td>
-                <td>{event.action}</td>
-                <td>{formatEventDetails(event)}</td>
-              </tr>
+        {isLoading ? (
+          <div className={styles.skeletonTable}>
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div className={styles.skeletonRow} key={index}>
+                <div className={styles.skeletonCell} />
+                <div className={styles.skeletonCell} />
+                <div className={styles.skeletonCell} />
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        ) : events.length === 0 ? (
+          <p className={styles.emptyState}>No activity events found yet.</p>
+        ) : (
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th>{t('activity.col_date')}</th>
+                <th>{t('activity.col_action')}</th>
+                <th>{t('activity.col_details')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.map((event) => (
+                <tr key={event.id}>
+                  <td>{new Date(event.timestamp).toLocaleString()}</td>
+                  <td>{event.action}</td>
+                  <td>{formatEventDetails(event)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );

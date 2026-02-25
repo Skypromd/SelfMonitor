@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 import datetime
 
@@ -43,26 +43,3 @@ class UserProfile(UserProfileBase):
     updated_at: datetime.datetime
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class SubscriptionUpdate(BaseModel):
-    subscription_plan: Optional[str] = None
-    subscription_status: Optional[str] = None
-    billing_cycle: Optional[str] = None
-    current_period_start: Optional[datetime.date] = None
-    current_period_end: Optional[datetime.date] = None
-    monthly_close_day: Optional[int] = Field(default=None, ge=1, le=28)
-
-
-class SubscriptionResponse(SubscriptionBase):
-    user_id: str
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class TenantSettingsUpdate(BaseModel):
-    """Schema for updating tenant settings."""
-    max_users: Optional[int] = None
-    features_enabled: Optional[dict] = None
-    rate_limits: Optional[dict] = None
-    custom_branding: Optional[dict] = None

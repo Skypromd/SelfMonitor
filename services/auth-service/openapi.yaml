@@ -1,211 +1,1368 @@
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: Auth Service
   description: Handles user authentication, registration, and token management.
   version: 1.0.0
 paths:
+  /metrics:
+    get:
+      summary: Metrics
+      description: Endpoint that serves Prometheus metrics.
+      operationId: metrics_metrics_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
   /register:
     post:
-      summary: Register a new user
-      tags:
-        - Authentication
+      summary: Register
+      operationId: register_register_post
       requestBody:
-        required: true
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              properties:
-                username:
-                  type: string
-                  format: email
-                  description: The user's email address.
-                password:
-                  type: string
-                  format: password
-                  description: The user's password.
-              required:
-                - username
-                - password
+              $ref: '#/components/schemas/Body_register_register_post'
+        required: true
       responses:
         '201':
-          description: User created successfully
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-        '400':
-          description: Invalid input
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /token:
     post:
-      summary: Get JWT token for user
-      tags:
-        - Authentication
+      summary: Login For Access Token
+      operationId: login_for_access_token_token_post
       requestBody:
-        required: true
         content:
           application/x-www-form-urlencoded:
             schema:
-              type: object
-              properties:
-                username:
-                  type: string
-                password:
-                  type: string
-                scope:
-                  type: string
-                  description: "Optional. Used for 2FA. Format: 'totp:123456'"
-              required:
-                - username
-                - password
+              $ref: '#/components/schemas/Body_login_for_access_token_token_post'
+        required: true
       responses:
         '200':
-          description: Successful authentication
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Token'
-        '401':
-          description: Unauthorized
-  /2fa/setup:
-    get:
-      summary: Setup 2FA
-      description: Generates a secret and returns a QR code for setting up TOTP-based 2FA.
-      tags:
-        - 2FA
-      security:
-        - bearerAuth: []
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /token/refresh:
+    post:
+      summary: Refresh Access Token
+      operationId: refresh_access_token_token_refresh_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
       responses:
         '200':
-          description: A PNG image of the QR code to be scanned by an authenticator app.
+          description: Successful Response
           content:
-            image/png:
+            application/json:
               schema:
-                type: string
-                format: binary
-        '400':
-          description: 2FA is already enabled for this user.
-  /2fa/verify:
+                $ref: '#/components/schemas/Token'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /token/revoke:
     post:
-      summary: Verify and Enable 2FA
-      description: Verifies the provided TOTP code and enables 2FA for the user.
-      tags:
-        - 2FA
+      summary: Revoke Refresh Token
+      operationId: revoke_refresh_token_token_revoke_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
       security:
-        - bearerAuth: []
+      - OAuth2PasswordBearer: []
+  /password/change:
+    post:
+      summary: Change Password
+      operationId: change_password_password_change_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChangeRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /verify-email/request:
+    post:
+      summary: Request Email Verification
+      operationId: request_email_verification_verify_email_request_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationChallengeResponse'
+      security:
+      - OAuth2PasswordBearer: []
+  /verify-email/confirm:
+    post:
+      summary: Confirm Email Verification
+      operationId: confirm_email_verification_verify_email_confirm_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailVerificationConfirmRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailVerificationConfirmResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /legal/current:
+    get:
+      summary: Get Current Legal Policy
+      operationId: get_current_legal_policy_legal_current_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalPolicyCurrentResponse'
+  /legal/accept:
+    post:
+      summary: Accept Current Legal Policy
+      operationId: accept_current_legal_policy_legal_accept_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LegalPolicyAcceptRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LegalPolicyAcceptResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /security/events:
+    get:
+      summary: List Security Events
+      operationId: list_security_events_security_events_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityEventsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/alerts/deliveries:
+    get:
+      summary: List Security Alert Deliveries
+      operationId: list_security_alert_deliveries_security_alerts_deliveries_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 100
+          minimum: 1
+          default: 20
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityAlertDeliveriesResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/attestation/session:
+    post:
+      summary: Issue Mobile Attestation Session
+      operationId: issue_mobile_attestation_session_mobile_attestation_session_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MobileAttestationSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MobileAttestationSessionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /security/push-tokens:
+    post:
+      summary: Register Security Push Token
+      operationId: register_security_push_token_security_push_tokens_post
+      security:
+      - OAuth2PasswordBearer: []
       requestBody:
         required: true
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
-              type: object
-              properties:
-                totp_code:
-                  type: string
-                  description: The 6-digit code from the authenticator app.
-              required:
-                - totp_code
+              $ref: '#/components/schemas/SecurityPushTokenRegisterRequest'
       responses:
         '200':
-          description: 2FA enabled successfully.
-        '400':
-          description: Invalid code or 2FA setup not initiated.
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRegisterResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      summary: List Security Push Tokens
+      operationId: list_security_push_tokens_security_push_tokens_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: include_revoked
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Revoked
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokensResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/security/push-tokens:
+    post:
+      summary: Register Mobile Security Push Token
+      operationId: register_mobile_security_push_token_mobile_security_push_tokens_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityPushTokenRegisterRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRegisterResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /security/push-tokens/{push_token}:
+    delete:
+      summary: Revoke Security Push Token
+      operationId: revoke_security_push_token_security_push_tokens__push_token__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: push_token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Push Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRevokeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /mobile/security/push-tokens/{push_token}:
+    delete:
+      summary: Revoke Mobile Security Push Token
+      operationId: revoke_mobile_security_push_token_mobile_security_push_tokens__push_token__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: push_token
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Push Token
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityPushTokenRevokeResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/alerts/delivery-receipts:
+    post:
+      summary: Ingest Security Alert Delivery Receipt
+      operationId: ingest_security_alert_delivery_receipt_security_alerts_delivery_receipts_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityAlertDeliveryReceiptResponse'
+  /security/state:
+    get:
+      summary: Get Security State
+      operationId: get_security_state_security_state_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityStateResponse'
+      security:
+      - OAuth2PasswordBearer: []
+  /security/sessions:
+    get:
+      summary: List Security Sessions
+      operationId: list_security_sessions_security_sessions_get
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: include_revoked
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+          title: Include Revoked
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecuritySessionsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/sessions/{session_id}:
+    delete:
+      summary: Revoke Security Session
+      operationId: revoke_security_session_security_sessions__session_id__delete
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: session_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Session Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeSessionsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /security/sessions/revoke-all:
+    post:
+      summary: Revoke All Security Sessions
+      operationId: revoke_all_security_sessions_security_sessions_revoke_all_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokeSessionsResponse'
+      security:
+      - OAuth2PasswordBearer: []
+  /security/lockdown:
+    post:
+      summary: Activate Security Lockdown
+      operationId: activate_security_lockdown_security_lockdown_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityLockdownRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityLockdownResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /mobile/security/lockdown:
+    post:
+      summary: Activate Mobile Security Lockdown
+      operationId: activate_mobile_security_lockdown_mobile_security_lockdown_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SecurityLockdownRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecurityLockdownResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - OAuth2PasswordBearer: []
+  /2fa/setup:
+    get:
+      summary: Setup Two Factor Auth
+      operationId: setup_two_factor_auth_2fa_setup_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+      - OAuth2PasswordBearer: []
+  /2fa/verify:
+    post:
+      summary: Verify Two Factor Auth
+      operationId: verify_two_factor_auth_2fa_verify_post
+      security:
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: totp_code
+        in: query
+        required: true
+        schema:
+          type: string
+          description: The 6-digit code from the authenticator app.
+          title: Totp Code
+        description: The 6-digit code from the authenticator app.
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /2fa/disable:
     delete:
-      summary: Disable 2FA
-      description: Disables TOTP-based 2FA for the currently authenticated user.
-      tags:
-        - 2FA
+      summary: Disable Two Factor Auth
+      operationId: disable_two_factor_auth_2fa_disable_delete
       security:
-        - bearerAuth: []
+      - OAuth2PasswordBearer: []
+      parameters:
+      - name: totp_code
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Current TOTP code to disable 2FA.
+          title: Totp Code
+        description: Current TOTP code to disable 2FA.
       responses:
         '204':
-          description: 2FA disabled successfully.
+          description: Successful Response
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /me:
     get:
-      summary: Get current user info
-      tags:
-        - Users
-      security:
-        - bearerAuth: []
+      summary: Read Users Me
+      operationId: read_users_me_me_get
       responses:
         '200':
-          description: Successful response
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-        '401':
-          description: Unauthorized
+      security:
+      - OAuth2PasswordBearer: []
   /users/{user_email}/deactivate:
     post:
-      summary: Deactivate a user (Admin only)
-      tags:
-        - Users
+      summary: Deactivate User
+      operationId: deactivate_user_users__user_email__deactivate_post
       security:
-        - bearerAuth: []
+      - OAuth2PasswordBearer: []
       parameters:
-        - name: user_email
-          in: path
-          required: true
-          schema:
-            type: string
-            format: email
+      - name: user_email
+        in: path
+        required: true
+        schema:
+          type: string
+          format: email
+          title: User Email
       responses:
         '200':
-          description: User deactivated successfully.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/User'
-        '403':
-          description: Forbidden - Admin access required.
-        '404':
-          description: User not found.
-
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
 components:
   schemas:
-    UserCreate:
-      type: object
+    Body_login_for_access_token_token_post:
       properties:
-        email:
+        grant_type:
+          anyOf:
+          - type: string
+            pattern: ^password$
+          - type: 'null'
+          title: Grant Type
+        username:
           type: string
-          format: email
+          title: Username
         password:
           type: string
-          minLength: 8
-      required:
-        - email
-        - password
-    User:
+          format: password
+          title: Password
+        scope:
+          type: string
+          title: Scope
+          default: ''
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          format: password
+          title: Client Secret
       type: object
+      required:
+      - username
+      - password
+      title: Body_login_for_access_token_token_post
+    Body_register_register_post:
+      properties:
+        grant_type:
+          anyOf:
+          - type: string
+            pattern: ^password$
+          - type: 'null'
+          title: Grant Type
+        username:
+          type: string
+          title: Username
+        password:
+          type: string
+          format: password
+          title: Password
+        scope:
+          type: string
+          title: Scope
+          default: ''
+        client_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Client Id
+        client_secret:
+          anyOf:
+          - type: string
+          - type: 'null'
+          format: password
+          title: Client Secret
+      type: object
+      required:
+      - username
+      - password
+      title: Body_register_register_post
+    EmailVerificationChallengeResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        code_sent:
+          type: boolean
+          title: Code Sent
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        debug_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Debug Code
+      type: object
+      required:
+      - message
+      - code_sent
+      - expires_at
+      title: EmailVerificationChallengeResponse
+    EmailVerificationConfirmRequest:
+      properties:
+        code:
+          type: string
+          maxLength: 12
+          minLength: 4
+          title: Code
+      type: object
+      required:
+      - code
+      title: EmailVerificationConfirmRequest
+    EmailVerificationConfirmResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        email_verified:
+          type: boolean
+          title: Email Verified
+      type: object
+      required:
+      - message
+      - email_verified
+      title: EmailVerificationConfirmResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    LegalPolicyAcceptRequest:
+      properties:
+        version:
+          type: string
+          maxLength: 64
+          minLength: 2
+          title: Version
+        source:
+          type: string
+          maxLength: 64
+          minLength: 2
+          title: Source
+          default: web
+      type: object
+      required:
+      - version
+      title: LegalPolicyAcceptRequest
+    LegalPolicyAcceptResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        accepted_version:
+          type: string
+          title: Accepted Version
+        accepted_at:
+          type: string
+          format: date-time
+          title: Accepted At
+        has_accepted_current_legal:
+          type: boolean
+          title: Has Accepted Current Legal
+      type: object
+      required:
+      - message
+      - accepted_version
+      - accepted_at
+      - has_accepted_current_legal
+      title: LegalPolicyAcceptResponse
+    LegalPolicyCurrentResponse:
+      properties:
+        current_version:
+          type: string
+          title: Current Version
+        terms_url:
+          type: string
+          title: Terms Url
+        eula_url:
+          type: string
+          title: Eula Url
+        requires_acceptance:
+          type: boolean
+          title: Requires Acceptance
+      type: object
+      required:
+      - current_version
+      - terms_url
+      - eula_url
+      - requires_acceptance
+      title: LegalPolicyCurrentResponse
+    MobileAttestationSessionRequest:
+      properties:
+        installation_id:
+          type: string
+          maxLength: 128
+          minLength: 8
+          title: Installation Id
+      type: object
+      required:
+      - installation_id
+      title: MobileAttestationSessionRequest
+    MobileAttestationSessionResponse:
+      properties:
+        token_type:
+          type: string
+          title: Token Type
+          default: bearer
+        attestation_token:
+          type: string
+          title: Attestation Token
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        installation_id:
+          type: string
+          title: Installation Id
+      type: object
+      required:
+      - attestation_token
+      - expires_at
+      - installation_id
+      title: MobileAttestationSessionResponse
+    PasswordChangeRequest:
+      properties:
+        current_password:
+          type: string
+          minLength: 1
+          title: Current Password
+        new_password:
+          type: string
+          minLength: 1
+          title: New Password
+      type: object
+      required:
+      - current_password
+      - new_password
+      title: PasswordChangeRequest
+    RefreshTokenRequest:
+      properties:
+        refresh_token:
+          type: string
+          minLength: 20
+          title: Refresh Token
+      type: object
+      required:
+      - refresh_token
+      title: RefreshTokenRequest
+    RevokeSessionsResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        revoked_sessions:
+          type: integer
+          title: Revoked Sessions
+      type: object
+      required:
+      - message
+      - revoked_sessions
+      title: RevokeSessionsResponse
+    SecurityAlertDeliveriesResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SecurityAlertDeliveriesResponse
+    SecurityAlertDeliveryReceiptResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        dispatch_id:
+          type: string
+          title: Dispatch Id
+        updated:
+          type: boolean
+          title: Updated
+      type: object
+      required:
+      - message
+      - dispatch_id
+      - updated
+      title: SecurityAlertDeliveryReceiptResponse
+    SecurityEvent:
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          title: Event Id
+        event_type:
+          type: string
+          title: Event Type
+        occurred_at:
+          type: string
+          format: date-time
+          title: Occurred At
+        ip:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ip
+        user_agent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Agent
+        details:
+          additionalProperties: true
+          type: object
+          title: Details
+      type: object
+      required:
+      - event_type
+      - occurred_at
+      title: SecurityEvent
+    SecurityEventsResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        items:
+          items:
+            $ref: '#/components/schemas/SecurityEvent'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total
+      - items
+      title: SecurityEventsResponse
+    SecurityLockdownRequest:
+      properties:
+        lock_minutes:
+          type: integer
+          minimum: 5.0
+          title: Lock Minutes
+          default: 30
+      type: object
+      title: SecurityLockdownRequest
+    SecurityLockdownResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        locked_until:
+          type: string
+          format: date-time
+          title: Locked Until
+        lock_minutes:
+          type: integer
+          title: Lock Minutes
+        revoked_sessions:
+          type: integer
+          title: Revoked Sessions
+      type: object
+      required:
+      - message
+      - locked_until
+      - lock_minutes
+      - revoked_sessions
+      title: SecurityLockdownResponse
+    SecurityPushTokenItem:
+      properties:
+        push_token:
+          type: string
+          title: Push Token
+        provider:
+          type: string
+          title: Provider
+        registered_at:
+          type: string
+          format: date-time
+          title: Registered At
+        last_used_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Used At
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+      type: object
+      required:
+      - push_token
+      - provider
+      - registered_at
+      title: SecurityPushTokenItem
+    SecurityPushTokenRegisterRequest:
+      properties:
+        push_token:
+          type: string
+          maxLength: 512
+          minLength: 8
+          title: Push Token
+        provider:
+          type: string
+          pattern: ^(expo|fcm)$
+          title: Provider
+          default: expo
+      type: object
+      required:
+      - push_token
+      title: SecurityPushTokenRegisterRequest
+    SecurityPushTokenRegisterResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        total_active_tokens:
+          type: integer
+          title: Total Active Tokens
+      type: object
+      required:
+      - message
+      - total_active_tokens
+      title: SecurityPushTokenRegisterResponse
+    SecurityPushTokenRevokeResponse:
+      properties:
+        message:
+          type: string
+          title: Message
+        revoked_tokens:
+          type: integer
+          title: Revoked Tokens
+      type: object
+      required:
+      - message
+      - revoked_tokens
+      title: SecurityPushTokenRevokeResponse
+    SecurityPushTokensResponse:
+      properties:
+        total_tokens:
+          type: integer
+          title: Total Tokens
+        items:
+          items:
+            $ref: '#/components/schemas/SecurityPushTokenItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total_tokens
+      - items
+      title: SecurityPushTokensResponse
+    SecuritySessionItem:
+      properties:
+        session_id:
+          type: string
+          title: Session Id
+        issued_at:
+          type: string
+          format: date-time
+          title: Issued At
+        expires_at:
+          type: string
+          format: date-time
+          title: Expires At
+        ip:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Ip
+        user_agent:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: User Agent
+        revoked_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Revoked At
+        revocation_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Revocation Reason
+      type: object
+      required:
+      - session_id
+      - issued_at
+      - expires_at
+      title: SecuritySessionItem
+    SecuritySessionsResponse:
+      properties:
+        total_sessions:
+          type: integer
+          title: Total Sessions
+        active_sessions:
+          type: integer
+          title: Active Sessions
+        items:
+          items:
+            $ref: '#/components/schemas/SecuritySessionItem'
+          type: array
+          title: Items
+      type: object
+      required:
+      - total_sessions
+      - active_sessions
+      - items
+      title: SecuritySessionsResponse
+    SecurityStateResponse:
       properties:
         email:
           type: string
           format: email
-        is_active:
+          title: Email
+        email_verified:
           type: boolean
-          default: true
-        is_admin:
-          type: boolean
-          default: false
+          title: Email Verified
         is_two_factor_enabled:
           type: boolean
-          default: false
-      required:
-        - email
-    Token:
+          title: Is Two Factor Enabled
+        failed_login_attempts:
+          type: integer
+          title: Failed Login Attempts
+        max_failed_login_attempts:
+          type: integer
+          title: Max Failed Login Attempts
+        locked_until:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Locked Until
+        last_login_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Login At
+        password_changed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Password Changed At
+        legal_current_version:
+          type: string
+          title: Legal Current Version
+        legal_terms_url:
+          type: string
+          title: Legal Terms Url
+        legal_eula_url:
+          type: string
+          title: Legal Eula Url
+        legal_accepted_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Accepted Version
+        legal_accepted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Legal Accepted At
+        has_accepted_current_legal:
+          type: boolean
+          title: Has Accepted Current Legal
       type: object
+      required:
+      - email
+      - email_verified
+      - is_two_factor_enabled
+      - failed_login_attempts
+      - max_failed_login_attempts
+      - locked_until
+      - last_login_at
+      - password_changed_at
+      - legal_current_version
+      - legal_terms_url
+      - legal_eula_url
+      - legal_accepted_version
+      - legal_accepted_at
+      - has_accepted_current_legal
+      title: SecurityStateResponse
+    Token:
       properties:
         access_token:
           type: string
+          title: Access Token
         token_type:
           type: string
+          title: Token Type
+          default: bearer
+        expires_in_seconds:
+          type: integer
+          title: Expires In Seconds
+        refresh_token:
+          type: string
+          title: Refresh Token
+      type: object
       required:
-        - access_token
-        - token_type
+      - access_token
+      - expires_in_seconds
+      - refresh_token
+      title: Token
+    User:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+        is_active:
+          type: boolean
+          title: Is Active
+          default: true
+        is_admin:
+          type: boolean
+          title: Is Admin
+          default: false
+        is_two_factor_enabled:
+          type: boolean
+          title: Is Two Factor Enabled
+          default: false
+        email_verified:
+          type: boolean
+          title: Email Verified
+          default: false
+        locked_until:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Locked Until
+        last_login_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Last Login At
+        legal_accepted_version:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Legal Accepted Version
+        legal_accepted_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Legal Accepted At
+      type: object
+      required:
+      - email
+      title: User
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    OAuth2PasswordBearer:
+      type: oauth2
+      flows:
+        password:
+          scopes: {}
+          tokenUrl: token

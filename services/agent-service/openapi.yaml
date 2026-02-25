@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: Agent Service
+  description: Self-Assessment Copilot with read-only guided actions.
+  version: 1.0.0
+paths:
+  /agent/actions/request-confirmation:
+    post:
+      summary: Request confirmation token for write action
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentConfirmationTokenRequest'
+      responses:
+        '200':
+          description: One-time confirmation token issued for action execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfirmationTokenResponse'
+        '400':
+          description: Unsupported action id.
+        '401':
+          description: Missing or invalid token.
+  /agent/actions/validate-confirmation:
+    post:
+      summary: Validate or consume confirmation token for write action
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentConfirmationValidationRequest'
+      responses:
+        '200':
+          description: Token validation result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentConfirmationValidationResponse'
+        '400':
+          description: Unsupported action id.
+        '401':
+          description: Missing or invalid token.
+  /agent/actions/execute:
+    post:
+      summary: Execute confirmed write action
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentExecuteActionRequest'
+      responses:
+        '200':
+          description: Execution result for confirmed action.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentExecuteActionResponse'
+        '400':
+          description: Unsupported action id or invalid payload for action.
+        '401':
+          description: Missing or invalid token.
+  /agent/audit/events:
+    get:
+      summary: List agent audit events for current user
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+      responses:
+        '200':
+          description: Recent audit events in reverse chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentAuditLogResponse'
+        '401':
+          description: Missing or invalid token.
+  /agent/chat:
+    post:
+      summary: Chat with self-assessment copilot
+      tags:
+        - Agent
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentChatRequest'
+      responses:
+        '200':
+          description: Structured guidance response with evidence and suggested actions.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentChatResponse'
+        '401':
+          description: Missing or invalid token.
+components:
+  schemas:
+    AgentChatRequest:
+      type: object
+      properties:
+        message:
+          type: string
+          example: Help me understand what to fix before tax submission.
+        session_id:
+          type: string
+          nullable: true
+          example: session-01
+      required:
+        - message
+    AgentConfirmationTokenRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+          example: session-01
+        action_id:
+          type: string
+          enum:
+            - documents.review_document
+            - transactions.reconcile_receipt_draft
+            - transactions.ignore_receipt_draft
+            - tax.calculate_and_submit
+        action_payload:
+          type: object
+          additionalProperties: true
+      required:
+        - session_id
+        - action_id
+    AgentConfirmationTokenResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+        confirmation_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required:
+        - session_id
+        - action_id
+        - confirmation_token
+        - expires_at
+    AgentConfirmationValidationRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+          enum:
+            - documents.review_document
+            - transactions.reconcile_receipt_draft
+            - transactions.ignore_receipt_draft
+            - tax.calculate_and_submit
+        confirmation_token:
+          type: string
+        action_payload:
+          type: object
+          additionalProperties: true
+        consume:
+          type: boolean
+          default: true
+      required:
+        - session_id
+        - action_id
+        - confirmation_token
+    AgentConfirmationValidationResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        action_id:
+          type: string
+        session_id:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        consumed:
+          type: boolean
+      required:
+        - valid
+        - action_id
+        - session_id
+        - consumed
+    AgentExecuteActionRequest:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+          enum:
+            - documents.review_document
+            - transactions.reconcile_receipt_draft
+            - transactions.ignore_receipt_draft
+            - tax.calculate_and_submit
+        confirmation_token:
+          type: string
+        action_payload:
+          type: object
+          additionalProperties: true
+      required:
+        - session_id
+        - action_id
+        - confirmation_token
+    AgentExecuteActionResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        action_id:
+          type: string
+        executed:
+          type: boolean
+        valid_confirmation:
+          type: boolean
+        confirmation_reason:
+          type: string
+          nullable: true
+        downstream_endpoint:
+          type: string
+          nullable: true
+        downstream_status_code:
+          type: integer
+          nullable: true
+        result:
+          nullable: true
+          oneOf:
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: {}
+        message:
+          type: string
+      required:
+        - session_id
+        - action_id
+        - executed
+        - valid_confirmation
+        - message
+    AgentToolCallLog:
+      type: object
+      properties:
+        service:
+          type: string
+        endpoint:
+          type: string
+        status:
+          type: string
+          enum:
+            - success
+            - error
+        error:
+          type: string
+          nullable: true
+      required:
+        - service
+        - endpoint
+        - status
+    AgentAuditEvent:
+      type: object
+      properties:
+        event_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        event_type:
+          type: string
+        session_id:
+          type: string
+          nullable: true
+        action_id:
+          type: string
+          nullable: true
+        prompt_hash:
+          type: string
+          nullable: true
+        tool_calls:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentToolCallLog'
+        payload_summary:
+          type: object
+          additionalProperties: true
+        action_result:
+          type: object
+          additionalProperties: true
+      required:
+        - event_id
+        - timestamp
+        - event_type
+        - tool_calls
+        - payload_summary
+        - action_result
+    AgentAuditLogResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentAuditEvent'
+      required:
+        - total
+        - items
+    AgentEvidence:
+      type: object
+      properties:
+        source_service:
+          type: string
+          example: documents-service
+        source_endpoint:
+          type: string
+          example: /documents/review-queue
+        record_ids:
+          type: array
+          items:
+            type: string
+        summary:
+          type: string
+      required:
+        - source_service
+        - source_endpoint
+        - record_ids
+        - summary
+    AgentSuggestedAction:
+      type: object
+      properties:
+        action_id:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        requires_confirmation:
+          type: boolean
+        action_payload:
+          type: object
+          additionalProperties: true
+          nullable: true
+      required:
+        - action_id
+        - label
+        - description
+        - requires_confirmation
+    AgentChatResponse:
+      type: object
+      properties:
+        session_id:
+          type: string
+        session_turn_count:
+          type: integer
+        last_intent_from_memory:
+          type: string
+          nullable: true
+          enum:
+            - readiness_check
+            - ocr_review_assist
+            - reconciliation_assist
+            - tax_pre_submit
+        intent:
+          type: string
+          enum:
+            - readiness_check
+            - ocr_review_assist
+            - reconciliation_assist
+            - tax_pre_submit
+        confidence:
+          type: number
+          format: float
+        confidence_band:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        intent_reason:
+          type: string
+        answer:
+          type: string
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentEvidence'
+        suggested_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSuggestedAction'
+      required:
+        - session_id
+        - session_turn_count
+        - intent
+        - confidence
+        - confidence_band
+        - intent_reason
+        - answer
+        - evidence
+        - suggested_actions
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

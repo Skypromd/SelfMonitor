@@ -1,122 +1,62 @@
-import os
+import datetime
+import sys
 import uuid
-from typing import Annotated, List
-from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
 from .database import get_db
 from .telemetry import setup_telemetry
 
-# Import Kafka event streaming
-import sys
-import logging
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'libs'))
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
-try:
-    from event_streaming.kafka_integration import EventStreamingMixin
-    KAFKA_ENABLED = True
-except ImportError:
-    KAFKA_ENABLED = False
-    logging.warning("Kafka event streaming not available")
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
-logger = logging.getLogger(__name__)
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    if KAFKA_ENABLED and hasattr(app, 'init_event_streaming'):
-        await app.init_event_streaming()
-        logger.info("Kafka event streaming initialized")
-    
-    yield
-    
-    # Shutdown
-    if KAFKA_ENABLED and hasattr(app, 'cleanup_event_streaming'):
-        await app.cleanup_event_streaming()
-        logger.info("Kafka event streaming cleaned up")
-
-class TransactionsServiceApp(FastAPI, EventStreamingMixin if KAFKA_ENABLED else object):
-    """Enhanced Transactions Service with Kafka event streaming"""
-    pass
-
-app = TransactionsServiceApp(
-    title="SelfMonitor Transactions Service",
-    description="Handle financial transactions with real-time event streaming",
-    version="1.0.0",
-    lifespan=lifespan
+app = FastAPI(
+    title="Transactions Service",
+    description="Stores and categorizes financial transactions.",
+    version="1.0.0"
 )
 
 # Instrument the app for OpenTelemetry
 setup_telemetry(app)
 
-# --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
-AUTH_ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
-
-
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-    except JWTError as exc:
-        raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
-        raise credentials_exception
-    return user_id
+get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 # --- Endpoints ---
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
-
-
-@app.post("/import", status_code=status.HTTP_202_ACCEPTED)
+@app.post(
+    "/import",
+    response_model=schemas.TransactionImportResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def import_transactions(
     request: schemas.TransactionImportRequest, 
     user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ):
     """Imports a batch of transactions for an account into the database."""
-    imported_count = await crud.create_transactions(
+    import_result = await crud.create_transactions(
         db, 
         user_id=user_id, 
         account_id=request.account_id, 
         transactions=request.transactions,
         auth_token=auth_token,
     )
-    
-    # Emit transaction import event
-    if KAFKA_ENABLED and hasattr(app, 'emit_event'):
-        try:
-            await app.emit_event(
-                topic="transaction.events",
-                event_type="transaction_batch_imported",
-                data={
-                    "account_id": str(request.account_id),
-                    "imported_count": imported_count,
-                    "total_transactions": len(request.transactions),
-                    "source": "import_endpoint"
-                },
-                user_id=user_id,
-                correlation_id=f"import_{uuid.uuid4()}"
-            )
-        except Exception as e:
-            logger.warning(f"Failed to emit transaction import event: {str(e)}")
-    
-    return {"message": "Import request accepted", "imported_count": imported_count}
+    return schemas.TransactionImportResponse(
+        message="Import request accepted",
+        imported_count=import_result["imported_count"],
+        created_count=import_result["created_count"],
+        reconciled_receipt_drafts=import_result["reconciled_receipt_drafts"],
+        skipped_duplicates=import_result["skipped_duplicates"],
+    )
 
 @app.get("/accounts/{account_id}/transactions", response_model=List[schemas.Transaction])
 async def get_transactions_for_account(
@@ -240,3 +180,186 @@ async def update_transaction_category(
             logger.warning(f"Failed to emit transaction update events: {str(e)}")
     
     return updated_transaction
+
+
+@app.post("/transactions/receipt-drafts", response_model=schemas.ReceiptDraftCreateResponse)
+async def create_receipt_draft_transaction(
+    payload: schemas.ReceiptDraftCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Creates or reuses a receipt-derived draft transaction for tax expenses."""
+    transaction, duplicated = await crud.create_or_get_receipt_draft_transaction(
+        db,
+        user_id=user_id,
+        payload=payload,
+    )
+    return schemas.ReceiptDraftCreateResponse(transaction=transaction, duplicated=duplicated)
+
+
+@app.get(
+    "/transactions/receipt-drafts/unmatched",
+    response_model=schemas.UnmatchedReceiptDraftsResponse,
+)
+async def list_unmatched_receipt_drafts(
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    candidate_limit: int = Query(default=5, ge=1, le=20),
+    include_ignored: bool = Query(default=False),
+    search_provider_transaction_id: str | None = Query(default=None),
+    search_amount: float | None = Query(default=None, gt=0),
+    search_date: datetime.date | None = Query(default=None),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    total, items = await crud.list_unmatched_receipt_drafts(
+        db,
+        user_id=user_id,
+        limit=limit,
+        offset=offset,
+        candidate_limit=candidate_limit,
+        include_ignored=include_ignored,
+        search_provider_transaction_id=search_provider_transaction_id,
+        search_amount=search_amount,
+        search_date=search_date,
+    )
+    return schemas.UnmatchedReceiptDraftsResponse(total=total, items=items)
+
+
+@app.get(
+    "/transactions/receipt-drafts/{draft_transaction_id}/candidates",
+    response_model=schemas.ReceiptDraftCandidatesResponse,
+)
+async def get_receipt_draft_candidates(
+    draft_transaction_id: uuid.UUID,
+    limit: int = Query(default=20, ge=1, le=100),
+    include_ignored: bool = Query(default=True),
+    search_provider_transaction_id: str | None = Query(default=None),
+    search_amount: float | None = Query(default=None, gt=0),
+    search_date: datetime.date | None = Query(default=None),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction, candidates = await crud.get_receipt_draft_candidates(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            limit=limit,
+            include_ignored=include_ignored,
+            search_provider_transaction_id=search_provider_transaction_id,
+            search_amount=search_amount,
+            search_date=search_date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+
+    return schemas.ReceiptDraftCandidatesResponse(
+        draft_transaction=draft_transaction,
+        total=len(candidates),
+        items=candidates,
+    )
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/ignore-candidate",
+    response_model=schemas.ReceiptDraftStateUpdateResponse,
+)
+async def ignore_receipt_draft_candidate(
+    draft_transaction_id: uuid.UUID,
+    payload: schemas.ReceiptDraftIgnoreCandidateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction = await crud.ignore_receipt_draft_candidate(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            target_transaction_id=payload.target_transaction_id,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if detail in {"draft_not_found", "target_not_found"}:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+    return schemas.ReceiptDraftStateUpdateResponse(draft_transaction=draft_transaction)
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/ignore",
+    response_model=schemas.ReceiptDraftStateUpdateResponse,
+)
+async def ignore_receipt_draft(
+    draft_transaction_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction = await crud.set_receipt_draft_status(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            status="ignored",
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "draft_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+    return schemas.ReceiptDraftStateUpdateResponse(draft_transaction=draft_transaction)
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/reopen",
+    response_model=schemas.ReceiptDraftStateUpdateResponse,
+)
+async def reopen_receipt_draft(
+    draft_transaction_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        draft_transaction = await crud.set_receipt_draft_status(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            status="open",
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "draft_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail) from exc
+    return schemas.ReceiptDraftStateUpdateResponse(draft_transaction=draft_transaction)
+
+
+@app.post(
+    "/transactions/receipt-drafts/{draft_transaction_id}/reconcile",
+    response_model=schemas.ReceiptDraftManualReconcileResponse,
+)
+async def manual_reconcile_receipt_draft(
+    draft_transaction_id: uuid.UUID,
+    payload: schemas.ReceiptDraftManualReconcileRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        reconciled, removed_id = await crud.manual_reconcile_receipt_draft(
+            db,
+            user_id=user_id,
+            draft_transaction_id=draft_transaction_id,
+            target_transaction_id=payload.target_transaction_id,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        if message in {"draft_not_found", "target_not_found"}:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=message) from exc
+        if message in {"draft_not_unmatched", "target_is_draft", "target_provider_conflict"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message) from exc
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=message) from exc
+
+    return schemas.ReceiptDraftManualReconcileResponse(
+        reconciled_transaction=reconciled,
+        removed_transaction_id=removed_id,
+    )
