@@ -21,7 +21,7 @@ PARTNERS_CATALOG_PATH = Path(
 PARTNER_DB_PATH = os.getenv("PARTNER_DB_PATH", "/tmp/partner_registry.db")
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -137,39 +137,43 @@ def reset_partner_db_for_tests() -> None:
 def save_handoff(handoff: HandoffRecord) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            INSERT INTO partner_handoffs (
-                handoff_id, user_id, partner_id, partner_name, status, audit_event_id, created_at
+        try:
+            conn.execute(
+                """
+                INSERT INTO partner_handoffs (
+                    handoff_id, user_id, partner_id, partner_name, status, audit_event_id, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(handoff.handoff_id),
+                    handoff.user_id,
+                    str(handoff.partner_id),
+                    handoff.partner_name,
+                    handoff.status,
+                    handoff.audit_event_id,
+                    handoff.created_at.isoformat(),
+                ),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(handoff.handoff_id),
-                handoff.user_id,
-                str(handoff.partner_id),
-                handoff.partner_name,
-                handoff.status,
-                handoff.audit_event_id,
-                handoff.created_at.isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def list_handoffs_for_user(user_id: str) -> List[HandoffRecord]:
     with db_lock:
         conn = _connect()
-        rows = conn.execute(
-            """
-            SELECT * FROM partner_handoffs
-            WHERE user_id = ?
-            ORDER BY created_at DESC
-            """,
-            (user_id,),
-        ).fetchall()
-        conn.close()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM partner_handoffs
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+        finally:
+            conn.close()
 
     return [
         HandoffRecord(

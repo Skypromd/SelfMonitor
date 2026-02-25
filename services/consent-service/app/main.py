@@ -18,7 +18,7 @@ COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://localhost:8
 CONSENT_DB_PATH = os.getenv("CONSENT_DB_PATH", "/tmp/consent.db")
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -118,24 +118,26 @@ def reset_consent_db_for_tests() -> None:
 def insert_consent_for_tests(consent: Consent) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            INSERT INTO consents (id, user_id, connection_id, status, provider, scopes_json, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(consent.id),
-                consent.user_id,
-                str(consent.connection_id),
-                consent.status,
-                consent.provider,
-                json.dumps(consent.scopes),
-                consent.created_at.isoformat(),
-                consent.updated_at.isoformat(),
-            ),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute(
+                """
+                INSERT INTO consents (id, user_id, connection_id, status, provider, scopes_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(consent.id),
+                    consent.user_id,
+                    str(consent.connection_id),
+                    consent.status,
+                    consent.provider,
+                    json.dumps(consent.scopes),
+                    consent.created_at.isoformat(),
+                    consent.updated_at.isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def create_consent(consent: Consent) -> None:
@@ -145,35 +147,41 @@ def create_consent(consent: Consent) -> None:
 def get_consent_by_id(consent_id: uuid.UUID) -> Consent | None:
     with db_lock:
         conn = _connect()
-        row = conn.execute("SELECT * FROM consents WHERE id = ?", (str(consent_id),)).fetchone()
-        conn.close()
+        try:
+            row = conn.execute("SELECT * FROM consents WHERE id = ?", (str(consent_id),)).fetchone()
+        finally:
+            conn.close()
     return _row_to_consent(row) if row else None
 
 
 def get_active_consents_for_user(user_id: str) -> List[Consent]:
     with db_lock:
         conn = _connect()
-        rows = conn.execute(
-            "SELECT * FROM consents WHERE user_id = ? AND status = 'active'",
-            (user_id,),
-        ).fetchall()
-        conn.close()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM consents WHERE user_id = ? AND status = 'active'",
+                (user_id,),
+            ).fetchall()
+        finally:
+            conn.close()
     return [_row_to_consent(row) for row in rows]
 
 
 def update_consent(consent: Consent) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            UPDATE consents
-            SET status = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (consent.status, consent.updated_at.isoformat(), str(consent.id)),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute(
+                """
+                UPDATE consents
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (consent.status, consent.updated_at.isoformat(), str(consent.id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 # --- Service Communication ---
 

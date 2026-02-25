@@ -18,7 +18,7 @@ from fpdf import FPDF
 import io
 
 # --- Security ---
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 ANALYTICS_DB_PATH = os.getenv("ANALYTICS_DB_PATH", "/tmp/analytics.db")
@@ -145,51 +145,57 @@ def _row_to_job(row: sqlite3.Row) -> JobStatus:
 def save_job(job: JobStatus) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            INSERT INTO jobs (job_id, user_id, job_type, status, created_at, finished_at, result_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(job.job_id),
-                job.user_id,
-                job.job_type,
-                job.status,
-                job.created_at.isoformat(),
-                job.finished_at.isoformat() if job.finished_at else None,
-                json.dumps(job.result) if job.result else None,
-            ),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute(
+                """
+                INSERT INTO jobs (job_id, user_id, job_type, status, created_at, finished_at, result_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(job.job_id),
+                    job.user_id,
+                    job.job_type,
+                    job.status,
+                    job.created_at.isoformat(),
+                    job.finished_at.isoformat() if job.finished_at else None,
+                    json.dumps(job.result) if job.result else None,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def get_job(job_id: uuid.UUID) -> JobStatus | None:
     with db_lock:
         conn = _connect()
-        row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (str(job_id),)).fetchone()
-        conn.close()
+        try:
+            row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (str(job_id),)).fetchone()
+        finally:
+            conn.close()
     return _row_to_job(row) if row else None
 
 
 def update_job(job: JobStatus) -> None:
     with db_lock:
         conn = _connect()
-        conn.execute(
-            """
-            UPDATE jobs
-            SET status = ?, finished_at = ?, result_json = ?
-            WHERE job_id = ?
-            """,
-            (
-                job.status,
-                job.finished_at.isoformat() if job.finished_at else None,
-                json.dumps(job.result) if job.result else None,
-                str(job.job_id),
-            ),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            conn.execute(
+                """
+                UPDATE jobs
+                SET status = ?, finished_at = ?, result_json = ?
+                WHERE job_id = ?
+                """,
+                (
+                    job.status,
+                    job.finished_at.isoformat() if job.finished_at else None,
+                    json.dumps(job.result) if job.result else None,
+                    str(job.job_id),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 def run_job_worker(job_id: uuid.UUID):
     job = get_job(job_id)
