@@ -62,47 +62,67 @@ NAVBAR = """
 
 BASE_STYLE = """
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    :root {
+        --lp-bg: #0f172a;
+        --lp-bg-elevated: #1e293b;
+        --lp-bg-card: #334155;
+        --lp-text: #f1f5f9;
+        --lp-text-muted: #94a3b8;
+        --lp-accent-teal: #0d9488;
+        --lp-accent-teal-light: #14b8a6;
+        --lp-accent-gold: #d97706;
+        --lp-border: rgba(148, 163, 184, 0.15);
+    }
+    
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: var(--lp-bg);
         min-height: 100vh;
         padding: 20px;
+        color: var(--lp-text);
     }
     .navbar {
-        background: rgba(255,255,255,0.95);
-        backdrop-filter: blur(10px);
-        border-radius: 15px;
+        background: var(--lp-bg-elevated);
+        border: 1px solid var(--lp-border);
+        border-radius: 12px;
         padding: 20px 30px;
         margin-bottom: 30px;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
         display: flex;
         justify-content: space-between;
         align-items: center;
         flex-wrap: wrap;
     }
-    .logo { font-size: 1.8em; font-weight: bold; color: #667eea; }
-    .nav-links { display: flex; gap: 15px; flex-wrap: wrap; }
+    .logo { 
+        font-size: 1.75rem; 
+        font-weight: 700; 
+        color: var(--lp-accent-teal);
+        letter-spacing: -0.04em;
+    }
+    .nav-links { display: flex; gap: 0.5rem; flex-wrap: wrap; }
     .nav-link {
-        color: #333;
+        color: var(--lp-text-muted);
         text-decoration: none;
-        padding: 8px 16px;
-        border-radius: 8px;
-        transition: all 0.3s;
+        padding: 0.75rem 1rem;
+        border-radius: 10px;
+        transition: all 0.2s;
         font-weight: 500;
-        font-size: 0.95em;
+        font-size: 0.95rem;
     }
     .nav-link:hover {
-        background: #667eea;
-        color: white;
-        transform: translateY(-2px);
+        background: rgba(13, 148, 136, 0.15);
+        color: var(--lp-accent-teal);
     }
     .container { max-width: 1400px; margin: 0 auto; }
     .content-box {
-        background: white;
-        border-radius: 20px;
-        padding: 40px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        background: var(--lp-bg-elevated);
+        border: 1px solid var(--lp-border);
+        border-radius: 12px;
+        padding: 3rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
         animation: fadeIn 0.6s ease-in;
     }
     @keyframes fadeIn {
@@ -110,14 +130,24 @@ BASE_STYLE = """
         to { opacity: 1; transform: translateY(0); }
     }
     h1 {
-        font-size: 2.5em;
-        margin-bottom: 20px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        font-size: 2.5rem;
+        margin-bottom: 1.5rem;
+        color: var(--lp-text);
+        font-weight: 700;
+        letter-spacing: -0.04em;
     }
-    h2 { color: #667eea; margin: 30px 0 15px; font-size: 1.8em; }
-    h3 { color: #764ba2; margin: 20px 0 10px; font-size: 1.3em; }
+    h2 { 
+        color: var(--lp-accent-teal); 
+        margin: 2rem 0 1rem; 
+        font-size: 1.8rem;
+        font-weight: 600;
+    }
+    h3 { 
+        color: var(--lp-accent-teal-light); 
+        margin: 1.5rem 0 0.75rem; 
+        font-size: 1.3rem;
+        font-weight: 600;
+    }
 </style>
 """
 
@@ -136,42 +166,52 @@ async def home():
             .menu-grid {{
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-                gap: 25px;
-                margin-top: 30px;
+                gap: 1.5rem;
+                margin-top: 2rem;
             }}
             .menu-card {{
-                background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
-                border-radius: 15px;
-                padding: 30px;
+                background: var(--lp-bg-card);
+                border: 1px solid var(--lp-border);
+                border-radius: 12px;
+                padding: 2rem;
                 text-decoration: none;
-                color: #333;
-                transition: all 0.3s;
-                border: 2px solid #e5e7eb;
+                color: var(--lp-text);
+                transition: all 0.2s;
                 display: block;
             }}
             .menu-card:hover {{
-                transform: translateY(-8px);
-                box-shadow: 0 15px 40px rgba(102, 126, 234, 0.3);
-                border-color: #667eea;
+                transform: translateY(-4px);
+                box-shadow: 0 12px 32px rgba(13, 148, 136, 0.2);
+                border-color: var(--lp-accent-teal);
+                background: rgba(13, 148, 136, 0.05);
             }}
-            .card-icon {{ font-size: 3em; margin-bottom: 15px; }}
-            .card-title {{ font-size: 1.5em; font-weight: bold; color: #667eea; margin-bottom: 10px; }}
-            .card-desc {{ color: #6b7280; line-height: 1.6; }}
+            .card-icon {{ font-size: 3rem; margin-bottom: 1rem; }}
+            .card-title {{ 
+                font-size: 1.5rem; 
+                font-weight: 600; 
+                color: var(--lp-accent-teal); 
+                margin-bottom: 0.75rem; 
+            }}
+            .card-desc {{ 
+                color: var(--lp-text-muted); 
+                line-height: 1.6; 
+            }}
             .stat-row {{
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 20px;
-                margin: 30px 0;
+                gap: 1.25rem;
+                margin: 2rem 0;
             }}
             .stat-box {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 20px;
+                background: linear-gradient(135deg, var(--lp-accent-teal) 0%, var(--lp-accent-teal-light) 100%);
+                color: var(--lp-bg);
+                padding: 1.5rem;
                 border-radius: 12px;
                 text-align: center;
+                box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
             }}
-            .stat-num {{ font-size: 2.5em; font-weight: bold; }}
-            .stat-label {{ font-size: 0.9em; opacity: 0.9; margin-top: 5px; }}
+            .stat-num {{ font-size: 2.5rem; font-weight: 700; }}
+            .stat-label {{ font-size: 0.9rem; opacity: 0.9; margin-top: 0.5rem; }}
         </style>
     </head>
     <body>
@@ -179,7 +219,7 @@ async def home():
         <div class="container">
             <div class="content-box">
                 <h1>🚀 Self Monitor FinTech Platform</h1>
-                <p style="font-size: 1.2em; color: #6b7280; margin-bottom: 25px;">
+                <p style="font-size: 1.2rem; color: var(--lp-text-muted); margin-bottom: 2rem; line-height: 1.6;">
                     Полнофункциональная платформа для самозанятых. 33 микросервиса, AI-powered аналитика, автоматизация финансов.
                 </p>
                 
@@ -258,7 +298,7 @@ async def dashboard():
         categories[cat].append(svc)
     
     for cat, svcs in sorted(categories.items()):
-        services_html += f'<h3 style="margin-top: 30px; color: #764ba2;">📦 {cat} ({len(svcs)} сервисов)</h3>'
+        services_html += f'<h3 style="margin-top: 2rem; color: var(--lp-accent-teal-light);">📦 {cat} ({len(svcs)} сервисов)</h3>'
         services_html += '<div class="service-grid">'
         for svc in svcs:
             status_color = "#10b981" if svc["status"] == "●" else "#f59e0b"
@@ -290,16 +330,17 @@ async def dashboard():
                 margin-top: 15px;
             }}
             .service-card {{
-                background: linear-gradient(135deg, #f9fafb 0%, #ffffff 100%);
-                border: 1px solid #e5e7eb;
+                background: var(--lp-bg-card);
+                border: 1px solid var(--lp-border);
                 border-radius: 10px;
-                padding: 15px;
-                transition: all 0.3s;
+                padding: 1rem;
+                transition: all 0.2s;
             }}
             .service-card:hover {{
                 transform: translateY(-4px);
-                box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
-                border-color: #667eea;
+                box-shadow: 0 8px 20px rgba(13, 148, 136, 0.2);
+                border-color: var(--lp-accent-teal);
+                background: rgba(13, 148, 136, 0.05);
             }}
             .service-header {{
                 display: flex;
@@ -309,22 +350,22 @@ async def dashboard():
             }}
             .service-status {{ font-size: 1.5em; }}
             .service-port {{
-                background: #e5e7eb;
+                background: var(--lp-bg);
                 padding: 4px 10px;
                 border-radius: 5px;
-                font-size: 0.85em;
+                font-size: 0.85rem;
                 font-weight: 600;
-                color: #6b7280;
+                color: var(--lp-accent-gold);
             }}
             .service-name {{
-                font-size: 1.1em;
-                font-weight: bold;
-                color: #667eea;
-                margin-bottom: 8px;
+                font-size: 1.1rem;
+                font-weight: 600;
+                color: var(--lp-accent-teal);
+                margin-bottom: 0.5rem;
             }}
             .service-desc {{
-                font-size: 0.9em;
-                color: #6b7280;
+                font-size: 0.9rem;
+                color: var(--lp-text-muted);
                 line-height: 1.4;
             }}
         </style>
@@ -334,10 +375,10 @@ async def dashboard():
         <div class="container">
             <div class="content-box">
                 <h1>📊 Dashboard - Мониторинг Микросервисов</h1>
-                <p style="color: #6b7280; margin-bottom: 20px;">
+                <p style="color: var(--lp-text-muted); margin-bottom: 1.5rem;">
                     Статус всех 33 микросервисов платформы SelfMonitor. 
-                    <span style="color: #10b981; font-weight: bold;">● Работает</span> | 
-                    <span style="color: #f59e0b; font-weight: bold;">◐ Деградирован</span>
+                    <span style="color: #10b981; font-weight: 600;">● Работает</span> | 
+                    <span style="color: var(--lp-accent-gold); font-weight: 600;">◐ Деградирован</span>
                 </p>
                 {services_html}
             </div>
@@ -360,39 +401,40 @@ async def architecture():
         <style>
             .layer {{ margin: 30px 0; }}
             .layer-title {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
-                padding: 15px 25px;
+                background: linear-gradient(135deg, var(--lp-accent-teal) 0%, var(--lp-accent-teal-light) 100%);
+                color: var(--lp-bg);
+                padding: 1rem 1.5rem;
                 border-radius: 10px;
-                font-size: 1.3em;
-                font-weight: bold;
-                margin-bottom: 15px;
+                font-size: 1.3rem;
+                font-weight: 600;
+                margin-bottom: 1rem;
+                box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
             }}
             .layer-items {{
                 display: grid;
                 grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-                gap: 12px;
+                gap: 0.75rem;
             }}
             .layer-item {{
-                background: #f9fafb;
-                border: 2px solid #e5e7eb;
+                background: var(--lp-bg-card);
+                border: 1px solid var(--lp-border);
                 border-radius: 8px;
-                padding: 12px;
+                padding: 0.75rem;
                 text-align: center;
                 font-weight: 500;
-                color: #333;
-                transition: all 0.3s;
+                color: var(--lp-text);
+                transition: all 0.2s;
             }}
             .layer-item:hover {{
-                border-color: #667eea;
-                background: white;
+                border-color: var(--lp-accent-teal);
+                background: rgba(13, 148, 136, 0.1);
                 transform: scale(1.05);
             }}
             .flow-arrow {{
                 text-align: center;
-                font-size: 2em;
-                color: #667eea;
-                margin: 20px 0;
+                font-size: 2rem;
+                color: var(--lp-accent-gold);
+                margin: 1.5rem 0;
             }}
         </style>
     </head>
@@ -401,7 +443,7 @@ async def architecture():
         <div class="container">
             <div class="content-box">
                 <h1>🏗️ Архитектура Платформы</h1>
-                <p style="color: #6b7280; margin-bottom: 30px;">
+                <p style="color: var(--lp-text-muted); margin-bottom: 2rem; line-height: 1.6;">
                     Многоуровневая микросервисная архитектура с GraphQL Federation, Event-Driven коммуникацией и ML/AI моделями.
                 </p>
                 
@@ -509,35 +551,38 @@ async def guide():
         {BASE_STYLE}
         <style>
             .step {{
-                background: #f9fafb;
-                border-left: 4px solid #667eea;
-                padding: 25px;
-                margin: 25px 0;
+                background: var(--lp-bg-card);
+                border-left: 4px solid var(--lp-accent-teal);
+                border: 1px solid var(--lp-border);
+                padding: 1.5rem;
+                margin: 1.5rem 0;
                 border-radius: 8px;
             }}
             .step-num {{
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
+                background: linear-gradient(135deg, var(--lp-accent-teal) 0%, var(--lp-accent-teal-light) 100%);
+                color: var(--lp-bg);
                 width: 40px;
                 height: 40px;
                 border-radius: 50%;
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                font-weight: bold;
-                font-size: 1.2em;
-                margin-right: 15px;
+                font-weight: 700;
+                font-size: 1.2rem;
+                margin-right: 1rem;
+                box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
             }}
-            .step-title {{ font-size: 1.4em; font-weight: bold; color: #333; margin-bottom: 15px; }}
-            .step-content {{ color: #6b7280; line-height: 1.8; }}
-            ul {{ margin: 15px 0 15px 25px; }}
-            li {{ margin: 8px 0; color: #4b5563; }}
+            .step-title {{ font-size: 1.4rem; font-weight: 600; color: var(--lp-text); margin-bottom: 1rem; }}
+            .step-content {{ color: var(--lp-text-muted); line-height: 1.8; }}
+            ul {{ margin: 1rem 0 1rem 1.5rem; }}
+            li {{ margin: 0.5rem 0; color: var(--lp-text-muted); }}
             code {{
-                background: #e5e7eb;
-                padding: 3px 8px;
+                background: var(--lp-bg);
+                padding: 0.25rem 0.5rem;
                 border-radius: 4px;
                 font-family: 'Courier New', monospace;
-                color: #d6336c;
+                color: var(--lp-accent-gold);
+                border: 1px solid var(--lp-border);
             }}
         </style>
     </head>
@@ -546,7 +591,7 @@ async def guide():
         <div class="container">
             <div class="content-box">
                 <h1>📖 Руководство по Использованию</h1>
-                <p style="color: #6b7280; margin-bottom: 30px; font-size: 1.1em;">
+                <p style="color: var(--lp-text-muted); margin-bottom: 2rem; font-size: 1.1rem; line-height: 1.6;">
                     Полное пошаговое руководство по работе с платформой SelfMonitor. Узнайте как синхронизировать модули и правильно использовать систему.
                 </p>
                 
