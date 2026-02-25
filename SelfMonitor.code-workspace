@@ -76,8 +76,8 @@
     ],
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-      "source.organizeImports": true,
-      "source.fixAll.eslint": true
+      "source.organizeImports": "explicit",
+      "source.fixAll.eslint": "explicit"
     }
   },
   "extensions": {
@@ -142,7 +142,7 @@
     "configurations": [
       {
         "name": "🔧 Debug Any Service",
-        "type": "python",
+        "type": "debugpy",
         "request": "launch",
         "module": "uvicorn",
         "args": [

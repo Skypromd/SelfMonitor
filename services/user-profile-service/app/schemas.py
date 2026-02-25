@@ -7,6 +7,11 @@ class UserProfileBase(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     date_of_birth: Optional[datetime.date] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    timezone: Optional[str] = Field(default="UTC", description="User timezone")
+    language: Optional[str] = Field(default="en", description="User language preference")
+    currency: Optional[str] = Field(default="USD", description="User currency preference")
 
 
 class SubscriptionBase(BaseModel):
@@ -19,7 +24,17 @@ class SubscriptionBase(BaseModel):
 
 class UserProfileUpdate(UserProfileBase):
     """Schema for updating a profile."""
+    subscription_plan: Optional[str] = None
+    subscription_status: Optional[str] = None
+    billing_cycle: Optional[str] = None
     pass
+
+class UserProfileCreate(UserProfileBase):
+    """Schema for creating a new profile."""
+    user_id: str
+    subscription_plan: Optional[str] = Field(default="free", description="Subscription plan")
+    subscription_status: Optional[str] = Field(default="active", description="Subscription status")
+    billing_cycle: Optional[str] = Field(default="monthly", description="Billing cycle")
 
 class UserProfile(UserProfileBase):
     """Schema for returning a profile, includes all fields."""
@@ -43,3 +58,11 @@ class SubscriptionResponse(SubscriptionBase):
     user_id: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TenantSettingsUpdate(BaseModel):
+    """Schema for updating tenant settings."""
+    max_users: Optional[int] = None
+    features_enabled: Optional[dict] = None
+    rate_limits: Optional[dict] = None
+    custom_branding: Optional[dict] = None

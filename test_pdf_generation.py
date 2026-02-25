@@ -3,49 +3,13 @@ Test PDF generation workflow without external dependencies
 """
 
 import sys
-import os
 from pathlib import Path
-from datetime import datetime
 from decimal import Decimal
+from typing import List, Tuple, Callable
 
 def test_template_rendering():
     """Test template rendering logic without WeasyPrint"""
     print("🔍 Testing PDF template rendering logic...")
-    
-    # Mock invoice data
-    invoice_data = {
-        'invoice_number': 'INV-2024-001',
-        'client_name': 'Test Client Ltd',
-        'client_address': '123 Test Street\nLondon\nE1 4AA',
-        'issue_date': datetime.now().strftime('%d %B %Y'),
-        'due_date': (datetime.now()).strftime('%d %B %Y'),
-        'currency': 'GBP',
-        'line_items': [
-            {
-                'description': 'Software Development Services',
-                'quantity': Decimal('40'),
-                'unit_price': Decimal('75.00'),
-                'tax_rate': Decimal('20'),
-                'total': Decimal('3600.00')  # (40 * 75) * 1.2
-            },
-            {
-                'description': 'Technical Consultation',
-                'quantity': Decimal('8'),
-                'unit_price': Decimal('125.00'),
-                'tax_rate': Decimal('20'),
-                'total': Decimal('1200.00')  # (8 * 125) * 1.2
-            }
-        ],
-        'subtotal': Decimal('4000.00'),
-        'tax_amount': Decimal('800.00'),
-        'total_amount': Decimal('4800.00'),
-        'user_details': {
-            'business_name': 'Tech Freelancer Ltd',
-            'address': '456 Developer Avenue\nLondon\nW1 2BB',
-            'tax_number': 'GB123456789',
-            'bank_details': 'Sort Code: 12-34-56\nAccount: 87654321'
-        }
-    }
     
     # Test template files
     templates_path = Path("services/invoice-service/app/templates")
@@ -69,8 +33,8 @@ def test_template_rendering():
                 'issue_date'
             ]
             
-            found_placeholders = []
-            missing_placeholders = []
+            found_placeholders: List[str] = []
+            missing_placeholders: List[str] = []
             
             for placeholder in required_placeholders:
                 # Check for Jinja2 template syntax
@@ -170,13 +134,13 @@ def run_pdf_validation():
     print("🚀 Starting PDF generation validation...")
     print("="*60)
     
-    tests = [
+    tests: List[Tuple[str, Callable[[], bool]]] = [
         ("Template Rendering", test_template_rendering),
         ("PDF Generation Logic", test_pdf_generation_logic),
         ("Business Logic", test_business_logic)
     ]
     
-    results = []
+    results: List[Tuple[str, bool]] = []
     for test_name, test_func in tests:
         try:
             result = test_func()

@@ -22,39 +22,60 @@ class InvoiceCalculator:
         "EUR": Decimal("1.16")
     }
     
-    def calculate_totals(self, invoice_data: schemas.InvoiceCreate) -> schemas.InvoiceCreate:
+    def calculate_totals(self, invoice_data: schemas.InvoiceCreate) -> schemas.CalculatedInvoice:
         """Calculate all invoice totals and tax amounts"""
         subtotal = Decimal("0.00")
-        total_tax = Decimal("0.00")
+        total_vat = Decimal("0.00")
+        calculated_line_items = []
         
         # Calculate line item totals
         for line_item in invoice_data.line_items:
             line_total = self.calculate_line_total(line_item)
-            line_tax = self.calculate_line_tax(line_item)
+            line_vat = self.calculate_line_tax(line_item)
             
-            # Update line item with calculated values
-            line_item.total_amount = line_total
-            line_item.tax_amount = line_tax
+            # Create calculated line item
+            calculated_line_item = schemas.CalculatedLineItem(
+                description=line_item.description,
+                quantity=line_item.quantity,
+                unit_price=line_item.unit_price,
+                vat_rate=line_item.vat_rate,
+                line_total=line_total,
+                vat_amount=line_vat,
+                category=line_item.category,
+                product_code=line_item.product_code
+            )
+            calculated_line_items.append(calculated_line_item)
             
             subtotal += line_total
-            total_tax += line_tax
+            total_vat += line_vat
         
-        # Apply invoice-level discount
+        # Apply invoice-level discount (if we had that field)
         discount_amount = Decimal("0.00")
-        if invoice_data.discount_percentage and invoice_data.discount_percentage > 0:
-            discount_amount = subtotal * (invoice_data.discount_percentage / 100)
-            subtotal -=oscount_amount
         
         # Calculate final total
-        total_amount = subtotal + total_tax
+        total_amount = subtotal + total_vat
         
-        # Update invoice totals
-        invoice_data.subtotal = self.round_currency(subtotal)
-        invoice_data.tax_amount = self.round_currency(total_tax)
-        invoice_data.total_amount = self.round_currency(total_amount)
-        invoice_data.discount_amount = self.round_currency(discount_amount)
+        # Create calculated invoice
+        calculated_invoice = schemas.CalculatedInvoice(
+            client_name=invoice_data.client_name,
+            client_email=invoice_data.client_email,
+            client_address=invoice_data.client_address,
+            client_vat_number=invoice_data.client_vat_number,
+            due_date=invoice_data.due_date,
+            vat_rate=invoice_data.vat_rate,
+            currency=invoice_data.currency,
+            notes=invoice_data.notes,
+            terms_conditions=invoice_data.terms_conditions,
+            company_id=invoice_data.company_id,
+            template_id=invoice_data.template_id,
+            line_items=calculated_line_items,
+            subtotal=self.round_currency(subtotal),
+            total_vat=self.round_currency(total_vat),
+            total_amount=self.round_currency(total_amount),
+            discount_amount=self.round_currency(discount_amount)
+        )
         
-        return invoice_data
+        return calculated_invoice
     
     def calculate_line_total(self, line_item: schemas.InvoiceLineItemCreate) -> Decimal:
         """Calculate total for a single line item (quantity * unit_price)"""
@@ -68,10 +89,10 @@ class InvoiceCalculator:
         """Calculate VAT/tax for a single line item"""
         line_total = self.calculate_line_total(line_item)
         
-        if not line_item.tax_rate:
+        if not line_item.vat_rate:
             return Decimal("0.00")
         
-        tax_rate = Decimal(str(line_item.tax_rate)) / 100
+        tax_rate = Decimal(str(line_item.vat_rate)) / 100
         tax_amount = line_total * tax_rate
         
         return self.round_currency(tax_amount)

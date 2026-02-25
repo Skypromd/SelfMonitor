@@ -44,7 +44,7 @@ def upgrade() -> None:
         sa.Column('currency', sa.String(3), nullable=False, default='GBP'),
         sa.Column('notes', sa.Text(), nullable=True),
         sa.Column('pdf_file_path', sa.String(500), nullable=True),
-        sa.Column('status', postgresql.ENUM('draft', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled', name='invoice_status'), nullable=False, default='draft'),
+        sa.Column('status', postgresql.ENUM('draft', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled', name='invoice_status'), nullable=False, default='draft'),  # type: ignore
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.PrimaryKeyConstraint('id')
@@ -79,7 +79,7 @@ def upgrade() -> None:
         sa.Column('invoice_id', sa.String(36), nullable=False),
         sa.Column('amount', sa.Numeric(precision=12, scale=2), nullable=False),
         sa.Column('payment_date', sa.Date(), nullable=False),
-        sa.Column('payment_method', postgresql.ENUM('bank_transfer', 'card', 'cash', 'paypal', 'stripe', 'other', name='payment_method'), nullable=False),
+        sa.Column('payment_method', postgresql.ENUM('bank_transfer', 'card', 'cash', 'paypal', 'stripe', 'other', name='payment_method'), nullable=False),  # type: ignore
         sa.Column('reference_number', sa.String(100), nullable=True),
         sa.Column('notes', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -116,7 +116,7 @@ def upgrade() -> None:
         sa.Column('template_id', sa.String(36), nullable=False),
         sa.Column('user_id', sa.String(36), nullable=False),
         sa.Column('name', sa.String(200), nullable=False),
-        sa.Column('frequency', postgresql.ENUM('weekly', 'monthly', 'quarterly', 'yearly', name='frequency_type'), nullable=False),
+        sa.Column('frequency', postgresql.ENUM('weekly', 'monthly', 'quarterly', 'yearly', name='frequency_type'), nullable=False),  # type: ignore
         sa.Column('start_date', sa.Date(), nullable=False),
         sa.Column('end_date', sa.Date(), nullable=True),
         sa.Column('next_invoice_date', sa.Date(), nullable=False),

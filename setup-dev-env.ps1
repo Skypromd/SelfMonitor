@@ -182,15 +182,15 @@ try {
   $migrationServices = @("user-profile-service", "transactions-service", "analytics-service")
     
   foreach ($service in $migrationServices) {
-    if (Test-Path "services\$service\alembic.ini") {
+    if (Test-Path "services\${service}\alembic.ini") {
       Write-Step "Running migrations for $service..."
       try {
-        Set-Location "services\$service"
+        Set-Location "services\${service}"
         alembic upgrade head
         Write-Success "Migrations completed for $service"
       }
       catch {
-        Write-Warning "Failed to run migrations for $service: $_"
+        Write-Warning "Failed to run migrations for ${service}: $($_.Exception.Message)"
       }
       finally {
         Set-Location $PSScriptRoot

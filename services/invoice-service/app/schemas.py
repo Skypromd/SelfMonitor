@@ -243,3 +243,37 @@ class PDFGenerationResponse(BaseModel):
     pdf_url: str
     file_path: str
     generated_at: datetime
+
+# === CALCULATION RESULT SCHEMAS ===
+class CalculatedLineItem(BaseModel):
+    """Line item with calculated totals"""
+    description: str
+    quantity: Decimal
+    unit_price: Decimal
+    vat_rate: Decimal
+    line_total: Decimal
+    vat_amount: Decimal
+    category: Optional[str] = None
+    product_code: Optional[str] = None
+
+class CalculatedInvoice(BaseModel):
+    """Invoice with calculated totals"""
+    client_name: str
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+    client_vat_number: Optional[str] = None
+    due_date: datetime
+    vat_rate: Decimal = Decimal("20.0")
+    currency: str = "GBP"
+    notes: Optional[str] = None
+    terms_conditions: Optional[str] = None
+    company_id: Optional[str] = None
+    template_id: Optional[str] = None
+    
+    line_items: List[CalculatedLineItem]
+    
+    # Calculated totals
+    subtotal: Decimal
+    total_vat: Decimal
+    total_amount: Decimal
+    discount_amount: Optional[Decimal] = Decimal("0.00")

@@ -4,11 +4,11 @@ Validates syntax and import structure without starting the service
 """
 
 import sys
-import os
 import ast
 from pathlib import Path
+from typing import Tuple, Union
 
-def check_python_syntax(file_path):
+def check_python_syntax(file_path: str) -> Tuple[bool, Union[str, None]]:
     """Check if Python file has valid syntax"""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
@@ -52,7 +52,7 @@ def validate_service():
             all_valid = False
             continue
             
-        is_valid, error = check_python_syntax(file_path)
+        is_valid, error = check_python_syntax(str(file_path))
         if is_valid:
             print(f"✅ {file_name}: Valid syntax")
         else:

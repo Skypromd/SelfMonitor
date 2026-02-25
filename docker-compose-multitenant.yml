@@ -1,0 +1,430 @@
+# Multi-Tenant SelfMonitor FinTech Platform
+# Полная изоляция данных на уровне БД для 500,000 клиентов
+
+version: "3.8"
+
+services:
+  # Tenant Router Service - Центральный сервис маршрутизации
+  tenant-router:
+    build: ./services/tenant-router
+    container_name: selfmonitor_tenant_router
+    environment:
+      REDIS_URL: "redis://redis-cluster:6379"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MAX_TENANTS_PER_SHARD: 1000
+      AUTO_SCALING_ENABLED: true
+      LOG_LEVEL: info
+    ports:
+      - "8001:8001"
+    depends_on:
+      - redis-cluster
+      - postgres-shard-1
+      - postgres-shard-2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tenant_network
+
+  # PostgreSQL Shards для tenant isolation
+  postgres-shard-1:
+    image: postgres:15-alpine
+    container_name: postgres_shard_1
+    environment:
+      POSTGRES_USER: tenant_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_tenant_password_2026}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+      # Multi-DB support
+      POSTGRES_MULTIPLE_DATABASES: "tenant_demo_1,tenant_demo_2,tenant_demo_3"
+    volumes:
+      - shard_1_data:/var/lib/postgresql/data
+      - ./infra/postgres-multitenant/init-shard.sh:/docker-entrypoint-initdb.d/init-shard.sh
+      - ./infra/postgres-multitenant/postgresql-shard.conf:/etc/postgresql/postgresql.conf
+      - ./infra/postgres-multitenant/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5432:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenant_user -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tenant_network
+
+  postgres-shard-2:
+    image: postgres:15-alpine
+    container_name: postgres_shard_2
+    environment:
+      POSTGRES_USER: tenant_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_tenant_password_2026}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+      POSTGRES_MULTIPLE_DATABASES: "tenant_demo_4,tenant_demo_5,tenant_demo_6"
+    volumes:
+      - shard_2_data:/var/lib/postgresql/data
+      - ./infra/postgres-multitenant/init-shard.sh:/docker-entrypoint-initdb.d/init-shard.sh
+      - ./infra/postgres-multitenant/postgresql-shard.conf:/etc/postgresql/postgresql.conf
+      - ./infra/postgres-multitenant/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5433:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenant_user -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tenant_network
+
+  # PostgreSQL Shard 3 (для демонстрации масштабирования)
+  postgres-shard-3:
+    image: postgres:15-alpine
+    container_name: postgres_shard_3
+    environment:
+      POSTGRES_USER: tenant_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_tenant_password_2026}
+      POSTGRES_DB: postgres
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+    volumes:
+      - shard_3_data:/var/lib/postgresql/data
+      - ./infra/postgres-multitenant/init-shard.sh:/docker-entrypoint-initdb.d/init-shard.sh
+      - ./infra/postgres-multitenant/postgresql-shard.conf:/etc/postgresql/postgresql.conf
+      - ./infra/postgres-multitenant/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5434:5432"
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tenant_user -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - tenant_network
+
+  # Redis Cluster для метаданных tenant
+  redis-cluster:
+    image: redis/redis-stack-server:7.2.0-v0
+    container_name: redis_tenant_metadata
+    environment:
+      REDIS_ARGS: "--requirepass ${REDIS_PASSWORD:-redis_secure_password_2026} --maxmemory 512mb --maxmemory-policy allkeys-lru"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_tenant_data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "-a",
+          "${REDIS_PASSWORD:-redis_secure_password_2026}",
+          "ping",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - tenant_network
+
+  # Multi-Tenant User Profile Service
+  user-profile-service-mt:
+    build:
+      context: ./services/user-profile-service
+      dockerfile: Dockerfile.multitenant
+    container_name: user_profile_service_mt
+    environment:
+      TENANT_ROUTER_URL: "http://tenant-router:8001"
+      JWT_SECRET: ${JWT_SECRET:-a_secure_random_string_for_jwt_signing_!@#$%^}
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      LOG_LEVEL: info
+      ENABLE_TENANT_MIDDLEWARE: true
+    ports:
+      - "8010:80"
+    depends_on:
+      - tenant-router
+      - redis-cluster
+      - kafka
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tenant_network
+
+  # Multi-Tenant Transactions Service
+  transactions-service-mt:
+    build:
+      context: ./services/transactions-service
+      dockerfile: Dockerfile.multitenant
+    container_name: transactions_service_mt
+    environment:
+      TENANT_ROUTER_URL: "http://tenant-router:8001"
+      JWT_SECRET: ${JWT_SECRET:-a_secure_random_string_for_jwt_signing_!@#$%^}
+      KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+      LOG_LEVEL: info
+      ENABLE_TENANT_MIDDLEWARE: true
+    ports:
+      - "8011:80"
+    depends_on:
+      - tenant-router
+      - user-profile-service-mt
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tenant_network
+
+  # Kafka для event streaming между tenant
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka_tenant_events
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Tenant-specific topics
+      KAFKA_NUM_PARTITIONS: 10
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    volumes:
+      - kafka_tenant_data:/var/lib/kafka/data
+    networks:
+      - tenant_network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper_tenant
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper_tenant_data:/var/lib/zookeeper/data
+    networks:
+      - tenant_network
+
+  # GraphQL Gateway с tenant routing
+  graphql-gateway-mt:
+    build:
+      context: ./services/graphql-gateway
+      dockerfile: Dockerfile.multitenant
+    container_name: graphql_gateway_mt
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET:-a_secure_random_string_for_jwt_signing_!@#$%^}
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001"
+      TENANT_ROUTER_URL: "http://tenant-router:8001"
+      # Multi-tenant service URLs
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service-mt:80/graphql"
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service-mt:80/graphql"
+      # ... other services
+    ports:
+      - "4000:4000"
+    depends_on:
+      - tenant-router
+      - user-profile-service-mt
+      - transactions-service-mt
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - tenant_network
+
+  # NGINX Gateway с tenant routing support
+  nginx-gateway-mt:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.multitenant
+    container_name: nginx_gateway_mt
+    ports:
+      - "8000:80"
+    depends_on:
+      - graphql-gateway-mt
+      - user-profile-service-mt
+      - transactions-service-mt
+      - tenant-router
+    volumes:
+      - ./nginx/nginx-multitenant.conf:/etc/nginx/nginx.conf
+    networks:
+      - tenant_network
+
+  # Prometheus для мониторинга multi-tenant метрик
+  prometheus-mt:
+    image: prom/prometheus:v2.45.0
+    container_name: prometheus_multitenant
+    command:
+      - "--config.file=/etc/prometheus/prometheus-multitenant.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+      - "--web.enable-admin-api"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus-multitenant.yml:/etc/prometheus/prometheus-multitenant.yml
+      - prometheus_mt_data:/prometheus
+    networks:
+      - tenant_network
+
+  # Grafana для визуализации tenant metrics
+  grafana-mt:
+    image: grafana/grafana:10.0.0
+    container_name: grafana_multitenant
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_mt_data:/var/lib/grafana
+      - ./observability/grafana/dashboards-multitenant:/etc/grafana/provisioning/dashboards
+      - ./observability/grafana/datasources-multitenant:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus-mt
+    networks:
+      - tenant_network
+
+  # Tenant Auto-Scaler Service
+  tenant-autoscaler:
+    build: ./services/tenant-autoscaler
+    container_name: tenant_autoscaler
+    environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
+      TENANT_ROUTER_URL: "http://tenant-router:8001"
+      MAX_TENANTS_PER_SHARD: 1000
+      MIN_SHARDS: 2
+      MAX_SHARDS: 10
+      SCALE_UP_THRESHOLD: 0.8
+      SCALE_DOWN_THRESHOLD: 0.3
+      CHECK_INTERVAL_SECONDS: 300
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./scripts/create-new-shard.sh:/scripts/create-new-shard.sh
+    depends_on:
+      - tenant-router
+      - prometheus-mt
+    networks:
+      - tenant_network
+
+  # Backup Service для tenant databases
+  tenant-backup:
+    build: ./services/tenant-backup
+    container_name: tenant_backup_service
+    environment:
+      TENANT_ROUTER_URL: "http://tenant-router:8001"
+      S3_ENDPOINT: "minio:9000"
+      S3_ACCESS_KEY: "minioadmin"
+      S3_SECRET_KEY: "minioadmin"
+      BACKUP_SCHEDULE: "0 2 * * *" # Daily at 2 AM
+      RETENTION_DAYS: 30
+    volumes:
+      - ./scripts/backup-tenant-db.sh:/scripts/backup-tenant-db.sh
+    depends_on:
+      - tenant-router
+      - minio
+    networks:
+      - tenant_network
+
+  # MinIO для хранения tenant backups
+  minio:
+    image: minio/minio:RELEASE.2023-06-19T19-52-50Z
+    container_name: minio_tenant_backups
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-minioadmin123}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_tenant_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - tenant_network
+
+  # pgAdmin для управления tenant databases
+  pgadmin:
+    image: dpage/pgadmin4:7.4
+    container_name: pgadmin_multitenant
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@selfmonitor.com
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_mt_data:/var/lib/pgadmin
+      - ./observability/pgadmin/servers-multitenant.json:/pgadmin4/servers.json
+    depends_on:
+      - postgres-shard-1
+      - postgres-shard-2
+      - postgres-shard-3
+    networks:
+      - tenant_network
+
+volumes:
+  # PostgreSQL shards data
+  shard_1_data:
+    driver: local
+  shard_2_data:
+    driver: local
+  shard_3_data:
+    driver: local
+
+  # Redis tenant metadata
+  redis_tenant_data:
+    driver: local
+
+  # Kafka tenant events
+  kafka_tenant_data:
+    driver: local
+  zookeeper_tenant_data:
+    driver: local
+
+  # Monitoring data
+  prometheus_mt_data:
+    driver: local
+  grafana_mt_data:
+    driver: local
+
+  # Backup storage
+  minio_tenant_data:
+    driver: local
+  pgadmin_mt_data:
+    driver: local
+
+networks:
+  tenant_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/16

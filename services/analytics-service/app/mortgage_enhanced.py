@@ -3,11 +3,9 @@
 # This file contains the enhanced mortgage readiness report that integrates
 # invoice data to provide a more comprehensive income picture for self-employed
 
-from typing import Optional, Dict, Any
+from typing import Dict, Any, List
 from datetime import datetime, date, timedelta
-from decimal import Decimal
 import httpx
-from fastapi import HTTPException
 
 class MortgageReadinessEnhanced:
     """Enhanced mortgage readiness report with invoice integration"""
@@ -99,18 +97,18 @@ class MortgageReadinessEnhanced:
                         timeout=10.0
                     )
                     
-                    invoices = invoices_response.json() if invoices_response.status_code == 200 else []
+                    invoices: List[Dict[str, Any]] = invoices_response.json() if invoices_response.status_code == 200 else []
                     
                     # Analyze invoice income by month
-                    monthly_invoice_income = {}
-                    total_invoice_income = 0
-                    invoice_count = 0
+                    monthly_invoice_income: Dict[str, float] = {}
+                    total_invoice_income: float = 0
+                    invoice_count: int = 0
                     
                     for invoice in invoices:
                         if invoice.get('status') in ['paid', 'partially_paid', 'sent']:
-                            invoice_date = datetime.fromisoformat(invoice['invoice_date']).date()
-                            month = invoice_date.strftime("%Y-%m")
-                            amount = float(invoice.get('total_amount', 0))
+                            invoice_date: date = datetime.fromisoformat(invoice['invoice_date']).date()
+                            month: str = invoice_date.strftime("%Y-%m")
+                            amount: float = float(invoice.get('total_amount', 0))
                             
                             if month not in monthly_invoice_income:
                                 monthly_invoice_income[month] = 0
@@ -137,17 +135,17 @@ class MortgageReadinessEnhanced:
         except Exception as e:
             return {'source': 'invoices', 'error': str(e), 'monthly_income': {}, 'total_income': 0}
     
-    def _combine_income_sources(self, transaction_income: Dict, invoice_income: Dict) -> Dict[str, Any]:
+    def _combine_income_sources(self, transaction_income: Dict[str, Any], invoice_income: Dict[str, Any]) -> Dict[str, Any]:
         """Combine transaction and invoice income for comprehensive view"""
         
         # Merge monthly data
-        combined_monthly = {}
+        combined_monthly: Dict[str, Dict[str, float]] = {}
         all_months = set(transaction_income.get('monthly_income', {}).keys()) | \
                      set(invoice_income.get('monthly_income', {}).keys())
         
         for month in all_months:
-            transaction_amount = transaction_income.get('monthly_income', {}).get(month, 0)
-            invoice_amount = invoice_income.get('monthly_income', {}).get(month, 0)
+            transaction_amount: float = float(transaction_income.get('monthly_income', {}).get(month, 0))
+            invoice_amount: float = float(invoice_income.get('monthly_income', {}).get(month, 0))
             
             combined_monthly[month] = {
                 'transaction_income': transaction_amount,
@@ -155,11 +153,11 @@ class MortgageReadinessEnhanced:
                 'total_income': transaction_amount + invoice_amount
             }
         
-        total_combined_income = transaction_income.get('total_income', 0) + invoice_income.get('total_income', 0)
-        average_monthly_combined = total_combined_income / 12 if total_combined_income > 0 else 0
+        total_combined_income: float = float(transaction_income.get('total_income', 0)) + float(invoice_income.get('total_income', 0))
+        average_monthly_combined: float = total_combined_income / 12 if total_combined_income > 0 else 0.0
         
         # Professional credentials for self-employed
-        is_self_employed = invoice_income.get('invoice_count', 0) > 0
+        is_self_employed: bool = int(invoice_income.get('invoice_count', 0)) > 0
         
         return {
             'period': '12 months',
@@ -171,14 +169,14 @@ class MortgageReadinessEnhanced:
             },
             'income_sources': {
                 'traditional_income': {
-                    'total': transaction_income.get('total_income', 0),
-                    'monthly_average': transaction_income.get('average_monthly', 0)
+                    'total': float(transaction_income.get('total_income', 0)),
+                    'monthly_average': float(transaction_income.get('average_monthly', 0))
                 },
                 'professional_income': {
-                    'total': invoice_income.get('total_income', 0),
-                    'monthly_average': invoice_income.get('average_monthly', 0),
-                    'invoice_count': invoice_income.get('invoice_count', 0),
-                    'average_invoice_value': invoice_income.get('average_invoice_value', 0)
+                    'total': float(invoice_income.get('total_income', 0)),
+                    'monthly_average': float(invoice_income.get('average_monthly', 0)),
+                    'invoice_count': int(invoice_income.get('invoice_count', 0)),
+                    'average_invoice_value': float(invoice_income.get('average_invoice_value', 0))
                 }
             },
             'mortgage_readiness_score': self._calculate_mortgage_readiness_score(
@@ -193,11 +191,11 @@ class MortgageReadinessEnhanced:
             )
         }
     
-    def _calculate_mortgage_readiness_score(self, total_income: float, is_self_employed: bool, invoice_data: Dict) -> Dict[str, Any]:
+    def _calculate_mortgage_readiness_score(self, total_income: float, is_self_employed: bool, invoice_data: Dict[str, Any]) -> Dict[str, Any]:
         """Calculate mortgage readiness score based on income stability"""
         
         base_score = 0
-        factors = []
+        factors: List[str] = []
         
         # Income level scoring
         if total_income >= 50000:  # £50k+
@@ -260,10 +258,10 @@ class MortgageReadinessEnhanced:
             'factors': factors
         }
     
-    def _generate_mortgage_recommendations(self, total_income: float, is_self_employed: bool, invoice_data: Dict) -> List[str]:
+    def _generate_mortgage_recommendations(self, total_income: float, is_self_employed: bool, invoice_data: Dict[str, Any]) -> List[str]:
         """Generate personalized mortgage application recommendations"""
         
-        recommendations = []
+        recommendations: List[str] = []
         
         if is_self_employed:
             recommendations.extend([

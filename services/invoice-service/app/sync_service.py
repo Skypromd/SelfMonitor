@@ -7,8 +7,7 @@ corresponding transaction records for comprehensive financial reporting
 import httpx
 import asyncio
 from typing import Optional, Dict, Any, List
-from datetime import datetime, date
-from decimal import Decimal
+from datetime import datetime
 import logging
 
 from . import models, schemas
@@ -51,7 +50,7 @@ class InvoiceTransactionSync:
             async with httpx.AsyncClient() as client:
                 # Check if transaction already exists
                 existing_transaction = await self._find_existing_transaction(
-                    client, headers, invoice.id
+                    client, headers, str(invoice.id)
                 )
                 
                 if existing_transaction:
@@ -116,12 +115,12 @@ class InvoiceTransactionSync:
         """Create transaction payload from invoice data"""
         
         # Base transaction data
-        transaction = {
-            "user_id": invoice.user_id,
-            "amount": float(invoice.total_amount),
-            "currency": invoice.currency,
+        transaction: Dict[str, Any] = {
+            "user_id": str(invoice.user_id),
+            "amount": float(invoice.total_amount),  # type: ignore
+            "currency": str(invoice.currency),
             "description": f"Invoice {invoice.invoice_number} - {invoice.client_name}",
-            "date": invoice.invoice_date.isoformat(),
+            "date": invoice.invoice_date.isoformat() if invoice.invoice_date else datetime.now().date().isoformat(),  # type: ignore
             "type": "income",
             "category": "Business Income",
             "subcategory": "Professional Services",
@@ -134,26 +133,27 @@ class InvoiceTransactionSync:
                 "invoice_status": invoice.status.value,
                 "sync_type": sync_type,
                 "line_items_count": len(invoice.line_items or []),
-                "payment_terms": invoice.payment_terms,
-                "due_date": invoice.due_date.isoformat() if invoice.due_date else None,
-                "tax_amount": float(invoice.tax_amount or 0),
-                "subtotal": float(invoice.subtotal or 0)
+                "payment_terms": int(invoice.payment_terms) if invoice.payment_terms else None,
+                "due_date": invoice.due_date.isoformat() if invoice.due_date else None,  # type: ignore
+                "tax_amount": float(invoice.tax_amount or 0),  # type: ignore
+                "subtotal": float(invoice.subtotal or 0)  # type: ignore
             }
         }
         
         # Adjust transaction based on invoice status  
-        if invoice.status == schemas.InvoiceStatus.PAID:
+        invoice_status = str(invoice.status)
+        if invoice_status == schemas.InvoiceStatus.PAID.value:
             transaction["status"] = "completed"
             transaction["metadata"]["payment_confirmed"] = True
-        elif invoice.status == schemas.InvoiceStatus.PARTIALLY_PAID:
+        elif invoice_status == schemas.InvoiceStatus.PARTIALLY_PAID.value:
             transaction["amount"] = float(invoice.paid_amount or 0)
             transaction["status"] = "pending"
             transaction["metadata"]["partial_payment"] = True
-            transaction["metadata"]["remaining_balance"] = float(invoice.total_amount - (invoice.paid_amount or 0))
-        elif invoice.status == schemas.InvoiceStatus.SENT:
+            transaction["metadata"]["remaining_balance"] = float(invoice.total_amount - (invoice.paid_amount or 0))  # type: ignore
+        elif invoice_status == schemas.InvoiceStatus.SENT.value:
             transaction["status"] = "pending"
             transaction["metadata"]["invoice_sent"] = True
-        elif invoice.status == schemas.InvoiceStatus.CANCELLED:
+        elif invoice_status == schemas.InvoiceStatus.CANCELLED.value:
             transaction["status"] = "cancelled"
             transaction["amount"] = 0
         else:
@@ -161,14 +161,14 @@ class InvoiceTransactionSync:
         
         # Add line item details for categorization
         if invoice.line_items:
-            line_items_data = []
+            line_items_data: List[Dict[str, Any]] = []
             for item in invoice.line_items:
                 line_items_data.append({
                     "description": item.description,
                     "category": item.category,
-                    "amount": float(item.total_amount),
-                    "quantity": float(item.quantity),
-                    "unit_price": float(item.unit_price)
+                    "amount": float(item.total_amount),  # type: ignore
+                    "quantity": float(item.quantity),  # type: ignore
+                    "unit_price": float(item.unit_price)  # type: ignore
                 })
             transaction["metadata"]["line_items"] = line_items_data
             
@@ -215,12 +215,12 @@ class InvoiceTransactionSync:
             }
             
             # Create payment transaction
-            payment_transaction = {
-                "user_id": invoice.user_id,
-                "amount": float(payment.amount),
-                "currency": invoice.currency,
+            payment_transaction: Dict[str, Any] = {
+                "user_id": str(invoice.user_id),
+                "amount": float(payment.amount),  # type: ignore
+                "currency": str(invoice.currency),
                 "description": f"Payment received for Invoice {invoice.invoice_number}",
-                "date": payment.payment_date.isoformat(),
+                "date": payment.payment_date.isoformat() if payment.payment_date else datetime.now().date().isoformat(),  # type: ignore
                 "type": "income",
                 "category": "Payment Received",
                 "subcategory": "Invoice Payment",
@@ -272,7 +272,7 @@ class InvoiceTransactionSync:
         auth_token: str
     ) -> Dict[str, Any]:
         """Bulk sync multiple invoices"""
-        results = {
+        results: Dict[str, Any] = {
             "total_invoices": len(invoices),
             "successful_syncs": 0,
             "failed_syncs": 0,
@@ -296,11 +296,14 @@ class InvoiceTransactionSync:
                 if isinstance(result, Exception):
                     results["failed_syncs"] += 1
                     results["errors"].append(str(result))
-                elif result.get("status") == "success":
+                elif isinstance(result, dict) and result.get("status") == "success":
                     results["successful_syncs"] += 1
                 else:
                     results["failed_syncs"] += 1
-                    results["errors"].append(result.get("message", "Unknown error"))
+                    if isinstance(result, dict):
+                        results["errors"].append(result.get("message", "Unknown error"))
+                    else:
+                        results["errors"].append("Unknown error type")
             
             # Small delay between batches
             await asyncio.sleep(0.1)

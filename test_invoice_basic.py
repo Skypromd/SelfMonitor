@@ -3,15 +3,13 @@ Simple test for basic invoice functionality without external dependencies
 """
 
 import sys
-import os
 from pathlib import Path
 from decimal import Decimal
-from datetime import datetime
-from typing import Optional, List
+from typing import Any, Tuple, Callable
 
 # Mock basic pydantic types for testing
 class BaseModel:
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         for key, value in data.items():
             setattr(self, key, value)
     
@@ -80,7 +78,7 @@ def test_template_structure():
                 
             # Check for basic template elements
             required_elements = ['{{', 'invoice_number', 'client_name', 'total_amount']
-            missing_elements = []
+            missing_elements: list[str] = []
             
             for element in required_elements:
                 if element not in content:
@@ -131,13 +129,13 @@ def test_invoice_service():
     print("🚀 Starting invoice-service validation tests...")
     print("="*60)
     
-    tests = [
+    tests: list[Tuple[str, Callable[[], bool]]] = [
         ("File Structure", test_file_structure),
         ("Basic Calculations", test_basic_calculations), 
         ("Template Structure", test_template_structure)
     ]
     
-    results = []
+    results: list[Tuple[str, bool]] = []
     for test_name, test_func in tests:
         try:
             result = test_func()
