@@ -1,9 +1,11 @@
 from datetime import timedelta
 import datetime
 import io
+import logging
 import os
 import sqlite3
 import threading
+import uuid
 from typing import Annotated, Optional, List
 
 import pyotp
@@ -14,6 +16,8 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, EmailStr, Field
+
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 # The secret key is now read from an environment variable for better security.
@@ -420,7 +424,6 @@ async def create_organization(
     if plan not in ("enterprise", "team"):
         raise HTTPException(status_code=400, detail="Invalid plan. Must be 'enterprise' or 'team'.")
 
-    import uuid
     org_id = str(uuid.uuid4())[:8].upper()
     
     with db_lock:
@@ -451,7 +454,8 @@ async def create_organization(
                 "message": f"Enterprise organization '{name}' created! Monthly revenue: £{45 * 10} minimum"
             }
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to create organization: {e}")
+            logger.error("Failed to create organization: %s", e)
+            raise HTTPException(status_code=500, detail="Failed to create organization")
         finally:
             conn.close()
 

@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated, Any, Dict, List, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
@@ -11,6 +12,8 @@ import os
 import sqlite3
 import threading
 import json
+
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 # The URL for the compliance service is now read from an environment variable.
@@ -195,11 +198,11 @@ async def log_audit_event(user_id: str, action: str, details: Dict[str, Any], au
                 json={"user_id": user_id, "action": action, "details": details},
                 timeout=5.0
             )
-        print(f"Successfully logged audit event: {action}")
+        logger.info("Successfully logged audit event: %s", action)
     except httpx.RequestError as e:
         # In a production system, you'd have more robust error handling,
         # like a dead-letter queue or retries with exponential backoff.
-        print(f"Error: Could not log audit event to compliance service: {e}")
+        logger.error("Could not log audit event to compliance service: %s", e)
 
 # --- Endpoints ---
 

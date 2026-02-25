@@ -43,12 +43,6 @@ async def health_check():
     return {"status": "ok"}
 
 
-# @app.on_event("startup")
-# async def startup():
-#     # This logic is now handled by Alembic migrations.
-#     # You should run `alembic upgrade head` before starting the application.
-#     pass
-
 @app.get("/profiles/me", response_model=schemas.UserProfile)
 async def get_my_profile(
     user_id: str = Depends(get_current_user_id),

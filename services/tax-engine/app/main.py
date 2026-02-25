@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -8,6 +9,8 @@ import datetime
 import os
 import httpx
 from .telemetry import setup_telemetry
+
+logger = logging.getLogger(__name__)
 
 # --- Configuration ---
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
@@ -179,7 +182,7 @@ async def calculate_and_submit_tax(
             )
     except httpx.RequestError:
         # This is a non-critical step, so we don't fail the whole request if it fails.
-        print("Warning: Could not create calendar event.")
+        logger.warning("Could not create calendar event.")
 
 
     return {

@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Annotated, List, Dict, Any, Optional
 from enum import Enum
@@ -7,6 +8,8 @@ from fastapi import Depends, FastAPI, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Business Intelligence Service", 
@@ -434,10 +437,10 @@ async def generate_business_insights(
 
 async def process_advanced_insights(analysis_type: str, generator: Dict[str, Any]):
     """Process advanced AI insights in background"""
-    print(f"🧠 Processing advanced insights for {analysis_type}")
-    print(f"📊 ML Models: {generator['ml_models']}")
-    print(f"📈 Impact Score: {generator['impact_score']}")
-    print("✅ Advanced insights processing completed")
+    logger.info("Processing advanced insights for %s", analysis_type)
+    logger.info("ML Models: %s", generator['ml_models'])
+    logger.info("Impact Score: %s", generator['impact_score'])
+    logger.info("Advanced insights processing completed")
 
 @app.get("/executive-dashboard")
 async def get_executive_dashboard(

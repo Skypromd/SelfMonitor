@@ -1,3 +1,4 @@
+import logging
 import os
 import datetime
 import httpx
@@ -9,6 +10,8 @@ from fastapi import Depends, FastAPI, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer 
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Customer Success Service",
@@ -163,7 +166,7 @@ async def get_user_journey(
             )
             
     except Exception as e:
-        # Fallback for new users
+        logger.warning("Could not fetch user journey for %s, returning default: %s", user_id, e)
         return UserJourney(
             user_id=user_id,
             current_stage=OnboardingStage.REGISTRATION,
@@ -241,7 +244,7 @@ async def execute_interventions(interventions: List[ProactiveAction]):
     """Execute proactive interventions (send emails, create tasks, etc.)"""
     for intervention in interventions:
         # In production: send email, create calendar task, trigger notification
-        print(f"Executing {intervention.action_type} for {intervention.user_id}: {intervention.suggested_message}")
+        logger.info("Executing %s for %s: %s", intervention.action_type, intervention.user_id, intervention.suggested_message)
 
 @app.get("/success-metrics/{user_id}", response_model=SuccessMetrics)
 async def get_success_metrics(

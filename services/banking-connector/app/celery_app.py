@@ -1,8 +1,11 @@
+import logging
 from celery import Celery
 import os
 import httpx
 import uuid
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 # Use os.getenv to read environment variables set by Docker Compose
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
@@ -33,9 +36,9 @@ def import_transactions_task(account_id: str, transactions_data: List[dict], aut
                 timeout=10.0
             )
             response.raise_for_status()
-        print(f"Celery task: Successfully imported {len(transactions_data)} transactions for account {account_id}.")
+        logger.info("Celery task: Successfully imported %d transactions for account %s.", len(transactions_data), account_id)
         return {"status": "success", "imported_count": len(transactions_data)}
     except httpx.RequestError as e:
-        print(f"Celery task error: Could not import transactions for account {account_id}: {e}")
+        logger.error("Celery task error: Could not import transactions for account %s: %s", account_id, e)
         # Celery can be configured to retry tasks on failure.
         raise e

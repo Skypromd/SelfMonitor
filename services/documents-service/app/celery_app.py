@@ -1,3 +1,4 @@
+import logging
 from celery import Celery
 import os
 import time
@@ -21,12 +22,14 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
+logger = logging.getLogger(__name__)
+
 celery = Celery(__name__, broker=CELERY_BROKER_URL, backend=CELERY_RESULT_BACKEND)
 
 def index_document_content(user_id: str, doc_id: str, filename: str, content: str):
     """Synchronous function to call the Q&A service for indexing."""
     if not QNA_INTERNAL_TOKEN:
-        print("Error indexing document: QNA_INTERNAL_TOKEN is not configured.")
+        logger.error("Error indexing document: QNA_INTERNAL_TOKEN is not configured.")
         return
 
     try:
@@ -43,16 +46,16 @@ def index_document_content(user_id: str, doc_id: str, filename: str, content: st
                 timeout=10.0
             )
             response.raise_for_status()
-        print(f"Successfully indexed document {doc_id} in Q&A service.")
+        logger.info("Successfully indexed document %s in Q&A service.", doc_id)
     except httpx.RequestError as e:
-        print(f"Error indexing document {doc_id}: {e}")
+        logger.error("Error indexing document %s: %s", doc_id, e)
 
 @celery.task
 def ocr_processing_task(document_id: str, user_id: str, filename: str):
     """
     Simulates OCR and then calls the Q&A service to index the content.
     """
-    print(f"Starting OCR processing for document: {document_id}")
+    logger.info("Starting OCR processing for document: %s", document_id)
     time.sleep(5) # Simulate long-running task
 
     # 1. Simulate OCR result
@@ -72,7 +75,7 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str):
                 extracted_data=extracted_data
             )
     asyncio.run(update_db())
-    print(f"Finished OCR processing for document: {document_id}")
+    logger.info("Finished OCR processing for document: %s", document_id)
 
     # 3. Create a simple text representation and index it
     text_content = f"Receipt from {extracted_data.vendor_name} for the amount of {extracted_data.total_amount} on {extracted_data.transaction_date}."
