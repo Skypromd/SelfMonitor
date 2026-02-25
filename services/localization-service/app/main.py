@@ -33,6 +33,24 @@ translations_catalog = load_translations_catalog()
 # --- Endpoints ---
 
 @app.get(
+    "/translations/{locale}/all",
+    response_model=Dict[str, Dict[str, str]],
+    summary="Get all translations for a locale"
+)
+async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB")):
+    """
+    Retrieves all translation namespaces for a given locale.
+    This is useful for loading all strings for a single-page application.
+    """
+    if locale_data := translations_catalog.get(locale):
+        return locale_data
+
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"Translations for locale '{locale}' not found."
+    )
+
+@app.get(
     "/translations/{locale}/{component}",
     response_model=Dict[str, str],
     summary="Get translations for a component",
@@ -52,22 +70,4 @@ async def get_translations_by_component(
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Translations for locale '{locale}' and component '{component}' not found."
-    )
-
-@app.get(
-    "/translations/{locale}/all",
-    response_model=Dict[str, Dict[str, str]],
-    summary="Get all translations for a locale"
-)
-async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB")):
-    """
-    Retrieves all translation namespaces for a given locale.
-    This is useful for loading all strings for a single-page application.
-    """
-    if locale_data := translations_catalog.get(locale):
-        return locale_data
-
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Translations for locale '{locale}' not found."
     )
