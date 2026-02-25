@@ -1,197 +1,103 @@
 .layoutContainer {
   display: flex;
   min-height: 100vh;
+  background: var(--lp-bg);
 }
 
 .sidebar {
-  width: 286px;
-  padding: 24px 18px 20px;
-  background: linear-gradient(180deg, var(--color-nav-bg-start) 0%, var(--color-nav-bg-end) 100%);
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  width: 260px;
+  background: var(--lp-bg-elevated);
+  border-right: 1px solid var(--lp-border);
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  transition: background 0.24s ease;
+  padding: 2rem;
 }
 
 .logo {
-  margin: 0;
-  font-size: 1.55rem;
-  font-weight: 800;
-  letter-spacing: 0.02em;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--lp-accent-teal);
+  letter-spacing: -0.04em;
+  margin: 0 0 2.5rem 0;
   text-align: center;
-  color: #f8fbff;
 }
 
 .nav {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0.25rem;
 }
 
-.navLink {
-  display: block;
-  animation: slideIn 0.3s ease both;
-}
-
-.navLabel {
-  display: block;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
+.nav a {
+  text-decoration: none;
+  color: var(--lp-text-muted);
+  font-weight: 500;
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--color-nav-link);
-  transition: all 0.18s ease;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  transition: background 0.2s, color 0.2s;
 }
 
-.navLink:hover .navLabel {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--color-nav-link-active);
+.nav a:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--lp-text);
 }
 
-.active {
-  background: linear-gradient(135deg, var(--color-primary) 0%, #3b82f6 100%);
-  color: var(--color-nav-link-active);
-  box-shadow: 0 10px 20px rgba(15, 46, 115, 0.35);
+.nav .active {
+  background: rgba(13, 148, 136, 0.15);
+  color: var(--lp-accent-teal);
 }
 
 .sidebarFooter {
   margin-top: auto;
 }
 
-.userEmail {
-  margin: 0 0 12px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.09);
-  color: #d4dff2;
-  font-size: 0.82rem;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-
-.themeToggleButton {
-  width: 100%;
-  margin: 0 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
-  background: rgba(255, 255, 255, 0.08);
-  color: #f4f8ff;
-  font-weight: 700;
-  border-radius: 10px;
-  padding: 9px 12px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.themeToggleButton:hover {
-  background: rgba(255, 255, 255, 0.16);
-  transform: translateY(-1px);
-}
-
 .langSwitcher {
   display: flex;
   justify-content: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 6px;
-  border-radius: 10px;
-  background: var(--color-nav-chip-bg);
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0.4rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
 }
 
-.langSwitcher span {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 34px;
-  padding: 4px 10px;
-  border-radius: 8px;
-  color: #d5e1f5;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  transition: background 0.18s ease, color 0.18s ease;
+.langSwitcher a {
+  text-decoration: none;
+  color: var(--lp-text-muted);
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
 }
 
 .langSwitcher .activeLang {
-  background: #f8fbff;
-  color: #10213f;
-}
-
-.logoutButton {
-  width: 100%;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.08);
-  color: #f4f8ff;
-  font-weight: 700;
-  border-radius: 10px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-}
-
-.logoutButton:hover {
-  background: rgba(255, 255, 255, 0.16);
-  transform: translateY(-1px);
+  background: var(--lp-bg-card);
+  color: var(--lp-text);
 }
 
 .mainContent {
   flex: 1;
-  padding: 34px;
+  padding: 2.5rem 3rem;
+  background: var(--lp-bg);
   overflow-y: auto;
 }
 
-.mainContent h1 {
-  margin: 0;
-  font-size: 2rem;
-  letter-spacing: -0.01em;
-  color: var(--color-text-primary);
+.logoutButton {
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--lp-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--lp-text-muted);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+  margin-top: 2rem;
 }
 
-.mainContent > div > p:first-of-type {
-  margin: 8px 0 22px;
-  color: var(--color-text-muted);
-  max-width: 760px;
-}
-
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateX(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@media (max-width: 980px) {
-  .layoutContainer {
-    flex-direction: column;
-  }
-
-  .sidebar {
-    width: 100%;
-    border-right: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .nav {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: 4px;
-  }
-
-  .navLabel {
-    white-space: nowrap;
-  }
-
-  .sidebarFooter {
-    margin-top: 10px;
-  }
-
-  .mainContent {
-    padding: 20px;
-  }
+.logoutButton:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: var(--lp-text);
 }
