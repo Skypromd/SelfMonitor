@@ -152,8 +152,10 @@ def reset_auth_db_for_tests() -> None:
 def get_user_record(email: str) -> Optional[dict]:
     with db_lock:
         conn = _connect()
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
-        conn.close()
+        try:
+            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+        finally:
+            conn.close()
     return dict(row) if row else None
 
 

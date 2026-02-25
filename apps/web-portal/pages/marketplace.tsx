@@ -91,6 +91,7 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
       acc[title] = Array.from(uniqueById.values());
       return acc;
     }, {} as Record<string, Partner[]>);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupedPartners]);
 
   return (

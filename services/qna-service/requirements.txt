@@ -2,5 +2,5 @@ fastapi
 uvicorn[standard]
 pydantic
 python-jose[cryptography]
-weaviate-client
+weaviate-client>=3.26.7,<4.0.0
 sentence-transformers

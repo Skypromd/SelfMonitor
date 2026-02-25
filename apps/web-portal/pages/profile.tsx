@@ -53,6 +53,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
 
   useEffect(() => {
     fetchProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const handleProfileChange = (e: ChangeEvent<HTMLInputElement>) => {

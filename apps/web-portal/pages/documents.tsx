@@ -103,6 +103,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
 
   useEffect(() => {
     fetchDocuments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {

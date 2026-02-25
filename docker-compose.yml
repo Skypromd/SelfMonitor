@@ -17,8 +17,15 @@ services:
   nginx-gateway:
     build: ./nginx
     container_name: nginx-gateway
+    restart: unless-stopped
     ports:
       - "8000:80" # The single entry point for our backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     depends_on:
       - auth-service
       - user-profile-service
@@ -42,6 +49,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: postgres_db
+    restart: unless-stopped
     volumes:
       - postgres_data:/var/lib/postgresql/data/
       - ./infra/postgres:/docker-entrypoint-initdb.d # Run init scripts
@@ -146,6 +154,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
