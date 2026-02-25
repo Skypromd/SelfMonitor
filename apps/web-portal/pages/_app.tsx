@@ -3,6 +3,7 @@ import { useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import '../styles/globals.css';
 import Layout from '../components/Layout';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { I18nProvider, I18nContext } from '../context/i18n';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
@@ -100,7 +101,9 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
 function MyApp(props: AppProps<AppPageProps>) {
   return (
     <I18nProvider>
-      <AppContent {...props} />
+      <ErrorBoundary>
+        <AppContent {...props} />
+      </ErrorBoundary>
     </I18nProvider>
   );
 }

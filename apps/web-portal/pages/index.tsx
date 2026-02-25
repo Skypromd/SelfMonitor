@@ -74,32 +74,38 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         <p className={styles.description}>{t('login.description')}</p>
         <div className={styles.formContainer}>
           <form>
+            <label htmlFor="email-input">Email</label>
             <input
+              id="email-input"
               type="email"
               placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className={styles.input}
+              aria-label="Email address"
             />
+            <label htmlFor="password-input">Password</label>
             <input
+              id="password-input"
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className={styles.input}
+              aria-label="Password"
             />
             <div className={styles.buttonGroup}>
-              <button onClick={handleRegister} className={styles.button}>
+              <button type="button" onClick={handleRegister} className={styles.button} aria-label="Register a new account">
                 {t('login.register_button')}
               </button>
-              <button onClick={handleLogin} className={styles.button}>
+              <button type="button" onClick={handleLogin} className={styles.button} aria-label="Log in to your account">
                 {t('login.login_button')}
               </button>
             </div>
           </form>
         </div>
-        {message && <p className={styles.message}>{message}</p>}
-        {error && <p className={styles.error}>{error}</p>}
+        {message && <p className={styles.message} role="alert">{message}</p>}
+        {error && <p className={styles.error} role="alert">{error}</p>}
       </main>
     </div>
   );
