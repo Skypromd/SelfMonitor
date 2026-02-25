@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "SelfMonitor",
+    "slug": "selfmonitor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0f172a",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.selfmonitor.app",
+      "buildNumber": "1"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f172a"
+      },
+      "package": "com.selfmonitor.app",
+      "versionCode": 1
+    },
+    "scheme": "selfmonitor",
+    "plugins": ["expo-router", "expo-secure-store"]
+  }
+}
