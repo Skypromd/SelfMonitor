@@ -101,14 +101,14 @@ async def get_user_journey(
         async with httpx.AsyncClient() as client:
             # Check if they have profile
             profile_response = await client.get(
-                f"{USER_PROFILE_SERVICE_URL}/profile",
+                f"{USER_PROFILE_SERVICE_URL}/profiles/me",
                 headers={"Authorization": f"Bearer {oauth2_scheme}"},
                 timeout=5.0
             )
             
             # Check transaction history
             transactions_response = await client.get(
-                f"{TRANSACTIONS_SERVICE_URL}/me",
+                f"{TRANSACTIONS_SERVICE_URL}/transactions/me",
                 headers={"Authorization": f"Bearer {oauth2_scheme}"},
                 timeout=5.0
             )
