@@ -160,7 +160,7 @@ def save_handoff(handoff: HandoffRecord) -> None:
             conn.close()
 
 
-def list_handoffs_for_user(user_id: str) -> List[HandoffRecord]:
+def list_handoffs_for_user(user_id: str, skip: int = 0, limit: int = 50) -> List[HandoffRecord]:
     with db_lock:
         conn = _connect()
         try:
@@ -169,8 +169,9 @@ def list_handoffs_for_user(user_id: str) -> List[HandoffRecord]:
                 SELECT * FROM partner_handoffs
                 WHERE user_id = ?
                 ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
                 """,
-                (user_id,),
+                (user_id, limit, skip),
             ).fetchall()
         finally:
             conn.close()
@@ -252,8 +253,12 @@ async def initiate_handoff(
 
 
 @app.get("/handoffs", response_model=List[HandoffRecord])
-async def get_my_handoffs(user_id: str = Depends(get_current_user_id)):
-    return list_handoffs_for_user(user_id)
+async def get_my_handoffs(
+    user_id: str = Depends(get_current_user_id),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    return list_handoffs_for_user(user_id, skip=skip, limit=limit)
 
 
 init_partner_db()

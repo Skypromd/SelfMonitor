@@ -1,6 +1,6 @@
 from typing import Annotated, Any, Dict, List, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
@@ -154,13 +154,13 @@ def get_consent_by_id(consent_id: uuid.UUID) -> Consent | None:
     return _row_to_consent(row) if row else None
 
 
-def get_active_consents_for_user(user_id: str) -> List[Consent]:
+def get_active_consents_for_user(user_id: str, skip: int = 0, limit: int = 50) -> List[Consent]:
     with db_lock:
         conn = _connect()
         try:
             rows = conn.execute(
-                "SELECT * FROM consents WHERE user_id = ? AND status = 'active'",
-                (user_id,),
+                "SELECT * FROM consents WHERE user_id = ? AND status = 'active' LIMIT ? OFFSET ?",
+                (user_id, limit, skip),
             ).fetchall()
         finally:
             conn.close()
@@ -234,11 +234,15 @@ async def record_consent(
     return new_consent
 
 @app.get("/consents", response_model=List[Consent])
-async def list_active_consents(user_id: str = Depends(get_current_user_id)):
+async def list_active_consents(
+    user_id: str = Depends(get_current_user_id),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+):
     """
     Lists all active consents for the authenticated user.
     """
-    return get_active_consents_for_user(user_id)
+    return get_active_consents_for_user(user_id, skip=skip, limit=limit)
 
 @app.get("/consents/{consent_id}", response_model=Consent)
 async def get_consent(consent_id: uuid.UUID, user_id: str = Depends(get_current_user_id)):

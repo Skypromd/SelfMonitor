@@ -2,7 +2,7 @@ import os
 import uuid
 from typing import Annotated, List
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,10 +78,12 @@ async def get_transactions_for_account(
 @app.get("/transactions/me", response_model=List[schemas.Transaction])
 async def get_all_my_transactions(
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
 ):
     """Retrieves all transactions for the authenticated user across all accounts."""
-    transactions = await crud.get_transactions_by_user(db, user_id=user_id)
+    transactions = await crud.get_transactions_by_user(db, user_id=user_id, skip=skip, limit=limit)
     return transactions
 
 @app.patch("/transactions/{transaction_id}", response_model=schemas.Transaction)
