@@ -1,0 +1,34 @@
+---
+description: Code quality standards — prevents common mistakes that require re-work (which doubles token cost)
+globs:
+alwaysApply: true
+---
+
+# Code Quality Rules
+
+## Security
+- Never hardcode secrets, API keys, passwords, or tokens in source code.
+- Use environment variables for all secrets; crash on startup if missing (os.environ[], not os.getenv with defaults).
+- Never commit .env files with real credentials.
+- Validate all user input: file uploads (type, size), form fields (length, format), query params (range).
+
+## Error Handling
+- Always handle errors explicitly — no empty catch blocks, no silent failures.
+- Database connections must use try/finally or context managers to prevent leaks.
+- HTTP calls to external services must have timeouts.
+- Return meaningful error messages with appropriate HTTP status codes.
+
+## Performance
+- List endpoints must support pagination (skip/limit or page/per_page).
+- Database queries must not return unbounded result sets.
+- Use indexes for frequently queried columns.
+
+## Dependencies
+- Pin dependency versions in requirements.txt / package.json.
+- Don't use deprecated APIs — check for alternatives first.
+- Prefer standard library over third-party when functionality is equivalent.
+
+## Git
+- One logical change per commit.
+- Commit message: imperative mood, max 72 chars for subject line.
+- Don't commit generated files, build artifacts, or IDE configs.

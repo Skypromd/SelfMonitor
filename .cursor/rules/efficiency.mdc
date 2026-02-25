@@ -1,0 +1,36 @@
+---
+description: Core efficiency rules for Cursor AI agent — reduces token waste and improves output quality
+globs:
+alwaysApply: true
+---
+
+# Agent Efficiency Rules
+
+## File Creation Policy
+- NEVER create summary files, changelogs, or documentation files unless explicitly requested.
+- NEVER create TODO.md, CHANGES.md, SUMMARY.md, NOTES.md, or similar meta-files.
+- Only create files that are part of the actual deliverable: source code, tests, configs.
+- Each unnecessary file = full context re-read = wasted tokens.
+
+## Code Change Policy
+- Make minimal, focused changes. Do not refactor unrelated code.
+- Do not add comments that narrate what the code does ("// get the user", "// return result").
+- Do not add empty lines or formatting changes to files you didn't functionally modify.
+- When fixing a bug, change only what's needed to fix it — not the whole file.
+
+## Communication Policy
+- Be concise. No filler phrases ("Let me think about this", "Great question!", "Sure, I'd be happy to").
+- Answer first, explain after — if explanation is needed at all.
+- Use bullet points, not paragraphs, for lists of changes.
+- Never repeat the user's question back to them.
+
+## Testing Policy
+- Run existing tests after changes, don't write new tests unless asked.
+- If tests are needed, put them in the project's existing test structure.
+- Don't create test infrastructure (mock servers, test databases) unless the project already has it.
+
+## Context Efficiency
+- When given a specific file via @, work only with that file — don't scan the whole project.
+- Prefer targeted reads (specific file + line range) over broad searches.
+- Don't re-read files you've already read in this session unless they've changed.
+- Batch related changes into one edit when possible — each edit re-reads context.
