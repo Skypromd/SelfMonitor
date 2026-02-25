@@ -20,6 +20,11 @@ services:
     restart: unless-stopped
     ports:
       - "8000:80" # The single entry point for our backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
@@ -50,6 +55,11 @@ services:
     image: postgres:15-alpine
     container_name: postgres_db
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
     volumes:
       - postgres_data:/var/lib/postgresql/data/
       - ./infra/postgres:/docker-entrypoint-initdb.d # Run init scripts
@@ -57,8 +67,9 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:?POSTGRES_USER must be set}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}"
       POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
-    ports:
-      - "5432:5432" # Expose port for local inspection
+    # Removed: internal-only service, access via Docker network
+    # ports:
+    #   - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-db_user_profile}"]
       interval: 10s
@@ -70,6 +81,11 @@ services:
   auth-service:
     build: ./services/auth-service
     container_name: auth-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
       AUTH_DB_PATH: "/data/auth.db"
@@ -83,6 +99,11 @@ services:
   user-profile-service:
     build: ./services/user-profile-service
     container_name: user-profile-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - postgres
     environment:
@@ -97,6 +118,11 @@ services:
   transactions-service:
     build: ./services/transactions-service
     container_name: transactions-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - postgres
       - categorization-service
@@ -112,6 +138,11 @@ services:
   compliance-service:
     build: ./services/compliance-service
     container_name: compliance-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - postgres
     environment:
@@ -125,6 +156,11 @@ services:
   consent-service:
     build: ./services/consent-service
     container_name: consent-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - compliance-service
     environment:
@@ -140,6 +176,11 @@ services:
   banking-connector:
     build: ./services/banking-connector
     container_name: banking-connector
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - transactions-service
     environment:
@@ -155,8 +196,14 @@ services:
     image: redis:7-alpine
     container_name: redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+    # Removed: internal-only service, access via Docker network
+    # ports:
+    #   - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -169,6 +216,11 @@ services:
     build: ./services/banking-connector # Use the same image as the web server
     container_name: celery-worker
     command: celery -A app.celery_app.celery worker --loglevel=info
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - redis
       - transactions-service
@@ -184,6 +236,11 @@ services:
     build: ./services/documents-service
     container_name: celery-worker-docs
     command: celery -A app.celery_app.celery worker --loglevel=info
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - redis
       - postgres
@@ -237,6 +294,11 @@ services:
   documents-service:
     build: ./services/documents-service
     container_name: documents-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - postgres
       - localstack
@@ -260,6 +322,11 @@ services:
   tax-engine:
     build: ./services/tax-engine
     container_name: tax-engine
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - transactions-service
       - integrations-service
@@ -279,6 +346,11 @@ services:
   advice-service:
     build: ./services/advice-service
     container_name: advice-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - transactions-service
     environment:
@@ -291,6 +363,11 @@ services:
   partner-registry:
     build: ./services/partner-registry
     container_name: partner-registry
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - compliance-service
     environment:
@@ -306,6 +383,11 @@ services:
   integrations-service:
     build: ./services/integrations-service
     container_name: integrations-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
       INTEGRATIONS_DB_PATH: "/data/integrations.db"
@@ -318,6 +400,11 @@ services:
   analytics-service:
     build: ./services/analytics-service
     container_name: analytics-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - transactions-service
     environment:
@@ -333,6 +420,11 @@ services:
   localization-service:
     build: ./services/localization-service
     container_name: localization-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     healthcheck: *fastapi-healthcheck
     networks:
       - default_network
@@ -340,6 +432,11 @@ services:
   categorization-service:
     build: ./services/categorization-service
     container_name: categorization-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
     healthcheck: *fastapi-healthcheck
@@ -361,6 +458,11 @@ services:
   qna-service:
     build: ./services/qna-service
     container_name: qna-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     depends_on:
       - weaviate
     environment:
@@ -419,6 +521,11 @@ services:
   calendar-service:
     build: ./services/calendar-service
     container_name: calendar-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:?AUTH_SECRET_KEY must be set}"
       CALENDAR_DB_PATH: "/data/calendar.db"
@@ -452,6 +559,11 @@ services:
   referral-service:
     build: ./services/referral-service
     container_name: referral-service
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     ports:
       - "8013:80"
     depends_on:
@@ -471,6 +583,11 @@ services:
   customer-success:
     build: ./services/customer-success
     container_name: customer-success
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     ports:
       - "8014:80"
     depends_on:
@@ -491,6 +608,11 @@ services:
   pricing-engine:
     build: ./services/pricing-engine
     container_name: pricing-engine
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     ports:
       - "8015:80"
     depends_on:
@@ -510,6 +632,11 @@ services:
   predictive-analytics:
     build: ./services/predictive-analytics
     container_name: predictive-analytics
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     ports:
       - "8016:80"
     depends_on:
@@ -530,6 +657,11 @@ services:
   cost-optimization:
     build: ./services/cost-optimization
     container_name: cost-optimization
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     ports:
       - "8017:80"
     depends_on:
@@ -550,6 +682,11 @@ services:
   fraud-detection:
     build: ./services/fraud-detection
     container_name: fraud-detection
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     ports:
       - "8018:80"
     depends_on:
@@ -569,6 +706,11 @@ services:
   business-intelligence:
     build: ./services/business-intelligence
     container_name: business-intelligence
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     ports:
       - "8019:80"
     depends_on:
