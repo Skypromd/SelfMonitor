@@ -1,0 +1,81 @@
+groups:
+- name: database_alerts
+  rules:
+  
+  # PostgreSQL Alerts
+  - alert: PostgreSQLDown
+    expr: postgres_up == 0
+    for: 1m
+    labels:
+      severity: critical
+      service: postgresql
+    annotations:
+      summary: "PostgreSQL server is down"
+      description: "PostgreSQL server {{ $labels.server }} has been down for more than 1 minute."
+      
+  - alert: PostgreSQLHighConnections
+    expr: postgres_active_connections > 150
+    for: 5m
+    labels:
+      severity: warning
+      service: postgresql
+    annotations:
+      summary: "High PostgreSQL connections"
+      description: "PostgreSQL server {{ $labels.server }} has {{ $value }} active connections."
+      
+  - alert: PostgreSQLReplicationLag
+    expr: postgres_replication_lag_seconds > 60
+    for: 2m
+    labels:
+      severity: critical
+      service: postgresql
+    annotations:
+      summary: "PostgreSQL replication lag is high"
+      description: "PostgreSQL replication lag is {{ $value }} seconds, which exceeds the 60-second threshold."
+      
+  # Redis Alerts
+  - alert: RedisDown
+    expr: redis_up == 0
+    for: 1m
+    labels:
+      severity: critical
+      service: redis
+    annotations:
+      summary: "Redis server is down"
+      description: "Redis server {{ $labels.server }} has been down for more than 1 minute."
+      
+  - alert: RedisHighMemoryUsage
+    expr: redis_memory_usage_bytes > 400000000  # 400MB
+    for: 5m
+    labels:
+      severity: warning
+      service: redis
+    annotations:
+      summary: "High Redis memory usage"
+      description: "Redis server {{ $labels.server }} is using {{ $value }} bytes of memory."
+      
+  # Database Failover Alerts
+  - alert: DatabaseFailoverDetected
+    expr: increase(database_failover_events_total[5m]) > 0
+    for: 0s
+    labels:
+      severity: critical
+      service: database
+    annotations:
+      summary: "Database failover event detected"
+      description: "A database failover event of type {{ $labels.type }} has been detected."
+      
+  # System Health Alerts
+  - alert: CriticalDatabaseInfrastructure
+    expr: (
+        (postgres_up{server="master"} == 0) or
+        (redis_up{server="master"} == 0) or
+        (postgres_replication_lag_seconds > 300)
+      )
+    for: 1m
+    labels:
+      severity: critical
+      service: database_infrastructure
+    annotations:
+      summary: "Critical database infrastructure failure"
+      description: "One or more critical database components are failing. Immediate attention required for FinTech platform stability."

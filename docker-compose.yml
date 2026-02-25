@@ -1,12 +1,64 @@
 version: '3.8'
 
 services:
+  graphql-gateway:
+    build: ./services/graphql-gateway
+    container_name: graphql-gateway
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      JWT_SECRET: "a_secure_random_string_for_jwt_signing_!@#$%^"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001"
+      # Service URLs for federation
+      AUTH_SERVICE_URL: "http://auth-service:80/graphql"
+      USER_PROFILE_SERVICE_URL: "http://user-profile-service:80/graphql"
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service:80/graphql"
+      ANALYTICS_SERVICE_URL: "http://analytics-service:80/graphql"
+      ADVICE_SERVICE_URL: "http://advice-service:80/graphql"
+      CATEGORIZATION_SERVICE_URL: "http://categorization-service:80/graphql"
+      BANKING_CONNECTOR_URL: "http://banking-connector:80/graphql"
+      COMPLIANCE_SERVICE_URL: "http://compliance-service:80/graphql"
+      DOCUMENTS_SERVICE_URL: "http://documents-service:80/graphql"
+      CALENDAR_SERVICE_URL: "http://calendar-service:80/graphql"
+      AI_AGENT_SERVICE_URL: "http://ai-agent-service:80/graphql"
+      RECOMMENDATION_ENGINE_URL: "http://recommendation-engine:80/graphql"
+      FRAUD_DETECTION_SERVICE_URL: "http://fraud-detection-service:80/graphql"
+      BUSINESS_INTELLIGENCE_URL: "http://business-intelligence:80/graphql"
+      CUSTOMER_SUCCESS_URL: "http://customer-success-platform:80/graphql"
+      PRICING_ENGINE_URL: "http://pricing-engine:80/graphql"
+      INTEGRATIONS_SERVICE_URL: "http://integrations-service:80/graphql"
+      PARTNER_REGISTRY_URL: "http://partner-registry:80/graphql"
+      PAYMENT_GATEWAY_URL: "http://payment-gateway:80/graphql"
+      LOCALIZATION_SERVICE_URL: "http://localization-service:80/graphql"
+      CONSENT_SERVICE_URL: "http://consent-service:80/graphql"
+      TAX_ENGINE_URL: "http://tax-engine:80/graphql"
+      QNA_SERVICE_URL: "http://qna-service:80/graphql"
+      JAEGER_ENDPOINT: "http://jaeger-collector:14268/api/traces"
+    ports:
+      - "4000:4000" # GraphQL Federation Gateway endpoint
+    depends_on:
+      - postgres-master
+      - auth-service
+      - user-profile-service
+      - transactions-service
+      - analytics-service
+      - advice-service
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - default_network
+
   nginx-gateway:
     build: ./nginx
     container_name: nginx-gateway
     ports:
       - "8000:80" # The single entry point for our backend
     depends_on:
+      - graphql-gateway
       - auth-service
       - user-profile-service
       - transactions-service
@@ -26,18 +78,234 @@ services:
     networks:
       - default_network
 
-  postgres:
+  # PostgreSQL High Availability Master-Replica Setup
+  postgres-master:
     image: postgres:15-alpine
-    container_name: postgres_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/
-      - ./infra/postgres:/docker-entrypoint-initdb.d # Run init scripts
+    container_name: postgres_master
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: db_user_profile
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+      # Replication configuration
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: repl_password
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d
+      - ./infra/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./infra/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf
     ports:
-      - "5432:5432" # Expose port for local inspection
+      - "5432:5432"
+    command: >
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d db_user_profile"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  postgres-replica:
+    image: postgres:15-alpine
+    container_name: postgres_replica
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db_user_profile
+      PGUSER: user
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    depends_on:
+      - postgres-master
+    command: >
+      bash -c "
+      until pg_basebackup -h postgres-master -D /var/lib/postgresql/data -U replicator -v -P -W; do
+        echo 'Waiting for master to be available...'
+        sleep 1
+      done
+      echo 'Standby ready, starting replica'
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+      "
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # MLOps Platform Services
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"  # MinIO API
+      - "9001:9001"  # MinIO Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - default_network
+
+  # Redis High Availability Cluster with Sentinel
+  redis-master:
+    image: redis:7-alpine
+    container_name: redis_master
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_master_data:/data
+      - ./infra/redis/redis-master.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_secure_password_2026", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-replica-1:
+    image: redis:7-alpine
+    container_name: redis_replica_1
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_replica1_data:/data
+      - ./infra/redis/redis-replica.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_secure_password_2026", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-replica-2:
+    image: redis:7-alpine
+    container_name: redis_replica_2
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_replica2_data:/data
+      - ./infra/redis/redis-replica.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_secure_password_2026", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Redis Sentinels for automatic failover
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: redis_sentinel_1
+    ports:
+      - "26379:26379"
+    volumes:
+      - ./infra/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: redis_sentinel_2
+    ports:
+      - "26380:26379"
+    volumes:
+      - ./infra/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: redis_sentinel_3
+    ports:
+      - "26381:26379"
+    volumes:
+      - ./infra/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+
+  mlflow-server:
+    build: ./ml/mlops-platform
+    container_name: mlflow-server
+    depends_on:
+      - postgres-master
+      - minio
+      - redis-master
+    environment:
+      # MLflow Configuration
+      MLFLOW_TRACKING_URI: "postgresql://user:password@postgres-master:5432/mlflow"
+      ARTIFACT_STORE: "minio"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ACCESS_KEY: "minioadmin"
+      MINIO_SECRET_KEY: "minioadmin"
+      S3_BUCKET_NAME: "selfmonitor-ml-artifacts"
+      
+      # Database Configuration 
+      DB_HOST: "postgres"
+      DB_NAME: "mlflow"
+      DB_USER: "user"
+      DB_PASSWORD: "password"
+      
+      # Redis Configuration
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      
+      # Environment
+      ENVIRONMENT: "development"
+      DEBUG: "true"
+      LOG_LEVEL: "INFO"
+      
+      # Notification (development - no real webhooks)
+      SLACK_WEBHOOK_URL: ""
+      
+      # Model Configuration
+      MAX_PARALLEL_TRAINING_JOBS: "2"
+      AUTO_PROMOTE_THRESHOLD: "0.8"  # Lower for development
+      DRIFT_DETECTION_ENABLED: "true"
+      PERFORMANCE_MONITORING_ENABLED: "true"
+      AB_TESTING_ENABLED: "true"
+    ports:
+      - "5000:5000"  # MLflow UI
+      - "8000:8000"  # Metrics endpoint
+    volumes:
+      - mlflow_artifacts:/app/artifacts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - default_network
 
@@ -52,13 +320,43 @@ services:
     networks:
       - default_network
 
+  # === INVOICE SERVICE ===
+  invoice-service:
+    build: ./services/invoice-service
+    container_name: invoice-service
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://user:password@postgres-master:5432/db_invoices
+      - AUTH_SECRET_KEY=a_secure_random_string_for_jwt_signing_!@#$%^
+      - PDF_OUTPUT_DIR=/app/pdfs
+      - REDIS_URL=redis://redis-master:6379
+      - TRANSACTIONS_SERVICE_URL=http://transactions-service:80
+      - ANALYTICS_SERVICE_URL=http://analytics-service:80
+    volumes:
+      - invoice_pdfs:/app/pdfs
+      - ./services/invoice-service/templates:/app/templates
+    ports:
+      - "8005:80"  # Direct access for development/testing
+    depends_on:
+      - postgres-master
+      - redis-master
+      - auth-service
+    command: sh -c "python -m app.init_templates && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   user-profile-service:
     build: ./services/user-profile-service
     container_name: user-profile-service
     depends_on:
-      - postgres
+      - postgres-master
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_user_profile"
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres-master/db_user_profile"
     # Run migrations before starting the app server
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -68,10 +366,10 @@ services:
     build: ./services/transactions-service
     container_name: transactions-service
     depends_on:
-      - postgres
+      - postgres-master
       - categorization-service
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_transactions"
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres-master/db_transactions"
       CATEGORIZATION_SERVICE_URL: "http://categorization-service/categorize"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -81,9 +379,9 @@ services:
     build: ./services/compliance-service
     container_name: compliance-service
     depends_on:
-      - postgres
+      - postgres-master
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_compliance"
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres-master/db_compliance"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
@@ -139,14 +437,14 @@ services:
     container_name: celery-worker-docs
     command: celery -A app.celery_app.celery worker --loglevel=info
     depends_on:
-      - redis
-      - postgres
+      - redis-master
+      - postgres-master
       - localstack
       - qna-service
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_documents"
-      CELERY_BROKER_URL: "redis://redis:6379/0"
-      CELERY_RESULT_BACKEND: "redis://redis:6379/0"
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres-master/db_documents"
+      CELERY_BROKER_URL: "redis://:redis_secure_password_2026@redis-master:6379/0"
+      CELERY_RESULT_BACKEND: "redis://:redis_secure_password_2026@redis-master:6379/0"
       AWS_ENDPOINT_URL: "http://localstack:4566"
       AWS_ACCESS_KEY_ID: "test"
       AWS_SECRET_ACCESS_KEY: "test"
@@ -191,10 +489,10 @@ services:
     build: ./services/documents-service
     container_name: documents-service
     depends_on:
-      - postgres
+      - postgres-master
       - localstack
     environment:
-      DATABASE_URL: "postgresql+asyncpg://user:password@postgres/db_documents"
+      DATABASE_URL: "postgresql+asyncpg://user:password@postgres-master/db_documents"
       AWS_ENDPOINT_URL: "http://localstack:4566" # Point to LocalStack
       AWS_ACCESS_KEY_ID: "test"
       AWS_SECRET_ACCESS_KEY: "test"
@@ -375,8 +673,126 @@ services:
     networks:
       - default_network
 
+  # Security Service (Advanced Security Hardening)
+  security-service:
+    build: ./services/security-service
+    container_name: security-service
+    ports:
+      - "8018:8018"
+    environment:
+      NODE_ENV: "development"
+      SECURITY_SERVICE_PORT: "8018"
+      SECURITY_DATABASE_URL: "postgresql://user:password@postgres:5432/db_user_profile"
+      SECURITY_REDIS_URL: "redis://redis-cache:6379/3"
+      JWT_SECRET_KEY: "super-secret-jwt-key-change-in-production"
+      SESSION_SECRET: "session-secret-change-in-production"
+      MFA_ISSUER: "SelfMonitor"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001"
+      JAEGER_ENDPOINT: "http://jaeger:14268/api/traces"
+      PROMETHEUS_ENABLED: "true"
+    depends_on:
+      - postgres-master
+      - redis-cache
+    networks:
+      - default_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8018/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # SIEM and Log Management
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - default_network
+    restart: unless-stopped
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: kibana
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+    networks:
+      - default_network
+    restart: unless-stopped
+
+  # Web Application Firewall (Security Layer)
+  security-proxy:
+    image: nginx:alpine
+    container_name: security-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./security/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./security/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./security/ssl:/etc/nginx/ssl:ro
+      - security_logs:/var/log/nginx
+    depends_on:
+      - nginx-gateway
+      - security-service
+    networks:
+      - default_network
+    restart: unless-stopped
+
+  # Backup Service for automated backups
+  backup-service:
+    build: ./infra/backup
+    container_name: backup_service
+    environment:
+      POSTGRES_HOST: postgres-master
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db_user_profile
+      BACKUP_SCHEDULE: "0 2 * * *"  # Daily at 2 AM
+      BACKUP_RETENTION_DAYS: 30
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-backup_key_2026}
+      S3_BUCKET: ${S3_BUCKET:-selfmonitor-backups}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+      BACKUP_WEBHOOK_URL: ${BACKUP_WEBHOOK_URL}
+    volumes:
+      - backup_data:/backups
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - postgres-master
+      - redis-master
+    networks:
+      - default_network
+    restart: unless-stopped
+
 volumes:
+  # High Availability Database Volumes
+  postgres_master_data:
+  postgres_replica_data:
+  redis_master_data:
+  redis_replica1_data:
+  redis_replica2_data:
+  backup_data:
+  # Invoice service volumes
+  invoice_pdfs:
+  # Legacy and other volumes
   postgres_data:
+  minio_data:
+  redis_data:
+  mlflow_artifacts:
+  elasticsearch_data:
+  security_logs:
 
 networks:
   default_network:

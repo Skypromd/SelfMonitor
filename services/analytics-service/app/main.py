@@ -491,60 +491,163 @@ async def get_cash_flow_forecast(
 async def get_mortgage_readiness_report(
     user_id: str = Depends(get_current_user_id),
     auth_token: str = Depends(oauth2_scheme),
+    enhanced: bool = False
 ):
-    TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
-    # 1. Fetch transactions (similar to cash flow)
-    try:
-        async with httpx.AsyncClient() as client:
-            headers = {"Authorization": f"Bearer {auth_token}"}
-            response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
-            response.raise_for_status()
-            transactions = [Transaction(**t) for t in response.json()]
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
+    """Generate mortgage readiness report with optional invoice integration"""
+    
+    if enhanced:
+        # Use enhanced version with invoice integration
+        from .mortgage_enhanced import MortgageReadinessEnhanced
+        
+        try:
+            mortgage_service = MortgageReadinessEnhanced(auth_token)
+            comprehensive_data = await mortgage_service.get_comprehensive_income_report(user_id)
+            
+            # Generate enhanced PDF
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 18)
+            pdf.cell(0, 15, "Enhanced Mortgage Readiness Report", 0, 1, "C")
+            pdf.set_font("Helvetica", "", 10)
+            pdf.cell(0, 8, f"Generated for User: {user_id}", 0, 1)
+            pdf.cell(0, 8, f"Report Date: {datetime.date.today().isoformat()}", 0, 1)
+            pdf.ln(8)
+            
+            # Mortgage readiness score
+            score_data = comprehensive_data['mortgage_readiness_score']
+            pdf.set_font("Helvetica", "B", 16)
+            pdf.set_fill_color(46, 204, 113) if score_data['score'] >= 70 else pdf.set_fill_color(231, 76, 60)
+            pdf.cell(0, 12, f"Mortgage Readiness Score: {score_data['score']}/100 - {score_data['rating']}", 1, 1, "C", True)
+            pdf.set_fill_color(255, 255, 255)
+            pdf.ln(5)
+            
+            # Income summary
+            income_data = comprehensive_data['combined_income']
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.cell(0, 10, "Income Summary (12 Months)", 0, 1)
+            pdf.set_font("Helvetica", "", 11)
+            pdf.cell(0, 8, f"Total Annual Income: £{income_data['total_income']:,.2f}", 0, 1)
+            pdf.cell(0, 8, f"Average Monthly Income: £{income_data['average_monthly']:,.2f}", 0, 1)
+            
+            if comprehensive_data['is_self_employed']:
+                prof_income = comprehensive_data['income_sources']['professional_income']
+                pdf.set_text_color(46, 125, 50)
+                pdf.cell(0, 8, f"✓ Self-Employed Professional: {prof_income['invoice_count']} invoices", 0, 1)
+                pdf.cell(0, 8, f"Professional Income: £{prof_income['total']:,.2f} ({(prof_income['total']/income_data['total_income']*100):.1f}%)", 0, 1)
+                pdf.set_text_color(0, 0, 0)
+            pdf.ln(5)
+            
+            # Monthly breakdown table
+            pdf.set_font("Helvetica", "B", 12)
+            pdf.cell(0, 10, "Monthly Income Breakdown", 0, 1)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.cell(30, 8, 'Month', 1)
+            if comprehensive_data['is_self_employed']:
+                pdf.cell(35, 8, 'Professional', 1)
+                pdf.cell(35, 8, 'Other Income', 1)
+            pdf.cell(35, 8, 'Total Income', 1)
+            pdf.ln()
+            
+            pdf.set_font("Helvetica", "", 9)
+            for month in sorted(income_data['monthly_breakdown'].keys()):
+                month_data = income_data['monthly_breakdown'][month]
+                pdf.cell(30, 8, month, 1)
+                if comprehensive_data['is_self_employed']:
+                    pdf.cell(35, 8, f"£{month_data['invoice_income']:,.0f}", 1)
+                    pdf.cell(35, 8, f"£{month_data['transaction_income']:,.0f}", 1)
+                pdf.cell(35, 8, f"£{month_data['total_income']:,.0f}", 1)
+                pdf.ln()
+            
+            pdf.ln(8)
+            
+            # Recommendations
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.cell(0, 10, "Mortgage Application Recommendations", 0, 1)
+            pdf.set_font("Helvetica", "", 10)
+            
+            for i, rec in enumerate(comprehensive_data['recommendations'], 1):
+                pdf.cell(8, 6, f"{i}.", 0, 0)
+                # Handle long recommendations
+                lines = [rec[j:j+85] for j in range(0, len(rec), 85)]
+                for k, line in enumerate(lines):
+                    if k == 0:
+                        pdf.cell(0, 6, line, 0, 1)
+                    else:
+                        pdf.cell(8, 6, "", 0, 0)
+                        pdf.cell(0, 6, line, 0, 1)
+            
+            # Footer
+            pdf.ln(10)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.cell(0, 6, "This enhanced report includes professional invoicing data to provide comprehensive income documentation", 0, 1)
+            pdf.cell(0, 6, "for UK mortgage applications. Generated by SelfMonitor Professional FinTech Platform", 0, 1)
+            
+        except Exception as e:
+            # Fallback to traditional report if enhanced fails
+            comprehensive_data = {"error": str(e)}
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 16)
+            pdf.cell(0, 10, "Enhanced Report Unavailable", 0, 1, "C")
+            pdf.set_font("Helvetica", "", 12)
+            pdf.cell(0, 10, f"Error: {str(e)}", 0, 1)
+            pdf.cell(0, 10, "Falling back to basic mortgage readiness report...", 0, 1)
+    
+    else:
+        # Original implementation for backward compatibility
+        TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
+        try:
+            async with httpx.AsyncClient() as client:
+                headers = {"Authorization": f"Bearer {auth_token}"}
+                response = await client.get(TRANSACTIONS_SERVICE_URL, headers=headers, timeout=10.0)
+                response.raise_for_status()
+                transactions = [Transaction(**t) for t in response.json()]
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {e}")
 
-    # 2. Analyze income over the last 12 months
-    twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)
-    monthly_income = defaultdict(float)
-    for t in transactions:
-        if t.date >= twelve_months_ago and t.amount > 0:
-            month = t.date.strftime("%Y-%m")
-            monthly_income[month] += t.amount
+        # 2. Analyze income over the last 12 months
+        twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)
+        monthly_income = defaultdict(float)
+        for t in transactions:
+            if t.date >= twelve_months_ago and t.amount > 0:
+                month = t.date.strftime("%Y-%m")
+                monthly_income[month] += t.amount
 
-    total_income = sum(monthly_income.values())
-    average_monthly_income = total_income / 12 if total_income > 0 else 0
+        total_income = sum(monthly_income.values())
+        average_monthly_income = total_income / 12 if total_income > 0 else 0
 
-    # 3. Generate PDF
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Mortgage Readiness Report", 0, 1, "C")
-    pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 10, f"Generated for user: {user_id}", 0, 1)
-    pdf.cell(0, 10, f"Date: {datetime.date.today().isoformat()}", 0, 1)
-    pdf.ln(10)
+        # 3. Generate PDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, "Mortgage Readiness Report", 0, 1, "C")
+        pdf.set_font("Helvetica", "", 12)
+        pdf.cell(0, 10, f"Generated for user: {user_id}", 0, 1)
+        pdf.cell(0, 10, f"Date: {datetime.date.today().isoformat()}", 0, 1)
+        pdf.ln(10)
 
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Income Summary (Last 12 Months)", 0, 1)
-    pdf.set_font("Helvetica", "", 12)
-    pdf.cell(0, 8, f"Total Gross Income: £{total_income:,.2f}", 0, 1)
-    pdf.cell(0, 8, f"Average Monthly Income: £{average_monthly_income:,.2f}", 0, 1)
-    pdf.ln(5)
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.cell(0, 10, "Income Summary (Last 12 Months)", 0, 1)
+        pdf.set_font("Helvetica", "", 12)
+        pdf.cell(0, 8, f"Total Gross Income: £{total_income:,.2f}", 0, 1)
+        pdf.cell(0, 8, f"Average Monthly Income: £{average_monthly_income:,.2f}", 0, 1)
+        pdf.ln(5)
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(40, 10, 'Month', 1)
-    pdf.cell(40, 10, 'Income', 1)
-    pdf.ln()
-    pdf.set_font("Helvetica", "", 12)
-    for month, income in sorted(monthly_income.items()):
-        pdf.cell(40, 10, month, 1)
-        pdf.cell(40, 10, f"£{income:,.2f}", 1)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(40, 10, 'Month', 1)
+        pdf.cell(40, 10, 'Income', 1)
         pdf.ln()
+        pdf.set_font("Helvetica", "", 12)
+        for month, income in sorted(monthly_income.items()):
+            pdf.cell(40, 10, month, 1)
+            pdf.cell(40, 10, f"£{income:,.2f}", 1)
+            pdf.ln()
 
     # Create a streaming response
     pdf_bytes = pdf.output(dest='S').encode('latin1')
+    filename = f"mortgage_report_{'enhanced_' if enhanced else ''}{datetime.date.today()}.pdf"
     return StreamingResponse(io.BytesIO(pdf_bytes), media_type="application/pdf", headers={
-        "Content-Disposition": f"attachment; filename=mortgage_report_{datetime.date.today()}.pdf"
+        "Content-Disposition": f"attachment; filename={filename}"
     })
 
 

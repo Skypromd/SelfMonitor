@@ -1,0 +1,252 @@
+"""
+GraphQL schema for Auth Service
+Implements Apollo Federation directives
+"""
+
+directive @key(fields: String!) on OBJECT | INTERFACE
+directive @extends on OBJECT | INTERFACE  
+directive @external on FIELD_DEFINITION
+directive @requires(fields: String!) on FIELD_DEFINITION
+directive @provides(fields: String!) on FIELD_DEFINITION
+
+type User @key(fields: "id") {
+  id: ID!
+  email: String!
+  username: String
+  roles: [Role!]!
+  isActive: Boolean!
+  lastLoginAt: String
+  createdAt: String!
+  updatedAt: String!
+  tenantId: String
+  
+  # Federation - these will be resolved by other services
+  profile: UserProfile @external
+  transactions: [Transaction] @external
+  insights: UserInsights @external
+}
+
+type Role {
+  id: ID!
+  name: String!
+  permissions: [Permission!]!
+  description: String
+}
+
+type Permission {
+  id: ID!
+  name: String!
+  resource: String!
+  action: String!
+  description: String
+}
+
+type AuthPayload {
+  token: String!
+  refreshToken: String!
+  user: User!
+  expiresIn: Int!
+}
+
+type RefreshTokenPayload {
+  token: String!
+  refreshToken: String!
+  expiresIn: Int!
+}
+
+input LoginInput {
+  email: String!
+  password: String!
+  rememberMe: Boolean = false
+}
+
+input RegisterInput {
+  email: String!
+  password: String!
+  username: String
+  firstName: String!
+  lastName: String!
+  acceptTerms: Boolean!
+  tenantId: String
+}
+
+input ChangePasswordInput {
+  currentPassword: String!
+  newPassword: String!
+}
+
+input ResetPasswordInput {
+  token: String!
+  newPassword: String!
+}
+
+input UpdateProfileInput {
+  username: String
+  firstName: String
+  lastName: String
+}
+
+type Query {
+  # User queries
+  me: User
+  user(id: ID!): User
+  users(filter: UserFilter, pagination: PaginationInput): UserConnection!
+  
+  # Role & Permission queries
+  roles: [Role!]!
+  role(id: ID!): Role
+  permissions: [Permission!]!
+  
+  # Session queries
+  validateToken(token: String!): Boolean!
+  sessions: [Session!]!
+}
+
+type Mutation {
+  # Authentication
+  login(input: LoginInput!): AuthPayload!
+  register(input: RegisterInput!): AuthPayload!
+  logout: Boolean!
+  refreshToken(refreshToken: String!): RefreshTokenPayload!
+  
+  # Password management
+  changePassword(input: ChangePasswordInput!): Boolean!
+  forgotPassword(email: String!): Boolean!
+  resetPassword(input: ResetPasswordInput!): Boolean!
+  
+  # Profile management
+  updateProfile(input: UpdateProfileInput!): User!
+  activateUser(id: ID!): User!
+  deactivateUser(id: ID!): User!
+  
+  # Role management (admin only)
+  createRole(input: CreateRoleInput!): Role!
+  updateRole(id: ID!, input: UpdateRoleInput!): Role!
+  deleteRole(id: ID!): Boolean!
+  assignRole(userId: ID!, roleId: ID!): User!
+  revokeRole(userId: ID!, roleId: ID!): User!
+  
+  # Session management
+  terminateSession(sessionId: ID!): Boolean!
+  terminateAllSessions: Boolean!
+}
+
+type Subscription {
+  userStatusChanged(userId: ID!): UserStatusEvent!
+  sessionActivity: SessionActivityEvent!
+}
+
+# Supporting types
+type Session {
+  id: ID!
+  userId: ID!
+  token: String!
+  ipAddress: String
+  userAgent: String
+  isActive: Boolean!
+  expiresAt: String!
+  createdAt: String!
+}
+
+type UserConnection {
+  edges: [UserEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type UserEdge {
+  node: User!
+  cursor: String!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+input UserFilter {
+  search: String
+  isActive: Boolean
+  roles: [String!]
+  tenantId: String
+  createdAfter: String
+  createdBefore: String
+}
+
+input PaginationInput {
+  first: Int
+  after: String
+  last: Int
+  before: String
+}
+
+input CreateRoleInput {
+  name: String!
+  description: String
+  permissions: [ID!]!
+}
+
+input UpdateRoleInput {
+  name: String
+  description: String
+  permissions: [ID!]
+}
+
+# Event types for subscriptions
+union UserStatusEvent = UserActivatedEvent | UserDeactivatedEvent | UserUpdatedEvent
+
+type UserActivatedEvent {
+  user: User!
+  timestamp: String!
+}
+
+type UserDeactivatedEvent {
+  user: User!
+  timestamp: String!
+}
+
+type UserUpdatedEvent {
+  user: User!
+  changes: [String!]!
+  timestamp: String!
+}
+
+union SessionActivityEvent = SessionStartedEvent | SessionEndedEvent | SessionExpiredEvent
+
+type SessionStartedEvent {
+  session: Session!
+  timestamp: String!
+}
+
+type SessionEndedEvent {
+  sessionId: ID!
+  userId: ID!
+  timestamp: String!
+}
+
+type SessionExpiredEvent {
+  sessionId: ID!
+  userId: ID!
+  timestamp: String!
+}
+
+# Federation placeholder types (resolved by other services)
+type UserProfile @key(fields: "userId") @extends {
+  userId: ID! @external
+  firstName: String @external
+  lastName: String @external
+}
+
+type Transaction @key(fields: "id") @extends {
+  id: ID! @external
+  userId: ID! @external
+  amount: Float @external
+}
+
+type UserInsights @key(fields: "userId") @extends {
+  userId: ID! @external
+  totalTransactions: Int @external
+  averageSpending: Float @external
+}

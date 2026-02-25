@@ -1,0 +1,274 @@
+# ОТСУТСТВУЮЩИЙ КОМПОНЕНТ: Redis High Availability с Sentinel
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-sentinel-config
+  namespace: selfmonitor
+data:
+  sentinel.conf: |
+    port 26379
+    sentinel monitor mymaster redis-master 6379 2
+    sentinel down-after-milliseconds mymaster 5000
+    sentinel failover-timeout mymaster 10000
+    sentinel parallel-syncs mymaster 1
+    sentinel auth-user mymaster default
+    sentinel auth-pass mymaster $REDIS_PASSWORD
+    
+    # Notification scripts
+    sentinel notification-script mymaster /scripts/notify-failover.sh
+    sentinel client-reconfig-script mymaster /scripts/reconfig-clients.sh
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-sentinel
+  namespace: selfmonitor
+  labels:
+    app: redis-sentinel
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis-sentinel
+  template:
+    metadata:
+      labels:
+        app: redis-sentinel
+    spec:
+      containers:
+      - name: redis-sentinel
+        image: redis:7-alpine
+        ports:
+        - containerPort: 26379
+          name: sentinel
+        command:
+        - redis-sentinel
+        - /etc/redis-sentinel/sentinel.conf
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: password
+        volumeMounts:
+        - name: sentinel-config
+          mountPath: /etc/redis-sentinel
+        - name: scripts
+          mountPath: /scripts
+        livenessProbe:
+          tcpSocket:
+            port: 26379
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -p
+            - "26379"
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+      volumes:
+      - name: sentinel-config
+        configMap:
+          name: redis-sentinel-config
+      - name: scripts
+        configMap:
+          name: redis-sentinel-scripts
+          defaultMode: 0755
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  namespace: selfmonitor
+  labels:
+    app: redis-sentinel
+spec:
+  type: ClusterIP
+  ports:
+  - port: 26379
+    targetPort: 26379
+    name: sentinel
+  selector:
+    app: redis-sentinel
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-sentinel-scripts
+  namespace: selfmonitor
+data:
+  notify-failover.sh: |
+    #!/bin/bash
+    # Redis Sentinel failover notification script
+    
+    EVENT_TYPE=$1
+    EVENT_OBJECT=$2
+    shift 2
+    EVENT_DETAILS=$*
+    
+    echo "$(date): Redis Sentinel Event - $EVENT_TYPE $EVENT_OBJECT $EVENT_DETAILS"
+    
+    # Send Slack notification
+    if [ "$EVENT_TYPE" = "+switch-master" ]; then
+        MESSAGE="🔄 Redis Master Failover: $EVENT_DETAILS"
+        curl -X POST "$SLACK_WEBHOOK" \
+            -H 'Content-type: application/json' \
+            --data "{\"text\":\"$MESSAGE\"}"
+    fi
+    
+    # Log to file
+    echo "$(date): $EVENT_TYPE $EVENT_OBJECT $EVENT_DETAILS" >> /var/log/redis-sentinel-events.log
+    
+  reconfig-clients.sh: |
+    #!/bin/bash
+    # Redis client reconfiguration script
+    
+    MASTER_NAME=$1
+    NEW_MASTER_IP=$2
+    NEW_MASTER_PORT=$3
+    
+    echo "$(date): Reconfiguring clients for new master: $NEW_MASTER_IP:$NEW_MASTER_PORT"
+    
+    # Update Kubernetes service to point to new master
+    kubectl patch service redis-master -p '{"spec":{"selector":{"redis-role":"master"}}}'
+    
+    # Update application configuration (if needed)
+    kubectl patch configmap app-config -p '{"data":{"redis_master_host":"'$NEW_MASTER_IP'"}}'
+    
+    # Restart affected services to pick up new Redis master
+    kubectl rollout restart deployment/auth-service
+    kubectl rollout restart deployment/user-profile-service
+    
+    echo "$(date): Client reconfiguration completed"
+
+---
+# Redis Master with Sentinel integration
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-master
+  namespace: selfmonitor
+  labels:
+    app: redis
+    role: master
+spec:
+  serviceName: redis-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+      role: master
+  template:
+    metadata:
+      labels:
+        app: redis
+        role: master
+        redis-role: master
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - /etc/redis/redis.conf
+        - --requirepass
+        - $(REDIS_PASSWORD)
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: password
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        - name: redis-config
+          mountPath: /etc/redis
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - -a
+            - $(REDIS_PASSWORD)
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: redis-config
+        configMap:
+          name: redis-master-config
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 20Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-master-config
+  namespace: selfmonitor
+data:
+  redis.conf: |
+    # Redis master configuration
+    bind 0.0.0.0
+    port 6379
+    
+    # Persistence
+    save 900 1
+    save 300 10
+    save 60 10000
+    
+    appendonly yes
+    appendfsync everysec
+    
+    # Replication
+    replica-serve-stale-data yes
+    replica-read-only yes
+    
+    # Memory
+    maxmemory-policy allkeys-lru
+    
+    # Security
+    protected-mode no
+    
+    # Logging
+    loglevel notice
+    logfile "/data/redis.log"

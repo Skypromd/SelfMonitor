@@ -1,0 +1,619 @@
+"""
+GraphQL schema for AI Agent Service (SelfMate)
+Provides intelligent financial assistance and automation
+"""
+
+directive @key(fields: String!) on OBJECT | INTERFACE
+directive @extends on OBJECT | INTERFACE
+directive @external on FIELD_DEFINITION
+directive @requires(fields: String!) on FIELD_DEFINITION
+directive @provides(fields: String!) on FIELD_DEFINITION
+
+extend type User @key(fields: "id") {
+  id: ID! @external
+  
+  # AI Assistant state
+  agentProfile: AgentProfile!
+  chatSessions: [ChatSession!]!
+  automationRules: [AutomationRule!]!
+  aiInsights: UserAIInsights!
+  preferences: AgentPreferences!
+}
+
+# Core AI Agent Types
+type AgentProfile {
+  id: ID!
+  userId: ID!
+  personalityType: PersonalityType!
+  financialGoals: [FinancialGoal!]!
+  riskProfile: RiskProfile!
+  communicationStyle: CommunicationStyle!
+  knowledgeBase: AgentKnowledgeBase!
+  learningProgress: LearningProgress!
+  trustScore: Float! # 0.0 to 1.0
+  createdAt: String!
+  updatedAt: String!
+}
+
+type ChatSession {
+  id: ID!
+  userId: ID!
+  title: String!
+  context: ConversationContext!
+  messages: [ChatMessage!]!
+  isActive: Boolean!
+  sentiment: Float! # -1.0 to 1.0
+  confidence: Float! # 0.0 to 1.0
+  tags: [String!]!
+  metadata: JSON
+  startedAt: String!
+  lastMessageAt: String!
+  endedAt: String
+}
+
+type ChatMessage {
+  id: ID!
+  sessionId: ID!
+  role: MessageRole!
+  content: String!
+  messageType: MessageType!
+  attachments: [MessageAttachment]
+  toolCalls: [ToolCall]
+  reasoning: String
+  confidence: Float!
+  timestamp: String!
+  metadata: JSON
+}
+
+type AutomationRule {
+  id: ID!
+  userId: ID!
+  name: String!
+  description: String!
+  trigger: RuleTrigger!
+  conditions: [RuleCondition!]!
+  actions: [RuleAction!]!
+  isActive: Boolean!
+  executionCount: Int!
+  lastExecuted: String
+  successRate: Float!
+  createdAt: String!
+  updatedAt: String!
+}
+
+type UserAIInsights {
+  userId: ID!
+  spendingPersonality: SpendingPersonality!
+  financialHealthScore: Float! # 0.0 to 100.0
+  predictions: [FinancialPrediction!]!
+  recommendations: [AIRecommendation!]!
+  riskAssessment: RiskAssessment!
+  goalProgress: [GoalProgress!]!
+  behavioralPatterns: [BehavioralPattern!]!
+  lastUpdated: String!
+}
+
+type AgentPreferences {
+  userId: ID!
+  language: String!
+  timezone: String!
+  notificationSettings: NotificationSettings!
+  privacySettings: PrivacySettings!
+  learningSettings: LearningSettings!
+  automationLevel: AutomationLevel!
+  communicationFrequency: CommunicationFrequency!
+}
+
+# Personality and Learning Types
+type PersonalityType {
+  primary: String! # "Conservative", "Balanced", "Aggressive", "Data-Driven"
+  traits: [PersonalityTrait!]!
+  adaptability: Float! # 0.0 to 1.0
+  decisionMaking: DecisionMakingStyle!
+}
+
+type PersonalityTrait {
+  name: String!
+  score: Float! # 0.0 to 1.0
+  influence: Float! # 0.0 to 1.0
+}
+
+type FinancialGoal {
+  id: ID!
+  type: GoalType!
+  title: String!
+  description: String!
+  targetAmount: Float!
+  currentAmount: Float!
+  targetDate: String!
+  priority: Priority!
+  category: String!
+  isRecurring: Boolean!
+  milestones: [GoalMilestone!]!
+  strategies: [GoalStrategy!]!
+  aiRecommendations: [AIRecommendation!]!
+  progress: Float! # 0.0 to 1.0
+  createdAt: String!
+}
+
+type RiskProfile {
+  level: RiskLevel!
+  tolerance: Float! # 0.0 to 1.0
+  factors: [RiskFactor!]!
+  assessment: RiskAssessment!
+  recommendations: [RiskRecommendation!]!
+  lastAssessed: String!
+}
+
+type AgentKnowledgeBase {
+  userId: ID!
+  financialData: FinancialDataProfile!
+  behaviorPatterns: [BehaviorPattern!]!
+  preferences: [LearnedPreference!]!
+  contextualMemory: [ContextualMemory!]!
+  entityRecognition: [RecognizedEntity!]!
+  relationships: [DataRelationship!]!
+}
+
+type LearningProgress {
+  userId: ID!
+  totalInteractions: Int!
+  successfulRecommendations: Int!
+  userSatisfactionScore: Float!
+  learningCurve: [LearningDataPoint!]!
+  adaptationRate: Float!
+  knowledgeGaps: [KnowledgeGap!]!
+}
+
+# Conversation and Communication
+type ConversationContext {
+  sessionId: ID!
+  currentTopic: String!
+  intent: ConversationIntent!
+  entities: [ContextEntity!]!
+  history: [ContextHistoryItem!]!
+  emotionalState: EmotionalState!
+  urgency: UrgencyLevel!
+  complexity: ComplexityLevel!
+}
+
+type ToolCall {
+  id: ID!
+  name: String!
+  arguments: JSON!
+  result: JSON
+  executionTime: Int! # milliseconds
+  success: Boolean!
+  error: String
+}
+
+type MessageAttachment {
+  id: ID!
+  type: AttachmentType!
+  url: String!
+  name: String!
+  size: Int
+  metadata: JSON
+}
+
+# Automation and Rules
+type RuleTrigger {
+  type: TriggerType!
+  conditions: JSON!
+  schedule: Schedule
+  events: [EventType!]!
+}
+
+type RuleCondition {
+  id: ID!
+  field: String!
+  operator: ConditionOperator!
+  value: JSON!
+  logicalOperator: LogicalOperator
+}
+
+type RuleAction {
+  id: ID!
+  type: ActionType!
+  parameters: JSON!
+  priority: Priority!
+  conditions: [ActionCondition!]
+}
+
+type Schedule {
+  type: ScheduleType!
+  interval: Int
+  frequency: Frequency!
+  timePattern: String
+  timezone: String!
+}
+
+# AI Insights and Predictions
+type SpendingPersonality {
+  type: String!
+  characteristics: [String!]!
+  spendingPatterns: [SpendingPattern!]!
+  triggers: [SpendingTrigger!]!
+  strengths: [String!]!
+  improvementAreas: [String!]!
+}
+
+type FinancialPrediction {
+  id: ID!
+  type: PredictionType!
+  description: String!
+  prediction: JSON!
+  confidence: Float!
+  timeFrame: String!
+  factors: [PredictionFactor!]!
+  scenarios: [PredictionScenario!]!
+  createdAt: String!
+}
+
+type AIRecommendation {
+  id: ID!
+  type: RecommendationType!
+  title: String!
+  description: String!
+  reasoning: String!
+  priority: Priority!
+  confidence: Float!
+  impact: ImpactAssessment!
+  actionRequired: Boolean!
+  deadline: String
+  category: String!
+  tags: [String!]!
+  metadata: JSON
+  createdAt: String!
+}
+
+type RiskAssessment {
+  overallRisk: RiskLevel!
+  factors: [RiskFactor!]!
+  mitigationStrategy: [MitigationAction!]!
+  monitoring: [RiskMonitor!]!
+  lastAssessed: String!
+  nextAssessment: String!
+}
+
+type BehavioralPattern {
+  id: ID!
+  type: PatternType!
+  description: String!
+  frequency: Float!
+  strength: Float!
+  triggers: [String!]!
+  outcomes: [String!]!
+  recommendations: [String!]!
+  detectedAt: String!
+}
+
+# Goals and Progress
+type GoalProgress {
+  goalId: ID!
+  goal: FinancialGoal!
+  currentProgress: Float!
+  velocity: Float! # progress per time unit
+  projectedCompletion: String
+  recommendations: [AIRecommendation!]!
+  obstacles: [String!]!
+  opportunities: [String!]!
+}
+
+type GoalMilestone {
+  id: ID!
+  title: String!
+  targetAmount: Float!
+  targetDate: String!
+  isCompleted: Boolean!
+  completedAt: String
+}
+
+type GoalStrategy {
+  id: ID!
+  name: String!
+  description: String!
+  effectiveness: Float!
+  timeframe: String!
+  requirements: [String!]!
+  risks: [String!]!
+}
+
+# Input Types
+input CreateChatSessionInput {
+  title: String
+  context: ConversationContextInput
+  initialMessage: String!
+}
+
+input SendMessageInput {
+  sessionId: ID!
+  content: String!
+  messageType: MessageType = TEXT
+  attachments: [MessageAttachmentInput!]
+}
+
+input CreateAutomationRuleInput {
+  name: String!
+  description: String!
+  trigger: RuleTriggerInput!
+  conditions: [RuleConditionInput!]!
+  actions: [RuleActionInput!]!
+}
+
+input UpdateAgentPreferencesInput {
+  language: String
+  timezone: String
+  notificationSettings: NotificationSettingsInput
+  privacySettings: PrivacySettingsInput
+  learningSettings: LearningSettingsInput
+  automationLevel: AutomationLevel
+  communicationFrequency: CommunicationFrequency
+}
+
+input CreateFinancialGoalInput {
+  type: GoalType!
+  title: String!
+  description: String!
+  targetAmount: Float!
+  targetDate: String!
+  priority: Priority!
+  category: String!
+}
+
+input FinancialDataInput {
+  context: String!
+  timeRange: TimeRange!
+  includeProjections: Boolean = false
+}
+
+input TrainingFeedbackInput {
+  sessionId: ID
+  messageId: ID
+  rating: Int! # 1-5
+  feedback: String
+  category: FeedbackCategory!
+}
+
+# Query and Mutation Types
+type Query {
+  # Chat and Conversation
+  chatSession(id: ID!): ChatSession
+  chatSessions(filter: ChatSessionFilter, pagination: PaginationInput): ChatSessionConnection!
+  
+  # AI Insights
+  aiInsights(userId: ID!): UserAIInsights!
+  recommendations(userId: ID!, type: RecommendationType, limit: Int = 10): [AIRecommendation!]!
+  predictions(userId: ID!, timeFrame: String): [FinancialPrediction!]!
+  
+  # Automation
+  automationRules(userId: ID!): [AutomationRule!]!
+  automationRule(id: ID!): AutomationRule
+  
+  # Agent Profile
+  agentProfile(userId: ID!): AgentProfile!
+  agentPreferences(userId: ID!): AgentPreferences!
+  
+  # Analytics
+  agentPerformance(userId: ID!, period: String!): AgentPerformanceMetrics!
+  learningProgress(userId: ID!): LearningProgress!
+  
+  # Tools and Capabilities
+  availableTools: [AITool!]!
+  toolCapabilities(toolName: String!): ToolCapabilities!
+}
+
+type Mutation {
+  # Chat Management
+  createChatSession(input: CreateChatSessionInput!): ChatSession!
+  sendMessage(input: SendMessageInput!): ChatMessage!
+  endChatSession(sessionId: ID!): Boolean!
+  deleteChat(sessionId: ID!): Boolean!
+  
+  # Automation
+  createAutomationRule(input: CreateAutomationRuleInput!): AutomationRule!
+  updateAutomationRule(id: ID!, input: UpdateAutomationRuleInput!): AutomationRule!
+  deleteAutomationRule(id: ID!): Boolean!
+  toggleAutomationRule(id: ID!, isActive: Boolean!): AutomationRule!
+  executeAutomationRule(id: ID!): RuleExecutionResult!
+  
+  # Agent Configuration
+  updateAgentPreferences(input: UpdateAgentPreferencesInput!): AgentPreferences!
+  resetAgent(userId: ID!): Boolean!
+  trainAgent(input: TrainingFeedbackInput!): Boolean!
+  
+  # Goals Management
+  createFinancialGoal(input: CreateFinancialGoalInput!): FinancialGoal!
+  updateFinancialGoal(id: ID!, input: UpdateFinancialGoalInput!): FinancialGoal!
+  deleteFinancialGoal(id: ID!): Boolean!
+  
+  # Learning and Feedback
+  provideFeedback(input: TrainingFeedbackInput!): Boolean!
+  reportIssue(input: IssueReportInput!): Boolean!
+  
+  # Advanced Operations
+  analyzeFinancialData(input: FinancialDataInput!): FinancialAnalysisResult!
+  generateInsights(userId: ID!, context: String!): [AIRecommendation!]!
+  simulateScenario(input: ScenarioSimulationInput!): ScenarioResult!
+}
+
+type Subscription {
+  messageReceived(sessionId: ID!): ChatMessage!
+  agentNotification(userId: ID!): AgentNotification!
+  automationTriggered(userId: ID!): AutomationExecutionEvent!
+  insightGenerated(userId: ID!): AIRecommendation!
+  goalProgressUpdate(goalId: ID!): GoalProgress!
+}
+
+# Enums
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  DOCUMENT
+  VOICE
+  CHART
+  RECOMMENDATION
+  ALERT
+  AUTOMATION_RESULT
+}
+
+enum PersonalityType {
+  CONSERVATIVE
+  BALANCED
+  AGGRESSIVE
+  DATA_DRIVEN
+  INTUITIVE
+}
+
+enum RiskLevel {
+  VERY_LOW
+  LOW
+  MODERATE
+  HIGH
+  VERY_HIGH
+}
+
+enum GoalType {
+  SAVINGS
+  INVESTMENT
+  DEBT_PAYMENT
+  PURCHASE
+  EMERGENCY_FUND
+  RETIREMENT
+  EDUCATION
+  TRAVEL
+  BUSINESS
+  OTHER
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum TriggerType {
+  SCHEDULED
+  EVENT_BASED
+  THRESHOLD
+  PATTERN
+  USER_ACTION
+}
+
+enum ActionType {
+  NOTIFICATION
+  CATEGORIZATION
+  BUDGET_ADJUSTMENT
+  INVESTMENT_SUGGESTION
+  PAYMENT_REMINDER
+  GOAL_UPDATE
+  ALERT_CREATION
+  REPORT_GENERATION
+}
+
+enum PredictionType {
+  SPENDING_FORECAST
+  INCOME_PROJECTION
+  GOAL_COMPLETION
+  RISK_ASSESSMENT
+  MARKET_IMPACT
+  CASH_FLOW
+}
+
+enum RecommendationType {
+  SPENDING_OPTIMIZATION
+  INVESTMENT_OPPORTUNITY
+  DEBT_MANAGEMENT
+  GOAL_STRATEGY
+  RISK_MITIGATION
+  TAX_OPTIMIZATION
+  BUDGETING
+  AUTOMATION
+}
+
+enum AutomationLevel {
+  MANUAL
+  ASSISTED
+  SEMI_AUTOMATED
+  FULLY_AUTOMATED
+}
+
+enum CommunicationFrequency {
+  REAL_TIME
+  DAILY
+  WEEKLY
+  MONTHLY
+  ON_DEMAND
+}
+
+# Additional supporting types would continue here...
+# (Similar pattern for all other types mentioned in the schema)
+
+scalar JSON
+scalar TimeRange
+scalar UpdateAutomationRuleInput
+scalar UpdateFinancialGoalInput
+scalar IssueReportInput
+scalar ScenarioSimulationInput
+scalar ChatSessionFilter
+scalar PaginationInput
+scalar ChatSessionConnection
+scalar AgentPerformanceMetrics
+scalar AITool
+scalar ToolCapabilities
+scalar RuleExecutionResult
+scalar FinancialAnalysisResult
+scalar ScenarioResult
+scalar AgentNotification
+scalar AutomationExecutionEvent
+scalar ConversationContextInput
+scalar MessageAttachmentInput
+scalar RuleTriggerInput
+scalar RuleConditionInput
+scalar RuleActionInput
+scalar NotificationSettingsInput
+scalar PrivacySettingsInput
+scalar LearningSettingsInput
+scalar AttachmentType
+scalar TriggerType
+scalar ConditionOperator
+scalar LogicalOperator
+scalar ActionCondition
+scalar ScheduleType
+scalar Frequency
+scalar SpendingPattern
+scalar SpendingTrigger
+scalar PredictionFactor
+scalar PredictionScenario
+scalar ImpactAssessment
+scalar PatternType
+scalar MitigationAction
+scalar RiskMonitor
+scalar RiskFactor
+scalar RiskRecommendation
+scalar FinancialDataProfile
+scalar BehaviorPattern
+scalar LearnedPreference
+scalar ContextualMemory
+scalar RecognizedEntity
+scalar DataRelationship
+scalar LearningDataPoint
+scalar KnowledgeGap
+scalar ConversationIntent
+scalar ContextEntity
+scalar ContextHistoryItem
+scalar EmotionalState
+scalar UrgencyLevel
+scalar ComplexityLevel
+scalar EventType
+scalar DecisionMakingStyle
+scalar CommunicationStyle
+scalar FeedbackCategory

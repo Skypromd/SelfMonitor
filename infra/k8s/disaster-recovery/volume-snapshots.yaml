@@ -1,0 +1,169 @@
+# ОТСУТСТВУЮЩИЕ VOLUME SNAPSHOT AUTOMATION
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: postgres-snapshot-class
+  annotations:
+    snapshot.storage.kubernetes.io/is-default-class: "true"
+driver: ebs.csi.aws.com
+deletionPolicy: Retain
+parameters:
+  encrypted: "true"
+  type: "gp3"
+
+---
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: redis-snapshot-class
+driver: ebs.csi.aws.com
+deletionPolicy: Retain
+parameters:
+  encrypted: "true"
+  type: "gp3"
+
+---
+# АВТОМАТИЧЕСКИЕ SNAPSHOTS PostgreSQL (Every 6 hours)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-volume-snapshots
+  namespace: selfmonitor
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: snapshot-creator
+          restartPolicy: OnFailure
+          containers:
+          - name: snapshot-creator
+            image: bitnami/kubectl:latest
+            env:
+            - name: KUBECONFIG
+              value: /var/run/secrets/kubernetes.io/serviceaccount
+            command:
+            - /bin/bash
+            - -c
+            - |
+              DATE=$(date +%Y%m%d-%H%M%S)
+              
+              echo "Creating PostgreSQL volume snapshot at $(date)"
+              
+              # Create snapshot
+              cat <<EOF | kubectl apply -f -
+              apiVersion: snapshot.storage.k8s.io/v1
+              kind: VolumeSnapshot
+              metadata:
+                name: postgres-snapshot-$DATE
+                namespace: selfmonitor
+              spec:
+                source:
+                  persistentVolumeClaimName: postgres-storage-postgres-master-0
+                volumeSnapshotClassName: postgres-snapshot-class
+              EOF
+              
+              # Wait for snapshot to complete
+              kubectl wait --for=condition=ReadyToUse volumesnapshot/postgres-snapshot-$DATE --timeout=300s
+              
+              if [ $? -eq 0 ]; then
+                echo "✅ PostgreSQL snapshot postgres-snapshot-$DATE created successfully"
+                
+                # Send notification
+                curl -X POST "$SLACK_WEBHOOK" -d "{\"text\":\"✅ PostgreSQL volume snapshot completed: postgres-snapshot-$DATE\"}"
+              else
+                echo "❌ PostgreSQL snapshot failed"
+                curl -X POST "$SLACK_WEBHOOK" -d "{\"text\":\"🚨 PostgreSQL volume snapshot FAILED: postgres-snapshot-$DATE\"}"
+                exit 1
+              fi
+              
+              # Cleanup old snapshots (keep 14 days)
+              CUTOFF_DATE=$(date -d '14 days ago' +%Y%m%d)
+              kubectl get volumesnapshots -o json | jq -r '.items[] | select(.metadata.name | startswith("postgres-snapshot-")) | select(.metadata.name | split("-")[2] < "'$CUTOFF_DATE'") | .metadata.name' | while read snapshot; do
+                echo "Deleting old snapshot: $snapshot"
+                kubectl delete volumesnapshot $snapshot
+              done
+
+---
+# АВТОМАТИЧЕСКИЕ SNAPSHOTS Redis (Daily)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-volume-snapshots
+  namespace: selfmonitor
+spec:
+  schedule: "0 5 * * *"  # Daily at 5 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: snapshot-creator
+          restartPolicy: OnFailure
+          containers:
+          - name: snapshot-creator
+            image: bitnami/kubectl:latest
+            command:
+            - /bin/bash
+            - -c
+            - |
+              DATE=$(date +%Y%m%d-%H%M%S)
+              
+              echo "Creating Redis volume snapshot at $(date)"
+              
+              # Create snapshot
+              cat <<EOF | kubectl apply -f -
+              apiVersion: snapshot.storage.k8s.io/v1
+              kind: VolumeSnapshot
+              metadata:
+                name: redis-snapshot-$DATE
+                namespace: selfmonitor
+              spec:
+                source:
+                  persistentVolumeClaimName: redis-data-redis-master-0
+                volumeSnapshotClassName: redis-snapshot-class
+              EOF
+              
+              kubectl wait --for=condition=ReadyToUse volumesnapshot/redis-snapshot-$DATE --timeout=300s
+              
+              if [ $? -eq 0 ]; then
+                echo "✅ Redis snapshot redis-snapshot-$DATE created successfully"
+              else
+                echo "❌ Redis snapshot failed"
+                exit 1
+              fi
+
+---
+# ServiceAccount for snapshot operations
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: snapshot-creator
+  namespace: selfmonitor
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: snapshot-creator
+rules:
+- apiGroups: ["snapshot.storage.k8s.io"]
+  resources: ["volumesnapshots"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: snapshot-creator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: snapshot-creator
+subjects:
+- kind: ServiceAccount
+  name: snapshot-creator
+  namespace: selfmonitor

@@ -1,0 +1,6 @@
+psycopg2-binary==2.9.7
+redis==5.0.1
+requests==2.31.0
+prometheus-client==0.17.1
+schedule==1.2.0
+email-validator==2.0.0

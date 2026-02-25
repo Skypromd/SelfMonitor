@@ -1,12 +1,30 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials  
 from pydantic import BaseModel, HttpUrl
 from typing import List, Optional
 import uuid
 import datetime
 import os
 import hvac
+from jose import JWTError, jwt
 from .celery_app import import_transactions_task
 from .providers import get_provider, list_providers
+
+# Security
+security = HTTPBearer()
+JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
+JWT_ALGORITHM = "HS256"
+
+def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """Extract user ID from JWT token"""
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # --- Vault Client Setup ---
 VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
@@ -41,12 +59,6 @@ def save_connection_metadata(connection_id: str, metadata: dict):
         print(f"Metadata for connection {connection_id} securely stored in Vault.")
     except Exception as e:
         print(f"Error storing tokens in Vault: {e}")
-
-
-# --- Placeholder Security ---
-def fake_auth_check():
-    """A fake dependency to simulate user authentication."""
-    return {"user_id": "fake-user-123"}
 
 app = FastAPI(
     title="Banking Connector Service",
@@ -86,12 +98,12 @@ class Transaction(BaseModel):
 @app.post("/connections/initiate", response_model=InitiateConnectionResponse)
 async def initiate_connection(
     request: InitiateConnectionRequest,
-    auth_user: dict = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id)
 ):
-    print(f"User {auth_user['user_id']} is initiating connection with {request.provider_id}")
+    print(f"User {user_id} is initiating connection with {request.provider_id}")
     try:
         provider = get_provider(request.provider_id)
-        result = await provider.initiate(auth_user["user_id"], str(request.redirect_uri))
+        result = await provider.initiate(user_id, str(request.redirect_uri))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -103,12 +115,12 @@ async def handle_provider_callback(
     code: Optional[str] = None,
     connection_id: Optional[str] = None,
     state: Optional[str] = None,
-    auth_user: dict = Depends(fake_auth_check),
+    user_id: str = Depends(get_current_user_id),
 ):
     try:
         provider = get_provider(provider_id)
         callback_result = await provider.handle_callback(
-            user_id=auth_user["user_id"],
+            user_id=user_id,
             code=code,
             connection_id=connection_id,
             state=state,

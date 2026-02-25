@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'selfmonitor-fintech'
+    environment: 'production'
+
+rule_files:
+  - "/etc/prometheus/rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # PostgreSQL metrics
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 10s
+    metrics_path: /metrics
+    
+  # Redis metrics
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 10s
+    
+  # Custom database monitor
+  - job_name: 'database-monitor'
+    static_configs:
+      - targets: ['db-health-monitor:8000']
+    scrape_interval: 10s
+    
+  # Application services
+  - job_name: 'graphql-gateway'
+    static_configs:
+      - targets: ['graphql-gateway:4000']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    
+  # System monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s

@@ -1,0 +1,197 @@
+{
+  "folders": [
+    {
+      "name": "📁 SelfMonitor Root",
+      "path": "."
+    },
+    {
+      "name": "🔧 Services",
+      "path": "./services"
+    },
+    {
+      "name": "📱 Applications",
+      "path": "./apps"
+    },
+    {
+      "name": "📚 Libraries",
+      "path": "./libs"
+    },
+    {
+      "name": "🤖 Machine Learning",
+      "path": "./ml"
+    },
+    {
+      "name": "🧪 Tests",
+      "path": "./tests"
+    },
+    {
+      "name": "📊 Observability",
+      "path": "./observability"
+    },
+    {
+      "name": "☁️ Infrastructure",
+      "path": "./infra"
+    },
+    {
+      "name": "📖 Documentation",
+      "path": "./docs"
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "./.venv/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.autoSearchPaths": true,
+    "python.analysis.extraPaths": [
+      "./libs",
+      "./services"
+    ],
+    "files.exclude": {
+      "**/__pycache__": true,
+      "**/*.pyc": true,
+      "**/node_modules": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.coverage": true,
+      "**/htmlcov": true
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/.venv": true,
+      "**/__pycache__": true,
+      "**/dist": true,
+      "**/build": true
+    },
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+      "docker-compose.yml": "docker-compose.*.yml,Dockerfile",
+      "requirements.txt": "requirements-*.txt",
+      "package.json": "package-lock.json,yarn.lock,pnpm-lock.yaml",
+      "pyproject.toml": "poetry.lock",
+      ".env": ".env.*",
+      "README.md": "README.*.md"
+    },
+    "editor.rulers": [
+      88,
+      120
+    ],
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": true,
+      "source.fixAll.eslint": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "ms-python.python",
+      "ms-python.flake8",
+      "ms-python.mypy-type-checker",
+      "ms-python.black-formatter",
+      "ms-azuretools.vscode-docker",
+      "humao.rest-client",
+      "redhat.vscode-yaml",
+      "ms-vscode.vscode-json",
+      "eamodio.gitlens",
+      "gruntfuggly.todo-tree",
+      "aaron-bond.better-comments",
+      "ms-toolsai.jupyter"
+    ]
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "🚀 Quick Start - Setup Everything",
+        "type": "shell",
+        "command": "powershell",
+        "args": [
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "./setup-dev-env.ps1"
+        ],
+        "group": "build",
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "panel": "new"
+        }
+      },
+      {
+        "label": "🐳 Start All Services",
+        "type": "shell",
+        "command": "docker-compose",
+        "args": [
+          "up",
+          "-d"
+        ],
+        "group": "build"
+      },
+      {
+        "label": "🛑 Stop All Services",
+        "type": "shell",
+        "command": "docker-compose",
+        "args": [
+          "down"
+        ],
+        "group": "build"
+      }
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "🔧 Debug Any Service",
+        "type": "python",
+        "request": "launch",
+        "module": "uvicorn",
+        "args": [
+          "app.main:app",
+          "--reload",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "${input:port}"
+        ],
+        "cwd": "${workspaceFolder}/services/${input:serviceName}",
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}",
+          "DATABASE_URL": "postgresql://user:password@localhost:5432/selfmonitor_dev",
+          "REDIS_URL": "redis://localhost:6379/0",
+          "ENVIRONMENT": "development"
+        },
+        "console": "integratedTerminal"
+      }
+    ],
+    "inputs": [
+      {
+        "id": "serviceName",
+        "type": "pickString",
+        "description": "Select service to debug",
+        "options": [
+          "user-profile-service",
+          "transactions-service",
+          "analytics-service",
+          "auth-service",
+          "banking-connector",
+          "advice-service",
+          "categorization-service",
+          "compliance-service",
+          "consent-service",
+          "documents-service",
+          "tax-engine",
+          "invoice-service",
+          "calendar-service",
+          "ai-agent-service",
+          "fraud-detection"
+        ]
+      },
+      {
+        "id": "port",
+        "type": "promptString",
+        "description": "Enter port number (default: 8000)",
+        "default": "8000"
+      }
+    ]
+  }
+}

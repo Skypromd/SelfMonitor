@@ -3,7 +3,8 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 import datetime
 import os
-import httpx
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError, jwt
 from .telemetry import setup_telemetry
 
 # --- Configuration ---
@@ -88,9 +89,27 @@ CATEGORY_TO_SA103 = {
     "personal": "disallowable",
 }
 
-# --- Placeholder Security ---
-def fake_auth_check() -> str:
-    return "fake-user-123"
+# Security
+import httpx
+from fastapi.security import OAuth2PasswordBearer
+
+security = HTTPBearer()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
+
+# JWT Configuration
+JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key")
+JWT_ALGORITHM = "HS256"
+
+def get_current_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """Extract user ID from JWT token"""
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_id
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 async def get_subscription_plan(user_id: str) -> str:
     try:
@@ -248,7 +267,7 @@ def calculate_class4_nic(taxable_profit: float) -> float:
 @app.post("/calculate", response_model=TaxCalculationResult)
 async def calculate_tax(
     request: TaxCalculationRequest, 
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id)
 ):
     if request.start_date > request.end_date:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="End date cannot be before start date.")
@@ -356,7 +375,7 @@ async def calculate_tax(
 @app.post("/calculate-and-submit", status_code=status.HTTP_202_ACCEPTED)
 async def calculate_and_submit_tax(
     request: TaxCalculationRequest,
-    user_id: str = Depends(fake_auth_check)
+    user_id: str = Depends(get_current_user_id)
 ):
     await require_pro(user_id)
     # This re-uses the logic from the calculate endpoint.

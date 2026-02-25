@@ -1,0 +1,199 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graphql-gateway
+  labels:
+    app: graphql-gateway
+    version: v1
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: graphql-gateway
+      version: v1
+  template:
+    metadata:
+      labels:
+        app: graphql-gateway
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "4000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: graphql-gateway
+        image: selfmonitor/graphql-gateway:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 4000
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "4000"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: secret
+        - name: ALLOWED_ORIGINS
+          value: "https://app.selfmonitor.com,https://admin.selfmonitor.com"
+        
+        # Service URLs (Kubernetes internal)
+        - name: AUTH_SERVICE_URL
+          value: "http://auth-service:8080/graphql"
+        - name: USER_PROFILE_SERVICE_URL
+          value: "http://user-profile-service:8080/graphql"
+        - name: TRANSACTIONS_SERVICE_URL
+          value: "http://transactions-service:8080/graphql" 
+        - name: ANALYTICS_SERVICE_URL
+          value: "http://analytics-service:8080/graphql"
+        - name: ADVICE_SERVICE_URL
+          value: "http://advice-service:8080/graphql"
+        - name: CATEGORIZATION_SERVICE_URL
+          value: "http://categorization-service:8080/graphql"
+        - name: BANKING_CONNECTOR_URL
+          value: "http://banking-connector:8080/graphql"
+        - name: COMPLIANCE_SERVICE_URL
+          value: "http://compliance-service:8080/graphql"
+        - name: DOCUMENTS_SERVICE_URL
+          value: "http://documents-service:8080/graphql"
+        - name: CALENDAR_SERVICE_URL
+          value: "http://calendar-service:8080/graphql"
+          
+        # AI & ML Services
+        - name: AI_AGENT_SERVICE_URL
+          value: "http://ai-agent-service:8080/graphql"
+        - name: RECOMMENDATION_ENGINE_URL
+          value: "http://recommendation-engine:8080/graphql"
+        - name: FRAUD_DETECTION_SERVICE_URL
+          value: "http://fraud-detection-service:8080/graphql"
+          
+        # Business Services
+        - name: BUSINESS_INTELLIGENCE_URL
+          value: "http://business-intelligence:8080/graphql"
+        - name: CUSTOMER_SUCCESS_URL
+          value: "http://customer-success-platform:8080/graphql"
+        - name: PRICING_ENGINE_URL
+          value: "http://pricing-engine:8080/graphql"
+          
+        # Integration Services
+        - name: INTEGRATIONS_SERVICE_URL
+          value: "http://integrations-service:8080/graphql"
+        - name: PARTNER_REGISTRY_URL
+          value: "http://partner-registry:8080/graphql"
+        - name: PAYMENT_GATEWAY_URL
+          value: "http://payment-gateway:8080/graphql"
+          
+        # Core Platform Services
+        - name: LOCALIZATION_SERVICE_URL
+          value: "http://localization-service:8080/graphql"
+        - name: CONSENT_SERVICE_URL
+          value: "http://consent-service:8080/graphql"
+        - name: TAX_ENGINE_URL
+          value: "http://tax-engine:8080/graphql"
+        - name: QNA_SERVICE_URL
+          value: "http://qna-service:8080/graphql"
+          
+        # Observability 
+        - name: JAEGER_ENDPOINT
+          value: "http://jaeger-collector:14268/api/traces"
+          
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+            
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 4000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 4000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: graphql-gateway
+  labels:
+    app: graphql-gateway
+spec:
+  selector:
+    app: graphql-gateway
+  ports:
+  - port: 80
+    targetPort: 4000
+    protocol: TCP
+  type: ClusterIP
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: graphql-gateway
+spec:
+  hosts:
+  - api.selfmonitor.com
+  gateways:
+  - istio-gateway
+  http:
+  - match:
+    - uri:
+        prefix: /graphql
+    route:
+    - destination:
+        host: graphql-gateway
+        port:
+          number: 80
+    timeout: 30s
+    retries:
+      attempts: 3
+      perTryTimeout: 10s
+
+---
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: graphql-gateway
+spec:
+  host: graphql-gateway
+  trafficPolicy:
+    loadBalancer:
+      simple: LEAST_CONN
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+    circuitBreaker:
+      consecutiveErrors: 5
+      interval: 30s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IT Services Invoice {{ invoice.invoice_number }}</title>
+    <style>
+        @page { size: A4; margin: 1.5cm; }
+        body { font-family: 'Consolas', 'Monaco', monospace; font-size: 10pt; color: #2c3e50; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; margin: -1.5cm -1.5cm 20px -1.5cm; }
+        .company-name { font-size: 24pt; font-weight: bold; }
+        .tagline { font-style: italic; margin-top: 5px; }
+        .invoice-title { font-size: 26pt; color: #667eea; margin: 20px 0; text-align: center; }
+        .tech-border { border-left: 4px solid #667eea; padding-left: 15px; margin: 20px 0; }
+        .code-block { background: #f8f9fa; border: 1px solid #dee2e6; padding: 15px; font-family: 'Courier New', monospace; }
+        .invoice-table th { background: #667eea; color: white; }
+        .total-row { background: #667eea; color: white; }
+        .footer { border-top: 2px solid #667eea; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="company-name">{{ company.name }}</div>
+        <div class="tagline">Professional IT Services & Development</div>
+    </div>
+    
+    <div class="invoice-title">INVOICE</div>
+    
+    <div class="tech-border">
+        <h3>Project: {{ invoice.line_items[0].description if invoice.line_items else 'IT Services' }}</h3>
+        <p><strong>Client:</strong> {{ invoice.client_name }}</p>
+        <p><strong>Invoice #:</strong> {{ invoice.invoice_number }} | <strong>Date:</strong> {{ invoice.invoice_date | date }}</p>
+    </div>
+    
+    <div class="code-block">
+        <pre>// Services Delivered
+{% for item in invoice.line_items %}{{ loop.index }}. {{ item.description }}
+   Quantity: {{ item.quantity }} | Rate: {{ item.unit_price | currency(invoice.currency) }}/hour
+   Total: {{ item.total_amount | currency(invoice.currency) }}
+{% endfor %}
+
+// Total Project Value: {{ invoice.total_amount | currency(invoice.currency) }}</pre>
+    </div>
+    
+    <div class="tech-border">
+        <h3>Payment Information</h3>
+        <p><strong>Terms:</strong> Net {{ invoice.payment_terms or 14 }} days</p>
+        <p><strong>Method:</strong> Bank transfer preferred for IT services</p>
+        <p><strong>VAT Registration:</strong> {{ company.vat_number or 'Not VAT registered (under £85k threshold)' }}</p>
+    </div>
+    
+    <p style="margin-top: 30px; font-style: italic;">🚀 This invoice supports HMRC Self Assessment and mortgage applications for UK self-employed IT professionals.</p>
+</body>
+</html>

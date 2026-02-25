@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Consulting Invoice {{ invoice.invoice_number }}</title>
+    <style>
+        @page { size: A4; margin: 2cm; }
+        body { font-family: 'Times New Roman', serif; font-size: 11pt; color: #2c3e50; line-height: 1.6; }
+        .header { border-bottom: 3px solid #8b4513; padding-bottom: 20px; margin-bottom: 30px; }
+        .company-name { font-size: 26pt; color: #8b4513; font-weight: bold; }
+        .subtitle { color: #666; font-style: italic; margin-top: 10px; }
+        .invoice-title { font-size: 32pt; color: #8b4513; text-align: center; margin: 30px 0; }
+        .executive-summary { background: #f8f4e6; border-left: 5px solid #8b4513; padding: 20px; margin: 20px 0; }
+        .consulting-details { display: flex; justify-content: space-between; margin: 30px 0; }
+        .invoice-table th { background: #8b4513; color: white; }
+        .professional-note { background: #fff8dc; border: 2px solid #daa520; padding: 15px; margin: 20px 0; }
+        .signature-area { margin-top: 50px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="company-name">{{ company.name }}</div>
+        <div class="subtitle">Strategic Business Consulting & Advisory Services</div>
+        <div style="margin-top: 15px; color: #666;">
+            {{ company.address }} | {{ company.email }} | {{ company.phone }}
+        </div>
+    </div>
+    
+    <div class="invoice-title">PROFESSIONAL INVOICE</div>
+    
+    <div class="executive-summary">
+        <h3>Engagement Summary</h3>
+        <p><strong>Client:</strong> {{ invoice.client_name }}</p>
+        <p><strong>Engagement Period:</strong> {{ invoice.invoice_date | date }}</p>
+        <p><strong>Total Professional Fees:</strong> {{ invoice.total_amount | currency(invoice.currency) }}</p>
+    </div>
+    
+    <table style="width: 100%; border-collapse: collapse; margin: 30px 0;">
+        <thead>
+            <tr style="background: #8b4513; color: white;">
+                <th style="padding: 12px; text-align: left;">Consulting Services</th>
+                <th style="padding: 12px; text-align: right;">Hours</th>
+                <th style="padding: 12px; text-align: right;">Rate</th>
+                <th style="padding: 12px; text-align: right;">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in invoice.line_items %}
+            <tr style="border-bottom: 1px solid #ddd;">
+                <td style="padding: 12px;">{{ item.description }}</td>
+                <td style="padding: 12px; text-align: right;">{{ item.quantity }}</td>
+                <td style="padding: 12px; text-align: right;">{{ item.unit_price | currency(invoice.currency) }}</td>
+                <td style="padding: 12px; text-align: right;">{{ item.total_amount | currency(invoice.currency) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr style="background: #8b4513; color: white; font-weight: bold;">
+                <td colspan="3" style="padding: 12px; text-align: right;">Total Professional Fees:</td>
+                <td style="padding: 12px; text-align: right;">{{ invoice.total_amount | currency(invoice.currency) }}</td>
+            </tr>
+        </tfoot>
+    </table>
+    
+    <div class="professional-note">
+        <h4>Payment Terms & Conditions</h4>
+        <ul>
+            <li>Payment due within {{ invoice.payment_terms or 30 }} days of invoice date</li>
+            <li>Late payments subject to 8% annual interest (UK statutory rate)</li>
+            <li>All work performed under standard consulting terms & conditions</li>
+            <li>This invoice meets HMRC requirements for business expense deduction</li>
+        </ul>
+    </div>
+    
+    <div class="signature-area">
+        <p><strong>Authorized by:</strong></p>
+        <div style="margin: 20px 0; border-bottom: 1px solid #333; width: 200px;"></div>
+        <p>{{ company.name }} | Professional Consulting Services</p>
+    </div>
+</body>
+</html>

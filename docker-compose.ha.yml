@@ -1,0 +1,199 @@
+# PostgreSQL High Availability Configuration
+# Master-Replica setup with streaming replication for FinTech platform
+
+version: '3.8'
+
+services:
+  # PostgreSQL Master (Primary)
+  postgres-master:
+    image: postgres:15-alpine
+    container_name: postgres_master
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db_user_profile
+      POSTGRES_INITDB_ARGS: "--auth-host=md5"
+      # Replication configuration
+      POSTGRES_REPLICATION_USER: replicator
+      POSTGRES_REPLICATION_PASSWORD: repl_password
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d
+      - ./infra/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./infra/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    ports:
+      - "5432:5432"
+    command: >
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d db_user_profile"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # PostgreSQL Replica (Standby)
+  postgres-replica:
+    image: postgres:15-alpine
+    container_name: postgres_replica
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db_user_profile
+      PGUSER: user
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./infra/postgres/recovery.conf:/etc/postgresql/recovery.conf
+    ports:
+      - "5433:5432"  # Different port for replica
+    depends_on:
+      - postgres-master
+    command: >
+      bash -c "
+      until pg_basebackup -h postgres-master -D /var/lib/postgresql/data -U replicator -v -P -W; do
+        echo 'Waiting for master to be available...'
+        sleep 1
+      done
+      echo 'Standby ready, starting replica'
+      postgres -c config_file=/etc/postgresql/postgresql.conf
+      "
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Redis Sentinel Cluster
+  redis-master:
+    image: redis:7-alpine
+    container_name: redis_master
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_master_data:/data
+      - ./infra/redis/redis-master.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-replica-1:
+    image: redis:7-alpine
+    container_name: redis_replica_1
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_replica1_data:/data
+      - ./infra/redis/redis-replica.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  redis-replica-2:
+    image: redis:7-alpine
+    container_name: redis_replica_2
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_replica2_data:/data
+      - ./infra/redis/redis-replica.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Redis Sentinels for automatic failover
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: redis_sentinel_1
+    ports:
+      - "26379:26379"
+    volumes:
+      - ./infra/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: redis_sentinel_2
+    ports:
+      - "26380:26379"
+    volumes:
+      - ./infra/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: redis_sentinel_3
+    ports:
+      - "26381:26379"
+    volumes:
+      - ./infra/redis/sentinel.conf:/usr/local/etc/redis/sentinel.conf
+    command: redis-sentinel /usr/local/etc/redis/sentinel.conf
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+
+  # Backup Service for automated backups
+  backup-service:
+    build: ./infra/backup
+    container_name: backup_service
+    environment:
+      POSTGRES_HOST: postgres-master
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: db_user_profile
+      BACKUP_SCHEDULE: "0 2 * * *"  # Daily at 2 AM
+      BACKUP_RETENTION_DAYS: 30
+      S3_BUCKET: selfmonitor-backups
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY}
+    volumes:
+      - backup_data:/backups
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - postgres-master
+      - redis-master
+    networks:
+      - default_network
+
+volumes:
+  postgres_master_data:
+  postgres_replica_data:
+  redis_master_data:
+  redis_replica1_data:
+  redis_replica2_data:
+  backup_data:
+
+networks:
+  default_network:
+    driver: bridge

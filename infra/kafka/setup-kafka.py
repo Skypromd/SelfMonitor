@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from typing import Dict, List, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add project root to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -203,7 +203,7 @@ class RedisStreamsMigrator:
                 try:
                     # Convert Redis stream message to Kafka format
                     kafka_message = {
-                        "timestamp": datetime.utcnow().isoformat(),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
                         "source_stream": stream_name,
                         "original_id": message_id,
                         "data": fields

@@ -1,0 +1,353 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlops-config
+  namespace: selfmonitor
+data:
+  MLFLOW_TRACKING_URI: "postgresql://mlflow:mlflow@postgres:5432/mlflow"
+  ARTIFACT_STORE: "minio"
+  MINIO_ENDPOINT: "minio:9000"
+  MINIO_ACCESS_KEY: "minioadmin"
+  MINIO_SECRET_KEY: "minioadmin"
+  S3_BUCKET_NAME: "selfmonitor-ml-artifacts"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  PROMETHEUS_GATEWAY: "prometheus-pushgateway:9091"
+  K8S_NAMESPACE: "selfmonitor"
+  MAX_PARALLEL_TRAINING_JOBS: "3"
+  AUTO_PROMOTE_THRESHOLD: "0.85"
+  DRIFT_DETECTION_ENABLED: "true"
+  AB_TESTING_ENABLED: "true"
+  ENVIRONMENT: "production"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlops-secrets
+  namespace: selfmonitor
+type: Opaque
+data:
+  SLACK_WEBHOOK_URL: ""  # Base64 encoded webhook URL
+  JWT_SECRET_KEY: ""     # Base64 encoded JWT secret
+  MLOPS_API_KEY: ""      # Base64 encoded API key
+
+---
+# MLflow Tracking Server Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-server
+  namespace: selfmonitor
+  labels:
+    app: mlflow-server
+    component: ml-platform
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mlflow-server
+  template:
+    metadata:
+      labels:
+        app: mlflow-server
+        component: ml-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: mlflow-server
+        image: selfmonitor/mlops-platform:latest
+        command: ["python", "src/mlflow_server.py"]
+        ports:
+        - containerPort: 5000
+          name: http
+        - containerPort: 8000
+          name: metrics
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "5000"
+        envFrom:
+        - configMapRef:
+            name: mlops-config
+        - secretRef:
+            name: mlops-secrets
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: artifact-storage
+          mountPath: /app/artifacts
+      volumes:
+      - name: artifact-storage
+        persistentVolumeClaim:
+          claimName: mlflow-artifacts-pvc
+      securityContext:
+        runAsUser: 1001
+        fsGroup: 1001
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-server
+  namespace: selfmonitor
+  labels:
+    app: mlflow-server
+spec:
+  selector:
+    app: mlflow-server
+  ports:
+  - name: http
+    port: 80
+    targetPort: 5000
+    protocol: TCP
+  - name: metrics
+    port: 8000
+    targetPort: 8000
+    protocol: TCP
+  type: ClusterIP
+
+---
+# Training Job CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: automated-training
+  namespace: selfmonitor
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: ml-training
+            component: training-pipeline
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: training-job
+            image: selfmonitor/mlops-platform:latest
+            command: ["python", "scripts/training_pipeline.py"]
+            envFrom:
+            - configMapRef:
+                name: mlops-config
+            - secretRef:
+                name: mlops-secrets
+            resources:
+              requests:
+                memory: "2Gi"
+                cpu: "1000m"
+              limits:
+                memory: "8Gi"
+                cpu: "4000m"
+            volumeMounts:
+            - name: artifact-storage
+              mountPath: /app/artifacts
+          volumes:
+          - name: artifact-storage
+            persistentVolumeClaim:
+              claimName: mlflow-artifacts-pvc
+          securityContext:
+            runAsUser: 1001
+            fsGroup: 1001
+
+---
+# Model Monitoring Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-monitoring
+  namespace: selfmonitor
+  labels:
+    app: model-monitoring
+    component: ml-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: model-monitoring
+  template:
+    metadata:
+      labels:
+        app: model-monitoring
+        component: ml-platform
+    spec:
+      containers:
+      - name: monitoring
+        image: selfmonitor/mlops-platform:latest
+        command: ["python", "-c", "from src.utils.monitoring import ModelMonitoringOrchestrator; import asyncio; from src.utils.config import MLOpsConfig; orchestrator = ModelMonitoringOrchestrator(MLOpsConfig()); asyncio.run(orchestrator.initialize())"]
+        envFrom:
+        - configMapRef:
+            name: mlops-config
+        - secretRef:
+            name: mlops-secrets
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      securityContext:
+        runAsUser: 1001
+        fsGroup: 1001
+
+---
+# PersistentVolumeClaim for MLflow artifacts
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-artifacts-pvc
+  namespace: selfmonitor
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs-client  # Adjust based on your storage class
+  resources:
+    requests:
+      storage: 100Gi
+
+---
+# Ingress for MLflow UI
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mlflow-ingress
+  namespace: selfmonitor
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.ingress.kubernetes.io/auth-secret: mlflow-basic-auth
+    nginx.ingress.kubernetes.io/auth-realm: "MLflow Authentication"
+spec:
+  rules:
+  - host: mlops.selfmonitor.com
+    http:
+      paths:
+      - path: /mlflow(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: mlflow-server
+            port:
+              number: 80
+
+---
+# HorizontalPodAutoscaler for MLflow server
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mlflow-server-hpa
+  namespace: selfmonitor
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mlflow-server
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# ServiceMonitor for Prometheus scraping
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mlflow-server-monitor
+  namespace: selfmonitor
+  labels:
+    app: mlflow-server
+spec:
+  selector:
+    matchLabels:
+      app: mlflow-server
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+
+---
+# NetworkPolicy for MLOps platform
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mlops-network-policy
+  namespace: selfmonitor
+spec:
+  podSelector:
+    matchLabels:
+      component: ml-platform
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: nginx-gateway
+    - podSelector:
+        matchLabels:
+          app: graphql-gateway
+    ports:
+    - protocol: TCP
+      port: 5000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: minio
+    ports:
+    - protocol: TCP
+      port: 9000

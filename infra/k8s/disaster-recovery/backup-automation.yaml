@@ -1,0 +1,294 @@
+# ОТСУТСТВУЮЩИЕ BACKUP CRONJOBS - КРИТИЧЕСКИ ВАЖНО
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-daily-backup
+  namespace: selfmonitor
+spec:
+  schedule: "0 2 * * *"  # 2 AM daily UTC
+  timeZone: "UTC"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: postgres-backup
+            image: postgres:15-alpine
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: password
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-key
+            command:
+            - /bin/bash
+            - -c
+            - |
+              DATE=$(date +%Y%m%d_%H%M%S)
+              BACKUP_FILE="selfmonitor_$DATE.sql"
+              
+              echo "Starting PostgreSQL backup at $(date)"
+              
+              # Create backup with compression
+              pg_dump -h postgres-master -U postgres -d production \
+                --verbose --no-owner --no-privileges \
+                --format=custom --compress=9 \
+                --file=/tmp/$BACKUP_FILE
+              
+              # Upload to S3 with server-side encryption
+              aws s3 cp /tmp/$BACKUP_FILE \
+                s3://selfmonitor-backups/postgres/ \
+                --sse AES256 \
+                --storage-class STANDARD_IA
+              
+              # Verify backup was uploaded
+              if aws s3api head-object --bucket selfmonitor-backups --key postgres/$BACKUP_FILE; then
+                echo "Backup $BACKUP_FILE successfully uploaded"
+                
+                # Cleanup local file
+                rm /tmp/$BACKUP_FILE
+                
+                # Test backup integrity (restore to temp DB)
+                createdb -h postgres-master -U postgres temp_restore_test_$DATE
+                pg_restore -h postgres-master -U postgres -d temp_restore_test_$DATE /tmp/$BACKUP_FILE
+                dropdb -h postgres-master -U postgres temp_restore_test_$DATE
+                
+                echo "Backup integrity verified"
+              else
+                echo "ERROR: Backup upload failed!"
+                exit 1
+              fi
+              
+              # Send success notification
+              curl -X POST "$SLACK_WEBHOOK" -d "{\"text\":\"✅ PostgreSQL backup completed: $BACKUP_FILE\"}"
+              
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "250m"
+              limits:
+                memory: "1Gi"
+                cpu: "500m"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-backup
+  namespace: selfmonitor
+spec:
+  schedule: "0 3 * * *"  # 3 AM daily
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: redis-backup
+            image: redis:7-alpine
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-key
+            command:
+            - /bin/bash
+            - -c
+            - |
+              DATE=$(date +%Y%m%d_%H%M%S)
+              
+              echo "Starting Redis backup at $(date)"
+              
+              # Create Redis snapshot
+              redis-cli -h redis-master BGSAVE
+              
+              # Wait for backup to complete
+              while [ $(redis-cli -h redis-master LASTSAVE) -eq $(redis-cli -h redis-master LASTSAVE) ]; do
+                sleep 1
+              done
+              
+              # Copy RDB file
+              redis-cli -h redis-master --rdb /tmp/dump_$DATE.rdb
+              
+              # Upload to S3
+              aws s3 cp /tmp/dump_$DATE.rdb \
+                s3://selfmonitor-backups/redis/ \
+                --sse AES256
+              
+              echo "Redis backup completed: dump_$DATE.rdb"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: minio-backup
+  namespace: selfmonitor
+spec:
+  schedule: "0 4 * * *"  # 4 AM daily
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: minio-backup
+            image: minio/mc:latest
+            env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: access-key
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-secret
+                  key: secret-key
+            command:
+            - /bin/bash
+            - -c
+            - |
+              DATE=$(date +%Y%m%d_%H%M%S)
+              
+              echo "Starting MinIO backup at $(date)"
+              
+              # Configure mc client
+              mc alias set source http://minio:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+              mc alias set backup s3://selfmonitor-minio-backups $AWS_ACCESS_KEY_ID $AWS_SECRET_ACCESS_KEY
+              
+              # Mirror all buckets to S3
+              mc mirror source/ backup/minio-backup-$DATE/
+              
+              echo "MinIO backup completed to backup-$DATE"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-cleanup
+  namespace: selfmonitor
+spec:
+  schedule: "0 5 * * 0"  # Weekly cleanup (Sunday 5 AM)
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: backup-cleanup
+            image: amazon/aws-cli:2.13.25
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-key
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Starting backup cleanup at $(date)"
+              
+              # Delete postgres backups older than 30 days
+              aws s3 ls s3://selfmonitor-backups/postgres/ | \
+                awk '$1 < "'$(date -d '30 days ago' '+%Y-%m-%d')'" {print $4}' | \
+                xargs -I {} aws s3 rm s3://selfmonitor-backups/postgres/{}
+              
+              # Delete redis backups older than 14 days
+              aws s3 ls s3://selfmonitor-backups/redis/ | \
+                awk '$1 < "'$(date -d '14 days ago' '+%Y-%m-%d')'" {print $4}' | \
+                xargs -I {} aws s3 rm s3://selfmonitor-backups/redis/{}
+              
+              echo "Backup cleanup completed"
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup-validation
+  namespace: selfmonitor
+spec:
+  schedule: "0 6 * * 0"  # Weekly validation (Sunday 6 AM)
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: backup-validator
+            image: postgres:15-alpine
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: access-key
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-credentials
+                  key: secret-key
+            command:
+            - /bin/bash
+            - -c
+            - |
+              echo "Starting backup validation at $(date)"
+              
+              # Get latest backup file
+              LATEST_BACKUP=$(aws s3 ls s3://selfmonitor-backups/postgres/ --recursive | sort | tail -n 1 | awk '{print $4}')
+              
+              if [ -z "$LATEST_BACKUP" ]; then
+                echo "ERROR: No backup files found!"
+                exit 1
+              fi
+              
+              echo "Validating backup: $LATEST_BACKUP"
+              
+              # Download and test restore
+              aws s3 cp s3://selfmonitor-backups/$LATEST_BACKUP /tmp/test_backup.sql
+              
+              # Create test database and restore
+              createdb -h postgres-master -U postgres backup_validation_test
+              pg_restore -h postgres-master -U postgres -d backup_validation_test /tmp/test_backup.sql
+              
+              # Verify critical tables exist
+              TABLES=$(psql -h postgres-master -U postgres -d backup_validation_test -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public'")
+              
+              if [ "$TABLES" -gt 0 ]; then
+                echo "✅ Backup validation successful: $TABLES tables restored"
+                
+                # Send success notification
+                curl -X POST "$SLACK_WEBHOOK" -d "{\"text\":\"✅ Weekly backup validation passed: $LATEST_BACKUP\"}"
+              else
+                echo "❌ Backup validation failed: No tables found"
+                
+                # Send failure notification
+                curl -X POST "$SLACK_WEBHOOK" -d "{\"text\":\"🚨 CRITICAL: Backup validation failed for $LATEST_BACKUP\"}"
+                exit 1
+              fi
+              
+              # Cleanup test database
+              dropdb -h postgres-master -U postgres backup_validation_test
+              rm /tmp/test_backup.sql

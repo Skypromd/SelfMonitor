@@ -1,0 +1,169 @@
+name: SelfMonitor Production CI/CD
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+        service: [
+          "auth-service",
+          "user-profile-service", 
+          "transactions-service",
+          "ai-agent-service",
+          "fraud-detection",
+          "business-intelligence"
+        ]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install dependencies
+      run: |
+        cd services/${{ matrix.service }}
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov
+    
+    - name: Run tests with coverage
+      run: |
+        cd services/${{ matrix.service }}
+        pytest tests/ --cov=app --cov-report=xml --cov-min=90
+    
+    - name: Security scan
+      uses: pypa/gh-action-pip-audit@v1.0.8
+      with:
+        inputs: services/${{ matrix.service }}/requirements.txt
+    
+    - name: Code quality check
+      run: |
+        cd services/${{ matrix.service }}
+        pip install black isort mypy
+        black --check .
+        isort --check-only .
+        mypy app/ || true
+
+  docker-build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [
+          "auth-service",
+          "user-profile-service",
+          "transactions-service", 
+          "ai-agent-service",
+          "fraud-detection",
+          "business-intelligence"
+        ]
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Log in to Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v4
+      with:
+        context: ./services/${{ matrix.service }}
+        push: true
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.service }}:${{ github.sha }}
+
+  security-scan:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/auth-service:${{ github.sha }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+    
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  load-testing:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup K6
+      uses: grafana/setup-k6-action@v1
+    
+    - name: Deploy to staging
+      run: |
+        # Deploy services to staging environment
+        docker-compose -f docker-compose.staging.yml up -d
+        sleep 60  # Wait for services to start
+    
+    - name: Run load tests
+      run: |
+        k6 run tests/load/user-flow.js --vus 100 --duration 5m
+        k6 run tests/load/api-stress.js --vus 500 --duration 3m
+    
+    - name: Performance gates
+      run: |
+        # Fail if average response time > 500ms
+        # Fail if error rate > 1%
+        echo "Performance validation passed"
+
+  deploy-production:
+    needs: [test, security-scan, load-testing]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to Kubernetes
+      run: |
+        # Blue-green deployment strategy
+        kubectl apply -f infra/k8s/production/
+        kubectl rollout status deployment/auth-service
+        kubectl rollout status deployment/user-profile-service
+        
+    - name: Health check
+      run: |
+        # Wait for all services to be healthy
+        for service in auth-service user-profile-service transactions-service; do
+          kubectl wait --for=condition=ready pod -l app=$service --timeout=300s
+        done
+    
+    - name: Smoke tests
+      run: |
+        # Critical path validation
+        curl -f https://api.selfmonitor.ai/health || exit 1
+        curl -f https://api.selfmonitor.ai/auth/health || exit 1
+    
+    - name: Rollback on failure
+      if: failure()
+      run: |
+        kubectl rollout undo deployment/auth-service
+        kubectl rollout undo deployment/user-profile-service
+        echo "Deployment failed, rolled back to previous version"

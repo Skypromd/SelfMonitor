@@ -1,0 +1,460 @@
+"""
+GraphQL schema for Transactions Service
+Extends User entity from Auth Service with transaction data
+"""
+
+directive @key(fields: String!) on OBJECT | INTERFACE
+directive @extends on OBJECT | INTERFACE
+directive @external on FIELD_DEFINITION
+directive @requires(fields: String!) on FIELD_DEFINITION
+directive @provides(fields: String!) on FIELD_DEFINITION
+
+extend type User @key(fields: "id") {
+  id: ID! @external
+  transactions(filter: TransactionFilter, pagination: PaginationInput): TransactionConnection!
+  totalSpent: Float!
+  totalEarned: Float!
+  monthlySpending: [MonthlySpending!]!
+  topCategories: [CategorySpending!]!
+  recentTransactions(limit: Int = 10): [Transaction!]!
+}
+
+type Transaction @key(fields: "id") {
+  id: ID!
+  userId: ID!
+  amount: Float!
+  currency: String!
+  description: String!
+  category: Category
+  subcategory: Subcategory
+  merchantName: String
+  merchantId: String
+  accountId: String!
+  transactionType: TransactionType!
+  status: TransactionStatus!
+  date: String!
+  processedAt: String
+  location: TransactionLocation
+  tags: [String!]!
+  isRecurring: Boolean!
+  recurringGroupId: String
+  metadata: JSON
+  
+  # Enriched data
+  enrichment: TransactionEnrichment
+  insights: TransactionInsights
+  
+  # Related entities from other services
+  account: Account @external
+  user: User @external  
+  attachments: [Document] @external
+  taxInfo: TaxInfo @external
+  
+  createdAt: String!
+  updatedAt: String!
+}
+
+type Category {
+  id: ID!
+  name: String!
+  icon: String
+  color: String
+  description: String
+  isDefault: Boolean!
+  subcategories: [Subcategory!]!
+}
+
+type Subcategory {
+  id: ID!
+  name: String!
+  categoryId: ID!
+  category: Category!
+  icon: String
+  color: String
+}
+
+type TransactionLocation {
+  latitude: Float
+  longitude: Float
+  address: String
+  city: String
+  country: String
+  postalCode: String
+}
+
+type TransactionEnrichment {
+  merchantLogo: String
+  merchantWebsite: String
+  merchantCategory: String
+  isSubscription: Boolean
+  subscriptionFrequency: String
+  confidence: Float!
+  dataProviders: [String!]!
+}
+
+type TransactionInsights {
+  unusualSpending: Boolean!
+  categoryBudgetImpact: Float
+  recommendedCategory: Category
+  similarTransactions: [Transaction!]!
+  spendingPattern: SpendingPattern
+}
+
+type SpendingPattern {
+  frequency: String!
+  averageAmount: Float!
+  trend: String! # "increasing", "decreasing", "stable"
+  seasonality: String
+  confidence: Float!
+}
+
+type MonthlySpending {
+  month: String! # YYYY-MM format
+  totalAmount: Float!
+  transactionCount: Int!
+  categories: [CategorySpending!]!
+}
+
+type CategorySpending {
+  category: Category!
+  amount: Float!
+  percentage: Float!
+  transactionCount: Int!
+  trend: String! # "up", "down", "stable"
+}
+
+enum TransactionType {
+  DEBIT
+  CREDIT
+  TRANSFER
+  PAYMENT
+  REFUND
+  FEE
+  INTEREST
+  DIVIDEND
+  OTHER
+}
+
+enum TransactionStatus {
+  PENDING
+  POSTED
+  CANCELLED
+  FAILED
+  PROCESSING
+}
+
+# Input types
+input TransactionFilter {
+  accountId: String
+  category: String
+  subcategory: String
+  minAmount: Float
+  maxAmount: Float
+  startDate: String
+  endDate: String
+  transactionType: TransactionType
+  status: TransactionStatus
+  search: String
+  tags: [String!]
+  isRecurring: Boolean
+  merchantName: String
+}
+
+input CreateTransactionInput {
+  accountId: String!
+  amount: Float!
+  currency: String!
+  description: String!
+  categoryId: String
+  subcategoryId: String
+  merchantName: String
+  date: String!
+  transactionType: TransactionType!
+  location: TransactionLocationInput
+  tags: [String!]
+  metadata: JSON
+}
+
+input UpdateTransactionInput {
+  description: String
+  categoryId: String
+  subcategoryId: String
+  tags: [String!]
+  metadata: JSON
+}
+
+input TransactionLocationInput {
+  latitude: Float
+  longitude: Float
+  address: String
+  city: String
+  country: String
+  postalCode: String
+}
+
+input CreateCategoryInput {
+  name: String!
+  icon: String
+  color: String
+  description: String
+}
+
+input UpdateCategoryInput {
+  name: String
+  icon: String
+  color: String
+  description: String
+}
+
+input CreateSubcategoryInput {
+  name: String!
+  categoryId: ID!
+  icon: String
+  color: String
+}
+
+input PaginationInput {
+  first: Int
+  after: String
+  last: Int
+  before: String
+}
+
+# Connection types
+type TransactionConnection {
+  edges: [TransactionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+  totalAmount: Float!
+  summary: TransactionSummary!
+}
+
+type TransactionEdge {
+  node: Transaction!
+  cursor: String!
+}
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type TransactionSummary {
+  totalDebit: Float!
+  totalCredit: Float!
+  netAmount: Float!
+  transactionCount: Int!
+  averageAmount: Float!
+  categories: [CategorySpending!]!
+}
+
+# Queries
+type Query {
+  # Transaction queries
+  transaction(id: ID!): Transaction
+  transactions(filter: TransactionFilter, pagination: PaginationInput): TransactionConnection!
+  searchTransactions(query: String!, filter: TransactionFilter): [Transaction!]!
+  
+  # Category queries
+  categories: [Category!]!
+  category(id: ID!): Category
+  subcategories(categoryId: ID): [Subcategory!]!
+  
+  # Analytics queries
+  spendingAnalysis(userId: ID!, period: String!): SpendingAnalysis!
+  categoryAnalysis(userId: ID!, categoryId: ID!, period: String!): CategoryAnalysis!
+  recurringTransactions(userId: ID!): [RecurringTransactionGroup!]!
+  
+  # Insights
+  transactionInsights(userId: ID!, limit: Int = 10): [TransactionInsight!]!
+  spendingAlerts(userId: ID!): [SpendingAlert!]!
+}
+
+# Mutations  
+type Mutation {
+  # Transaction management
+  createTransaction(input: CreateTransactionInput!): Transaction!
+  updateTransaction(id: ID!, input: UpdateTransactionInput!): Transaction!
+  deleteTransaction(id: ID!): Boolean!
+  categorizeTransaction(id: ID!, categoryId: ID!, subcategoryId: ID): Transaction!
+  addTransactionTags(id: ID!, tags: [String!]!): Transaction!
+  removeTransactionTags(id: ID!, tags: [String!]!): Transaction!
+  
+  # Category management
+  createCategory(input: CreateCategoryInput!): Category!
+  updateCategory(id: ID!, input: UpdateCategoryInput!): Category!
+  deleteCategory(id: ID!): Boolean!
+  createSubcategory(input: CreateSubcategoryInput!): Subcategory!
+  updateSubcategory(id: ID!, input: UpdateSubcategoryInput!): Subcategory!
+  deleteSubcategory(id: ID!): Boolean!
+  
+  # Bulk operations
+  bulkCategorizeTransactions(transactionIds: [ID!]!, categoryId: ID!, subcategoryId: ID): [Transaction!]!
+  bulkDeleteTransactions(transactionIds: [ID!]!): Boolean!
+  
+  # Data import
+  importTransactions(accountId: String!, file: Upload!): TransactionImportResult!
+}
+
+# Subscriptions
+type Subscription {
+  transactionAdded(userId: ID!): Transaction!
+  transactionUpdated(userId: ID!): Transaction!
+  transactionDeleted(userId: ID!): TransactionDeletedEvent!
+  spendingAlert(userId: ID!): SpendingAlert!
+}
+
+# Additional types for analytics and insights
+type SpendingAnalysis {
+  period: String!
+  totalSpent: Float!
+  totalEarned: Float!
+  netAmount: Float!
+  transactionCount: Int!
+  averageTransactionAmount: Float!
+  dailyAverage: Float!
+  topCategories: [CategorySpending!]!
+  spendingTrend: String! # "increasing", "decreasing", "stable"
+  comparisonToPreviousPeriod: Float!
+  budgetPerformance: BudgetPerformance
+}
+
+type CategoryAnalysis {
+  category: Category!
+  period: String!
+  totalAmount: Float!
+  transactionCount: Int!
+  averageAmount: Float!
+  trend: String!
+  budgetAllocation: Float
+  budgetUsed: Float
+  topMerchants: [MerchantSpending!]!
+  spendingPattern: SpendingPattern!
+}
+
+type BudgetPerformance {
+  budgetAmount: Float
+  spentAmount: Float!
+  remainingAmount: Float
+  percentageUsed: Float!
+  isOverBudget: Boolean!
+  daysRemaining: Int
+  projectedSpend: Float
+}
+
+type MerchantSpending {
+  merchantName: String!
+  amount: Float!
+  transactionCount: Int!
+  percentage: Float!
+  lastTransactionDate: String!
+}
+
+type RecurringTransactionGroup {
+  id: ID!
+  pattern: String!
+  frequency: String!
+  averageAmount: Float!
+  nextExpectedDate: String
+  transactions: [Transaction!]!
+  confidence: Float!
+  isActive: Boolean!
+  category: Category
+}
+
+type TransactionInsight {
+  type: InsightType!
+  title: String!
+  description: String!
+  amount: Float
+  category: Category
+  confidence: Float!
+  actionable: Boolean!
+  metadata: JSON
+}
+
+type SpendingAlert {
+  id: ID!
+  type: AlertType!
+  title: String!
+  message: String!
+  severity: AlertSeverity!
+  amount: Float
+  category: Category
+  triggeredAt: String!
+  isRead: Boolean!
+  metadata: JSON
+}
+
+# Event types
+type TransactionDeletedEvent {
+  transactionId: ID!
+  userId: ID!
+  deletedAt: String!
+}
+
+type TransactionImportResult {
+  totalProcessed: Int!
+  successfulImports: Int!
+  failedImports: Int!
+  errors: [ImportError!]!
+  transactions: [Transaction!]!
+}
+
+type ImportError {
+  row: Int!
+  message: String!
+  data: JSON
+}
+
+# Enums
+enum InsightType {
+  UNUSUAL_SPENDING
+  RECURRING_PATTERN
+  CATEGORY_SUGGESTION
+  MERCHANT_SUGGESTION
+  BUDGET_WARNING
+  SAVINGS_OPPORTUNITY
+  SUBSCRIPTION_DETECTED
+}
+
+enum AlertType {
+  BUDGET_EXCEEDED
+  UNUSUAL_TRANSACTION
+  LARGE_TRANSACTION
+  NEW_MERCHANT
+  SUBSCRIPTION_RENEWAL
+  SPENDING_INCREASE
+}
+
+enum AlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+# Federation placeholder types
+type Account @key(fields: "id") @extends {
+  id: ID! @external
+  userId: ID! @external
+  name: String @external
+}
+
+type Document @key(fields: "id") @extends {
+  id: ID! @external
+  transactionId: ID! @external
+  name: String @external
+}
+
+type TaxInfo @key(fields: "transactionId") @extends {
+  transactionId: ID! @external
+  isDeductible: Boolean @external
+  category: String @external
+}
+
+# Custom scalar
+scalar JSON
+scalar Upload
+scalar UpdateSubcategoryInput

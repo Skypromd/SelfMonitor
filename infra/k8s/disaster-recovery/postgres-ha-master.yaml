@@ -1,0 +1,135 @@
+# ОТСУТСТВУЮЩИЙ КОМПОНЕНТ: PostgreSQL High Availability Master
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-master
+  namespace: selfmonitor
+  labels:
+    app: postgres
+    role: master
+spec:
+  serviceName: postgres-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+      role: master
+  template:
+    metadata:
+      labels:
+        app: postgres
+        role: master
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15-alpine
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "production"
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: password
+        - name: POSTGRES_REPLICATION_MODE
+          value: "master"
+        - name: POSTGRES_REPLICATION_USER
+          value: "replicator"
+        - name: POSTGRES_REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: replication-password
+        - name: PGUSER
+          value: "postgres"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /etc/postgresql
+        livenessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - "pg_isready -h localhost -U $POSTGRES_USER"
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - "pg_isready -h localhost -U $POSTGRES_USER && psql -d $POSTGRES_DB -U $POSTGRES_USER -c 'SELECT 1'"
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-master-config
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      storageClassName: fast-ssd
+      resources:
+        requests:
+          storage: 100Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-master
+  namespace: selfmonitor
+  labels:
+    app: postgres
+    role: master
+spec:
+  type: ClusterIP
+  ports:
+  - port: 5432
+    targetPort: 5432
+    name: postgres
+  selector:
+    app: postgres
+    role: master
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-master-config
+  namespace: selfmonitor
+data:
+  postgresql.conf: |
+    # Master configuration
+    wal_level = replica
+    max_wal_senders = 3
+    wal_keep_size = 64MB
+    hot_standby = on
+    archive_mode = on
+    archive_command = 'aws s3 cp %p s3://selfmonitor-wal-archive/%f'
+    log_statement = 'all'
+    log_destination = 'stderr'
+    logging_collector = on
+    
+  pg_hba.conf: |
+    # Master HBA configuration
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            trust
+    host    all             all             ::1/128                 trust
+    host    all             all             0.0.0.0/0               md5
+    host    replication     replicator      0.0.0.0/0               md5

@@ -1,0 +1,291 @@
+# ОТСУТСТВУЮЩИЕ DR MONITORING ALERTS
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: disaster-recovery-alerts
+  namespace: selfmonitor
+  labels:
+    app: prometheus
+    prometheus: selfmonitor
+spec:
+  groups:
+  - name: database.dr
+    rules:
+    - alert: PostgreSQLMasterDown
+      expr: up{job="postgres-master"} == 0
+      for: 30s
+      labels:
+        severity: critical
+        component: database
+        dr_impact: "high"
+      annotations:
+        summary: "PostgreSQL Master is down"
+        description: "PostgreSQL master instance has been down for more than 30 seconds. Immediate failover required."
+        runbook_url: "https://docs.selfmonitor.ai/runbooks/postgres-failover"
+        action_required: "Initiate emergency database failover"
+    
+    - alert: PostgreSQLReplicationLag
+      expr: pg_stat_replication_lag_seconds > 300
+      for: 5m
+      labels:
+        severity: warning
+        component: database
+        dr_impact: "medium"
+      annotations:
+        summary: "PostgreSQL replication lag is high"
+        description: "PostgreSQL replication lag is {{ $value }} seconds, which exceeds the 5-minute threshold."
+        action_required: "Check replication status and network connectivity"
+    
+    - alert: PostgreSQLSlaveDown
+      expr: pg_stat_replication_active == 0
+      for: 2m
+      labels:
+        severity: warning
+        component: database
+      annotations:
+        summary: "PostgreSQL slave is disconnected"
+        description: "PostgreSQL slave has been disconnected for more than 2 minutes."
+        action_required: "Investigate slave connectivity and restart if needed"
+
+  - name: redis.dr
+    rules:
+    - alert: RedisMasterDown
+      expr: up{job="redis-master"} == 0
+      for: 30s
+      labels:
+        severity: critical
+        component: redis
+        dr_impact: "high"
+      annotations:
+        summary: "Redis Master is down"
+        description: "Redis master instance has been down for more than 30 seconds."
+        action_required: "Check Redis Sentinel for automatic failover"
+    
+    - alert: RedisSentinelDown
+      expr: up{job="redis-sentinel"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        component: redis
+      annotations:
+        summary: "Redis Sentinel is down"
+        description: "Redis Sentinel monitoring is down. Automatic failover capability compromised."
+        action_required: "Restart Redis Sentinel immediately"
+    
+    - alert: RedisMemoryHigh
+      expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+        component: redis
+      annotations:
+        summary: "Redis memory usage is high"
+        description: "Redis memory usage is {{ $value | humanizePercentage }}. Risk of data loss."
+        action_required: "Scale Redis or clear old data"
+
+  - name: backup.dr
+    rules:
+    - alert: BackupJobFailed
+      expr: kube_cronjob_status_failed{cronjob=~".*-backup"} == 1
+      for: 0m
+      labels:
+        severity: critical
+        component: backup
+        dr_impact: "high"
+      annotations:
+        summary: "Backup job {{ $labels.cronjob }} failed"
+        description: "Critical backup job {{ $labels.cronjob }} has failed. Data protection compromised."
+        action_required: "Investigate backup failure and re-run manually if needed"
+    
+    - alert: BackupJobNotRun
+      expr: time() - kube_cronjob_status_last_schedule_time{cronjob=~".*-backup"} > 25 * 3600
+      for: 1h
+      labels:
+        severity: critical
+        component: backup
+      annotations:
+        summary: "Backup job {{ $labels.cronjob }} hasn't run in 25+ hours"
+        description: "Backup job {{ $labels.cronjob }} hasn't executed in over 25 hours."
+        action_required: "Check CronJob status and fix scheduling issues"
+    
+    - alert: VolumeSnapshotFailed
+      expr: (time() - kube_volumesnapshot_creation_time) > 1800 and kube_volumesnapshot_ready != 1
+      for: 5m
+      labels:
+        severity: warning
+        component: backup
+      annotations:
+        summary: "Volume snapshot {{ $labels.volumesnapshot }} is not ready"
+        description: "Volume snapshot has been in progress for over 30 minutes."
+        action_required: "Check storage system and snapshot status"
+
+  - name: infrastructure.dr
+    rules:
+    - alert: KubernetesNodeDown
+      expr: up{job="kubernetes-nodes"} == 0
+      for: 5m
+      labels:
+        severity: critical
+        component: infrastructure
+        dr_impact: "high"
+      annotations:
+        summary: "Kubernetes node {{ $labels.instance }} is down"
+        description: "Kubernetes node {{ $labels.instance }} has been unreachable for more than 5 minutes."
+        action_required: "Check node health and initiate pod evacuation if needed"
+    
+    - alert: EtcdDown
+      expr: up{job="etcd"} == 0
+      for: 1m
+      labels:
+        severity: critical
+        component: infrastructure
+        dr_impact: "critical"
+      annotations:
+        summary: "Etcd instance is down"
+        description: "Etcd cluster member is down. Risk of cluster state loss."
+        action_required: "Emergency etcd cluster recovery required"
+    
+    - alert: PersistentVolumeError
+      expr: kube_persistentvolume_status_phase{phase!="Available",phase!="Bound"} == 1
+      for: 5m
+      labels:
+        severity: warning
+        component: storage
+      annotations:
+        summary: "Persistent Volume {{ $labels.persistentvolume }} has issues"
+        description: "Persistent Volume is in {{ $labels.phase }} state."
+        action_required: "Check storage backend and volume status"
+
+  - name: application.dr
+    rules:
+    - alert: CriticalServiceDown
+      expr: up{job=~"auth-service|user-profile-service|transactions-service"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        component: application
+        dr_impact: "critical"
+      annotations:
+        summary: "Critical service {{ $labels.job }} is down"
+        description: "Critical service {{ $labels.job }} has been down for more than 2 minutes."
+        action_required: "Immediate investigation and service restart required"
+    
+    - alert: HighErrorRate
+      expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.05
+      for: 3m
+      labels:
+        severity: warning
+        component: application
+      annotations:
+        summary: "High error rate detected on {{ $labels.service }}"
+        description: "Error rate is {{ $value | humanizePercentage }} on {{ $labels.service }}."
+        action_required: "Check service logs and health"
+    
+    - alert: ServiceResponseTimeSlow
+      expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+      for: 10m
+      labels:
+        severity: warning
+        component: application
+      annotations:
+        summary: "Service {{ $labels.service }} response time is slow"
+        description: "95th percentile response time is {{ $value }}s."
+        action_required: "Investigate performance issues"
+
+---
+# Grafana Dashboard для DR Monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dr-dashboard
+  namespace: selfmonitor
+  labels:
+    grafana_dashboard: "1"
+data:
+  dr-monitoring.json: |
+    {
+      "dashboard": {
+        "title": "Disaster Recovery Monitoring",
+        "tags": ["disaster-recovery", "monitoring"],
+        "timezone": "UTC",
+        "panels": [
+          {
+            "title": "Database Health Status",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "up{job=\"postgres-master\"}",
+                "legendFormat": "PostgreSQL Master"
+              },
+              {
+                "expr": "up{job=\"redis-master\"}",
+                "legendFormat": "Redis Master"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "mappings": [
+                  {
+                    "options": {
+                      "0": {
+                        "text": "DOWN",
+                        "color": "red"
+                      },
+                      "1": {
+                        "text": "UP",
+                        "color": "green"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "title": "Backup Status",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "kube_cronjob_status_last_schedule_time{cronjob=~\".*-backup\"}",
+                "legendFormat": "{{ cronjob }}",
+                "format": "table"
+              }
+            ]
+          },
+          {
+            "title": "Replication Lag",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "pg_stat_replication_lag_seconds",
+                "legendFormat": "PostgreSQL Lag (seconds)"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Seconds",
+                "min": 0
+              }
+            ],
+            "thresholds": [
+              {
+                "value": 300,
+                "colorMode": "critical",
+                "op": "gt"
+              }
+            ]
+          },
+          {
+            "title": "Critical Alerts",
+            "type": "table",
+            "targets": [
+              {
+                "expr": "ALERTS{alertstate=\"firing\", severity=\"critical\"}",
+                "format": "table"
+              }
+            ]
+          }
+        ]
+      }
+    }

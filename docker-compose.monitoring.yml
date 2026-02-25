@@ -1,0 +1,141 @@
+# Enterprise Database Health Monitoring and Alerts
+# Automated failover detection and notification system
+
+version: '3.8'
+
+services:
+  # Database Health Monitor
+  db-health-monitor:
+    build: ./infra/monitoring
+    container_name: db_health_monitor
+    environment:
+      POSTGRES_MASTER_HOST: postgres-master
+      POSTGRES_REPLICA_HOST: postgres-replica
+      REDIS_MASTER_HOST: redis-master
+      REDIS_SENTINELS: redis-sentinel-1:26379,redis-sentinel-2:26380,redis-sentinel-3:26381
+      MONITORING_INTERVAL: 10
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL}
+      PAGERDUTY_KEY: ${PAGERDUTY_INTEGRATION_KEY}
+      EMAIL_SMTP_HOST: ${EMAIL_SMTP_HOST}
+      EMAIL_SMTP_PORT: ${EMAIL_SMTP_PORT}
+      EMAIL_USERNAME: ${EMAIL_USERNAME}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      ALERT_EMAIL: ${ALERT_EMAIL}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - monitoring_logs:/var/log/monitoring
+    depends_on:
+      - postgres-master
+      - redis-master
+    networks:
+      - default_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "/app/health_check.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Advanced Metrics Collection
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres_exporter
+    environment:
+      DATA_SOURCE_NAME: "postgresql://user:password@postgres-master:5432/db_user_profile?sslmode=disable"
+    ports:
+      - "9187:9187"
+    depends_on:
+      - postgres-master
+    networks:
+      - default_network
+    restart: unless-stopped
+
+  redis-exporter:
+    image: bitnami/redis-exporter:latest
+    container_name: redis_exporter
+    environment:
+      REDIS_ADDR: "redis-master:6379"
+      REDIS_PASSWORD: "redis_secure_password_2026"
+      REDIS_USER: ""
+    ports:
+      - "9121:9121"
+    depends_on:
+      - redis-master
+    networks:
+      - default_network
+    restart: unless-stopped
+
+  # Enhanced Prometheus for FinTech monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./infra/prometheus/rules:/etc/prometheus/rules
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - postgres-exporter
+      - redis-exporter
+    networks:
+      - default_network
+    restart: unless-stopped
+
+  # Grafana with FinTech dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin_password_2026}
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-simple-json-datasource,grafana-worldmap-panel"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./infra/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - default_network
+    restart: unless-stopped
+
+  # AlertManager for enterprise notifications
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    volumes:
+      - ./infra/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager_data:/alertmanager
+    ports:
+      - "9093:9093"
+    depends_on:
+      - prometheus
+    networks:
+      - default_network
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  alertmanager_data:
+  monitoring_logs:
+
+networks:
+  default_network:
+    driver: bridge
