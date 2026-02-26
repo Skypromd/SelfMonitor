@@ -14,11 +14,28 @@ type ProfileState = {
   date_of_birth: string;
 };
 
+type SubscriptionState = {
+  subscription_plan: string;
+  monthly_close_day: number;
+  subscription_status: string;
+  billing_cycle: string;
+  current_period_start: string;
+  current_period_end: string;
+};
+
 export default function ProfilePage({ token }: ProfilePageProps) {
   const [profile, setProfile] = useState<ProfileState>({
     first_name: '',
     last_name: '',
     date_of_birth: '',
+  });
+  const [subscription, setSubscription] = useState<SubscriptionState>({
+    subscription_plan: 'free',
+    monthly_close_day: 1,
+    subscription_status: 'active',
+    billing_cycle: 'monthly',
+    current_period_start: '',
+    current_period_end: '',
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -57,6 +74,36 @@ export default function ProfilePage({ token }: ProfilePageProps) {
 
   const handleProfileChange = (event: ChangeEvent<HTMLInputElement>) => {
     setProfile((current) => ({ ...current, [event.target.name]: event.target.value }));
+  };
+
+  const handleSubscriptionChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setSubscription((current) => ({ ...current, [event.target.name]: event.target.value }));
+  };
+
+  const handleSaveSubscription = async (event: FormEvent) => {
+    event.preventDefault();
+    setMessage('');
+    setError('');
+
+    try {
+      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me/subscription`, {
+        body: JSON.stringify({
+          subscription_plan: subscription.subscription_plan,
+          monthly_close_day: Number(subscription.monthly_close_day),
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        method: 'PUT',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update subscription');
+      }
+      setMessage('Subscription updated successfully!');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+    }
   };
 
   const handleSaveProfile = async (event: FormEvent) => {

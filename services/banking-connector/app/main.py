@@ -8,6 +8,7 @@ from typing import List, Optional
 import hvac
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, HttpUrl
+
 from .celery_app import import_transactions_task
 
 logger = logging.getLogger(__name__)
@@ -98,8 +99,6 @@ async def initiate_connection(
 @app.get("/connections/callback", response_model=CallbackResponse)
 async def handle_provider_callback(
     code: str,
-    user_id: str = Depends(get_current_user_id),
-    auth_token: str = Depends(oauth2_scheme),
     state: Optional[str] = None,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),

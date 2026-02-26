@@ -22,7 +22,6 @@ export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const { t } = useTranslation();
-  const effectiveUserId = userId || 'fake-user-123';
 
   useEffect(() => {
     const fetchActivity = async () => {

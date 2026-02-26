@@ -112,13 +112,15 @@ def index_document_content(user_id: str, doc_id: str, filename: str, content: st
         with httpx.Client() as client:
             response = client.post(
                 QNA_SERVICE_URL,
-                headers={"X-Internal-Token": QNA_INTERNAL_TOKEN},
+                headers={
+                    "X-Internal-Token": QNA_INTERNAL_TOKEN,
+                    "Authorization": f"Bearer {token}",
+                },
                 json={
                     "document_id": doc_id,
                     "filename": filename,
                     "text_content": content,
                 },
-                headers={"Authorization": f"Bearer {token}"},
                 timeout=10.0,
             )
             response.raise_for_status()
