@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": [
+    "services/localization-service/catalogs/translations/*.json",
+    "node_modules",
+    ".venv",
+    "**/*.min.js",
+    "**/*.lock"
+  ],
+  "words": [
+    "selfmonitor",
+    "hmrc",
+    "uvicorn",
+    "fastapi",
+    "pydantic",
+    "alembic",
+    "asyncpg",
+    "aiohttp"
+  ]
+}
