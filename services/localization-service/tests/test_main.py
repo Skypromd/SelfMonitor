@@ -47,7 +47,7 @@ def test_get_translations_german_common():
 
 
 def test_get_translations_unknown_locale():
-    response = client.get("/translations/fr-FR/login")
+    response = client.get("/translations/ja-JP/login")
     assert response.status_code == 404
 
 
@@ -95,8 +95,8 @@ def test_reports_translations():
 
 
 def test_404_detail_message_includes_locale_and_component():
-    response = client.get("/translations/fr-FR/login")
+    response = client.get("/translations/ja-JP/login")
     assert response.status_code == 404
     detail = response.json()["detail"]
-    assert "fr-FR" in detail
+    assert "ja-JP" in detail
     assert "login" in detail

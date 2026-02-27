@@ -156,5 +156,716 @@
       "search_button": "Suchen",
       "all_documents_title": "Alle hochgeladenen Dokumente"
     }
+  },
+  "pl-PL": {
+    "common": {
+      "submit": "Wyślij",
+      "cancel": "Anuluj",
+      "logout": "Wyloguj",
+      "save": "Zapisz"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Zarejestruj się lub zaloguj, aby kontynuować",
+      "register_button": "Rejestracja",
+      "login_button": "Zaloguj"
+    },
+    "nav": {
+      "dashboard": "Panel główny",
+      "activity": "Dziennik aktywności",
+      "transactions": "Transakcje",
+      "documents": "Dokumenty",
+      "reports": "Raporty",
+      "marketplace": "Rynek",
+      "submission": "Zgłoszenie HMRC",
+      "profile": "Profil",
+      "admin": "Admin"
+    },
+    "dashboard": {
+      "title": "Panel główny",
+      "description": "Witamy w panelu finansowym."
+    },
+    "profile": {
+      "title": "Twój profil"
+    },
+    "partners": {
+      "description": "Lista zaufanych partnerów regulowanych przez FCA.",
+      "handoff_button": "Rozpocznij przekazanie"
+    },
+    "submission": {
+      "description": "Oblicz i złóż zeznanie podatkowe do HMRC.",
+      "form_title": "Nowe zeznanie podatkowe UK",
+      "submit_button": "Oblicz i wyślij do HMRC",
+      "success_title": "Zgłoszenie wysłane pomyślnie"
+    },
+    "admin": {
+      "description": "Zarządzaj użytkownikami i ustawieniami.",
+      "form_title": "Dezaktywuj użytkownika",
+      "deactivate_button": "Dezaktywuj"
+    },
+    "reports": {
+      "description": "Generuj raporty na podstawie danych finansowych.",
+      "mortgage_title": "Raport gotowości hipotecznej",
+      "mortgage_description": "Wygeneruj podsumowanie dochodów z ostatnich 12 miesięcy w formacie PDF.",
+      "generate_button": "Generuj raport",
+      "generating_button": "Generowanie..."
+    },
+    "marketplace": {
+      "description": "Odkryj nasz rynek zaufanych partnerów."
+    },
+    "activity": {
+      "description": "Historia ostatnich ważnych zdarzeń na koncie.",
+      "col_date": "Data",
+      "col_action": "Akcja",
+      "col_details": "Szczegóły"
+    },
+    "documents": {
+      "description": "Przesyłaj i zarządzaj paragonami i fakturami.",
+      "upload_title": "Prześlij dokument",
+      "upload_button": "Prześlij",
+      "uploading_button": "Przesyłanie...",
+      "col_filename": "Nazwa pliku",
+      "col_status": "Status",
+      "col_vendor": "Dostawca",
+      "col_amount": "Kwota",
+      "col_uploaded_at": "Data przesłania",
+      "search_title": "Semantyczne wyszukiwanie",
+      "search_description": "Zadaj pytanie o swoje dokumenty.",
+      "search_placeholder": "np. 'gdzie kupiłem kawę w zeszłym miesiącu?'",
+      "search_button": "Szukaj",
+      "all_documents_title": "Wszystkie dokumenty"
+    }
+  },
+  "ro-RO": {
+    "common": {
+      "submit": "Trimite",
+      "cancel": "Anulează",
+      "logout": "Deconectare",
+      "save": "Salvează"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Înregistrați-vă sau conectați-vă pentru a continua",
+      "register_button": "Înregistrare",
+      "login_button": "Conectare"
+    },
+    "nav": {
+      "dashboard": "Panou principal",
+      "activity": "Jurnal activitate",
+      "transactions": "Tranzacții",
+      "documents": "Documente",
+      "reports": "Rapoarte",
+      "marketplace": "Piață",
+      "submission": "Declarație HMRC",
+      "profile": "Profil",
+      "admin": "Admin"
+    },
+    "dashboard": {
+      "title": "Panou principal",
+      "description": "Bine ați venit la panoul financiar."
+    },
+    "profile": {
+      "title": "Profilul tău"
+    },
+    "partners": {
+      "description": "Parteneri de încredere reglementați de FCA.",
+      "handoff_button": "Inițiază transferul"
+    },
+    "submission": {
+      "description": "Calculați și depuneți declarația fiscală la HMRC.",
+      "form_title": "Declarație fiscală nouă UK",
+      "submit_button": "Calculează și trimite la HMRC",
+      "success_title": "Declarație trimisă cu succes"
+    },
+    "admin": {
+      "description": "Gestionați utilizatorii și setările.",
+      "form_title": "Dezactivează utilizator",
+      "deactivate_button": "Dezactivează"
+    },
+    "reports": {
+      "description": "Generați rapoarte personalizate.",
+      "mortgage_title": "Raport ipotecă",
+      "mortgage_description": "Generați un rezumat PDF al veniturilor din ultimele 12 luni.",
+      "generate_button": "Generează raport",
+      "generating_button": "Se generează..."
+    },
+    "marketplace": {
+      "description": "Explorați piața noastră de parteneri de încredere."
+    },
+    "activity": {
+      "description": "Istoric evenimente recente.",
+      "col_date": "Data",
+      "col_action": "Acțiune",
+      "col_details": "Detalii"
+    },
+    "documents": {
+      "description": "Încărcați și gestionați chitanțele.",
+      "upload_title": "Încarcă document",
+      "upload_button": "Încarcă",
+      "uploading_button": "Se încarcă...",
+      "col_filename": "Nume fișier",
+      "col_status": "Status",
+      "col_vendor": "Furnizor",
+      "col_amount": "Sumă",
+      "col_uploaded_at": "Încărcat la",
+      "search_title": "Căutare semantică",
+      "search_description": "Puneți o întrebare despre documentele dvs.",
+      "search_placeholder": "ex. 'unde am cumpărat cafea luna trecută?'",
+      "search_button": "Caută",
+      "all_documents_title": "Toate documentele"
+    }
+  },
+  "it-IT": {
+    "common": {
+      "submit": "Invia",
+      "cancel": "Annulla",
+      "logout": "Esci",
+      "save": "Salva"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Registrati o accedi per continuare",
+      "register_button": "Registrati",
+      "login_button": "Accedi"
+    },
+    "nav": {
+      "dashboard": "Dashboard",
+      "activity": "Registro attività",
+      "transactions": "Transazioni",
+      "documents": "Documenti",
+      "reports": "Report",
+      "marketplace": "Marketplace",
+      "submission": "Dichiarazione HMRC",
+      "profile": "Profilo",
+      "admin": "Admin"
+    },
+    "dashboard": {
+      "title": "Dashboard principale",
+      "description": "Benvenuto nella tua dashboard finanziaria."
+    },
+    "profile": {
+      "title": "Il tuo profilo"
+    },
+    "partners": {
+      "description": "Partner affidabili regolamentati dalla FCA.",
+      "handoff_button": "Contatta"
+    },
+    "submission": {
+      "description": "Calcola e invia la dichiarazione fiscale a HMRC.",
+      "form_title": "Nuova dichiarazione fiscale UK",
+      "submit_button": "Calcola e invia a HMRC",
+      "success_title": "Dichiarazione inviata con successo"
+    },
+    "admin": {
+      "description": "Gestisci utenti e impostazioni.",
+      "form_title": "Disattiva utente",
+      "deactivate_button": "Disattiva"
+    },
+    "reports": {
+      "description": "Genera report personalizzati.",
+      "mortgage_title": "Report mutuo",
+      "mortgage_description": "Genera un riepilogo PDF del reddito degli ultimi 12 mesi.",
+      "generate_button": "Genera report",
+      "generating_button": "Generazione..."
+    },
+    "marketplace": {
+      "description": "Esplora il marketplace di partner affidabili."
+    },
+    "activity": {
+      "description": "Cronologia degli eventi recenti.",
+      "col_date": "Data",
+      "col_action": "Azione",
+      "col_details": "Dettagli"
+    },
+    "documents": {
+      "description": "Carica e gestisci ricevute e fatture.",
+      "upload_title": "Carica documento",
+      "upload_button": "Carica",
+      "uploading_button": "Caricamento...",
+      "col_filename": "Nome file",
+      "col_status": "Stato",
+      "col_vendor": "Fornitore",
+      "col_amount": "Importo",
+      "col_uploaded_at": "Caricato il",
+      "search_title": "Ricerca semantica",
+      "search_description": "Fai una domanda sui tuoi documenti.",
+      "search_placeholder": "es. 'dove ho comprato il caffè il mese scorso?'",
+      "search_button": "Cerca",
+      "all_documents_title": "Tutti i documenti"
+    }
+  },
+  "pt-PT": {
+    "common": {
+      "submit": "Enviar",
+      "cancel": "Cancelar",
+      "logout": "Sair",
+      "save": "Guardar"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Registe-se ou entre para continuar",
+      "register_button": "Registar",
+      "login_button": "Entrar"
+    },
+    "nav": {
+      "dashboard": "Painel",
+      "activity": "Registo de atividade",
+      "transactions": "Transações",
+      "documents": "Documentos",
+      "reports": "Relatórios",
+      "marketplace": "Mercado",
+      "submission": "Declaração HMRC",
+      "profile": "Perfil",
+      "admin": "Admin"
+    },
+    "dashboard": {
+      "title": "Painel principal",
+      "description": "Bem-vindo ao seu painel financeiro."
+    },
+    "profile": {
+      "title": "O seu perfil"
+    },
+    "partners": {
+      "description": "Parceiros de confiança regulados pela FCA.",
+      "handoff_button": "Contactar"
+    },
+    "submission": {
+      "description": "Calcule e submeta a sua declaração fiscal ao HMRC.",
+      "form_title": "Nova declaração fiscal UK",
+      "submit_button": "Calcular e enviar ao HMRC",
+      "success_title": "Declaração submetida com sucesso"
+    },
+    "admin": {
+      "description": "Gerir utilizadores e definições.",
+      "form_title": "Desativar utilizador",
+      "deactivate_button": "Desativar"
+    },
+    "reports": {
+      "description": "Gere relatórios personalizados.",
+      "mortgage_title": "Relatório hipotecário",
+      "mortgage_description": "Gere um resumo PDF dos rendimentos dos últimos 12 meses.",
+      "generate_button": "Gerar relatório",
+      "generating_button": "A gerar..."
+    },
+    "marketplace": {
+      "description": "Explore o nosso mercado de parceiros de confiança."
+    },
+    "activity": {
+      "description": "Histórico de eventos recentes.",
+      "col_date": "Data",
+      "col_action": "Ação",
+      "col_details": "Detalhes"
+    },
+    "documents": {
+      "description": "Carregue e gira os seus recibos e faturas.",
+      "upload_title": "Carregar documento",
+      "upload_button": "Carregar",
+      "uploading_button": "A carregar...",
+      "col_filename": "Nome do ficheiro",
+      "col_status": "Estado",
+      "col_vendor": "Fornecedor",
+      "col_amount": "Montante",
+      "col_uploaded_at": "Carregado em",
+      "search_title": "Pesquisa semântica",
+      "search_description": "Faça uma pergunta sobre os seus documentos.",
+      "search_placeholder": "ex. 'onde comprei café no mês passado?'",
+      "search_button": "Pesquisar",
+      "all_documents_title": "Todos os documentos"
+    }
+  },
+  "es-ES": {
+    "common": {
+      "submit": "Enviar",
+      "cancel": "Cancelar",
+      "logout": "Cerrar sesión",
+      "save": "Guardar"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Regístrate o inicia sesión para continuar",
+      "register_button": "Registrarse",
+      "login_button": "Iniciar sesión"
+    },
+    "nav": {
+      "dashboard": "Panel",
+      "activity": "Registro de actividad",
+      "transactions": "Transacciones",
+      "documents": "Documentos",
+      "reports": "Informes",
+      "marketplace": "Mercado",
+      "submission": "Declaración HMRC",
+      "profile": "Perfil",
+      "admin": "Admin"
+    },
+    "dashboard": {
+      "title": "Panel principal",
+      "description": "Bienvenido a tu panel financiero."
+    },
+    "profile": {
+      "title": "Tu perfil"
+    },
+    "partners": {
+      "description": "Socios de confianza regulados por la FCA.",
+      "handoff_button": "Contactar"
+    },
+    "submission": {
+      "description": "Calcula y presenta tu declaración fiscal ante HMRC.",
+      "form_title": "Nueva declaración fiscal UK",
+      "submit_button": "Calcular y enviar a HMRC",
+      "success_title": "Declaración enviada con éxito"
+    },
+    "admin": {
+      "description": "Gestionar usuarios y configuración.",
+      "form_title": "Desactivar usuario",
+      "deactivate_button": "Desactivar"
+    },
+    "reports": {
+      "description": "Genera informes personalizados.",
+      "mortgage_title": "Informe hipotecario",
+      "mortgage_description": "Genera un resumen PDF de tus ingresos de los últimos 12 meses.",
+      "generate_button": "Generar informe",
+      "generating_button": "Generando..."
+    },
+    "marketplace": {
+      "description": "Explora nuestro mercado de socios de confianza."
+    },
+    "activity": {
+      "description": "Historial de eventos recientes.",
+      "col_date": "Fecha",
+      "col_action": "Acción",
+      "col_details": "Detalles"
+    },
+    "documents": {
+      "description": "Sube y gestiona tus recibos y facturas.",
+      "upload_title": "Subir documento",
+      "upload_button": "Subir",
+      "uploading_button": "Subiendo...",
+      "col_filename": "Nombre",
+      "col_status": "Estado",
+      "col_vendor": "Proveedor",
+      "col_amount": "Importe",
+      "col_uploaded_at": "Subido el",
+      "search_title": "Búsqueda semántica",
+      "search_description": "Haz una pregunta sobre tus documentos.",
+      "search_placeholder": "ej. '¿dónde compré café el mes pasado?'",
+      "search_button": "Buscar",
+      "all_documents_title": "Todos los documentos"
+    }
+  },
+  "tr-TR": {
+    "common": {
+      "submit": "Gönder",
+      "cancel": "İptal",
+      "logout": "Çıkış",
+      "save": "Kaydet"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Devam etmek için kayıt olun veya giriş yapın",
+      "register_button": "Kayıt Ol",
+      "login_button": "Giriş Yap"
+    },
+    "nav": {
+      "dashboard": "Ana Panel",
+      "activity": "Etkinlik Günlüğü",
+      "transactions": "İşlemler",
+      "documents": "Belgeler",
+      "reports": "Raporlar",
+      "marketplace": "Pazar Yeri",
+      "submission": "HMRC Bildirimi",
+      "profile": "Profil",
+      "admin": "Yönetici"
+    },
+    "dashboard": {
+      "title": "Ana Panel",
+      "description": "Finansal panelinize hoş geldiniz."
+    },
+    "profile": {
+      "title": "Profiliniz"
+    },
+    "partners": {
+      "description": "FCA tarafından düzenlenen güvenilir ortaklar.",
+      "handoff_button": "İletişime Geç"
+    },
+    "submission": {
+      "description": "Vergi beyannamenizi hesaplayın ve HMRC'ye gönderin.",
+      "form_title": "Yeni UK Vergi Beyannamesi",
+      "submit_button": "Hesapla ve HMRC'ye Gönder",
+      "success_title": "Beyanname başarıyla gönderildi"
+    },
+    "admin": {
+      "description": "Kullanıcıları ve ayarları yönetin.",
+      "form_title": "Kullanıcıyı Devre Dışı Bırak",
+      "deactivate_button": "Devre Dışı Bırak"
+    },
+    "reports": {
+      "description": "Finansal verilerinize dayalı raporlar oluşturun.",
+      "mortgage_title": "Mortgage Raporu",
+      "mortgage_description": "Son 12 aylık gelir özetinin PDF'ini oluşturun.",
+      "generate_button": "Rapor Oluştur",
+      "generating_button": "Oluşturuluyor..."
+    },
+    "marketplace": {
+      "description": "Güvenilir ortaklardan oluşan pazar yerimizi keşfedin."
+    },
+    "activity": {
+      "description": "Son önemli olayların kaydı.",
+      "col_date": "Tarih",
+      "col_action": "İşlem",
+      "col_details": "Ayrıntılar"
+    },
+    "documents": {
+      "description": "Makbuzlarınızı ve faturalarınızı yükleyin ve yönetin.",
+      "upload_title": "Belge Yükle",
+      "upload_button": "Yükle",
+      "uploading_button": "Yükleniyor...",
+      "col_filename": "Dosya Adı",
+      "col_status": "Durum",
+      "col_vendor": "Tedarikçi",
+      "col_amount": "Tutar",
+      "col_uploaded_at": "Yüklenme Tarihi",
+      "search_title": "Anlamsal Arama",
+      "search_description": "Belgeleriniz hakkında bir soru sorun.",
+      "search_placeholder": "ör. 'geçen ay nereden kahve aldım?'",
+      "search_button": "Ara",
+      "all_documents_title": "Tüm Belgeler"
+    }
+  },
+  "fr-FR": {
+    "common": {
+      "submit": "Soumettre",
+      "cancel": "Annuler",
+      "logout": "Déconnexion",
+      "save": "Enregistrer"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Inscrivez-vous ou connectez-vous pour continuer",
+      "register_button": "S'inscrire",
+      "login_button": "Se connecter"
+    },
+    "nav": {
+      "dashboard": "Tableau de bord",
+      "activity": "Journal d'activité",
+      "transactions": "Transactions",
+      "documents": "Documents",
+      "reports": "Rapports",
+      "marketplace": "Marketplace",
+      "submission": "Déclaration HMRC",
+      "profile": "Profil",
+      "admin": "Admin"
+    },
+    "dashboard": {
+      "title": "Tableau de bord",
+      "description": "Bienvenue dans votre tableau de bord financier."
+    },
+    "profile": {
+      "title": "Votre profil"
+    },
+    "partners": {
+      "description": "Partenaires de confiance régulés par la FCA.",
+      "handoff_button": "Contacter"
+    },
+    "submission": {
+      "description": "Calculez et soumettez votre déclaration fiscale au HMRC.",
+      "form_title": "Nouvelle déclaration UK",
+      "submit_button": "Calculer et soumettre au HMRC",
+      "success_title": "Déclaration soumise avec succès"
+    },
+    "admin": {
+      "description": "Gérer les utilisateurs et les paramètres.",
+      "form_title": "Désactiver un utilisateur",
+      "deactivate_button": "Désactiver"
+    },
+    "reports": {
+      "description": "Générez des rapports personnalisés.",
+      "mortgage_title": "Rapport hypothécaire",
+      "mortgage_description": "Générez un résumé PDF de vos revenus des 12 derniers mois.",
+      "generate_button": "Générer le rapport",
+      "generating_button": "Génération..."
+    },
+    "marketplace": {
+      "description": "Découvrez notre marketplace de partenaires de confiance."
+    },
+    "activity": {
+      "description": "Historique des événements récents.",
+      "col_date": "Date",
+      "col_action": "Action",
+      "col_details": "Détails"
+    },
+    "documents": {
+      "description": "Téléchargez et gérez vos reçus et factures.",
+      "upload_title": "Télécharger un document",
+      "upload_button": "Télécharger",
+      "uploading_button": "Téléchargement...",
+      "col_filename": "Nom du fichier",
+      "col_status": "Statut",
+      "col_vendor": "Fournisseur",
+      "col_amount": "Montant",
+      "col_uploaded_at": "Téléchargé le",
+      "search_title": "Recherche sémantique",
+      "search_description": "Posez une question sur vos documents.",
+      "search_placeholder": "ex. 'où ai-je acheté du café le mois dernier ?'",
+      "search_button": "Chercher",
+      "all_documents_title": "Tous les documents"
+    }
+  },
+  "bn-BD": {
+    "common": {
+      "submit": "জমা দিন",
+      "cancel": "বাতিল",
+      "logout": "লগআউট",
+      "save": "সংরক্ষণ"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "চালিয়ে যেতে নিবন্ধন করুন বা লগইন করুন",
+      "register_button": "নিবন্ধন",
+      "login_button": "লগইন"
+    },
+    "nav": {
+      "dashboard": "ড্যাশবোর্ড",
+      "activity": "কার্যকলাপ",
+      "transactions": "লেনদেন",
+      "documents": "নথিপত্র",
+      "reports": "প্রতিবেদন",
+      "marketplace": "মার্কেটপ্লেস",
+      "submission": "HMRC জমা",
+      "profile": "প্রোফাইল",
+      "admin": "অ্যাডমিন"
+    },
+    "dashboard": {
+      "title": "প্রধান ড্যাশবোর্ড",
+      "description": "আপনার আর্থিক ড্যাশবোর্ডে স্বাগতম।"
+    },
+    "profile": {
+      "title": "আপনার প্রোফাইল"
+    },
+    "partners": {
+      "description": "FCA নিয়ন্ত্রিত বিশ্বস্ত অংশীদার।",
+      "handoff_button": "যোগাযোগ করুন"
+    },
+    "submission": {
+      "description": "আপনার কর রিটার্ন গণনা করুন এবং HMRC-তে জমা দিন।",
+      "form_title": "নতুন UK কর জমা",
+      "submit_button": "গণনা করুন এবং HMRC-তে পাঠান",
+      "success_title": "জমা সফলভাবে শুরু হয়েছে"
+    },
+    "admin": {
+      "description": "ব্যবহারকারী এবং সেটিংস পরিচালনা করুন।",
+      "form_title": "ব্যবহারকারী নিষ্ক্রিয় করুন",
+      "deactivate_button": "নিষ্ক্রিয় করুন"
+    },
+    "reports": {
+      "description": "আর্থিক ডেটার উপর ভিত্তি করে প্রতিবেদন তৈরি করুন।",
+      "mortgage_title": "বন্ধকী প্রতিবেদন",
+      "mortgage_description": "গত ১২ মাসের আয়ের PDF সারাংশ তৈরি করুন।",
+      "generate_button": "প্রতিবেদন তৈরি",
+      "generating_button": "তৈরি হচ্ছে..."
+    },
+    "marketplace": {
+      "description": "আমাদের বিশ্বস্ত অংশীদারদের মার্কেটপ্লেস অন্বেষণ করুন।"
+    },
+    "activity": {
+      "description": "সাম্প্রতিক গুরুত্বপূর্ণ ঘটনার ইতিহাস।",
+      "col_date": "তারিখ",
+      "col_action": "কার্যক্রম",
+      "col_details": "বিবরণ"
+    },
+    "documents": {
+      "description": "আপনার রসিদ এবং চালান আপলোড এবং পরিচালনা করুন।",
+      "upload_title": "নথি আপলোড",
+      "upload_button": "আপলোড",
+      "uploading_button": "আপলোড হচ্ছে...",
+      "col_filename": "ফাইলের নাম",
+      "col_status": "অবস্থা",
+      "col_vendor": "বিক্রেতা",
+      "col_amount": "পরিমাণ",
+      "col_uploaded_at": "আপলোডের তারিখ",
+      "search_title": "সেমান্টিক অনুসন্ধান",
+      "search_description": "আপনার নথি সম্পর্কে প্রশ্ন করুন।",
+      "search_placeholder": "যেমন 'গত মাসে কোথায় কফি কিনেছিলাম?'",
+      "search_button": "অনুসন্ধান",
+      "all_documents_title": "সকল নথি"
+    }
+  },
+  "ru-RU": {
+    "common": {
+      "submit": "Отправить",
+      "cancel": "Отмена",
+      "logout": "Выход",
+      "save": "Сохранить"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Зарегистрируйтесь или войдите",
+      "register_button": "Регистрация",
+      "login_button": "Войти"
+    },
+    "nav": {
+      "dashboard": "Главная",
+      "activity": "Журнал",
+      "transactions": "Транзакции",
+      "documents": "Документы",
+      "reports": "Отчёты",
+      "marketplace": "Маркетплейс",
+      "submission": "Подача в HMRC",
+      "profile": "Профиль",
+      "admin": "Админ"
+    },
+    "dashboard": {
+      "title": "Главная панель",
+      "description": "Добро пожаловать в финансовую панель."
+    },
+    "profile": {
+      "title": "Ваш профиль"
+    },
+    "partners": {
+      "description": "Список доверенных партнёров, регулируемых FCA.",
+      "handoff_button": "Связаться"
+    },
+    "submission": {
+      "description": "Рассчитайте и подайте налоговую декларацию в HMRC.",
+      "form_title": "Новая декларация UK",
+      "submit_button": "Рассчитать и отправить в HMRC",
+      "success_title": "Декларация успешно отправлена"
+    },
+    "admin": {
+      "description": "Управление пользователями и настройками.",
+      "form_title": "Деактивировать пользователя",
+      "deactivate_button": "Деактивировать"
+    },
+    "reports": {
+      "description": "Создавайте отчёты на основе финансовых данных.",
+      "mortgage_title": "Отчёт для ипотеки",
+      "mortgage_description": "Создайте PDF-сводку доходов за последние 12 месяцев.",
+      "generate_button": "Создать отчёт",
+      "generating_button": "Создание..."
+    },
+    "marketplace": {
+      "description": "Маркетплейс доверенных партнёров по бухгалтерии, ипотеке и страхованию."
+    },
+    "activity": {
+      "description": "История последних важных событий.",
+      "col_date": "Дата",
+      "col_action": "Действие",
+      "col_details": "Подробности"
+    },
+    "documents": {
+      "description": "Загружайте и управляйте чеками и счетами.",
+      "upload_title": "Загрузить документ",
+      "upload_button": "Загрузить",
+      "uploading_button": "Загрузка...",
+      "col_filename": "Имя файла",
+      "col_status": "Статус",
+      "col_vendor": "Поставщик",
+      "col_amount": "Сумма",
+      "col_uploaded_at": "Дата загрузки",
+      "search_title": "Семантический поиск",
+      "search_description": "Задайте вопрос о ваших документах.",
+      "search_placeholder": "напр. 'где я покупал кофе в прошлом месяце?'",
+      "search_button": "Искать",
+      "all_documents_title": "Все документы"
+    }
   }
 }
