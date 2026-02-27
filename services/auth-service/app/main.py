@@ -1,10 +1,13 @@
+from collections import defaultdict
 from datetime import timedelta
 import datetime
 import io
 import logging
 import os
+import re
 import sqlite3
 import threading
+import time
 import uuid
 from typing import Annotated, Optional, List
 
@@ -56,6 +59,51 @@ def get_password_hash(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+
+def validate_password_strength(password: str) -> None:
+    errors = []
+    if len(password) < 8:
+        errors.append("at least 8 characters")
+    if not re.search(r'[A-Z]', password):
+        errors.append("at least one uppercase letter")
+    if not re.search(r'[a-z]', password):
+        errors.append("at least one lowercase letter")
+    if not re.search(r'\d', password):
+        errors.append("at least one digit")
+    if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
+        errors.append("at least one special character")
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Password must contain: {', '.join(errors)}"
+        )
+
+
+# --- Account Lockout ---
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+LOCKOUT_THRESHOLD = 5
+LOCKOUT_WINDOW_SECONDS = 900  # 15 minutes
+
+
+def check_account_lockout(email: str) -> None:
+    now = time.time()
+    attempts = _login_attempts[email]
+    _login_attempts[email] = [t for t in attempts if now - t < LOCKOUT_WINDOW_SECONDS]
+    if len(_login_attempts[email]) >= LOCKOUT_THRESHOLD:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Account temporarily locked. Try again in 15 minutes."
+        )
+
+
+def record_failed_attempt(email: str) -> None:
+    _login_attempts[email].append(time.time())
+
+
+def clear_failed_attempts(email: str) -> None:
+    _login_attempts.pop(email, None)
+
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
@@ -102,6 +150,10 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     email: Optional[str] = None
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 # --- Database ---
 def _connect() -> sqlite3.Connection:
@@ -238,6 +290,7 @@ async def require_admin(current_user: Annotated[User, Depends(get_current_active
 @app.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate):
     user_email = str(user_in.email)
+    validate_password_strength(user_in.password)
     if get_user_record(user_email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -259,8 +312,11 @@ async def register(user_in: UserCreate):
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+    check_account_lockout(form_data.username)
+
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
+        record_failed_attempt(form_data.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -269,7 +325,6 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
 
     # --- 2FA Check ---
     if user.is_two_factor_enabled:
-        # We'll use the 'scope' field to pass the TOTP code, e.g., "totp:123456"
         totp_code = None
         if form_data.scopes:
             scope_parts = form_data.scopes[0].split(':')
@@ -277,13 +332,18 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
                 totp_code = scope_parts[1]
 
         if not totp_code:
-            raise HTTPException(status_code=401, detail="2FA code required in 'scope' field (e.g., 'totp:123456')")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="2FA_REQUIRED",
+                headers={"X-2FA-Required": "true"}
+            )
 
         row = get_user_record(user.email)
         totp = pyotp.TOTP(row["two_factor_secret"] if row else None)
         if not totp.verify(totp_code):
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
 
+    clear_failed_attempts(form_data.username)
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
@@ -325,6 +385,36 @@ async def setup_two_factor_auth(current_user: Annotated[User, Depends(get_curren
     buf.seek(0)
 
     return Response(content=buf.getvalue(), media_type="image/png")
+
+
+@app.get("/2fa/setup-json")
+async def setup_two_factor_auth_json(current_user: Annotated[User, Depends(get_current_active_user)]):
+    if current_user.is_two_factor_enabled:
+        raise HTTPException(status_code=400, detail="2FA is already enabled.")
+
+    secret = pyotp.random_base32()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE users SET two_factor_secret = ? WHERE email = ?",
+                (secret, current_user.email),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    totp = pyotp.TOTP(secret)
+    provisioning_uri = totp.provisioning_uri(
+        name=current_user.email,
+        issuer_name="SelfMonitor"
+    )
+
+    return {
+        "secret": secret,
+        "provisioning_uri": provisioning_uri,
+        "issuer": "SelfMonitor"
+    }
 
 
 @app.post("/2fa/verify")
@@ -382,6 +472,32 @@ async def disable_two_factor_auth(
 @app.get("/me", response_model=User)
 async def read_users_me(current_user: Annotated[User, Depends(get_current_active_user)]):
     return current_user
+
+
+@app.post("/change-password")
+async def change_password(
+    payload: PasswordChange,
+    current_user: Annotated[User, Depends(get_current_active_user)]
+):
+    row = get_user_record(current_user.email)
+    if not row or not verify_password(payload.current_password, row["hashed_password"]):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    validate_password_strength(payload.new_password)
+
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE users SET hashed_password = ? WHERE email = ?",
+                (get_password_hash(payload.new_password), current_user.email),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    return {"message": "Password changed successfully"}
+
 
 @app.post("/users/{user_email}/deactivate", response_model=User)
 async def deactivate_user(
