@@ -119,6 +119,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    plan: str = "free"
 
 class User(BaseModel):
     email: EmailStr
@@ -126,8 +127,10 @@ class User(BaseModel):
     is_admin: bool = False
     is_two_factor_enabled: bool = False
     organization_id: Optional[str] = None
-    role: str = "user"  # user, manager, admin, owner
-    subscription_tier: str = "free"  # free, pro, enterprise
+    role: str = "user"
+    subscription_tier: str = "free"
+    subscription_status: str = "active"
+    trial_days_remaining: Optional[int] = None
 
 class Organization(BaseModel):
     id: str
@@ -191,6 +194,16 @@ def init_auth_db() -> None:
             )
             """
         )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS subscriptions (
+                user_email TEXT PRIMARY KEY,
+                plan TEXT NOT NULL DEFAULT 'free',
+                status TEXT NOT NULL DEFAULT 'active',
+                trial_end TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+        """)
         conn.commit()
         if AUTH_BOOTSTRAP_ADMIN:
             _seed_admin_user(conn)
@@ -201,6 +214,7 @@ def reset_auth_db_for_tests() -> None:
     with db_lock:
         conn = _connect()
         conn.execute("DELETE FROM users")
+        conn.execute("DELETE FROM subscriptions")
         conn.commit()
         conn.close()
 
@@ -224,6 +238,71 @@ def set_user_admin_for_tests(email: str, is_admin: bool) -> None:
         )
         conn.commit()
         conn.close()
+
+
+# --- Subscription Logic ---
+PLAN_HIERARCHY = {"free": 0, "starter": 1, "pro": 2, "business": 3}
+TRIAL_DAYS = 14
+
+def get_subscription(email: str) -> dict:
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT * FROM subscriptions WHERE user_email = ?", (email,)).fetchone()
+        finally:
+            conn.close()
+    if not row:
+        return {"user_email": email, "plan": "free", "status": "active", "trial_end": None}
+    sub = dict(row)
+    if sub["status"] == "trialing" and sub["trial_end"]:
+        if datetime.datetime.fromisoformat(sub["trial_end"]) < datetime.datetime.now(datetime.UTC):
+            _expire_trial(email)
+            sub["status"] = "expired"
+            sub["plan"] = "free"
+    return sub
+
+def create_subscription(email: str, plan: str) -> dict:
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    trial_end = None
+    status = "active"
+    if plan != "free":
+        trial_end = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=TRIAL_DAYS)).isoformat()
+        status = "trialing"
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute("""
+                INSERT OR REPLACE INTO subscriptions (user_email, plan, status, trial_end, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (email, plan, status, trial_end, now, now))
+            conn.commit()
+        finally:
+            conn.close()
+    return {"user_email": email, "plan": plan, "status": status, "trial_end": trial_end}
+
+def _expire_trial(email: str) -> None:
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute("UPDATE subscriptions SET plan = 'free', status = 'expired', updated_at = ? WHERE user_email = ?", (now, email))
+            conn.commit()
+        finally:
+            conn.close()
+
+def update_subscription_plan(email: str, new_plan: str) -> dict:
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute("UPDATE subscriptions SET plan = ?, status = 'active', updated_at = ? WHERE user_email = ?", (new_plan, now, email))
+            conn.commit()
+        finally:
+            conn.close()
+    return get_subscription(email)
+
+def has_plan_access(user_plan: str, required_plan: str) -> bool:
+    return PLAN_HIERARCHY.get(user_plan, 0) >= PLAN_HIERARCHY.get(required_plan, 0)
 
 
 def get_user(email: str) -> Optional[User]:
@@ -307,6 +386,9 @@ async def register(user_in: UserCreate):
         )
         conn.commit()
         conn.close()
+    valid_plans = {"free", "starter", "pro", "business"}
+    plan = user_in.plan if user_in.plan in valid_plans else "free"
+    create_subscription(user_email, plan)
     return User(email=user_email, is_active=True, is_admin=False, is_two_factor_enabled=False)
 
 
@@ -471,6 +553,13 @@ async def disable_two_factor_auth(
 
 @app.get("/me", response_model=User)
 async def read_users_me(current_user: Annotated[User, Depends(get_current_active_user)]):
+    sub = get_subscription(current_user.email)
+    current_user.subscription_tier = sub["plan"]
+    current_user.subscription_status = sub["status"]
+    if sub["trial_end"]:
+        trial_end = datetime.datetime.fromisoformat(sub["trial_end"])
+        remaining = (trial_end - datetime.datetime.now(datetime.UTC)).days
+        current_user.trial_days_remaining = max(0, remaining)
     return current_user
 
 
@@ -524,6 +613,118 @@ async def deactivate_user(
     # Return the updated user model
     user_to_deactivate.is_active = False
     return user_to_deactivate
+
+
+# --- Subscription Endpoints ---
+
+class SubscriptionResponse(BaseModel):
+    user_email: str
+    plan: str
+    status: str
+    trial_end: Optional[str] = None
+    trial_days_remaining: Optional[int] = None
+    features: dict
+
+PLAN_FEATURES = {
+    "free": {
+        "bank_connections": 1, "transactions_per_month": 200,
+        "ai_categorization": False, "receipt_ocr": False,
+        "cash_flow_forecast": False, "tax_calculator": "basic",
+        "hmrc_submission": False, "smart_search": False,
+        "mortgage_reports": False, "advanced_analytics": False,
+        "api_access": False, "team_members": 1, "white_label": False
+    },
+    "starter": {
+        "bank_connections": 3, "transactions_per_month": 1000,
+        "ai_categorization": True, "receipt_ocr": True,
+        "cash_flow_forecast": True, "tax_calculator": "full",
+        "hmrc_submission": False, "smart_search": False,
+        "mortgage_reports": False, "advanced_analytics": False,
+        "api_access": False, "team_members": 1, "white_label": False
+    },
+    "pro": {
+        "bank_connections": 3, "transactions_per_month": 5000,
+        "ai_categorization": True, "receipt_ocr": True,
+        "cash_flow_forecast": True, "tax_calculator": "full",
+        "hmrc_submission": True, "smart_search": True,
+        "mortgage_reports": True, "advanced_analytics": True,
+        "api_access": True, "team_members": 1, "white_label": False
+    },
+    "business": {
+        "bank_connections": 3, "transactions_per_month": 999999,
+        "ai_categorization": True, "receipt_ocr": True,
+        "cash_flow_forecast": True, "tax_calculator": "full",
+        "hmrc_submission": True, "smart_search": True,
+        "mortgage_reports": True, "advanced_analytics": True,
+        "api_access": True, "team_members": 5, "white_label": True
+    },
+}
+
+@app.get("/subscription/me", response_model=SubscriptionResponse)
+async def get_my_subscription(current_user: Annotated[User, Depends(get_current_active_user)]):
+    sub = get_subscription(current_user.email)
+    trial_days = None
+    if sub.get("trial_end"):
+        trial_end = datetime.datetime.fromisoformat(sub["trial_end"])
+        trial_days = max(0, (trial_end - datetime.datetime.now(datetime.UTC)).days)
+    return SubscriptionResponse(
+        user_email=current_user.email,
+        plan=sub["plan"],
+        status=sub["status"],
+        trial_end=sub.get("trial_end"),
+        trial_days_remaining=trial_days,
+        features=PLAN_FEATURES.get(sub["plan"], PLAN_FEATURES["free"])
+    )
+
+@app.post("/subscription/upgrade")
+async def upgrade_subscription(
+    plan: str = Query(..., pattern="^(starter|pro|business)$"),
+    current_user: Annotated[User, Depends(get_current_active_user)] = None
+):
+    current_sub = get_subscription(current_user.email)
+    if not has_plan_access(plan, current_sub["plan"]):
+        pass
+    updated = update_subscription_plan(current_user.email, plan)
+    return {"message": f"Subscription upgraded to {plan}", "subscription": updated}
+
+@app.get("/subscription/plans")
+async def list_plans():
+    return {
+        "plans": [
+            {"id": "free", "name": "Free", "price_gbp": 0, "features": PLAN_FEATURES["free"]},
+            {"id": "starter", "name": "Starter", "price_gbp": 9, "features": PLAN_FEATURES["starter"]},
+            {"id": "pro", "name": "Pro", "price_gbp": 19, "features": PLAN_FEATURES["pro"], "popular": True},
+            {"id": "business", "name": "Business", "price_gbp": 39, "features": PLAN_FEATURES["business"]},
+        ],
+        "trial_days": 14
+    }
+
+@app.post("/subscription/check-access")
+async def check_feature_access(
+    feature: str = Query(...),
+    current_user: Annotated[User, Depends(get_current_active_user)] = None
+):
+    sub = get_subscription(current_user.email)
+    plan = sub["plan"]
+    features = PLAN_FEATURES.get(plan, PLAN_FEATURES["free"])
+    has_access = features.get(feature, False)
+    if isinstance(has_access, bool):
+        allowed = has_access
+    elif isinstance(has_access, int):
+        allowed = has_access > 0
+    else:
+        allowed = has_access != "basic" if feature == "tax_calculator" else bool(has_access)
+
+    if not allowed:
+        min_plan = "starter"
+        for p in ["starter", "pro", "business"]:
+            pf = PLAN_FEATURES[p]
+            val = pf.get(feature, False)
+            if val and val != "basic":
+                min_plan = p
+                break
+        return {"allowed": False, "required_plan": min_plan, "current_plan": plan}
+    return {"allowed": True, "current_plan": plan}
 
 
 init_auth_db()

@@ -6,8 +6,10 @@ os.environ["AUTH_SECRET_KEY"] = "test-secret"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.main import (
     app, get_user_record, reset_auth_db_for_tests, set_user_admin_for_tests,
-    _login_attempts,
+    _login_attempts, get_subscription, create_subscription, _expire_trial,
+    PLAN_FEATURES,
 )
+import datetime
 import pyotp
 
 client = TestClient(app)
@@ -323,3 +325,121 @@ def test_change_password_weak_new():
         "new_password": "weak",
     }, headers=headers)
     assert resp.status_code == 422  # Pydantic validation (min_length=8)
+
+
+# --- Subscription Tests ---
+
+def test_register_creates_free_subscription():
+    """Registration with default plan should create a free subscription."""
+    email = "sub-free@example.com"
+    resp = client.post("/register", json={"email": email, "password": STRONG_PASSWORD})
+    assert resp.status_code == 201
+    sub = get_subscription(email)
+    assert sub["plan"] == "free"
+    assert sub["status"] == "active"
+    assert sub["trial_end"] is None
+
+
+def test_register_with_plan_creates_trial():
+    """Registration with a paid plan should create a trialing subscription."""
+    email = "sub-starter@example.com"
+    resp = client.post("/register", json={"email": email, "password": STRONG_PASSWORD, "plan": "starter"})
+    assert resp.status_code == 201
+    sub = get_subscription(email)
+    assert sub["plan"] == "starter"
+    assert sub["status"] == "trialing"
+    assert sub["trial_end"] is not None
+
+
+def test_get_subscription_me():
+    """GET /subscription/me should return current subscription."""
+    email = "sub-me@example.com"
+    token = _register_and_login(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.get("/subscription/me", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["plan"] == "free"
+    assert data["status"] == "active"
+    assert "features" in data
+    assert data["features"]["bank_connections"] == 1
+
+
+def test_get_subscription_plans():
+    """GET /subscription/plans should return all plans."""
+    resp = client.get("/subscription/plans")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["plans"]) == 4
+    assert data["trial_days"] == 14
+    plan_ids = [p["id"] for p in data["plans"]]
+    assert plan_ids == ["free", "starter", "pro", "business"]
+
+
+def test_trial_auto_expiry():
+    """Expired trial should auto-expire to free plan."""
+    email = "sub-expire@example.com"
+    client.post("/register", json={"email": email, "password": STRONG_PASSWORD, "plan": "pro"})
+    sub = get_subscription(email)
+    assert sub["status"] == "trialing"
+
+    _expire_trial(email)
+    sub = get_subscription(email)
+    assert sub["status"] == "expired"
+    assert sub["plan"] == "free"
+
+
+def test_check_access_free_user():
+    """Free user should not have access to ai_categorization."""
+    email = "sub-access@example.com"
+    token = _register_and_login(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post("/subscription/check-access?feature=ai_categorization", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["allowed"] is False
+    assert data["current_plan"] == "free"
+    assert "required_plan" in data
+
+
+def test_check_access_allowed_feature():
+    """Free user should have access to bank_connections (int > 0)."""
+    email = "sub-access-ok@example.com"
+    token = _register_and_login(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post("/subscription/check-access?feature=bank_connections", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["allowed"] is True
+
+
+def test_upgrade_subscription():
+    """POST /subscription/upgrade should change the plan."""
+    email = "sub-upgrade@example.com"
+    token = _register_and_login(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.post("/subscription/upgrade?plan=pro", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["subscription"]["plan"] == "pro"
+
+    me_resp = client.get("/subscription/me", headers=headers)
+    assert me_resp.json()["plan"] == "pro"
+
+
+def test_me_includes_subscription_info():
+    """GET /me should include subscription_tier and subscription_status."""
+    email = "sub-me-info@example.com"
+    token = _register_and_login(email)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = client.get("/me", headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["subscription_tier"] == "free"
+    assert data["subscription_status"] == "active"
+    assert data["trial_days_remaining"] is None

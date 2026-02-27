@@ -78,12 +78,19 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   };
 
   useEffect(() => {
+    const saved = localStorage.getItem('preferredLocale');
+    if (!saved && (router.pathname === '/' || router.pathname === '/landing')) {
+      router.replace('/welcome');
+    }
+  }, [router]);
+
+  useEffect(() => {
     const storedToken = sessionStorage.getItem('authToken');
     if (storedToken) {
       setToken(storedToken);
       setUser(decodeUserFromToken(storedToken));
       fetchUserInfo(storedToken);
-    } else if (router.pathname !== '/' && router.pathname !== '/landing') {
+    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register' && router.pathname !== '/welcome') {
       router.replace('/');
     }
   }, [router.pathname, router]);
@@ -103,7 +110,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     router.push('/');
   };
 
-  if (router.pathname === '/' || router.pathname === '/landing') {
+  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/welcome') {
     return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }
 

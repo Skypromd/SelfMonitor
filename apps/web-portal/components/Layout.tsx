@@ -1,8 +1,21 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Layout.module.css';
+
+const LOCALE_FLAGS: Record<string, string> = {
+  'en-GB': '🇬🇧',
+  'pl-PL': '🇵🇱',
+  'ro-RO': '🇷🇴',
+  'uk-UA': '🇺🇦',
+  'ru-RU': '🇷🇺',
+  'es-ES': '🇪🇸',
+  'it-IT': '🇮🇹',
+  'pt-PT': '🇵🇹',
+  'tr-TR': '🇹🇷',
+  'bn-BD': '🇧🇩',
+};
 
 type UserSummary = {
   email?: string;
@@ -10,22 +23,18 @@ type UserSummary = {
 };
 
 type LayoutProps = {
-  children: ReactNode;
-  isDarkMode: boolean;
+  children: React.ReactNode;
   onLogout: () => void;
-  onToggleTheme: () => void;
-  userEmail?: string;
+  user: UserSummary;
 };
 
-export default function Layout({ children, isDarkMode, onLogout, onToggleTheme, userEmail }: LayoutProps) {
+export default function Layout({ children, onLogout, user }: LayoutProps) {
   const router = useRouter();
   const { t } = useTranslation();
   const { locales, locale: activeLocale } = router;
+  const [langOpen, setLangOpen] = useState(false);
 
-  // This is a placeholder for a real admin check.
-  // We assume the first user registered is the admin, so we hardcode it here.
-  // In a real app, this should come from user roles/permissions.
-  const isAdmin = userEmail === 'admin@example.com';
+  const isAdmin = user.is_admin === true;
 
   const navItems = [
     { href: '/dashboard', label: t('nav.dashboard') },
@@ -35,9 +44,8 @@ export default function Layout({ children, isDarkMode, onLogout, onToggleTheme, 
     { href: '/reports', label: t('nav.reports') },
     { href: '/marketplace', label: t('nav.marketplace') },
     { href: '/submission', label: t('nav.submission') },
-    { href: '/security', label: 'Security' },
-    { href: '/terms', label: 'Legal' },
     { href: '/profile', label: t('nav.profile') },
+    { href: '/billing', label: '💳 Billing' },
   ];
 
   if (isAdmin) {
@@ -50,26 +58,78 @@ export default function Layout({ children, isDarkMode, onLogout, onToggleTheme, 
         <h1 className={styles.logo}>FinTech</h1>
         <nav className={styles.nav}>
           {navItems.map(({ href, label }) => (
-            <Link href={href} key={href} locale={router.locale} className={styles.navLink}>
-              <span className={`${styles.navLabel} ${router.pathname === href ? styles.active : ''}`}>
+            <Link href={href} key={href} locale={router.locale}>
+              <span className={router.pathname === href ? styles.active : ''}>
                 {label}
               </span>
             </Link>
           ))}
         </nav>
         <div className={styles.sidebarFooter}>
-          {userEmail && <p className={styles.userEmail}>{userEmail}</p>}
-          <button className={styles.themeToggleButton} onClick={onToggleTheme} type="button">
-            {isDarkMode ? 'Switch to Light' : 'Switch to Dark'}
-          </button>
-          <div className={styles.langSwitcher}>
-            {locales?.map(locale => (
-              <Link href={router.pathname} key={locale} locale={locale}>
-                <span className={locale === activeLocale ? styles.activeLang : ''}>
-                  {locale.split('-')[0].toUpperCase()}
-                </span>
-              </Link>
-            ))}
+          <div className={styles.langSwitcher} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setLangOpen(!langOpen)}
+              style={{
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '1.5rem',
+                padding: '0.5rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                color: 'var(--lp-text)',
+              }}
+            >
+              {LOCALE_FLAGS[activeLocale || 'en-GB'] || '🌐'}
+              <span style={{ fontSize: '0.85rem', color: 'var(--lp-text-muted)' }}>
+                {(activeLocale || 'en-GB').split('-')[0].toUpperCase()}
+              </span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--lp-text-muted)' }}>▼</span>
+            </button>
+            {langOpen && (
+              <div style={{
+                position: 'absolute',
+                bottom: '100%',
+                left: 0,
+                right: 0,
+                background: 'var(--lp-bg-card)',
+                border: '1px solid var(--lp-border)',
+                borderRadius: 10,
+                padding: '0.5rem',
+                marginBottom: '0.5rem',
+                maxHeight: '300px',
+                overflowY: 'auto',
+                zIndex: 100,
+              }}>
+                {locales?.map(loc => (
+                  <Link
+                    href={router.pathname}
+                    key={loc}
+                    locale={loc}
+                    onClick={() => {
+                      localStorage.setItem('preferredLocale', loc);
+                      setLangOpen(false);
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.75rem',
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      background: loc === activeLocale ? 'rgba(13,148,136,0.15)' : 'transparent',
+                      color: loc === activeLocale ? 'var(--lp-accent-teal)' : 'var(--lp-text)',
+                      fontSize: '0.9rem',
+                    }}>
+                      <span style={{ fontSize: '1.2rem' }}>{LOCALE_FLAGS[loc] || '🌐'}</span>
+                      <span>{loc.split('-')[0].toUpperCase()}</span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
           <button onClick={onLogout} className={styles.logoutButton}>
             {t('common.logout')}
