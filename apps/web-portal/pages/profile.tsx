@@ -1,203 +1,489 @@
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
-import { useTranslation } from '../hooks/useTranslation';
+import { ChangeEvent, FormEvent, useEffect, useState, useMemo, useCallback } from 'react';
 import styles from '../styles/Home.module.css';
+import { useTranslation } from '../hooks/useTranslation';
 
-const PROFILE_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_PROFILE_SERVICE_URL || 'http://localhost:8001';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
 type ProfilePageProps = {
   token: string;
 };
 
-type ProfileState = {
+type UserProfile = {
   first_name: string;
   last_name: string;
   date_of_birth: string;
 };
 
-type SubscriptionState = {
-  subscription_plan: string;
-  monthly_close_day: number;
-  subscription_status: string;
-  billing_cycle: string;
-  current_period_start: string;
-  current_period_end: string;
+type TwoFASetup = {
+  secret: string;
+  provisioning_uri: string;
 };
 
+function getPasswordChecks(password: string) {
+  return {
+    length: password.length >= 8,
+    uppercase: /[A-Z]/.test(password),
+    lowercase: /[a-z]/.test(password),
+    digit: /\d/.test(password),
+    special: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password),
+  };
+}
+
+function getStrength(checks: ReturnType<typeof getPasswordChecks>) {
+  const passed = Object.values(checks).filter(Boolean).length;
+  if (passed >= 5) return 'strong';
+  if (passed >= 3) return 'medium';
+  return 'weak';
+}
+
 export default function ProfilePage({ token }: ProfilePageProps) {
-  const [profile, setProfile] = useState<ProfileState>({
+  const [profile, setProfile] = useState<UserProfile>({
     first_name: '',
     last_name: '',
     date_of_birth: '',
-  });
-  const [subscription, setSubscription] = useState<SubscriptionState>({
-    subscription_plan: 'free',
-    monthly_close_day: 1,
-    subscription_status: 'active',
-    billing_cycle: 'monthly',
-    current_period_start: '',
-    current_period_end: '',
   });
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const { t } = useTranslation();
 
+  // 2FA state
+  const [is2FAEnabled, setIs2FAEnabled] = useState(false);
+  const [twoFASetup, setTwoFASetup] = useState<TwoFASetup | null>(null);
+  const [verifyCode, setVerifyCode] = useState('');
+  const [securityMessage, setSecurityMessage] = useState('');
+  const [securityError, setSecurityError] = useState('');
+  const [securityLoading, setSecurityLoading] = useState(false);
+
+  // Password change state
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
+  const newPasswordChecks = useMemo(() => getPasswordChecks(newPassword), [newPassword]);
+  const newPasswordStrength = useMemo(() => getStrength(newPasswordChecks), [newPasswordChecks]);
+
   const fetchProfile = useCallback(async () => {
     setMessage('');
     setError('');
     try {
-      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me`, {
+      const response = await fetch(`${API_GATEWAY_URL}/profile/profiles/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 404) {
-        setMessage(t('profile.empty_profile'));
+        setMessage('No profile found. Create one by saving.');
         setProfile({ first_name: '', last_name: '', date_of_birth: '' });
         return;
       }
       if (!response.ok) {
         throw new Error('Failed to fetch profile');
       }
-
       const data = await response.json();
       setProfile({
         first_name: data.first_name || '',
         last_name: data.last_name || '',
         date_of_birth: data.date_of_birth || '',
       });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } catch (err: unknown) {
+      const details = err instanceof Error ? err.message : 'Failed to fetch profile';
+      setError(details);
+    }
+  }, [token]);
+
+  const check2FAStatus = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setIs2FAEnabled(data.totp_enabled === true);
+      }
+    } catch {
+      // Silently fail — status defaults to false
     }
   }, [token]);
 
   useEffect(() => {
     fetchProfile();
-  }, [fetchProfile]);
+    check2FAStatus();
+  }, [fetchProfile, check2FAStatus]);
 
-  const handleProfileChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setProfile((current) => ({ ...current, [event.target.name]: event.target.value }));
+  const handleProfileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setProfile({ ...profile, [e.target.name]: e.target.value });
   };
 
-  const handleSubscriptionChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setSubscription((current) => ({ ...current, [event.target.name]: event.target.value }));
-  };
-
-  const handleSaveSubscription = async (event: FormEvent) => {
-    event.preventDefault();
+  const handleSaveProfile = async (e: FormEvent) => {
+    e.preventDefault();
     setMessage('');
     setError('');
-
     try {
-      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me/subscription`, {
-        body: JSON.stringify({
-          subscription_plan: subscription.subscription_plan,
-          monthly_close_day: Number(subscription.monthly_close_day),
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+      const response = await fetch(`${API_GATEWAY_URL}/profile/profiles/me`, {
         method: 'PUT',
-      });
-      if (!response.ok) {
-        throw new Error('Failed to update subscription');
-      }
-      setMessage('Subscription updated successfully!');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
-    }
-  };
-
-  const handleSaveProfile = async (event: FormEvent) => {
-    event.preventDefault();
-    setMessage('');
-    setError('');
-
-    try {
-      const response = await fetch(`${PROFILE_SERVICE_BASE_URL}/profiles/me`, {
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...profile, date_of_birth: profile.date_of_birth || null }),
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        method: 'PUT',
       });
       if (!response.ok) {
         throw new Error('Failed to save profile');
       }
       setMessage('Profile saved successfully!');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
+    } catch (err: unknown) {
+      const details = err instanceof Error ? err.message : 'Failed to save profile';
+      setError(details);
     }
   };
 
+  // 2FA handlers
+  const handleEnable2FA = async () => {
+    setSecurityMessage('');
+    setSecurityError('');
+    setSecurityLoading(true);
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/auth/2fa/setup-json`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to start 2FA setup');
+      }
+      const data: TwoFASetup = await response.json();
+      setTwoFASetup(data);
+    } catch (err: unknown) {
+      const details = err instanceof Error ? err.message : 'Failed to start 2FA setup';
+      setSecurityError(details);
+    } finally {
+      setSecurityLoading(false);
+    }
+  };
+
+  const handleVerify2FA = async (e: FormEvent) => {
+    e.preventDefault();
+    setSecurityMessage('');
+    setSecurityError('');
+    setSecurityLoading(true);
+    try {
+      const response = await fetch(
+        `${API_GATEWAY_URL}/auth/2fa/verify?totp_code=${encodeURIComponent(verifyCode)}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || 'Invalid code. Please try again.');
+      }
+      setIs2FAEnabled(true);
+      setTwoFASetup(null);
+      setVerifyCode('');
+      setSecurityMessage('2FA enabled successfully!');
+    } catch (err: unknown) {
+      const details = err instanceof Error ? err.message : 'Verification failed';
+      setSecurityError(details);
+    } finally {
+      setSecurityLoading(false);
+    }
+  };
+
+  const handleDisable2FA = async () => {
+    setSecurityMessage('');
+    setSecurityError('');
+    setSecurityLoading(true);
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/auth/2fa/disable`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to disable 2FA');
+      }
+      setIs2FAEnabled(false);
+      setSecurityMessage('2FA has been disabled.');
+    } catch (err: unknown) {
+      const details = err instanceof Error ? err.message : 'Failed to disable 2FA';
+      setSecurityError(details);
+    } finally {
+      setSecurityLoading(false);
+    }
+  };
+
+  const handleChangePassword = async (e: FormEvent) => {
+    e.preventDefault();
+    setPasswordMessage('');
+    setPasswordError('');
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New passwords do not match.');
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const response = await fetch(`${API_GATEWAY_URL}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || 'Failed to change password');
+      }
+      setPasswordMessage('Password changed successfully!');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: unknown) {
+      const details = err instanceof Error ? err.message : 'Failed to change password';
+      setPasswordError(details);
+    } finally {
+      setPasswordLoading(false);
+    }
+  };
+
+  const strengthClass =
+    newPasswordStrength === 'strong'
+      ? styles.strengthStrong
+      : newPasswordStrength === 'medium'
+      ? styles.strengthMedium
+      : styles.strengthWeak;
+
+  const strengthLabel =
+    newPasswordStrength === 'strong'
+      ? 'Strong'
+      : newPasswordStrength === 'medium'
+      ? 'Medium'
+      : 'Weak';
+
   return (
-    <div className={styles.dashboard}>
+    <div>
       <h1>{t('profile.title')}</h1>
       <p>Fetch and update your profile data from a protected endpoint.</p>
       <div className={styles.subContainer}>
         <form onSubmit={handleSaveProfile}>
           <input
-            className={styles.input}
+            type="text"
             name="first_name"
-            onChange={handleProfileChange}
             placeholder="First Name"
-            type="text"
             value={profile.first_name}
+            onChange={handleProfileChange}
+            className={styles.input}
           />
           <input
-            className={styles.input}
-            name="last_name"
-            onChange={handleProfileChange}
-            placeholder="Last Name"
             type="text"
+            name="last_name"
+            placeholder="Last Name"
             value={profile.last_name}
+            onChange={handleProfileChange}
+            className={styles.input}
           />
           <input
-            className={styles.input}
-            name="date_of_birth"
-            onChange={handleProfileChange}
-            placeholder="Date of Birth"
             type="date"
+            name="date_of_birth"
+            placeholder="Date of Birth"
             value={profile.date_of_birth}
+            onChange={handleProfileChange}
+            className={styles.input}
           />
-          <button className={styles.button} type="submit">
+          <button type="submit" className={styles.button}>
             {t('common.save')}
           </button>
         </form>
         {message && <p className={styles.message}>{message}</p>}
         {error && <p className={styles.error}>{error}</p>}
       </div>
-      <div className={styles.subContainer}>
-        <h2>{t('subscription.title')}</h2>
-        <p>{t('subscription.description')}</p>
-        <form onSubmit={handleSaveSubscription}>
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ marginBottom: '0.5rem', color: '#4a5568' }}>{t('subscription.plan_label')}</div>
-            <select name="subscription_plan" value={subscription.subscription_plan} onChange={handleSubscriptionChange} className={styles.input}>
-              <option value="free">{t('subscription.plan_free')}</option>
-              <option value="pro">{t('subscription.plan_pro')}</option>
-            </select>
-          </div>
-          <div style={{ marginBottom: '1rem' }}>
-            <div style={{ marginBottom: '0.5rem', color: '#4a5568' }}>{t('subscription.close_day_label')}</div>
+
+      {/* Two-Factor Authentication Section */}
+      <div className={`${styles.subContainer} ${styles.securitySection}`}>
+        <div className={styles.securityHeader}>
+          <h2 style={{ margin: 0, border: 'none', padding: 0 }}>
+            {is2FAEnabled ? '🔐' : '🔓'} Two-Factor Authentication
+          </h2>
+          <span className={`${styles.securityBadge} ${is2FAEnabled ? styles.badgeEnabled : styles.badgeDisabled}`}>
+            {is2FAEnabled ? 'Enabled ✓' : 'Disabled'}
+          </span>
+        </div>
+
+        {is2FAEnabled ? (
+          <>
+            <p style={{ color: 'var(--lp-text-muted)', margin: '0 0 1rem' }}>
+              Your account is protected by two-factor authentication.
+            </p>
+            <button
+              type="button"
+              onClick={handleDisable2FA}
+              className={styles.dangerButton}
+              disabled={securityLoading}
+            >
+              {securityLoading ? 'Disabling...' : 'Disable 2FA'}
+            </button>
+          </>
+        ) : twoFASetup ? (
+          <form onSubmit={handleVerify2FA}>
+            <div className={styles.qrContainer}>
+              <p style={{ color: 'var(--lp-text-muted)', margin: 0 }}>
+                Scan this QR code with your authenticator app
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(twoFASetup.provisioning_uri)}`}
+                alt="QR Code for 2FA setup"
+                style={{ borderRadius: 12, background: 'white', padding: 8 }}
+                width={200}
+                height={200}
+              />
+              <p style={{ color: 'var(--lp-text-muted)', fontSize: '0.85rem', margin: 0 }}>
+                Or enter this key manually:
+              </p>
+              <code className={styles.secretKey}>{twoFASetup.secret}</code>
+            </div>
+            <div style={{ marginTop: '1rem' }}>
+              <label htmlFor="verify-code">Enter the 6-digit verification code</label>
+              <input
+                id="verify-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                placeholder="000000"
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className={`${styles.input} ${styles.totpInput}`}
+                style={{ marginTop: '0.5rem' }}
+              />
+            </div>
+            <div className={styles.buttonGroup}>
+              <button
+                type="button"
+                onClick={() => { setTwoFASetup(null); setVerifyCode(''); setSecurityError(''); }}
+                className={styles.button}
+                style={{ background: 'transparent', border: '1px solid var(--lp-border)', color: 'var(--lp-text-muted)' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={styles.button}
+                disabled={verifyCode.length !== 6 || securityLoading}
+              >
+                {securityLoading ? 'Verifying...' : 'Verify & Enable'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <p style={{ color: 'var(--lp-text-muted)', margin: '0 0 1rem' }}>
+              Your account is not protected by 2FA.
+            </p>
+            <button
+              type="button"
+              onClick={handleEnable2FA}
+              className={styles.button}
+              disabled={securityLoading}
+            >
+              {securityLoading ? 'Loading...' : 'Enable 2FA'}
+            </button>
+          </>
+        )}
+
+        {securityMessage && <p className={styles.message} style={{ marginTop: '1rem' }}>{securityMessage}</p>}
+        {securityError && <p className={styles.error} style={{ marginTop: '1rem' }}>{securityError}</p>}
+      </div>
+
+      {/* Change Password Section */}
+      <div className={`${styles.subContainer} ${styles.securitySection}`}>
+        <h2>🔑 Change Password</h2>
+        <form onSubmit={handleChangePassword}>
+          <label htmlFor="current-password">Current Password</label>
+          <div className={styles.passwordWrapper}>
             <input
-              type="number"
-              name="monthly_close_day"
-              min={1}
-              max={28}
-              value={subscription.monthly_close_day}
-              onChange={handleSubscriptionChange}
+              id="current-password"
+              type={showCurrentPassword ? 'text' : 'password'}
+              placeholder="Current Password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
               className={styles.input}
+              style={{ paddingRight: '3rem' }}
             />
+            <button
+              type="button"
+              className={styles.passwordToggle}
+              onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+              aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+            >
+              {showCurrentPassword ? '🙈' : '👁️'}
+            </button>
           </div>
-          <div className={styles.subContainer} style={{ marginTop: 0 }}>
-            <p><strong>{t('subscription.status_label')}:</strong> {subscription.subscription_status}</p>
-            <p><strong>{t('subscription.cycle_label')}:</strong> {subscription.billing_cycle}</p>
-            <p><strong>{t('subscription.period_label')}:</strong> {subscription.current_period_start || '-'} → {subscription.current_period_end || '-'}</p>
+
+          <label htmlFor="new-password">New Password</label>
+          <div className={styles.passwordWrapper}>
+            <input
+              id="new-password"
+              type={showNewPassword ? 'text' : 'password'}
+              placeholder="New Password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className={styles.input}
+              style={{ paddingRight: '3rem' }}
+            />
+            <button
+              type="button"
+              className={styles.passwordToggle}
+              onClick={() => setShowNewPassword(!showNewPassword)}
+              aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+            >
+              {showNewPassword ? '🙈' : '👁️'}
+            </button>
           </div>
-          <button type="submit" className={styles.button}>{t('subscription.update_button')}</button>
+
+          {newPassword.length > 0 && (
+            <>
+              <div className={strengthClass} style={{ height: 4, borderRadius: 2, marginTop: '0.5rem', transition: 'all 0.3s' }} />
+              <div className={styles.strengthLabel} style={{ color: newPasswordStrength === 'strong' ? '#14b8a6' : newPasswordStrength === 'medium' ? '#d97706' : '#ef4444' }}>
+                {strengthLabel}
+              </div>
+              <ul className={styles.requirements}>
+                <li className={newPasswordChecks.length ? styles.requirementMet : styles.requirementUnmet}>
+                  {newPasswordChecks.length ? '✓' : '✗'} At least 8 characters
+                </li>
+                <li className={newPasswordChecks.uppercase ? styles.requirementMet : styles.requirementUnmet}>
+                  {newPasswordChecks.uppercase ? '✓' : '✗'} Uppercase letter
+                </li>
+                <li className={newPasswordChecks.lowercase ? styles.requirementMet : styles.requirementUnmet}>
+                  {newPasswordChecks.lowercase ? '✓' : '✗'} Lowercase letter
+                </li>
+                <li className={newPasswordChecks.digit ? styles.requirementMet : styles.requirementUnmet}>
+                  {newPasswordChecks.digit ? '✓' : '✗'} Number
+                </li>
+                <li className={newPasswordChecks.special ? styles.requirementMet : styles.requirementUnmet}>
+                  {newPasswordChecks.special ? '✓' : '✗'} Special character (!@#$%...)
+                </li>
+              </ul>
+            </>
+          )}
+
+          <label htmlFor="confirm-password">Confirm Password</label>
+          <input
+            id="confirm-password"
+            type="password"
+            placeholder="Confirm New Password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className={styles.input}
+          />
+
+          <button
+            type="submit"
+            className={styles.button}
+            disabled={passwordLoading || !currentPassword || !newPassword || !confirmPassword}
+          >
+            {passwordLoading ? 'Changing...' : 'Change Password'}
+          </button>
         </form>
-        {message && <p className={styles.message}>{message}</p>}
-        {error && <p className={styles.error}>{error}</p>}
+        {passwordMessage && <p className={styles.message} style={{ marginTop: '1rem' }}>{passwordMessage}</p>}
+        {passwordError && <p className={styles.error} style={{ marginTop: '1rem' }}>{passwordError}</p>}
       </div>
     </div>
   );

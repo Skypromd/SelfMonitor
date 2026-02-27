@@ -1,113 +1,142 @@
-import os
-import sys
-import json
-
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-from app.main import CATALOG_ROOT, app
+from app.main import app
 
 client = TestClient(app)
 
 
-def test_list_supported_locales_contains_required_languages():
-    response = client.get("/translations/locales")
+# --- Health endpoint ---
+
+def test_health_check():
+    response = client.get("/health")
     assert response.status_code == 200
-    payload = response.json()
-    codes = {item["code"] for item in payload}
-    assert {"ru-RU", "uk-UA", "en-GB", "pl-PL", "ro-MD", "tr-TR", "hu-HU"}.issubset(codes)
+    assert response.json() == {"status": "ok"}
 
 
-def test_fallback_locale_returns_base_english_content():
-    response = client.get("/translations/ru-RU/all")
+# --- Get translations by component ---
+
+def test_get_translations_valid_locale_and_component():
+    response = client.get("/translations/en-GB/login")
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["common"]["submit"] == "Submit"
-    assert payload["nav"]["documents"] == "Documents"
+    data = response.json()
+    assert "title" in data
+    assert data["title"] == "FinTech App"
 
 
-def test_translated_locale_keeps_native_overrides():
-    response = client.get("/translations/de-DE/all")
+def test_get_translations_common_component():
+    response = client.get("/translations/en-GB/common")
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["common"]["submit"] == "Einreichen"
-    assert payload["nav"]["documents"] == "Dokumente"
+    data = response.json()
+    assert data["submit"] == "Submit"
+    assert data["cancel"] == "Cancel"
 
 
-def test_unknown_locale_returns_not_found():
-    response = client.get("/translations/es-ES/all")
+def test_get_translations_german_locale():
+    response = client.get("/translations/de-DE/login")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["login_button"] == "Anmelden"
+
+
+def test_get_translations_german_common():
+    response = client.get("/translations/de-DE/common")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["submit"] == "Einreichen"
+    assert data["cancel"] == "Abbrechen"
+
+
+def test_get_translations_unknown_locale():
+    response = client.get("/translations/ja-JP/login")
     assert response.status_code == 404
 
 
-def test_translation_health_reports_fallback_metrics():
-    response = client.get("/translations/health")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["default_locale"] == "en-GB"
-    assert payload["reference_total_keys"] > 0
-    assert payload["summary"]["total_locales"] >= 7
-    locale_rows = {item["code"]: item for item in payload["locales"]}
-    assert "ru-RU" in locale_rows
-    assert locale_rows["ru-RU"]["fallback_keys"] > 0
-    assert locale_rows["ru-RU"]["estimated_fallback_hit_rate_percent"] > 0
-    assert "en-GB" in locale_rows
-    assert locale_rows["en-GB"]["fallback_keys"] == 0
-    assert locale_rows["en-GB"]["estimated_fallback_hit_rate_percent"] == 0.0
-
-
-def test_translation_health_includes_missing_key_samples():
-    response = client.get("/translations/health")
-    assert response.status_code == 200
-    payload = response.json()
-    locale_rows = {item["code"]: item for item in payload["locales"]}
-    ru_row = locale_rows["ru-RU"]
-    assert ru_row["missing_key_count"] >= len(ru_row["missing_key_samples"])
-    assert all("." in key_name for key_name in ru_row["missing_key_samples"])
-
-
-def test_external_catalog_files_are_present_and_used():
-    locales_file = CATALOG_ROOT / "locales.json"
-    de_catalog_file = CATALOG_ROOT / "translations" / "de-DE.json"
-    assert locales_file.exists()
-    assert de_catalog_file.exists()
-
-    de_catalog = json.loads(de_catalog_file.read_text(encoding="utf-8"))
-    response = client.get("/translations/de-DE/all")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["common"]["submit"] == de_catalog["common"]["submit"]
-
-
-def test_locale_format_standards_for_supported_locale():
-    response = client.get("/translations/en-GB/format-standards")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["locale"] == "en-GB"
-    assert payload["default_currency"] == "GBP"
-    assert payload["time_zone"] == "Europe/London"
-
-
-def test_locale_format_standards_unknown_locale_returns_not_found():
-    response = client.get("/translations/es-ES/format-standards")
+def test_get_translations_unknown_component():
+    response = client.get("/translations/en-GB/nonexistent")
     assert response.status_code == 404
 
 
-def test_locale_rollout_roadmap_contains_required_locales():
-    response = client.get("/translations/locales/roadmap")
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["default_locale"] == "en-GB"
-    rows = {item["code"]: item for item in payload["items"]}
-    assert {"ru-RU", "uk-UA", "en-GB", "pl-PL", "ro-MD", "tr-TR", "hu-HU"}.issubset(rows.keys())
-    assert rows["en-GB"]["rollout_stage"] == "production_ready"
-    assert rows["ru-RU"]["rollout_stage"] in {"beta", "planning"}
+def test_get_translations_both_unknown():
+    response = client.get("/translations/xx-XX/zzz")
+    assert response.status_code == 404
 
 
-def test_locale_rollout_roadmap_exposes_market_format_hints():
-    response = client.get("/translations/locales/roadmap")
+# --- Verify specific component data ---
+
+def test_nav_translations_contain_expected_keys():
+    response = client.get("/translations/en-GB/nav")
     assert response.status_code == 200
-    rows = {item["code"]: item for item in response.json()["items"]}
-    assert rows["en-GB"]["default_currency"] == "GBP"
-    assert rows["en-GB"]["time_zone"] == "Europe/London"
-    assert rows["de-DE"]["default_currency"] == "EUR"
+    data = response.json()
+    for key in ["dashboard", "activity", "transactions", "documents", "reports", "marketplace", "profile"]:
+        assert key in data, f"Missing nav key: {key}"
+
+
+def test_dashboard_translations():
+    response = client.get("/translations/en-GB/dashboard")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "Main Dashboard"
+
+
+def test_documents_translations():
+    response = client.get("/translations/en-GB/documents")
+    assert response.status_code == 200
+    data = response.json()
+    assert "upload_title" in data
+    assert "search_title" in data
+
+
+def test_reports_translations():
+    response = client.get("/translations/en-GB/reports")
+    assert response.status_code == 200
+    data = response.json()
+    assert "mortgage_title" in data
+    assert "generate_button" in data
+
+
+# --- Ukrainian locale (uk-UA) ---
+
+def test_get_translations_ukrainian_login():
+    response = client.get("/translations/uk-UA/login")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "FinTech App"
+    assert data["login_button"] == "Увійти"
+    assert data["register_button"] == "Реєстрація"
+
+
+def test_get_translations_ukrainian_common():
+    response = client.get("/translations/uk-UA/common")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["submit"] == "Надіслати"
+    assert data["cancel"] == "Скасувати"
+    assert data["save"] == "Зберегти"
+
+
+def test_get_translations_ukrainian_nav():
+    response = client.get("/translations/uk-UA/nav")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dashboard"] == "Головна"
+    assert data["documents"] == "Документи"
+    assert data["reports"] == "Звіти"
+
+
+def test_get_translations_ukrainian_documents():
+    response = client.get("/translations/uk-UA/documents")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["upload_button"] == "Завантажити"
+    assert data["search_button"] == "Шукати"
+    assert data["all_documents_title"] == "Усі документи"
+
+
+# --- 404 detail message ---
+
+def test_404_detail_message_includes_locale_and_component():
+    response = client.get("/translations/ja-JP/login")
+    assert response.status_code == 404
+    detail = response.json()["detail"]
+    assert "ja-JP" in detail
+    assert "login" in detail

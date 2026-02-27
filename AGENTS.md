@@ -26,15 +26,31 @@ npm run dev
 ```
 Dev server runs on `http://localhost:3000`. The `.env.local` file points API requests to `http://localhost:8000/api`.
 
+### Running the Mobile App (React Native / Expo)
+
+```bash
+cd apps/mobile
+npm install
+npx expo start
+```
+
+The app targets Expo SDK 51 / React Native 0.74.5. It connects to the backend at `http://10.0.2.2:8000/api` (Android emulator → host) by default; update `api.ts` for other environments.
+
+**Linting:** `cd apps/mobile && npx eslint . --ext .ts,.tsx`
+**TypeScript check:** `cd apps/mobile && npx tsc --noEmit`
+**Bundle test (no device needed):** `cd apps/mobile && npx expo export --platform android`
+
 ### Linting
 
 - **Web portal:** `cd apps/web-portal && npx next lint`
+- **Mobile app:** `cd apps/mobile && npx eslint . --ext .ts,.tsx`
 - **Python services:** CI runs `python -m compileall services/<service>/app` (see `.github/workflows/ci.yaml`).
 
 ### Testing
 
 - **Python services:** Each service has `tests/test_main.py`. Run with `cd services/<service> && pip install -r requirements.txt && python3 -m pytest -q tests/test_main.py`. See CI matrix in `.github/workflows/ci.yaml` for the full list.
 - **Web portal:** `npm run build` is the CI check (no dedicated test suite).
+- **Mobile app:** `cd apps/mobile && npx tsc --noEmit && npx expo export --platform android` verifies the bundle builds. No device/emulator is needed for this check.
 
 ### Known Issues
 
