@@ -789,6 +789,85 @@
       "all_documents_title": "সকল নথি"
     }
   },
+  "uk-UA": {
+    "common": {
+      "submit": "Надіслати",
+      "cancel": "Скасувати",
+      "logout": "Вийти",
+      "save": "Зберегти"
+    },
+    "login": {
+      "title": "FinTech App",
+      "description": "Зареєструйтесь або увійдіть, щоб продовжити",
+      "register_button": "Реєстрація",
+      "login_button": "Увійти"
+    },
+    "nav": {
+      "dashboard": "Головна",
+      "activity": "Журнал",
+      "transactions": "Транзакції",
+      "documents": "Документи",
+      "reports": "Звіти",
+      "marketplace": "Маркетплейс",
+      "submission": "Подання до HMRC",
+      "profile": "Профіль",
+      "admin": "Адмін"
+    },
+    "dashboard": {
+      "title": "Головна панель",
+      "description": "Ласкаво просимо до фінансової панелі."
+    },
+    "profile": {
+      "title": "Ваш профіль"
+    },
+    "partners": {
+      "description": "Список довірених партнерів, регульованих FCA.",
+      "handoff_button": "Зв'язатися"
+    },
+    "submission": {
+      "description": "Розрахуйте та подайте податкову декларацію до HMRC.",
+      "form_title": "Нова декларація UK",
+      "submit_button": "Розрахувати та надіслати до HMRC",
+      "success_title": "Декларацію успішно надіслано"
+    },
+    "admin": {
+      "description": "Керування користувачами та налаштуваннями.",
+      "form_title": "Деактивувати користувача",
+      "deactivate_button": "Деактивувати"
+    },
+    "reports": {
+      "description": "Створюйте звіти на основі фінансових даних.",
+      "mortgage_title": "Звіт для іпотеки",
+      "mortgage_description": "Створіть PDF-зведення доходів за останні 12 місяців.",
+      "generate_button": "Створити звіт",
+      "generating_button": "Створення..."
+    },
+    "marketplace": {
+      "description": "Маркетплейс довірених партнерів з бухгалтерії, іпотеки та страхування."
+    },
+    "activity": {
+      "description": "Історія останніх важливих подій.",
+      "col_date": "Дата",
+      "col_action": "Дія",
+      "col_details": "Деталі"
+    },
+    "documents": {
+      "description": "Завантажуйте та керуйте чеками та рахунками.",
+      "upload_title": "Завантажити документ",
+      "upload_button": "Завантажити",
+      "uploading_button": "Завантаження...",
+      "col_filename": "Назва файлу",
+      "col_status": "Статус",
+      "col_vendor": "Постачальник",
+      "col_amount": "Сума",
+      "col_uploaded_at": "Дата завантаження",
+      "search_title": "Семантичний пошук",
+      "search_description": "Задайте питання про ваші документи.",
+      "search_placeholder": "напр. 'де я купував каву минулого місяця?'",
+      "search_button": "Шукати",
+      "all_documents_title": "Усі документи"
+    }
+  },
   "ru-RU": {
     "common": {
       "submit": "Отправить",

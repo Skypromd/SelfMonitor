@@ -94,6 +94,46 @@ def test_reports_translations():
     assert "generate_button" in data
 
 
+# --- Ukrainian locale (uk-UA) ---
+
+def test_get_translations_ukrainian_login():
+    response = client.get("/translations/uk-UA/login")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "FinTech App"
+    assert data["login_button"] == "Увійти"
+    assert data["register_button"] == "Реєстрація"
+
+
+def test_get_translations_ukrainian_common():
+    response = client.get("/translations/uk-UA/common")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["submit"] == "Надіслати"
+    assert data["cancel"] == "Скасувати"
+    assert data["save"] == "Зберегти"
+
+
+def test_get_translations_ukrainian_nav():
+    response = client.get("/translations/uk-UA/nav")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dashboard"] == "Головна"
+    assert data["documents"] == "Документи"
+    assert data["reports"] == "Звіти"
+
+
+def test_get_translations_ukrainian_documents():
+    response = client.get("/translations/uk-UA/documents")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["upload_button"] == "Завантажити"
+    assert data["search_button"] == "Шукати"
+    assert data["all_documents_title"] == "Усі документи"
+
+
+# --- 404 detail message ---
+
 def test_404_detail_message_includes_locale_and_component():
     response = client.get("/translations/ja-JP/login")
     assert response.status_code == 404

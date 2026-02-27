@@ -171,7 +171,7 @@ export default function LandingPage() {
                 <span className={styles.statLabel}>Security</span>
               </div>
               <div className={styles.statItem}>
-                <span className={styles.statValue}><AnimatedCounter target={11} /></span>
+                <span className={styles.statValue}><AnimatedCounter target={10} /></span>
                 <span className={styles.statLabel}>Languages</span>
               </div>
               <div className={styles.statItem}>
