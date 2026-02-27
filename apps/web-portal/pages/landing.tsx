@@ -3,7 +3,21 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { motion, useInView } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/router';
 import styles from '../styles/Landing.module.css';
+
+const LOCALE_FLAGS: Record<string, string> = {
+  'en-GB': '🇬🇧',
+  'pl-PL': '🇵🇱',
+  'ro-RO': '🇷🇴',
+  'uk-UA': '🇺🇦',
+  'ru-RU': '🇷🇺',
+  'es-ES': '🇪🇸',
+  'it-IT': '🇮🇹',
+  'pt-PT': '🇵🇹',
+  'tr-TR': '🇹🇷',
+  'bn-BD': '🇧🇩',
+};
 
 const CashFlowChart = dynamic(() => import('../components/charts/CashFlowChart'), { ssr: false });
 const ExpenseChart = dynamic(() => import('../components/charts/ExpenseChart'), { ssr: false });
@@ -79,6 +93,10 @@ const testimonials = [
 ];
 
 export default function LandingPage() {
+  const router = useRouter();
+  const { locales, locale: activeLocale } = router;
+  const [langOpen, setLangOpen] = useState(false);
+
   return (
     <>
       <Head>
@@ -91,6 +109,78 @@ export default function LandingPage() {
       </Head>
 
       <div className={styles.page}>
+        <div style={{
+          position: 'fixed',
+          top: '1rem',
+          right: '1.5rem',
+          zIndex: 1000,
+        }}>
+          <button
+            onClick={() => setLangOpen(!langOpen)}
+            style={{
+              background: 'rgba(30,41,59,0.85)',
+              backdropFilter: 'blur(8px)',
+              border: '1px solid var(--lp-border)',
+              borderRadius: 10,
+              cursor: 'pointer',
+              fontSize: '1.3rem',
+              padding: '0.5rem 0.75rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              color: 'var(--lp-text)',
+            }}
+          >
+            {LOCALE_FLAGS[activeLocale || 'en-GB'] || '🌐'}
+            <span style={{ fontSize: '0.8rem', color: 'var(--lp-text-muted)' }}>
+              {(activeLocale || 'en-GB').split('-')[0].toUpperCase()}
+            </span>
+            <span style={{ fontSize: '0.65rem', color: 'var(--lp-text-muted)' }}>▼</span>
+          </button>
+          {langOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              marginTop: '0.5rem',
+              background: 'var(--lp-bg-card)',
+              border: '1px solid var(--lp-border)',
+              borderRadius: 10,
+              padding: '0.5rem',
+              minWidth: '140px',
+              maxHeight: '300px',
+              overflowY: 'auto',
+              zIndex: 1001,
+            }}>
+              {locales?.map(loc => (
+                <Link
+                  href={router.pathname}
+                  key={loc}
+                  locale={loc}
+                  onClick={() => {
+                    localStorage.setItem('preferredLocale', loc);
+                    setLangOpen(false);
+                  }}
+                >
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.75rem',
+                    padding: '0.5rem 0.75rem',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    background: loc === activeLocale ? 'rgba(13,148,136,0.15)' : 'transparent',
+                    color: loc === activeLocale ? 'var(--lp-accent-teal)' : 'var(--lp-text)',
+                    fontSize: '0.85rem',
+                  }}>
+                    <span style={{ fontSize: '1.1rem' }}>{LOCALE_FLAGS[loc] || '🌐'}</span>
+                    <span>{loc.split('-')[0].toUpperCase()}</span>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
         {/* ====== HERO ====== */}
         <section className={styles.hero}>
           <div className={styles.container}>
