@@ -421,7 +421,7 @@ export default function LandingPage() {
                   £19<span>/mo</span>
                 </p>
                 <ul className={styles.pricingFeatures}>
-                  <li>Unlimited banks</li>
+                  <li>3 bank connections</li>
                   <li>5,000 transactions/month</li>
                   <li>HMRC auto-submission</li>
                   <li>Smart document search</li>
