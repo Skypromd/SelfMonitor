@@ -9,7 +9,7 @@ import time
 import uuid
 from collections import defaultdict
 from datetime import timedelta
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 import pyotp
 import qrcode
@@ -263,7 +263,7 @@ PLAN_HIERARCHY = {"free": 0, "starter": 1, "pro": 2, "business": 3}
 TRIAL_DAYS = 14
 
 
-def get_subscription(email: str) -> dict:
+def get_subscription(email: str) -> dict[str, Any]:
     with db_lock:
         conn = _connect()
         try:
@@ -290,7 +290,7 @@ def get_subscription(email: str) -> dict:
     return sub
 
 
-def create_subscription(email: str, plan: str) -> dict:
+def create_subscription(email: str, plan: str) -> dict[str, Any]:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     trial_end = None
     status = "active"
@@ -329,7 +329,7 @@ def _expire_trial(email: str) -> None:
             conn.close()
 
 
-def update_subscription_plan(email: str, new_plan: str) -> dict:
+def update_subscription_plan(email: str, new_plan: str) -> dict[str, Any]:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     with db_lock:
         conn = _connect()
@@ -638,10 +638,10 @@ async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     sub = get_subscription(current_user.email)
-    current_user.subscription_tier = sub["plan"]
-    current_user.subscription_status = sub["status"]
+    current_user.subscription_tier = str(sub["plan"])
+    current_user.subscription_status = str(sub["status"])
     if sub["trial_end"]:
-        trial_end = datetime.datetime.fromisoformat(sub["trial_end"])
+        trial_end = datetime.datetime.fromisoformat(str(sub["trial_end"]))
         remaining = (trial_end - datetime.datetime.now(datetime.UTC)).days
         current_user.trial_days_remaining = max(0, remaining)
     return current_user
@@ -713,10 +713,10 @@ class SubscriptionResponse(BaseModel):
     status: str
     trial_end: Optional[str] = None
     trial_days_remaining: Optional[int] = None
-    features: dict
+    features: dict[str, Any]
 
 
-PLAN_FEATURES = {
+PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     "free": {
         "bank_connections": 1,
         "transactions_per_month": 200,
@@ -786,33 +786,36 @@ async def get_my_subscription(
 ):
     sub = get_subscription(current_user.email)
     trial_days = None
-    if sub.get("trial_end"):
-        trial_end = datetime.datetime.fromisoformat(sub["trial_end"])
+    trial_end_val: Optional[str] = sub.get("trial_end")  # type: ignore[assignment]
+    if trial_end_val:
+        trial_end = datetime.datetime.fromisoformat(trial_end_val)
         trial_days = max(0, (trial_end - datetime.datetime.now(datetime.UTC)).days)
+    plan_name = str(sub["plan"])
     return SubscriptionResponse(
         user_email=current_user.email,
-        plan=sub["plan"],
-        status=sub["status"],
-        trial_end=sub.get("trial_end"),
+        plan=plan_name,
+        status=str(sub["status"]),
+        trial_end=trial_end_val,
         trial_days_remaining=trial_days,
-        features=PLAN_FEATURES.get(sub["plan"], PLAN_FEATURES["free"]),
+        features=PLAN_FEATURES.get(plan_name, PLAN_FEATURES["free"]),
     )
 
 
 @app.post("/subscription/upgrade")
 async def upgrade_subscription(
     plan: str = Query(..., pattern="^(starter|pro|business)$"),
-    current_user: Annotated[User, Depends(get_current_active_user)] = None,
-):
+    current_user: Annotated[User, Depends(get_current_active_user)] = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    assert current_user is not None
     current_sub = get_subscription(current_user.email)
-    if not has_plan_access(plan, current_sub["plan"]):
+    if not has_plan_access(plan, str(current_sub["plan"])):
         pass
     updated = update_subscription_plan(current_user.email, plan)
     return {"message": f"Subscription upgraded to {plan}", "subscription": updated}
 
 
 @app.get("/subscription/plans")
-async def list_plans():
+async def list_plans() -> dict[str, Any]:
     return {
         "plans": [
             {
@@ -848,14 +851,15 @@ async def list_plans():
 @app.post("/subscription/check-access")
 async def check_feature_access(
     feature: str = Query(...),
-    current_user: Annotated[User, Depends(get_current_active_user)] = None,
-):
+    current_user: Annotated[User, Depends(get_current_active_user)] = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    assert current_user is not None
     sub = get_subscription(current_user.email)
-    plan = sub["plan"]
-    features = PLAN_FEATURES.get(plan, PLAN_FEATURES["free"])
-    has_access = features.get(feature, False)
+    plan: str = str(sub["plan"])
+    features: dict[str, Any] = PLAN_FEATURES.get(plan, PLAN_FEATURES["free"])
+    has_access: Any = features.get(feature, False)
     if isinstance(has_access, bool):
-        allowed = has_access
+        allowed: bool = has_access
     elif isinstance(has_access, int):
         allowed = has_access > 0
     else:
@@ -866,8 +870,8 @@ async def check_feature_access(
     if not allowed:
         min_plan = "starter"
         for p in ["starter", "pro", "business"]:
-            pf = PLAN_FEATURES[p]
-            val = pf.get(feature, False)
+            pf: dict[str, Any] = PLAN_FEATURES[p]
+            val: Any = pf.get(feature, False)
             if val and val != "basic":
                 min_plan = p
                 break
