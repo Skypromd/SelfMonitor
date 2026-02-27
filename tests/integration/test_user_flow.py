@@ -1,11 +1,28 @@
-import httpx
-import uuid
-import time
 import os
-import pytest
+import time
+import uuid
 
-# URL'ы наших сервисов, как они доступны снаружи Docker через API Gateway
+import httpx
+
+# URLs for our services, as accessible from outside Docker via API Gateway
 API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:8000/api")
+
+
+def _ensure_integration_ready(timeout: int = 10) -> None:
+    """Verify that the API Gateway is reachable before proceeding with integration tests."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            response = httpx.get(f"{API_GATEWAY_URL}/health", timeout=2)
+            if response.status_code < 500:
+                return
+        except httpx.RequestError:
+            pass
+        time.sleep(1)
+    raise RuntimeError(
+        f"API Gateway at {API_GATEWAY_URL} is not reachable after {timeout}s. "
+        "Make sure services are running (e.g. via docker-compose)."
+    )
 
 
 def register_and_login_user() -> tuple[str, str]:
@@ -15,17 +32,18 @@ def register_and_login_user() -> tuple[str, str]:
 
     reg_response = httpx.post(
         f"{API_GATEWAY_URL}/auth/register",
-        data={"username": unique_email, "password": password}
+        data={"username": unique_email, "password": password},
     )
     assert reg_response.status_code == 201
 
     login_response = httpx.post(
         f"{API_GATEWAY_URL}/auth/token",
-        data={"username": unique_email, "password": password}
+        data={"username": unique_email, "password": password},
     )
     assert login_response.status_code == 200
     token = login_response.json()["access_token"]
     return unique_email, token
+
 
 def test_user_registration_and_profile_creation():
     """
@@ -43,20 +61,19 @@ def test_user_registration_and_profile_creation():
     profile_data = {
         "first_name": "Integration",
         "last_name": "Test",
-        "date_of_birth": "1999-12-31"
+        "date_of_birth": "1999-12-31",
     }
     create_profile_response = httpx.put(
         f"{API_GATEWAY_URL}/profile/profiles/me",
         headers=auth_headers,
-        json=profile_data
+        json=profile_data,
     )
     assert create_profile_response.status_code == 200
     print("Profile created successfully.")
 
     # 4. Use the token again to verify that the profile was saved
     get_profile_response = httpx.get(
-        f"{API_GATEWAY_URL}/profile/profiles/me",
-        headers=auth_headers
+        f"{API_GATEWAY_URL}/profile/profiles/me", headers=auth_headers
     )
     assert get_profile_response.status_code == 200
     profile = get_profile_response.json()
@@ -94,18 +111,20 @@ def test_full_transaction_import_flow():
     assert callback_response.status_code == 200
     callback_data = callback_response.json()
     account_id = callback_data["account_id"]
-    print(f"Callback successful. Account ID: {account_id}. Celery task ID: {callback_data['task_id']}")
+    print(
+        f"Callback successful. Account ID: {account_id}. Celery task ID: {callback_data['task_id']}"
+    )
 
     # 2. Wait for the asynchronous processing to complete.
     # In a real-world test suite, we might use more sophisticated polling
     # or check the Celery task status, but sleep is simple and effective here.
     print("Waiting for Celery worker to process the task...")
-    time.sleep(8) # Give enough time for Celery task (mocked 2s) + network calls
+    time.sleep(8)  # Give enough time for Celery task (mocked 2s) + network calls
 
     # 3. Verify the final result in the transactions-service
     get_trans_response = httpx.get(
         f"{API_GATEWAY_URL}/transactions/accounts/{account_id}/transactions",
-        headers=auth_headers
+        headers=auth_headers,
     )
 
     assert get_trans_response.status_code == 200
@@ -116,15 +135,19 @@ def test_full_transaction_import_flow():
     # 4. Assert that the data is correct and auto-categorization worked
     assert len(transactions) == 2
 
-    tesco_transaction = next((t for t in transactions if t['description'] == 'Tesco'), None)
-    amazon_transaction = next((t for t in transactions if t['description'] == 'Amazon'), None)
+    tesco_transaction = next(
+        (t for t in transactions if t["description"] == "Tesco"), None
+    )
+    amazon_transaction = next(
+        (t for t in transactions if t["description"] == "Amazon"), None
+    )
 
     assert tesco_transaction is not None
     assert amazon_transaction is not None
 
     # This is the most important assertion: check if auto-categorization was successful
-    assert tesco_transaction['category'] == 'groceries'
+    assert tesco_transaction["category"] == "groceries"
     # And check that a transaction without a rule was not categorized
-    assert amazon_transaction['category'] is None
+    assert amazon_transaction["category"] is None
 
     print("Integration test for transaction import and categorization passed!")

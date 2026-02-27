@@ -5,10 +5,10 @@ const nextConfig = {
   i18n: {
     // These are all the locales you want to support in
     // your application
-    locales: ['en-GB', 'pl-PL', 'ro-RO', 'it-IT', 'pt-PT', 'es-ES', 'tr-TR', 'bn-BD', 'ru-RU', 'uk-UA'],
+    locales: ['ru-RU', 'en-GB', 'pl-PL', 'ro-RO', 'it-IT', 'pt-PT', 'es-ES', 'tr-TR', 'bn-BD', 'uk-UA'],
     // This is the default locale you want to be used when visiting
     // a non-locale prefixed path e.g. `/hello`
-    defaultLocale: 'en-GB',
+    defaultLocale: 'ru-RU',
   },
 
   // This allows us to use environment variables on the client-side

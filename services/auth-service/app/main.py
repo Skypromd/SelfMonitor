@@ -1,5 +1,3 @@
-from collections import defaultdict
-from datetime import timedelta
 import datetime
 import io
 import logging
@@ -9,7 +7,9 @@ import sqlite3
 import threading
 import time
 import uuid
-from typing import Annotated, Optional, List
+from collections import defaultdict
+from datetime import timedelta
+from typing import Annotated, Optional
 
 import pyotp
 import qrcode
@@ -36,7 +36,7 @@ AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "tr
 app = FastAPI(
     title="Auth Service",
     description="Handles user authentication, registration, and token management.",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # --- Observability ---
@@ -48,34 +48,37 @@ Instrumentator().instrument(app).expose(app)
 async def health_check():
     return {"status": "ok"}
 
+
 # --- Security Utils ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 db_lock = threading.Lock()
 
+
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
 def validate_password_strength(password: str) -> None:
-    errors = []
+    errors: list[str] = []
     if len(password) < 8:
         errors.append("at least 8 characters")
-    if not re.search(r'[A-Z]', password):
+    if not re.search(r"[A-Z]", password):
         errors.append("at least one uppercase letter")
-    if not re.search(r'[a-z]', password):
+    if not re.search(r"[a-z]", password):
         errors.append("at least one lowercase letter")
-    if not re.search(r'\d', password):
+    if not re.search(r"\d", password):
         errors.append("at least one digit")
     if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
         errors.append("at least one special character")
     if errors:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Password must contain: {', '.join(errors)}"
+            detail=f"Password must contain: {', '.join(errors)}",
         )
 
 
@@ -92,7 +95,7 @@ def check_account_lockout(email: str) -> None:
     if len(_login_attempts[email]) >= LOCKOUT_THRESHOLD:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Account temporarily locked. Try again in 15 minutes."
+            detail="Account temporarily locked. Try again in 15 minutes.",
         )
 
 
@@ -104,8 +107,10 @@ def clear_failed_attempts(email: str) -> None:
     _login_attempts.pop(email, None)
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
+def create_access_token(
+    data: dict[str, object], expires_delta: Optional[timedelta] = None
+) -> str:
+    to_encode: dict[str, object] = data.copy()
     if expires_delta:
         expire = datetime.datetime.now(datetime.UTC) + expires_delta
     else:
@@ -114,12 +119,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+
 # --- Models ---
+
 
 class UserCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     plan: str = "free"
+
 
 class User(BaseModel):
     email: EmailStr
@@ -132,6 +140,7 @@ class User(BaseModel):
     subscription_status: str = "active"
     trial_days_remaining: Optional[int] = None
 
+
 class Organization(BaseModel):
     id: str
     name: str
@@ -140,6 +149,7 @@ class Organization(BaseModel):
     created_at: datetime.datetime
     owner_email: str
 
+
 class TeamInvite(BaseModel):
     email: EmailStr
     organization_id: str
@@ -147,16 +157,20 @@ class TeamInvite(BaseModel):
     invited_by: str
     expires_at: datetime.datetime
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
 
+
 class TokenData(BaseModel):
     email: Optional[str] = None
+
 
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
 
 # --- Database ---
 def _connect() -> sqlite3.Connection:
@@ -166,7 +180,9 @@ def _connect() -> sqlite3.Connection:
 
 
 def _seed_admin_user(conn: sqlite3.Connection) -> None:
-    existing = conn.execute("SELECT email FROM users WHERE email = ?", (AUTH_ADMIN_EMAIL,)).fetchone()
+    existing = conn.execute(
+        "SELECT email FROM users WHERE email = ?", (AUTH_ADMIN_EMAIL,)
+    ).fetchone()
     if existing:
         return
     conn.execute(
@@ -219,11 +235,13 @@ def reset_auth_db_for_tests() -> None:
         conn.close()
 
 
-def get_user_record(email: str) -> Optional[dict]:
+def get_user_record(email: str) -> Optional[dict[str, object]]:
     with db_lock:
         conn = _connect()
         try:
-            row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
         finally:
             conn.close()
     return dict(row) if row else None
@@ -244,62 +262,87 @@ def set_user_admin_for_tests(email: str, is_admin: bool) -> None:
 PLAN_HIERARCHY = {"free": 0, "starter": 1, "pro": 2, "business": 3}
 TRIAL_DAYS = 14
 
+
 def get_subscription(email: str) -> dict:
     with db_lock:
         conn = _connect()
         try:
-            row = conn.execute("SELECT * FROM subscriptions WHERE user_email = ?", (email,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM subscriptions WHERE user_email = ?", (email,)
+            ).fetchone()
         finally:
             conn.close()
     if not row:
-        return {"user_email": email, "plan": "free", "status": "active", "trial_end": None}
+        return {
+            "user_email": email,
+            "plan": "free",
+            "status": "active",
+            "trial_end": None,
+        }
     sub = dict(row)
     if sub["status"] == "trialing" and sub["trial_end"]:
-        if datetime.datetime.fromisoformat(sub["trial_end"]) < datetime.datetime.now(datetime.UTC):
+        if datetime.datetime.fromisoformat(sub["trial_end"]) < datetime.datetime.now(
+            datetime.UTC
+        ):
             _expire_trial(email)
             sub["status"] = "expired"
             sub["plan"] = "free"
     return sub
+
 
 def create_subscription(email: str, plan: str) -> dict:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     trial_end = None
     status = "active"
     if plan != "free":
-        trial_end = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=TRIAL_DAYS)).isoformat()
+        trial_end = (
+            datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=TRIAL_DAYS)
+        ).isoformat()
         status = "trialing"
     with db_lock:
         conn = _connect()
         try:
-            conn.execute("""
+            conn.execute(
+                """
                 INSERT OR REPLACE INTO subscriptions (user_email, plan, status, trial_end, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
-            """, (email, plan, status, trial_end, now, now))
+            """,
+                (email, plan, status, trial_end, now, now),
+            )
             conn.commit()
         finally:
             conn.close()
     return {"user_email": email, "plan": plan, "status": status, "trial_end": trial_end}
+
 
 def _expire_trial(email: str) -> None:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     with db_lock:
         conn = _connect()
         try:
-            conn.execute("UPDATE subscriptions SET plan = 'free', status = 'expired', updated_at = ? WHERE user_email = ?", (now, email))
+            conn.execute(
+                "UPDATE subscriptions SET plan = 'free', status = 'expired', updated_at = ? WHERE user_email = ?",
+                (now, email),
+            )
             conn.commit()
         finally:
             conn.close()
+
 
 def update_subscription_plan(email: str, new_plan: str) -> dict:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     with db_lock:
         conn = _connect()
         try:
-            conn.execute("UPDATE subscriptions SET plan = ?, status = 'active', updated_at = ? WHERE user_email = ?", (new_plan, now, email))
+            conn.execute(
+                "UPDATE subscriptions SET plan = ?, status = 'active', updated_at = ? WHERE user_email = ?",
+                (new_plan, now, email),
+            )
             conn.commit()
         finally:
             conn.close()
     return get_subscription(email)
+
 
 def has_plan_access(user_plan: str, required_plan: str) -> bool:
     return PLAN_HIERARCHY.get(user_plan, 0) >= PLAN_HIERARCHY.get(required_plan, 0)
@@ -310,27 +353,30 @@ def get_user(email: str) -> Optional[User]:
     if not row:
         return None
     return User(
-        email=row["email"],
+        email=str(row["email"]),
         is_active=bool(row["is_active"]),
         is_admin=bool(row["is_admin"]),
         is_two_factor_enabled=bool(row["is_two_factor_enabled"]),
     )
+
 
 def authenticate_user(email: str, password: str) -> Optional[User]:
     """Authenticates a user by checking their email and password."""
     row = get_user_record(email)
     if not row:
         return None
-    if not verify_password(password, row["hashed_password"]):
+    if not verify_password(password, str(row["hashed_password"])):
         return None
     return User(
-        email=row["email"],
+        email=str(row["email"]),
         is_active=bool(row["is_active"]),
         is_admin=bool(row["is_admin"]),
         is_two_factor_enabled=bool(row["is_two_factor_enabled"]),
     )
 
+
 # --- Dependencies ---
+
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     credentials_exception = HTTPException(
@@ -340,31 +386,47 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
+        email: Optional[str] = payload.get("sub")
         if email is None:
             raise credentials_exception
         token_data = TokenData(email=email)
     except JWTError:
+        raise credentials_exception
+    if token_data.email is None:
         raise credentials_exception
     user = get_user(email=token_data.email)
     if user is None:
         raise credentials_exception
     return user
 
-async def get_current_active_user(current_user: Annotated[User, Depends(get_current_user)]):
+
+async def get_current_active_user(
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     if not current_user.is_active:
-        raise HTTPException(status_code=401, detail="Inactive user", headers={"WWW-Authenticate": "Bearer"})
+        raise HTTPException(
+            status_code=401,
+            detail="Inactive user",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return current_user
 
-async def require_admin(current_user: Annotated[User, Depends(get_current_active_user)]):
+
+async def require_admin(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
     """
     A dependency that checks if the current user has admin privileges.
     """
     if not current_user.is_admin:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
     return current_user
 
+
 # --- Endpoints ---
+
 
 @app.post("/register", response_model=User, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate):
@@ -389,11 +451,15 @@ async def register(user_in: UserCreate):
     valid_plans = {"free", "starter", "pro", "business"}
     plan = user_in.plan if user_in.plan in valid_plans else "free"
     create_subscription(user_email, plan)
-    return User(email=user_email, is_active=True, is_admin=False, is_two_factor_enabled=False)
+    return User(
+        email=user_email, is_active=True, is_admin=False, is_two_factor_enabled=False
+    )
 
 
 @app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
+async def login_for_access_token(
+    form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
+):
     check_account_lockout(form_data.username)
 
     user = authenticate_user(form_data.username, form_data.password)
@@ -409,19 +475,24 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
     if user.is_two_factor_enabled:
         totp_code = None
         if form_data.scopes:
-            scope_parts = form_data.scopes[0].split(':')
-            if len(scope_parts) == 2 and scope_parts[0] == 'totp':
+            scope_parts = form_data.scopes[0].split(":")
+            if len(scope_parts) == 2 and scope_parts[0] == "totp":
                 totp_code = scope_parts[1]
 
         if not totp_code:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="2FA_REQUIRED",
-                headers={"X-2FA-Required": "true"}
+                headers={"X-2FA-Required": "true"},
             )
 
         row = get_user_record(user.email)
-        totp = pyotp.TOTP(row["two_factor_secret"] if row else None)
+        two_fa_secret = (
+            str(row["two_factor_secret"])
+            if row and row.get("two_factor_secret")
+            else ""
+        )
+        totp = pyotp.TOTP(two_fa_secret)
         if not totp.verify(totp_code):
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
 
@@ -432,10 +503,14 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
+
 # --- 2FA Endpoints ---
 
+
 @app.get("/2fa/setup")
-async def setup_two_factor_auth(current_user: Annotated[User, Depends(get_current_active_user)]):
+async def setup_two_factor_auth(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
     """
     Generates a secret and a QR code URI for setting up 2FA.
     """
@@ -456,8 +531,7 @@ async def setup_two_factor_auth(current_user: Annotated[User, Depends(get_curren
     # Generate provisioning URI
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(
-        name=current_user.email,
-        issuer_name="FinTech App"
+        name=current_user.email, issuer_name="FinTech App"
     )
 
     # Generate QR code image
@@ -470,7 +544,9 @@ async def setup_two_factor_auth(current_user: Annotated[User, Depends(get_curren
 
 
 @app.get("/2fa/setup-json")
-async def setup_two_factor_auth_json(current_user: Annotated[User, Depends(get_current_active_user)]):
+async def setup_two_factor_auth_json(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
     if current_user.is_two_factor_enabled:
         raise HTTPException(status_code=400, detail="2FA is already enabled.")
 
@@ -488,29 +564,34 @@ async def setup_two_factor_auth_json(current_user: Annotated[User, Depends(get_c
 
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(
-        name=current_user.email,
-        issuer_name="SelfMonitor"
+        name=current_user.email, issuer_name="SelfMonitor"
     )
 
     return {
         "secret": secret,
         "provisioning_uri": provisioning_uri,
-        "issuer": "SelfMonitor"
+        "issuer": "SelfMonitor",
     }
 
 
 @app.post("/2fa/verify")
 async def verify_two_factor_auth(
     current_user: Annotated[User, Depends(get_current_active_user)],
-    totp_code: str = Query(..., description="The 6-digit code from the authenticator app.")
+    totp_code: str = Query(
+        ..., description="The 6-digit code from the authenticator app."
+    ),
 ):
     """
     Verifies the TOTP code and enables 2FA for the user.
     """
     row = get_user_record(current_user.email)
-    secret = row["two_factor_secret"] if row else None
+    secret: Optional[str] = (
+        str(row["two_factor_secret"]) if row and row.get("two_factor_secret") else None
+    )
     if not secret:
-        raise HTTPException(status_code=400, detail="2FA setup not initiated. Call /2fa/setup first.")
+        raise HTTPException(
+            status_code=400, detail="2FA setup not initiated. Call /2fa/setup first."
+        )
 
     totp = pyotp.TOTP(secret)
     if not totp.verify(totp_code):
@@ -527,9 +608,10 @@ async def verify_two_factor_auth(
         conn.close()
     return {"message": "2FA enabled successfully."}
 
+
 @app.delete("/2fa/disable", status_code=status.HTTP_204_NO_CONTENT)
 async def disable_two_factor_auth(
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     """
     Disables 2FA for the currently authenticated user.
@@ -552,7 +634,9 @@ async def disable_two_factor_auth(
 
 
 @app.get("/me", response_model=User)
-async def read_users_me(current_user: Annotated[User, Depends(get_current_active_user)]):
+async def read_users_me(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
     sub = get_subscription(current_user.email)
     current_user.subscription_tier = sub["plan"]
     current_user.subscription_status = sub["status"]
@@ -566,10 +650,12 @@ async def read_users_me(current_user: Annotated[User, Depends(get_current_active
 @app.post("/change-password")
 async def change_password(
     payload: PasswordChange,
-    current_user: Annotated[User, Depends(get_current_active_user)]
+    current_user: Annotated[User, Depends(get_current_active_user)],
 ):
     row = get_user_record(current_user.email)
-    if not row or not verify_password(payload.current_password, row["hashed_password"]):
+    if not row or not verify_password(
+        payload.current_password, str(row["hashed_password"])
+    ):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     validate_password_strength(payload.new_password)
@@ -590,23 +676,26 @@ async def change_password(
 
 @app.post("/users/{user_email}/deactivate", response_model=User)
 async def deactivate_user(
-    user_email: EmailStr,
-    admin_user: Annotated[User, Depends(require_admin)]
+    user_email: EmailStr, admin_user: Annotated[User, Depends(require_admin)]
 ):
     """
     Deactivates a user. This action is restricted to administrators.
     """
     user_to_deactivate = get_user(email=user_email)
     if not user_to_deactivate:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
 
     if not user_to_deactivate.is_active:
-        return user_to_deactivate # Already inactive, no change needed
+        return user_to_deactivate  # Already inactive, no change needed
 
     # Update the persistent user store directly.
     with db_lock:
         conn = _connect()
-        conn.execute("UPDATE users SET is_active = 0 WHERE email = ?", (str(user_email),))
+        conn.execute(
+            "UPDATE users SET is_active = 0 WHERE email = ?", (str(user_email),)
+        )
         conn.commit()
         conn.close()
 
@@ -617,6 +706,7 @@ async def deactivate_user(
 
 # --- Subscription Endpoints ---
 
+
 class SubscriptionResponse(BaseModel):
     user_email: str
     plan: str
@@ -625,43 +715,75 @@ class SubscriptionResponse(BaseModel):
     trial_days_remaining: Optional[int] = None
     features: dict
 
+
 PLAN_FEATURES = {
     "free": {
-        "bank_connections": 1, "transactions_per_month": 200,
-        "ai_categorization": False, "receipt_ocr": False,
-        "cash_flow_forecast": False, "tax_calculator": "basic",
-        "hmrc_submission": False, "smart_search": False,
-        "mortgage_reports": False, "advanced_analytics": False,
-        "api_access": False, "team_members": 1, "white_label": False
+        "bank_connections": 1,
+        "transactions_per_month": 200,
+        "ai_categorization": False,
+        "receipt_ocr": False,
+        "cash_flow_forecast": False,
+        "tax_calculator": "basic",
+        "hmrc_submission": False,
+        "smart_search": False,
+        "mortgage_reports": False,
+        "advanced_analytics": False,
+        "api_access": False,
+        "team_members": 1,
+        "white_label": False,
     },
     "starter": {
-        "bank_connections": 3, "transactions_per_month": 1000,
-        "ai_categorization": True, "receipt_ocr": True,
-        "cash_flow_forecast": True, "tax_calculator": "full",
-        "hmrc_submission": False, "smart_search": False,
-        "mortgage_reports": False, "advanced_analytics": False,
-        "api_access": False, "team_members": 1, "white_label": False
+        "bank_connections": 3,
+        "transactions_per_month": 1000,
+        "ai_categorization": True,
+        "receipt_ocr": True,
+        "cash_flow_forecast": True,
+        "tax_calculator": "full",
+        "hmrc_submission": False,
+        "smart_search": False,
+        "mortgage_reports": False,
+        "advanced_analytics": False,
+        "api_access": False,
+        "team_members": 1,
+        "white_label": False,
     },
     "pro": {
-        "bank_connections": 3, "transactions_per_month": 5000,
-        "ai_categorization": True, "receipt_ocr": True,
-        "cash_flow_forecast": True, "tax_calculator": "full",
-        "hmrc_submission": True, "smart_search": True,
-        "mortgage_reports": True, "advanced_analytics": True,
-        "api_access": True, "team_members": 1, "white_label": False
+        "bank_connections": 3,
+        "transactions_per_month": 5000,
+        "ai_categorization": True,
+        "receipt_ocr": True,
+        "cash_flow_forecast": True,
+        "tax_calculator": "full",
+        "hmrc_submission": True,
+        "smart_search": True,
+        "mortgage_reports": True,
+        "advanced_analytics": True,
+        "api_access": True,
+        "team_members": 1,
+        "white_label": False,
     },
     "business": {
-        "bank_connections": 3, "transactions_per_month": 999999,
-        "ai_categorization": True, "receipt_ocr": True,
-        "cash_flow_forecast": True, "tax_calculator": "full",
-        "hmrc_submission": True, "smart_search": True,
-        "mortgage_reports": True, "advanced_analytics": True,
-        "api_access": True, "team_members": 5, "white_label": True
+        "bank_connections": 3,
+        "transactions_per_month": 999999,
+        "ai_categorization": True,
+        "receipt_ocr": True,
+        "cash_flow_forecast": True,
+        "tax_calculator": "full",
+        "hmrc_submission": True,
+        "smart_search": True,
+        "mortgage_reports": True,
+        "advanced_analytics": True,
+        "api_access": True,
+        "team_members": 5,
+        "white_label": True,
     },
 }
 
+
 @app.get("/subscription/me", response_model=SubscriptionResponse)
-async def get_my_subscription(current_user: Annotated[User, Depends(get_current_active_user)]):
+async def get_my_subscription(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
     sub = get_subscription(current_user.email)
     trial_days = None
     if sub.get("trial_end"):
@@ -673,13 +795,14 @@ async def get_my_subscription(current_user: Annotated[User, Depends(get_current_
         status=sub["status"],
         trial_end=sub.get("trial_end"),
         trial_days_remaining=trial_days,
-        features=PLAN_FEATURES.get(sub["plan"], PLAN_FEATURES["free"])
+        features=PLAN_FEATURES.get(sub["plan"], PLAN_FEATURES["free"]),
     )
+
 
 @app.post("/subscription/upgrade")
 async def upgrade_subscription(
     plan: str = Query(..., pattern="^(starter|pro|business)$"),
-    current_user: Annotated[User, Depends(get_current_active_user)] = None
+    current_user: Annotated[User, Depends(get_current_active_user)] = None,
 ):
     current_sub = get_subscription(current_user.email)
     if not has_plan_access(plan, current_sub["plan"]):
@@ -687,22 +810,45 @@ async def upgrade_subscription(
     updated = update_subscription_plan(current_user.email, plan)
     return {"message": f"Subscription upgraded to {plan}", "subscription": updated}
 
+
 @app.get("/subscription/plans")
 async def list_plans():
     return {
         "plans": [
-            {"id": "free", "name": "Free", "price_gbp": 0, "features": PLAN_FEATURES["free"]},
-            {"id": "starter", "name": "Starter", "price_gbp": 9, "features": PLAN_FEATURES["starter"]},
-            {"id": "pro", "name": "Pro", "price_gbp": 19, "features": PLAN_FEATURES["pro"], "popular": True},
-            {"id": "business", "name": "Business", "price_gbp": 39, "features": PLAN_FEATURES["business"]},
+            {
+                "id": "free",
+                "name": "Free",
+                "price_gbp": 0,
+                "features": PLAN_FEATURES["free"],
+            },
+            {
+                "id": "starter",
+                "name": "Starter",
+                "price_gbp": 9,
+                "features": PLAN_FEATURES["starter"],
+            },
+            {
+                "id": "pro",
+                "name": "Pro",
+                "price_gbp": 19,
+                "features": PLAN_FEATURES["pro"],
+                "popular": True,
+            },
+            {
+                "id": "business",
+                "name": "Business",
+                "price_gbp": 39,
+                "features": PLAN_FEATURES["business"],
+            },
         ],
-        "trial_days": 14
+        "trial_days": 14,
     }
+
 
 @app.post("/subscription/check-access")
 async def check_feature_access(
     feature: str = Query(...),
-    current_user: Annotated[User, Depends(get_current_active_user)] = None
+    current_user: Annotated[User, Depends(get_current_active_user)] = None,
 ):
     sub = get_subscription(current_user.email)
     plan = sub["plan"]
@@ -713,7 +859,9 @@ async def check_feature_access(
     elif isinstance(has_access, int):
         allowed = has_access > 0
     else:
-        allowed = has_access != "basic" if feature == "tax_calculator" else bool(has_access)
+        allowed = (
+            has_access != "basic" if feature == "tax_calculator" else bool(has_access)
+        )
 
     if not allowed:
         min_plan = "starter"
@@ -731,18 +879,21 @@ init_auth_db()
 
 # === ENTERPRISE FEATURES ===
 
+
 @app.post("/organizations")
 async def create_organization(
+    current_user: Annotated[User, Depends(get_current_active_user)],
     name: str = Query(min_length=1, max_length=200),
     plan: str = Query(default="enterprise"),
-    current_user: Annotated[User, Depends(get_current_active_user)] = None
-):
+) -> dict[str, object]:
     """Create a new organization (available for Pro+ users)"""
     if plan not in ("enterprise", "team"):
-        raise HTTPException(status_code=400, detail="Invalid plan. Must be 'enterprise' or 'team'.")
+        raise HTTPException(
+            status_code=400, detail="Invalid plan. Must be 'enterprise' or 'team'."
+        )
 
     org_id = str(uuid.uuid4())[:8].upper()
-    
+
     with db_lock:
         conn = _connect()
         try:
@@ -755,20 +906,20 @@ async def create_organization(
                     created_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            
+
             conn.execute(
                 "INSERT INTO organizations (id, name, subscription_plan, owner_email) VALUES (?, ?, ?, ?)",
-                (org_id, name, plan, current_user.email)
+                (org_id, name, plan, current_user.email),
             )
-            
+
             conn.commit()
-            
+
             return {
                 "id": org_id,
                 "name": name,
                 "subscription_plan": plan,
                 "owner_email": current_user.email,
-                "message": f"Enterprise organization '{name}' created! Monthly revenue: £{45 * 10} minimum"
+                "message": f"Enterprise organization '{name}' created! Monthly revenue: £{45 * 10} minimum",
             }
         except Exception as e:
             logger.error("Failed to create organization: %s", e)
@@ -776,26 +927,27 @@ async def create_organization(
         finally:
             conn.close()
 
+
 @app.get("/enterprise/pricing")
-async def get_enterprise_pricing():
+async def get_enterprise_pricing() -> dict[str, object]:
     """Get current enterprise pricing plans"""
     return {
         "plans": {
             "team": {
                 "price_per_user_per_month_gbp": 25,
-                "min_users": 5, 
+                "min_users": 5,
                 "max_users": 20,
-                "estimated_monthly_revenue": 625  # 25 * 25 avg users
+                "estimated_monthly_revenue": 625,  # 25 * 25 avg users
             },
             "enterprise": {
                 "price_per_user_per_month_gbp": 45,
                 "min_users": 10,
                 "max_users": 500,
-                "estimated_monthly_revenue": 2250  # 50 * 45 avg users
-            }
+                "estimated_monthly_revenue": 2250,  # 50 * 45 avg users
+            },
         },
         "roi_metrics": {
             "customer_lifetime_value": 12600,  # £45 * 12 months * 23.33 avg retention
-            "enterprise_arpu_improvement": "3x higher than individual plans"
-        }
+            "enterprise_arpu_improvement": "3x higher than individual plans",  # cspell:ignore arpu
+        },
     }

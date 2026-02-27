@@ -1,10 +1,10 @@
 import type { AppProps } from 'next/app';
-import { useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import '../styles/globals.css';
-import Layout from '../components/Layout';
+import { useContext, useEffect, useState } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
-import { I18nProvider, I18nContext } from '../context/i18n';
+import Layout from '../components/Layout';
+import { I18nContext, I18nProvider } from '../context/i18n';
+import '../styles/globals.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 
@@ -41,7 +41,10 @@ function decodeUserFromToken(token: string): AuthUser {
 function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser>({ email: '', is_admin: false });
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const router = useRouter();
+
+  const handleToggleTheme = () => setIsDarkMode((prev) => !prev);
   const { setTranslations } = useContext(I18nContext);
   const { locale, defaultLocale } = router;
 
@@ -119,7 +122,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   }
 
   return (
-    <Layout onLogout={handleLogout} user={user}>
+    <Layout onLogout={handleLogout} userEmail={user.email} isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme}>
       <Component {...pageProps} token={token} user={user} />
     </Layout>
   );
