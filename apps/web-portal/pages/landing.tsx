@@ -114,9 +114,9 @@ export default function LandingPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.3 }}
             >
-              <a href="#pricing" className={styles.btnPrimary}>
+              <Link href="/register?plan=pro" className={styles.btnPrimary}>
                 Start Free
-              </a>
+              </Link>
               <a href="#pricing" className={styles.btnSecondary}>
                 See Pricing
               </a>
@@ -645,7 +645,7 @@ export default function LandingPage() {
                   <li>Basic tax calculator</li>
                   <li>Email support</li>
                 </ul>
-                <Link href="/" className={styles.btnSecondary}>
+                <Link href="/register?plan=free" className={styles.btnSecondary}>
                   Get Started
                 </Link>
               </motion.div>
@@ -663,7 +663,7 @@ export default function LandingPage() {
                   <li>Receipt OCR</li>
                   <li>Cash flow forecasting</li>
                 </ul>
-                <Link href="/" className={styles.btnPrimary}>
+                <Link href="/register?plan=starter" className={styles.btnPrimary}>
                   Start Free Trial
                 </Link>
               </motion.div>
@@ -687,7 +687,7 @@ export default function LandingPage() {
                   <li>Advanced analytics</li>
                   <li>API access</li>
                 </ul>
-                <Link href="/" className={styles.btnPrimaryLg}>
+                <Link href="/register?plan=pro" className={styles.btnPrimaryLg}>
                   Start Free Trial
                 </Link>
               </motion.div>
@@ -705,7 +705,7 @@ export default function LandingPage() {
                   <li>White-label reports</li>
                   <li>Dedicated success manager</li>
                 </ul>
-                <Link href="/" className={styles.btnGold}>
+                <Link href="/register?plan=business" className={styles.btnGold}>
                   Contact Sales
                 </Link>
               </motion.div>
@@ -724,7 +724,7 @@ export default function LandingPage() {
                 Join thousands of UK self-employed professionals who saved 5+ hours
                 per week.
               </p>
-              <Link href="/" className={styles.btnGoldLg}>
+              <Link href="/register?plan=pro" className={styles.btnGoldLg}>
                 Start Free — No Credit Card Required
               </Link>
               <small className={styles.ctaSmall}>

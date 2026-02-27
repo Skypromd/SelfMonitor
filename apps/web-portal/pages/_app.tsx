@@ -83,7 +83,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
       setToken(storedToken);
       setUser(decodeUserFromToken(storedToken));
       fetchUserInfo(storedToken);
-    } else if (router.pathname !== '/' && router.pathname !== '/landing') {
+    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register') {
       router.replace('/');
     }
   }, [router.pathname, router]);
@@ -103,7 +103,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     router.push('/');
   };
 
-  if (router.pathname === '/' || router.pathname === '/landing') {
+  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register') {
     return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }
 

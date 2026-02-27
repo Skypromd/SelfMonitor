@@ -30,6 +30,7 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
     { href: '/marketplace', label: t('nav.marketplace') },
     { href: '/submission', label: t('nav.submission') },
     { href: '/profile', label: t('nav.profile') },
+    { href: '/billing', label: '💳 Billing' },
   ];
 
   if (isAdmin) {

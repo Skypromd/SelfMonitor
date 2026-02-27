@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import styles from '../styles/Home.module.css';
 import { useTranslation } from '../hooks/useTranslation';
@@ -139,6 +140,70 @@ function CashFlowChart({ token }: { token: string }) {
   );
 }
 
+type TrialSubscription = {
+  plan: string;
+  status: string;
+  trial_end?: string;
+};
+
+function TrialBanner({ token }: { token: string }) {
+  const [sub, setSub] = useState<TrialSubscription | null>(null);
+
+  useEffect(() => {
+    const fetchSub = async () => {
+      try {
+        const response = await fetch(`${API_GATEWAY_URL}/auth/subscription/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          setSub(await response.json());
+        }
+      } catch {
+        // silently ignore
+      }
+    };
+    fetchSub();
+  }, [token]);
+
+  if (!sub || sub.status !== 'trialing') return null;
+
+  const daysRemaining = sub.trial_end
+    ? Math.max(0, Math.ceil((new Date(sub.trial_end).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 0;
+
+  const planName = sub.plan.charAt(0).toUpperCase() + sub.plan.slice(1);
+
+  return (
+    <div style={{
+      width: '100%',
+      padding: '0.75rem 1.25rem',
+      borderRadius: 10,
+      background: 'rgba(13,148,136,0.15)',
+      border: '1px solid rgba(13,148,136,0.3)',
+      marginBottom: '1.5rem',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: '1rem',
+    }}>
+      <span style={{ color: '#14b8a6', fontWeight: 600 }}>
+        🎉 {planName} trial — {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining
+      </span>
+      <Link href="/billing" style={{
+        color: '#fff',
+        background: 'var(--lp-accent-teal)',
+        padding: '0.4rem 1rem',
+        borderRadius: 8,
+        fontWeight: 600,
+        fontSize: '0.85rem',
+        textDecoration: 'none',
+      }}>
+        Upgrade Now
+      </Link>
+    </div>
+  );
+}
+
 function ActionCenter({ token }: { token: string }) {
   const [advice, setAdvice] = useState<AdviceItem | null>(null);
   const router = useRouter();
@@ -189,6 +254,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
 
   return (
     <div>
+      <TrialBanner token={token} />
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
       <ActionCenter token={token} />
