@@ -403,3 +403,165 @@
 .searchResultItem small {
   color: var(--lp-text-muted);
 }
+
+/* Password strength meter */
+.strengthMeter {
+  height: 4px;
+  border-radius: 2px;
+  margin-top: 0.5rem;
+  transition: all 0.3s;
+}
+
+.strengthWeak {
+  background: #ef4444;
+  width: 33%;
+}
+
+.strengthMedium {
+  background: #d97706;
+  width: 66%;
+}
+
+.strengthStrong {
+  background: #14b8a6;
+  width: 100%;
+}
+
+/* Password requirements checklist */
+.requirements {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+}
+
+.requirements li {
+  padding: 0.2rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.requirementMet {
+  color: #14b8a6;
+}
+
+.requirementUnmet {
+  color: #94a3b8;
+}
+
+/* TOTP input */
+.totpInput {
+  text-align: center;
+  font-size: 1.5rem;
+  letter-spacing: 0.5rem;
+  font-weight: 700;
+}
+
+/* Password toggle */
+.passwordWrapper {
+  position: relative;
+}
+
+.passwordToggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--lp-text-muted);
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+/* Security section */
+.securitySection {
+  margin-top: 2rem;
+}
+
+.securityHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.securityBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.badgeEnabled {
+  background: rgba(13, 148, 136, 0.15);
+  color: #14b8a6;
+}
+
+.badgeDisabled {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+/* QR Code container */
+.qrContainer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+}
+
+.secretKey {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--lp-text-muted);
+  word-break: break-all;
+  text-align: center;
+}
+
+/* Strength label */
+.strengthLabel {
+  font-size: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+/* TOTP section styling */
+.totpSection {
+  text-align: center;
+  margin-top: 1rem;
+}
+
+.totpSection p {
+  color: var(--lp-text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+/* Danger button (disable 2FA, etc.) */
+.dangerButton {
+  flex: 1;
+  height: 48px;
+  padding: 0 1rem;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 10px;
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  min-width: 120px;
+}
+
+.dangerButton:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.6);
+}
