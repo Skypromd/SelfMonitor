@@ -10,6 +10,11 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@nivo/bar": "^0.99.0",
+    "@nivo/core": "^0.99.0",
+    "@nivo/line": "^0.99.0",
+    "@nivo/pie": "^0.99.0",
+    "framer-motion": "^12.34.3",
     "next": "13.5.6",
     "react": "^18",
     "react-dom": "^18",
