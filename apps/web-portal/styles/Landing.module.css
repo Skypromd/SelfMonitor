@@ -660,6 +660,200 @@
   font-size: 1.25rem;
 }
 
+/* ---------- charts grid ---------- */
+
+.chartsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+}
+
+.chartCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+}
+
+.chartCard:hover {
+  border-color: rgba(13, 148, 136, 0.4);
+  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.12);
+  transform: translateY(-3px);
+}
+
+.chartLabel {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--lp-text);
+  margin: 0 0 0.25rem;
+}
+
+.chartCaption {
+  font-size: 0.85rem;
+  color: var(--lp-text-muted);
+  line-height: 1.5;
+  margin: 0.75rem 0 0;
+}
+
+/* ---------- testimonials ---------- */
+
+.testimonialGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+}
+
+.testimonialCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+}
+
+.testimonialCard:hover {
+  border-color: rgba(13, 148, 136, 0.35);
+  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.1);
+  transform: translateY(-3px);
+}
+
+.testimonialStars {
+  color: #d97706;
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+}
+
+.testimonialQuote {
+  font-style: italic;
+  color: var(--lp-text);
+  font-size: 1rem;
+  line-height: 1.7;
+  margin: 0;
+  position: relative;
+  padding-left: 1rem;
+  border-left: 3px solid rgba(20, 184, 166, 0.3);
+}
+
+.testimonialAuthor {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: auto;
+}
+
+.testimonialAvatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--lp-accent-teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.testimonialInfo {
+  display: flex;
+  flex-direction: column;
+}
+
+.testimonialName {
+  color: var(--lp-text);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.testimonialRole {
+  color: var(--lp-text-muted);
+  font-size: 0.85rem;
+}
+
+/* ---------- ROI calculator ---------- */
+
+.roiSection {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2rem;
+  max-width: 800px;
+  margin: 0 auto 2.5rem;
+}
+
+.roiColumn {
+  background: var(--lp-bg-card);
+  border-radius: 16px;
+  padding: 2rem;
+  border: 2px solid transparent;
+}
+
+.roiColumnBad {
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.roiColumnGood {
+  border-color: rgba(20, 184, 166, 0.35);
+}
+
+.roiColumnTitle {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  margin: 0 0 1.25rem;
+  text-align: center;
+}
+
+.roiColumnTitleBad {
+  color: #f87171;
+}
+
+.roiColumnTitleGood {
+  color: var(--lp-accent-teal-light);
+}
+
+.roiItem {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--lp-border);
+  font-size: 0.92rem;
+}
+
+.roiItemLabel {
+  color: var(--lp-text-muted);
+}
+
+.roiItemValueBad {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.roiItemValueGood {
+  color: var(--lp-accent-teal-light);
+  font-weight: 600;
+}
+
+.roiTotal {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--lp-accent-teal-light);
+  text-align: center;
+  margin: 1.5rem 0 0.25rem;
+}
+
+.roiTotalLabel {
+  text-align: center;
+  color: var(--lp-text-muted);
+  font-size: 1rem;
+  margin: 0;
+}
+
 /* ============================================================
    Responsive
    ============================================================ */
@@ -670,6 +864,12 @@
     grid-template-columns: repeat(2, 1fr);
   }
   .footerTop {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .chartsGrid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .testimonialGrid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
@@ -725,5 +925,17 @@
   .statsRow {
     flex-direction: column;
     align-items: center;
+  }
+  .chartsGrid {
+    grid-template-columns: 1fr;
+  }
+  .testimonialGrid {
+    grid-template-columns: 1fr;
+  }
+  .roiSection {
+    grid-template-columns: 1fr;
+  }
+  .roiTotal {
+    font-size: 2rem;
   }
 }
