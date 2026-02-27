@@ -463,6 +463,203 @@
   font-size: 0.8rem;
 }
 
+/* ---------- store buttons ---------- */
+.storeButtons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+}
+
+.storeButtonsLeft {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.storeButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  color: var(--lp-text);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.storeButton:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: var(--lp-accent-teal);
+  transform: translateY(-2px);
+}
+
+.storeIcon {
+  font-size: 1.75rem;
+}
+
+.storeText {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+}
+
+.storeText small {
+  font-size: 0.7rem;
+  color: var(--lp-text-muted);
+  letter-spacing: 0.02em;
+}
+
+.storeText strong {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* ---------- mobile showcase ---------- */
+.mobileShowcase {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4rem;
+  align-items: center;
+}
+
+.mobileContent {
+  display: flex;
+  flex-direction: column;
+}
+
+.mobileBadge {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  background: rgba(13,148,136,0.15);
+  border: 1px solid rgba(13,148,136,0.3);
+  border-radius: 999px;
+  color: var(--lp-accent-teal-light);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 1.5rem;
+  width: fit-content;
+}
+
+.mobileDesc {
+  color: var(--lp-text-muted);
+  font-size: 1.05rem;
+  line-height: 1.7;
+  margin-top: 1rem;
+  max-width: 500px;
+}
+
+.mobileFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 2rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.mobileFeatures li {
+  color: var(--lp-text);
+  font-size: 0.95rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.mobileCheck {
+  color: var(--lp-accent-teal);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ---------- phone mockup ---------- */
+.mobilePreview {
+  display: flex;
+  justify-content: center;
+}
+
+.phoneFrame {
+  width: 280px;
+  background: #1a1a2e;
+  border-radius: 36px;
+  padding: 12px;
+  border: 2px solid rgba(148,163,184,0.2);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(148,163,184,0.1);
+}
+
+.phoneNotch {
+  width: 120px;
+  height: 24px;
+  background: #0f172a;
+  border-radius: 0 0 16px 16px;
+  margin: 0 auto 8px;
+}
+
+.phoneScreen {
+  background: var(--lp-bg);
+  border-radius: 24px;
+  padding: 1.25rem;
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.phoneHeader {
+  text-align: center;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--lp-border);
+  margin-bottom: 0.25rem;
+}
+
+.phoneLogo {
+  color: var(--lp-accent-teal);
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: -0.02em;
+}
+
+.phoneCard {
+  background: var(--lp-bg-elevated);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1rem;
+}
+
+.phoneCardLabel {
+  font-size: 0.7rem;
+  color: var(--lp-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.25rem;
+}
+
+.phoneCardValue {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--lp-accent-teal);
+  margin: 0;
+}
+
+.phoneCardSub {
+  font-size: 0.75rem;
+  color: var(--lp-text-muted);
+  margin: 0.25rem 0 0;
+}
+
+.phoneNav {
+  display: flex;
+  justify-content: space-around;
+  padding: 0.75rem 0 0.25rem;
+  border-top: 1px solid var(--lp-border);
+  margin-top: auto;
+  font-size: 1.25rem;
+}
+
 /* ============================================================
    Responsive
    ============================================================ */
@@ -486,6 +683,26 @@
   }
   .statsRow {
     gap: 1.25rem;
+  }
+  .mobileShowcase {
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+  }
+  .mobilePreview {
+    order: -1;
+  }
+  .mobileContent .sectionHeading {
+    text-align: center;
+  }
+  .storeButtons,
+  .storeButtonsLeft {
+    flex-direction: column;
+    align-items: center;
+  }
+  .storeButton {
+    width: 100%;
+    max-width: 240px;
+    justify-content: center;
   }
 }
 

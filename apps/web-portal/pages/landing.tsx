@@ -35,6 +35,23 @@ export default function LandingPage() {
               </a>
             </div>
 
+            <div className={styles.storeButtons}>
+              <a href="https://apps.apple.com/app/selfmonitor" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
+                <span className={styles.storeIcon}>🍎</span>
+                <span className={styles.storeText}>
+                  <small>Download on the</small>
+                  <strong>App Store</strong>
+                </span>
+              </a>
+              <a href="https://play.google.com/store/apps/details?id=com.selfmonitor.app" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
+                <span className={styles.storeIcon}>▶️</span>
+                <span className={styles.storeText}>
+                  <small>Get it on</small>
+                  <strong>Google Play</strong>
+                </span>
+              </a>
+            </div>
+
             <div className={styles.trustPills}>
               <span className={styles.trustPill}>🔒 Bank-Grade Security</span>
               <span className={styles.trustPill}>🇬🇧 HMRC Compliant</span>
@@ -172,6 +189,83 @@ export default function LandingPage() {
                   Ask &ldquo;Where did I buy coffee last month?&rdquo; — AI
                   finds it instantly.
                 </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ====== MOBILE APP ====== */}
+        <section className={styles.sectionElevated}>
+          <div className={styles.container}>
+            <div className={styles.mobileShowcase}>
+              <div className={styles.mobileContent}>
+                <span className={styles.mobileBadge}>📱 MOBILE APP</span>
+                <h2 className={styles.sectionHeading} style={{ textAlign: 'left' }}>
+                  Your Finances in Your Pocket
+                </h2>
+                <p className={styles.mobileDesc}>
+                  Everything you can do on the web — now on your phone. Scan receipts with your camera, 
+                  check cash flow on the go, get instant tax estimates, and submit to HMRC from anywhere.
+                </p>
+
+                <ul className={styles.mobileFeatures}>
+                  <li><span className={styles.mobileCheck}>✓</span> Scan receipts with your camera — OCR extracts data instantly</li>
+                  <li><span className={styles.mobileCheck}>✓</span> Push notifications for tax deadlines and unusual transactions</li>
+                  <li><span className={styles.mobileCheck}>✓</span> Check your cash flow forecast anytime, anywhere</li>
+                  <li><span className={styles.mobileCheck}>✓</span> Connect bank accounts with biometric authentication</li>
+                  <li><span className={styles.mobileCheck}>✓</span> Offline mode — view your data even without internet</li>
+                  <li><span className={styles.mobileCheck}>✓</span> Dark theme designed for comfortable night-time use</li>
+                </ul>
+
+                <div className={styles.storeButtonsLeft}>
+                  <a href="https://apps.apple.com/app/selfmonitor" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
+                    <span className={styles.storeIcon}>🍎</span>
+                    <span className={styles.storeText}>
+                      <small>Download on the</small>
+                      <strong>App Store</strong>
+                    </span>
+                  </a>
+                  <a href="https://play.google.com/store/apps/details?id=com.selfmonitor.app" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
+                    <span className={styles.storeIcon}>▶️</span>
+                    <span className={styles.storeText}>
+                      <small>Get it on</small>
+                      <strong>Google Play</strong>
+                    </span>
+                  </a>
+                </div>
+              </div>
+
+              <div className={styles.mobilePreview}>
+                <div className={styles.phoneFrame}>
+                  <div className={styles.phoneNotch}></div>
+                  <div className={styles.phoneScreen}>
+                    <div className={styles.phoneHeader}>
+                      <span className={styles.phoneLogo}>SelfMonitor</span>
+                    </div>
+                    <div className={styles.phoneCard}>
+                      <p className={styles.phoneCardLabel}>Cash Flow</p>
+                      <p className={styles.phoneCardValue}>£4,230.50</p>
+                      <p className={styles.phoneCardSub}>+12% from last month</p>
+                    </div>
+                    <div className={styles.phoneCard}>
+                      <p className={styles.phoneCardLabel}>Tax Due</p>
+                      <p className={styles.phoneCardValue}>£1,847.00</p>
+                      <p className={styles.phoneCardSub}>Due 31 Jan 2026</p>
+                    </div>
+                    <div className={styles.phoneCard}>
+                      <p className={styles.phoneCardLabel}>Receipts Scanned</p>
+                      <p className={styles.phoneCardValue}>127</p>
+                      <p className={styles.phoneCardSub}>This quarter</p>
+                    </div>
+                    <div className={styles.phoneNav}>
+                      <span>🏠</span>
+                      <span>💳</span>
+                      <span>📄</span>
+                      <span>📊</span>
+                      <span>👤</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -401,7 +495,10 @@ export default function LandingPage() {
                     <a href="#pricing">Pricing</a>
                   </li>
                   <li>
-                    <a href="#features">Mobile App</a>
+                    <a href="https://apps.apple.com/app/selfmonitor" target="_blank" rel="noopener noreferrer">iOS App</a>
+                  </li>
+                  <li>
+                    <a href="https://play.google.com/store/apps/details?id=com.selfmonitor.app" target="_blank" rel="noopener noreferrer">Android App</a>
                   </li>
                   <li>
                     <a href="#features">API</a>
