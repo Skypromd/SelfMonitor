@@ -7,6 +7,7 @@ import { I18nContext, I18nProvider } from '../context/i18n';
 import '../styles/globals.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const LOCALIZATION_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || `${API_GATEWAY_URL}/localization`;
 
 type AuthUser = {
   email: string;
@@ -45,14 +46,16 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   const router = useRouter();
 
   const handleToggleTheme = () => setIsDarkMode((prev) => !prev);
-  const { setTranslations } = useContext(I18nContext);
+  const { setTranslations, setLocale } = useContext(I18nContext);
   const { locale, defaultLocale } = router;
 
   useEffect(() => {
     const fetchTranslations = async () => {
       const lang = locale || defaultLocale || 'en-GB';
+      // Sync locale into context so useTranslation uses correct locale for formatting
+      setLocale(lang);
       try {
-        const response = await fetch(`${API_GATEWAY_URL}/localization/translations/${lang}/all`);
+        const response = await fetch(`${LOCALIZATION_URL}/translations/${lang}/all`);
         if (!response.ok) {
           throw new Error('Failed to fetch translations');
         }
@@ -64,7 +67,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     };
 
     fetchTranslations();
-  }, [locale, defaultLocale, setTranslations]);
+  }, [locale, defaultLocale, setTranslations, setLocale]);
 
   const fetchUserInfo = async (authToken: string) => {
     try {
