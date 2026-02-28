@@ -1,0 +1,82 @@
+{
+  "common": {
+    "submit": "Wyślij",
+    "cancel": "Anuluj",
+    "logout": "Wyloguj",
+    "save": "Zapisz"
+  },
+  "login": {
+    "title": "Aplikacja FinTech",
+    "description": "Zarejestruj się lub zaloguj, aby kontynuować",
+    "register_button": "Zarejestruj się",
+    "login_button": "Zaloguj się"
+  },
+  "nav": {
+    "dashboard": "Panel główny",
+    "transactions": "Transakcje",
+    "documents": "Dokumenty",
+    "profile": "Profil",
+    "activity": "Aktywność",
+    "reports": "Raporty",
+    "marketplace": "Marketplace",
+    "submission": "Złożenie zeznania",
+    "admin": "Administracja"
+  },
+  "dashboard": {
+    "title": "Główny panel",
+    "description": "Witaj w swoim panelu finansowym."
+  },
+  "profile": {
+    "title": "Twój profil"
+  },
+  "partners": {
+    "description": "Lista zaufanych, licencjonowanych partnerów, do których możesz się zwrócić po poradę.",
+    "handoff_button": "Przekaż zapytanie"
+  },
+  "submission": {
+    "description": "Oblicz i złóż swoje zeznanie podatkowe.",
+    "form_title": "Nowe zeznanie podatkowe",
+    "submit_button": "Oblicz i złóż",
+    "success_title": "Zeznanie zostało pomyślnie złożone"
+  },
+  "admin": {
+    "description": "Zarządzaj użytkownikami i ustawieniami systemu.",
+    "form_title": "Dezaktywacja użytkownika",
+    "deactivate_button": "Dezaktywuj użytkownika"
+  },
+  "reports": {
+    "description": "Generuj niestandardowe raporty na podstawie swoich danych finansowych.",
+    "mortgage_title": "Raport zdolności hipotecznej",
+    "mortgage_description": "Wygeneruj PDF z podsumowaniem swoich dochodów z ostatnich 12 miesięcy. Przydatne przy ubieganiu się o kredyt hipoteczny.",
+    "generate_button": "Generuj raport",
+    "generating_button": "Generowanie..."
+  },
+  "documents": {
+    "description": "Przesyłaj paragony i faktury oraz zarządzaj nimi.",
+    "upload_title": "Prześlij dokument",
+    "upload_button": "Prześlij",
+    "uploading_button": "Przesyłanie...",
+    "col_filename": "Nazwa pliku",
+    "col_status": "Status",
+    "col_vendor": "Sprzedawca",
+    "col_amount": "Kwota",
+    "col_category": "Kategoria",
+    "col_expense_article": "Artykuł wydatku",
+    "col_deductible": "Odliczenie",
+    "col_receipt_draft": "Wersja robocza transakcji",
+    "col_uploaded_at": "Data przesłania",
+    "search_title": "Semantyczne wyszukiwanie dokumentów",
+    "search_description": "Zadaj pytanie o swoje dokumenty w języku naturalnym.",
+    "search_placeholder": "np. 'gdzie kupiłem kawę w zeszłym miesiącu?'",
+    "search_button": "Szukaj",
+    "all_documents_title": "Wszystkie przesłane dokumenty",
+    "uploaded_documents_count": "{count, plural, =0 {Brak przesłanych dokumentów.} one {# przesłany dokument} few {# przesłane dokumenty} many {# przesłanych dokumentów} other {# przesłanych dokumentów}}",
+    "review_queue_count": "{count, plural, =0 {Brak dokumentów wymagających przeglądu.} one {# dokument wymaga ręcznego przeglądu OCR.} few {# dokumenty wymagają ręcznego przeglądu OCR.} many {# dokumentów wymaga ręcznego przeglądu OCR.} other {# dokumentów wymaga ręcznego przeglądu OCR.}}"
+  },
+  "activity": {
+    "description": "Historia działań i zdarzeń w Twoim koncie."
+  },
+  "transactions": {
+    "description": "Przeglądaj i zarządzaj swoimi transakcjami finansowymi."
+  }
+}

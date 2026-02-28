@@ -1,0 +1,82 @@
+{
+  "common": {
+    "submit": "Trimite",
+    "cancel": "Anulează",
+    "logout": "Deconectare",
+    "save": "Salvează"
+  },
+  "login": {
+    "title": "Aplicație FinTech",
+    "description": "Înregistrează-te sau conectează-te pentru a continua",
+    "register_button": "Înregistrare",
+    "login_button": "Conectare"
+  },
+  "nav": {
+    "dashboard": "Panou",
+    "transactions": "Tranzacții",
+    "documents": "Documente",
+    "profile": "Profil",
+    "activity": "Activitate",
+    "reports": "Rapoarte",
+    "marketplace": "Marketplace",
+    "submission": "Declarație fiscală",
+    "admin": "Administrare"
+  },
+  "dashboard": {
+    "title": "Panou principal",
+    "description": "Bine ați venit la panoul dvs. financiar."
+  },
+  "profile": {
+    "title": "Profilul dvs."
+  },
+  "partners": {
+    "description": "Listă de parteneri de încredere și autorizați pentru consultanță financiară.",
+    "handoff_button": "Transferă solicitarea"
+  },
+  "submission": {
+    "description": "Calculați și depuneți declarația dvs. fiscală.",
+    "form_title": "Declarație fiscală nouă",
+    "submit_button": "Calculează și depune",
+    "success_title": "Declarația a fost depusă cu succes"
+  },
+  "admin": {
+    "description": "Gestionați utilizatorii și setările sistemului.",
+    "form_title": "Dezactivare utilizator",
+    "deactivate_button": "Dezactivează utilizatorul"
+  },
+  "reports": {
+    "description": "Generați rapoarte personalizate pe baza datelor dvs. financiare.",
+    "mortgage_title": "Raport eligibilitate ipotecă",
+    "mortgage_description": "Generați un rezumat PDF al venitului dvs. din ultimele 12 luni. Util la solicitarea unui credit ipotecar.",
+    "generate_button": "Generează raport",
+    "generating_button": "Se generează..."
+  },
+  "documents": {
+    "description": "Încărcați și gestionați chitanțele și facturile dvs.",
+    "upload_title": "Încarcă document",
+    "upload_button": "Încarcă",
+    "uploading_button": "Se încarcă...",
+    "col_filename": "Nume fișier",
+    "col_status": "Stare",
+    "col_vendor": "Furnizor",
+    "col_amount": "Sumă",
+    "col_category": "Categorie",
+    "col_expense_article": "Articol cheltuială",
+    "col_deductible": "Deductibil",
+    "col_receipt_draft": "Schiță tranzacție",
+    "col_uploaded_at": "Încărcat la",
+    "search_title": "Căutare semantică documente",
+    "search_description": "Adresați o întrebare despre documentele dvs. în limbaj natural.",
+    "search_placeholder": "ex. 'unde am cumpărat cafea luna trecută?'",
+    "search_button": "Caută",
+    "all_documents_title": "Toate documentele încărcate",
+    "uploaded_documents_count": "{count, plural, =0 {Niciun document încărcat.} one {# document încărcat} few {# documente încărcate} other {# documente încărcate}}",
+    "review_queue_count": "{count, plural, =0 {Niciun document nu necesită revizuire OCR.} one {# document necesită revizuire OCR manuală.} few {# documente necesită revizuire OCR manuală.} other {# documente necesită revizuire OCR manuală.}}"
+  },
+  "activity": {
+    "description": "Istoricul acțiunilor și evenimentelor din contul dvs."
+  },
+  "transactions": {
+    "description": "Vizualizați și gestionați tranzacțiile dvs. financiare."
+  }
+}

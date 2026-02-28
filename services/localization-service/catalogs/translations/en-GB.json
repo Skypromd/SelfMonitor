@@ -15,7 +15,12 @@
     "dashboard": "Dashboard",
     "transactions": "Transactions",
     "documents": "Documents",
-    "profile": "Profile"
+    "profile": "Profile",
+    "activity": "Activity",
+    "reports": "Reports",
+    "marketplace": "Marketplace",
+    "submission": "Tax Submission",
+    "admin": "Administration"
   },
   "dashboard": {
     "title": "Main Dashboard",

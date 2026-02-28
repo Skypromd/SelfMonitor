@@ -1,0 +1,82 @@
+{
+  "common": {
+    "submit": "Gönder",
+    "cancel": "İptal",
+    "logout": "Çıkış yap",
+    "save": "Kaydet"
+  },
+  "login": {
+    "title": "FinTech Uygulaması",
+    "description": "Devam etmek için kayıt olun veya giriş yapın",
+    "register_button": "Kayıt ol",
+    "login_button": "Giriş yap"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "transactions": "İşlemler",
+    "documents": "Belgeler",
+    "profile": "Profil",
+    "activity": "Etkinlik",
+    "reports": "Raporlar",
+    "marketplace": "Pazar yeri",
+    "submission": "Vergi beyannamesi",
+    "admin": "Yönetim"
+  },
+  "dashboard": {
+    "title": "Ana panel",
+    "description": "Finansal panelinize hoş geldiniz."
+  },
+  "profile": {
+    "title": "Profiliniz"
+  },
+  "partners": {
+    "description": "Finansal danışmanlık için başvurabileceğiniz güvenilir, lisanslı ortakların listesi.",
+    "handoff_button": "Talebi aktar"
+  },
+  "submission": {
+    "description": "Vergi beyannamenizi hesaplayın ve gönderin.",
+    "form_title": "Yeni vergi beyannamesi",
+    "submit_button": "Hesapla ve gönder",
+    "success_title": "Beyanname başarıyla gönderildi"
+  },
+  "admin": {
+    "description": "Kullanıcıları ve sistem ayarlarını yönetin.",
+    "form_title": "Kullanıcı devre dışı bırakma",
+    "deactivate_button": "Kullanıcıyı devre dışı bırak"
+  },
+  "reports": {
+    "description": "Finansal verilerinize dayalı özel raporlar oluşturun.",
+    "mortgage_title": "Mortgage uygunluk raporu",
+    "mortgage_description": "Son 12 ayın gelir özetini PDF olarak oluşturun. Mortgage başvurusunda faydalıdır.",
+    "generate_button": "Rapor oluştur",
+    "generating_button": "Oluşturuluyor..."
+  },
+  "documents": {
+    "description": "Makbuzlarınızı ve faturalarınızı yükleyin ve yönetin.",
+    "upload_title": "Belge yükle",
+    "upload_button": "Yükle",
+    "uploading_button": "Yükleniyor...",
+    "col_filename": "Dosya adı",
+    "col_status": "Durum",
+    "col_vendor": "Satıcı",
+    "col_amount": "Tutar",
+    "col_category": "Kategori",
+    "col_expense_article": "Gider kalemi",
+    "col_deductible": "İndirilebilir",
+    "col_receipt_draft": "İşlem taslağı",
+    "col_uploaded_at": "Yüklenme tarihi",
+    "search_title": "Anlamsal belge arama",
+    "search_description": "Doğal dilde belgeleriniz hakkında soru sorun.",
+    "search_placeholder": "örn. 'geçen ay kahveyi nerede aldım?'",
+    "search_button": "Ara",
+    "all_documents_title": "Tüm yüklenen belgeler",
+    "uploaded_documents_count": "{count, plural, =0 {Henüz yüklenen belge yok.} one {# yüklenen belge} other {# yüklenen belge}}",
+    "review_queue_count": "{count, plural, =0 {İnceleme gerektiren belge yok.} one {# belge manuel OCR incelemesi gerektiriyor.} other {# belge manuel OCR incelemesi gerektiriyor.}}"
+  },
+  "activity": {
+    "description": "Hesabınızdaki işlem ve olay geçmişi."
+  },
+  "transactions": {
+    "description": "Finansal işlemlerinizi görüntüleyin ve yönetin."
+  }
+}

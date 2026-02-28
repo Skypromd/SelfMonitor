@@ -1,0 +1,82 @@
+{
+  "common": {
+    "submit": "Invia",
+    "cancel": "Annulla",
+    "logout": "Esci",
+    "save": "Salva"
+  },
+  "login": {
+    "title": "App FinTech",
+    "description": "Registrati o accedi per continuare",
+    "register_button": "Registrati",
+    "login_button": "Accedi"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "transactions": "Transazioni",
+    "documents": "Documenti",
+    "profile": "Profilo",
+    "activity": "Attività",
+    "reports": "Rapporti",
+    "marketplace": "Marketplace",
+    "submission": "Dichiarazione fiscale",
+    "admin": "Amministrazione"
+  },
+  "dashboard": {
+    "title": "Dashboard principale",
+    "description": "Benvenuto nella tua dashboard finanziaria."
+  },
+  "profile": {
+    "title": "Il tuo profilo"
+  },
+  "partners": {
+    "description": "Elenco di partner affidabili e regolamentati a cui puoi rivolgerti per consulenza.",
+    "handoff_button": "Trasferisci richiesta"
+  },
+  "submission": {
+    "description": "Calcola e invia la tua dichiarazione dei redditi.",
+    "form_title": "Nuova dichiarazione fiscale",
+    "submit_button": "Calcola e invia",
+    "success_title": "Dichiarazione inviata con successo"
+  },
+  "admin": {
+    "description": "Gestisci utenti e impostazioni di sistema.",
+    "form_title": "Disattiva un utente",
+    "deactivate_button": "Disattiva utente"
+  },
+  "reports": {
+    "description": "Genera report personalizzati basati sui tuoi dati finanziari.",
+    "mortgage_title": "Report idoneità mutuo",
+    "mortgage_description": "Genera un riepilogo PDF del tuo reddito degli ultimi 12 mesi. Utile per richiedere un mutuo.",
+    "generate_button": "Genera report",
+    "generating_button": "Generazione..."
+  },
+  "documents": {
+    "description": "Carica e gestisci le tue ricevute e fatture.",
+    "upload_title": "Carica un documento",
+    "upload_button": "Carica",
+    "uploading_button": "Caricamento...",
+    "col_filename": "Nome file",
+    "col_status": "Stato",
+    "col_vendor": "Fornitore",
+    "col_amount": "Importo",
+    "col_category": "Categoria",
+    "col_expense_article": "Voce di spesa",
+    "col_deductible": "Detraibile",
+    "col_receipt_draft": "Bozza transazione",
+    "col_uploaded_at": "Caricato il",
+    "search_title": "Ricerca semantica documenti",
+    "search_description": "Fai una domanda sui tuoi documenti in linguaggio naturale.",
+    "search_placeholder": "es. 'dove ho comprato il caffè il mese scorso?'",
+    "search_button": "Cerca",
+    "all_documents_title": "Tutti i documenti caricati",
+    "uploaded_documents_count": "{count, plural, =0 {Nessun documento caricato.} one {# documento caricato} other {# documenti caricati}}",
+    "review_queue_count": "{count, plural, =0 {Nessun documento richiede revisione OCR.} one {# documento richiede revisione OCR manuale.} other {# documenti richiedono revisione OCR manuale.}}"
+  },
+  "activity": {
+    "description": "Cronologia delle azioni ed eventi nel tuo account."
+  },
+  "transactions": {
+    "description": "Visualizza e gestisci le tue transazioni finanziarie."
+  }
+}

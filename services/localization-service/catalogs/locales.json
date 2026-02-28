@@ -14,32 +14,47 @@
     "ru-RU": {
       "native_name": "Русский",
       "fallback_locale": "en-GB",
-      "status": "fallback_en_gb"
+      "status": "translated"
     },
     "uk-UA": {
       "native_name": "Українська",
       "fallback_locale": "en-GB",
-      "status": "fallback_en_gb"
+      "status": "translated"
     },
     "pl-PL": {
       "native_name": "Polski",
       "fallback_locale": "en-GB",
-      "status": "fallback_en_gb"
+      "status": "translated"
     },
-    "ro-MD": {
-      "native_name": "Română (Moldova)",
+    "ro-RO": {
+      "native_name": "Română",
       "fallback_locale": "en-GB",
-      "status": "fallback_en_gb"
+      "status": "translated"
+    },
+    "it-IT": {
+      "native_name": "Italiano",
+      "fallback_locale": "en-GB",
+      "status": "translated"
+    },
+    "pt-PT": {
+      "native_name": "Português",
+      "fallback_locale": "en-GB",
+      "status": "translated"
+    },
+    "es-ES": {
+      "native_name": "Español",
+      "fallback_locale": "en-GB",
+      "status": "translated"
     },
     "tr-TR": {
       "native_name": "Türkçe",
       "fallback_locale": "en-GB",
-      "status": "fallback_en_gb"
+      "status": "translated"
     },
-    "hu-HU": {
-      "native_name": "Magyar",
+    "bn-BD": {
+      "native_name": "বাংলা",
       "fallback_locale": "en-GB",
-      "status": "fallback_en_gb"
+      "status": "translated"
     }
   }
 }

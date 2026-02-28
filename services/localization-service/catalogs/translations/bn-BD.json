@@ -1,0 +1,82 @@
+{
+  "common": {
+    "submit": "জমা দিন",
+    "cancel": "বাতিল",
+    "logout": "প্রস্থান",
+    "save": "সংরক্ষণ করুন"
+  },
+  "login": {
+    "title": "FinTech অ্যাপ",
+    "description": "চালিয়ে যেতে নিবন্ধন করুন বা লগইন করুন",
+    "register_button": "নিবন্ধন করুন",
+    "login_button": "লগইন করুন"
+  },
+  "nav": {
+    "dashboard": "ড্যাশবোর্ড",
+    "transactions": "লেনদেন",
+    "documents": "নথি",
+    "profile": "প্রোফাইল",
+    "activity": "কার্যকলাপ",
+    "reports": "প্রতিবেদন",
+    "marketplace": "মার্কেটপ্লেস",
+    "submission": "কর দাখিল",
+    "admin": "প্রশাসন"
+  },
+  "dashboard": {
+    "title": "মূল ড্যাশবোর্ড",
+    "description": "আপনার আর্থিক ড্যাশবোর্ডে স্বাগতম।"
+  },
+  "profile": {
+    "title": "আপনার প্রোফাইল"
+  },
+  "partners": {
+    "description": "আর্থিক পরামর্শের জন্য বিশ্বস্ত, লাইসেন্সপ্রাপ্ত অংশীদারদের তালিকা।",
+    "handoff_button": "অনুরোধ স্থানান্তর করুন"
+  },
+  "submission": {
+    "description": "আপনার কর রিটার্ন গণনা করুন এবং জমা দিন।",
+    "form_title": "নতুন কর দাখিল",
+    "submit_button": "গণনা করুন এবং জমা দিন",
+    "success_title": "দাখিল সফলভাবে সম্পন্ন হয়েছে"
+  },
+  "admin": {
+    "description": "ব্যবহারকারী এবং সিস্টেম সেটিংস পরিচালনা করুন।",
+    "form_title": "ব্যবহারকারী নিষ্ক্রিয় করুন",
+    "deactivate_button": "ব্যবহারকারী নিষ্ক্রিয় করুন"
+  },
+  "reports": {
+    "description": "আপনার আর্থিক তথ্যের উপর ভিত্তি করে কাস্টম প্রতিবেদন তৈরি করুন।",
+    "mortgage_title": "বন্ধকী যোগ্যতা প্রতিবেদন",
+    "mortgage_description": "গত ১২ মাসের আয়ের পিডিএফ সারাংশ তৈরি করুন। বন্ধক আবেদনের জন্য উপযোগী।",
+    "generate_button": "প্রতিবেদন তৈরি করুন",
+    "generating_button": "তৈরি হচ্ছে..."
+  },
+  "documents": {
+    "description": "আপনার রসিদ এবং ইনভয়েস আপলোড ও পরিচালনা করুন।",
+    "upload_title": "নথি আপলোড করুন",
+    "upload_button": "আপলোড করুন",
+    "uploading_button": "আপলোড হচ্ছে...",
+    "col_filename": "ফাইলের নাম",
+    "col_status": "অবস্থা",
+    "col_vendor": "বিক্রেতা",
+    "col_amount": "পরিমাণ",
+    "col_category": "বিভাগ",
+    "col_expense_article": "ব্যয়ের আইটেম",
+    "col_deductible": "কর্তনযোগ্য",
+    "col_receipt_draft": "লেনদেনের খসড়া",
+    "col_uploaded_at": "আপলোডের তারিখ",
+    "search_title": "নথির শব্দার্থিক অনুসন্ধান",
+    "search_description": "স্বাভাবিক ভাষায় আপনার নথি সম্পর্কে প্রশ্ন করুন।",
+    "search_placeholder": "যেমন 'গত মাসে আমি কোথায় কফি কিনেছিলাম?'",
+    "search_button": "অনুসন্ধান করুন",
+    "all_documents_title": "সমস্ত আপলোড করা নথি",
+    "uploaded_documents_count": "{count, plural, =0 {কোনো নথি আপলোড করা হয়নি।} one {# টি নথি আপলোড করা হয়েছে} other {# টি নথি আপলোড করা হয়েছে}}",
+    "review_queue_count": "{count, plural, =0 {কোনো নথির OCR পর্যালোচনা প্রয়োজন নেই।} one {# টি নথির ম্যানুয়াল OCR পর্যালোচনা প্রয়োজন।} other {# টি নথির ম্যানুয়াল OCR পর্যালোচনা প্রয়োজন।}}"
+  },
+  "activity": {
+    "description": "আপনার অ্যাকাউন্টে কার্যকলাপ এবং ঘটনার ইতিহাস।"
+  },
+  "transactions": {
+    "description": "আপনার আর্থিক লেনদেন দেখুন এবং পরিচালনা করুন।"
+  }
+}

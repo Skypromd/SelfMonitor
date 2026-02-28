@@ -1,0 +1,82 @@
+{
+  "common": {
+    "submit": "Enviar",
+    "cancel": "Cancelar",
+    "logout": "Cerrar sesión",
+    "save": "Guardar"
+  },
+  "login": {
+    "title": "Aplicación FinTech",
+    "description": "Regístrate o inicia sesión para continuar",
+    "register_button": "Registrarse",
+    "login_button": "Iniciar sesión"
+  },
+  "nav": {
+    "dashboard": "Panel",
+    "transactions": "Transacciones",
+    "documents": "Documentos",
+    "profile": "Perfil",
+    "activity": "Actividad",
+    "reports": "Informes",
+    "marketplace": "Marketplace",
+    "submission": "Declaración fiscal",
+    "admin": "Administración"
+  },
+  "dashboard": {
+    "title": "Panel principal",
+    "description": "Bienvenido a tu panel financiero."
+  },
+  "profile": {
+    "title": "Tu perfil"
+  },
+  "partners": {
+    "description": "Lista de socios de confianza y regulados a los que puedes acudir para asesoramiento financiero.",
+    "handoff_button": "Transferir solicitud"
+  },
+  "submission": {
+    "description": "Calcula y presenta tu declaración de la renta.",
+    "form_title": "Nueva declaración fiscal",
+    "submit_button": "Calcular y presentar",
+    "success_title": "Declaración presentada con éxito"
+  },
+  "admin": {
+    "description": "Gestiona usuarios y configuración del sistema.",
+    "form_title": "Desactivar un usuario",
+    "deactivate_button": "Desactivar usuario"
+  },
+  "reports": {
+    "description": "Genera informes personalizados basados en tus datos financieros.",
+    "mortgage_title": "Informe de elegibilidad hipotecaria",
+    "mortgage_description": "Genera un resumen PDF de tus ingresos de los últimos 12 meses. Útil al solicitar una hipoteca.",
+    "generate_button": "Generar informe",
+    "generating_button": "Generando..."
+  },
+  "documents": {
+    "description": "Sube y gestiona tus recibos y facturas.",
+    "upload_title": "Subir documento",
+    "upload_button": "Subir",
+    "uploading_button": "Subiendo...",
+    "col_filename": "Nombre de archivo",
+    "col_status": "Estado",
+    "col_vendor": "Proveedor",
+    "col_amount": "Importe",
+    "col_category": "Categoría",
+    "col_expense_article": "Artículo de gasto",
+    "col_deductible": "Deducible",
+    "col_receipt_draft": "Borrador de transacción",
+    "col_uploaded_at": "Subido el",
+    "search_title": "Búsqueda semántica de documentos",
+    "search_description": "Haz una pregunta sobre tus documentos en lenguaje natural.",
+    "search_placeholder": "ej. '¿dónde compré café el mes pasado?'",
+    "search_button": "Buscar",
+    "all_documents_title": "Todos los documentos subidos",
+    "uploaded_documents_count": "{count, plural, =0 {Sin documentos subidos.} one {# documento subido} other {# documentos subidos}}",
+    "review_queue_count": "{count, plural, =0 {Ningún documento requiere revisión OCR.} one {# documento requiere revisión OCR manual.} other {# documentos requieren revisión OCR manual.}}"
+  },
+  "activity": {
+    "description": "Historial de acciones y eventos en tu cuenta."
+  },
+  "transactions": {
+    "description": "Visualiza y gestiona tus transacciones financieras."
+  }
+}

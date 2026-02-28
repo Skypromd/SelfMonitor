@@ -1,0 +1,82 @@
+{
+  "common": {
+    "submit": "Enviar",
+    "cancel": "Cancelar",
+    "logout": "Sair",
+    "save": "Guardar"
+  },
+  "login": {
+    "title": "Aplicação FinTech",
+    "description": "Registe-se ou inicie sessão para continuar",
+    "register_button": "Registar",
+    "login_button": "Iniciar sessão"
+  },
+  "nav": {
+    "dashboard": "Painel",
+    "transactions": "Transações",
+    "documents": "Documentos",
+    "profile": "Perfil",
+    "activity": "Atividade",
+    "reports": "Relatórios",
+    "marketplace": "Marketplace",
+    "submission": "Submissão fiscal",
+    "admin": "Administração"
+  },
+  "dashboard": {
+    "title": "Painel principal",
+    "description": "Bem-vindo ao seu painel financeiro."
+  },
+  "profile": {
+    "title": "O seu perfil"
+  },
+  "partners": {
+    "description": "Lista de parceiros de confiança e regulamentados para aconselhamento financeiro.",
+    "handoff_button": "Transferir pedido"
+  },
+  "submission": {
+    "description": "Calcule e submeta a sua declaração de impostos.",
+    "form_title": "Nova declaração fiscal",
+    "submit_button": "Calcular e submeter",
+    "success_title": "Declaração submetida com sucesso"
+  },
+  "admin": {
+    "description": "Gerir utilizadores e definições do sistema.",
+    "form_title": "Desativar um utilizador",
+    "deactivate_button": "Desativar utilizador"
+  },
+  "reports": {
+    "description": "Gere relatórios personalizados com base nos seus dados financeiros.",
+    "mortgage_title": "Relatório de elegibilidade para hipoteca",
+    "mortgage_description": "Gere um resumo PDF do seu rendimento nos últimos 12 meses. Útil ao candidatar-se a uma hipoteca.",
+    "generate_button": "Gerar relatório",
+    "generating_button": "A gerar..."
+  },
+  "documents": {
+    "description": "Carregue e gira os seus recibos e faturas.",
+    "upload_title": "Carregar documento",
+    "upload_button": "Carregar",
+    "uploading_button": "A carregar...",
+    "col_filename": "Nome do ficheiro",
+    "col_status": "Estado",
+    "col_vendor": "Fornecedor",
+    "col_amount": "Valor",
+    "col_category": "Categoria",
+    "col_expense_article": "Artigo de despesa",
+    "col_deductible": "Dedutível",
+    "col_receipt_draft": "Rascunho de transação",
+    "col_uploaded_at": "Carregado em",
+    "search_title": "Pesquisa semântica de documentos",
+    "search_description": "Faça uma pergunta sobre os seus documentos em linguagem natural.",
+    "search_placeholder": "ex. 'onde comprei café no mês passado?'",
+    "search_button": "Pesquisar",
+    "all_documents_title": "Todos os documentos carregados",
+    "uploaded_documents_count": "{count, plural, =0 {Sem documentos carregados.} one {# documento carregado} other {# documentos carregados}}",
+    "review_queue_count": "{count, plural, =0 {Nenhum documento requer revisão OCR.} one {# documento requer revisão OCR manual.} other {# documentos requerem revisão OCR manual.}}"
+  },
+  "activity": {
+    "description": "Histórico de ações e eventos na sua conta."
+  },
+  "transactions": {
+    "description": "Visualize e gira as suas transações financeiras."
+  }
+}
