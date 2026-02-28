@@ -1,12 +1,7 @@
+import logging
 import sys
+import uuid
 from pathlib import Path
-
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from . import crud, models, schemas
-from .database import get_db
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "libs").exists():
@@ -15,7 +10,17 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+
+from . import crud, schemas
+from .database import get_db
+
+logger = logging.getLogger(__name__)
+KAFKA_ENABLED = False
 
 app = FastAPI(
     title="User Profile Service",
@@ -113,7 +118,7 @@ async def create_or_update_my_profile(
                     event_type="user_profile_created",
                     data={
                         "profile_fields": list(
-                            profile_update.dict(exclude_unset=True).keys()
+                            profile_update.model_dump(exclude_unset=True).keys()
                         ),
                         "initial_completeness": getattr(
                             db_profile, "completeness_score", 0
@@ -134,14 +139,14 @@ async def create_or_update_my_profile(
                         "metric_value": 1.0,
                         "milestone": "profile_setup_complete",
                         "fields_completed": len(
-                            profile_update.dict(exclude_unset=True)
+                            profile_update.model_dump(exclude_unset=True)
                         ),
                     },
                     user_id=user_id,
                 )
             else:
                 # Profile update
-                updated_fields = profile_update.dict(exclude_unset=True)
+                updated_fields = profile_update.model_dump(exclude_unset=True)
                 await app.emit_event(
                     topic="user.events",
                     event_type="user_profile_updated",
