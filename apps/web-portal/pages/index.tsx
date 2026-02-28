@@ -1,8 +1,8 @@
-import { FormEvent, useState, useMemo } from 'react';
-import styles from '../styles/Home.module.css';
+import { FormEvent, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import styles from '../styles/Home.module.css';
 
-const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 
 type IndexPageProps = {
   onLoginSuccess: (newToken: string) => void;
@@ -69,7 +69,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/auth/register`, {
+      const response = await fetch(`${AUTH_SERVICE_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -107,7 +107,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         formData.append('scope', `totp:${code}`);
       }
 
-      const response = await fetch(`${API_GATEWAY_URL}/auth/token`, {
+      const response = await fetch(`${AUTH_SERVICE_URL}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData,

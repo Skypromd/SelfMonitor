@@ -26,6 +26,8 @@ type LayoutProps = {
   children: React.ReactNode;
   onLogout: () => void;
   user: UserSummary;
+  isDarkMode?: boolean;
+  onToggleTheme?: () => void;
 };
 
 export default function Layout({ children, onLogout, user }: LayoutProps) {

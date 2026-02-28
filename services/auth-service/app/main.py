@@ -14,6 +14,7 @@ from typing import Annotated, Any, Optional
 import pyotp
 import qrcode
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -37,6 +38,14 @@ app = FastAPI(
     title="Auth Service",
     description="Handles user authentication, registration, and token management.",
     version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://192.168.0.248:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # --- Observability ---

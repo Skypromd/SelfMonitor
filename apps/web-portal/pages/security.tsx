@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import styles from '../styles/Home.module.css';
 
-const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8000';
+const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 
 type SecurityPageProps = {
   onAuthSessionUpdated?: (accessToken: string, refreshToken?: string | null) => void;

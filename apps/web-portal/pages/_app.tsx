@@ -7,6 +7,7 @@ import { I18nContext, I18nProvider } from '../context/i18n';
 import '../styles/globals.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 const LOCALIZATION_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || `${API_GATEWAY_URL}/localization`;
 
 type AuthUser = {
@@ -71,7 +72,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
 
   const fetchUserInfo = async (authToken: string) => {
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/auth/me`, {
+      const response = await fetch(`${AUTH_SERVICE_URL}/me`, {
         headers: { Authorization: `Bearer ${authToken}` },
       });
       if (response.ok) {
@@ -125,7 +126,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   }
 
   return (
-    <Layout onLogout={handleLogout} userEmail={user.email} isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme}>
+    <Layout onLogout={handleLogout} user={user} isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme}>
       <Component {...pageProps} token={token} user={user} />
     </Layout>
   );

@@ -1,9 +1,9 @@
+import { motion, useInView } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import Link from 'next/link';
-import dynamic from 'next/dynamic';
-import { motion, useInView } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
+import { useEffect, useRef, useState } from 'react';
 import styles from '../styles/Landing.module.css';
 
 const LOCALE_FLAGS: Record<string, string> = {
@@ -109,6 +109,25 @@ export default function LandingPage() {
       </Head>
 
       <div className={styles.page}>
+        {/* Sign In button — fixed top-left */}
+        <div style={{ position: 'fixed', top: '1rem', left: '1.5rem', zIndex: 1000 }}>
+          <Link
+            href="/"
+            style={{
+              display: 'inline-block',
+              padding: '0.5rem 1.2rem',
+              borderRadius: '8px',
+              background: 'var(--lp-accent-teal)',
+              color: '#fff',
+              fontWeight: 600,
+              fontSize: '0.9rem',
+              textDecoration: 'none',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
+            }}
+          >
+            Sign In
+          </Link>
+        </div>
         <div style={{
           position: 'fixed',
           top: '1rem',
@@ -206,6 +225,9 @@ export default function LandingPage() {
             >
               <Link href="/register?plan=pro" className={styles.btnPrimary}>
                 Start Free
+              </Link>
+              <Link href="/" className={styles.btnSecondary}>
+                Sign In
               </Link>
               <a href="#pricing" className={styles.btnSecondary}>
                 See Pricing

@@ -1,10 +1,11 @@
-import { useRouter } from 'next/router';
-import { FormEvent, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { FormEvent, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 
 const PLAN_NAMES: Record<string, string> = {
   free: 'Free',
@@ -55,7 +56,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
 
     try {
       // 1. Register with plan
-      const regResponse = await fetch(`${API_GATEWAY_URL}/auth/register`, {
+      const regResponse = await fetch(`${AUTH_SERVICE_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, plan }),
@@ -69,7 +70,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
       const loginForm = new URLSearchParams();
       loginForm.append('username', email);
       loginForm.append('password', password);
-      const loginResponse = await fetch(`${API_GATEWAY_URL}/auth/token`, {
+      const loginResponse = await fetch(`${AUTH_SERVICE_URL}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: loginForm,

@@ -1,8 +1,10 @@
-import { ChangeEvent, FormEvent, useEffect, useState, useMemo, useCallback } from 'react';
-import styles from '../styles/Home.module.css';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
+const PROFILE_SERVICE_URL = process.env.NEXT_PUBLIC_PROFILE_SERVICE_URL || 'http://localhost:8005';
 
 type ProfilePageProps = {
   token: string;
@@ -71,7 +73,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
     setMessage('');
     setError('');
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/profile/profiles/me`, {
+      const response = await fetch(`${PROFILE_SERVICE_URL}/profiles/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.status === 404) {
@@ -96,7 +98,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
 
   const check2FAStatus = useCallback(async () => {
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/auth/me`, {
+      const response = await fetch(`${AUTH_SERVICE_URL}/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (response.ok) {
@@ -122,7 +124,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
     setMessage('');
     setError('');
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/profile/profiles/me`, {
+      const response = await fetch(`${PROFILE_SERVICE_URL}/profiles/me`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ...profile, date_of_birth: profile.date_of_birth || null }),
@@ -143,7 +145,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
     setSecurityError('');
     setSecurityLoading(true);
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/auth/2fa/setup-json`, {
+      const response = await fetch(`${AUTH_SERVICE_URL}/2fa/setup-json`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!response.ok) {
@@ -193,7 +195,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
     setSecurityError('');
     setSecurityLoading(true);
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/auth/2fa/disable`, {
+      const response = await fetch(`${AUTH_SERVICE_URL}/2fa/disable`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -222,7 +224,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
 
     setPasswordLoading(true);
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/auth/change-password`, {
+      const response = await fetch(`${AUTH_SERVICE_URL}/change-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),

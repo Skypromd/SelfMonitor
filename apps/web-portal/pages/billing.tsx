@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import { useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 
 type BillingPageProps = {
   token: string;
@@ -78,7 +79,7 @@ export default function BillingPage({ token }: BillingPageProps) {
   useEffect(() => {
     const fetchSubscription = async () => {
       try {
-        const response = await fetch(`${API_GATEWAY_URL}/auth/subscription/me`, {
+        const response = await fetch(`${AUTH_SERVICE_URL}/subscription/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!response.ok) {

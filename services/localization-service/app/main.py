@@ -1,17 +1,25 @@
-from copy import deepcopy
 import datetime
 import json
 import os
+from copy import deepcopy
 from pathlib import Path as FsPath
 from typing import Dict, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Path, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI(
     title="Localization Service",
     description="Provides translation strings for different locales.",
-    version="1.0.0"
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://192.168.0.248:3000"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
 )
 
 # --- "Database" for translations ---
@@ -24,7 +32,7 @@ fake_translations_db = {
             "cancel": "Cancel",
             "logout": "Logout",
             "save": "Save",
-            "loading": "Loading..."
+            "loading": "Loading...",
         },
         "login": {
             "title": "Self Assessment Assistant",
@@ -33,7 +41,7 @@ fake_translations_db = {
             "login_button": "Login",
             "email_placeholder": "Email",
             "password_placeholder": "Password",
-            "register_success": "Registration successful. You can now log in."
+            "register_success": "Registration successful. You can now log in.",
         },
         "nav": {
             "dashboard": "Dashboard",
@@ -44,7 +52,7 @@ fake_translations_db = {
             "marketplace": "Marketplace",
             "submission": "Tax Submission",
             "profile": "Profile",
-            "admin": "Admin"
+            "admin": "Admin",
         },
         "dashboard": {
             "title": "Main Dashboard",
@@ -77,13 +85,13 @@ fake_translations_db = {
             "readiness_loading": "Calculating readiness...",
             "action_next_title": "What's next?",
             "action_next_description": "Explore our marketplace of trusted partners for insurance, accounting, and more.",
-            "action_next_button": "Explore Partner Services"
+            "action_next_button": "Explore Partner Services",
         },
         "activity": {
             "description": "Here is a record of recent events in your account.",
             "col_date": "Date",
             "col_action": "Action",
-            "col_details": "Details"
+            "col_details": "Details",
         },
         "transactions": {
             "title": "Transactions",
@@ -107,7 +115,7 @@ fake_translations_db = {
             "csv_success": "CSV import accepted. Imported:",
             "csv_skipped_label": "Skipped:",
             "csv_select_error": "Please select a CSV file.",
-            "csv_account_error": "Account ID is required."
+            "csv_account_error": "Account ID is required.",
         },
         "documents": {
             "description": "Upload and manage your receipts and invoices.",
@@ -129,8 +137,8 @@ fake_translations_db = {
             "search_button": "Search",
             "all_documents_title": "All Uploaded Documents",
             "uploaded_documents_count": "{count, plural, =0 {No uploaded documents yet.} one {# uploaded document} other {# uploaded documents}}",
-            "review_queue_count": "{count, plural, =0 {No documents currently require manual OCR review.} one {# document requires manual OCR review.} other {# documents require manual OCR review.}}"
-        }
+            "review_queue_count": "{count, plural, =0 {No documents currently require manual OCR review.} one {# document requires manual OCR review.} other {# documents require manual OCR review.}}",
+        },
     },
     "de-DE": {
         "common": {
@@ -138,7 +146,7 @@ fake_translations_db = {
             "cancel": "Abbrechen",
             "logout": "Ausloggen",
             "save": "Speichern",
-            "loading": "Wird geladen..."
+            "loading": "Wird geladen...",
         },
         "login": {
             "title": "Self-Assessment Assistent",
@@ -147,7 +155,7 @@ fake_translations_db = {
             "login_button": "Anmelden",
             "email_placeholder": "E-Mail",
             "password_placeholder": "Passwort",
-            "register_success": "Registrierung erfolgreich. Sie können sich jetzt anmelden."
+            "register_success": "Registrierung erfolgreich. Sie können sich jetzt anmelden.",
         },
         "nav": {
             "dashboard": "Dashboard",
@@ -158,7 +166,7 @@ fake_translations_db = {
             "marketplace": "Marktplatz",
             "submission": "HMRC-Übermittlung",
             "profile": "Profil",
-            "admin": "Admin"
+            "admin": "Admin",
         },
         "dashboard": {
             "title": "Haupt-Dashboard",
@@ -191,13 +199,13 @@ fake_translations_db = {
             "readiness_loading": "Bereitschaft wird berechnet...",
             "action_next_title": "Was kommt als Nächstes?",
             "action_next_description": "Entdecken Sie unseren Marktplatz mit vertrauenswürdigen Partnern für Versicherungen, Buchhaltung und mehr.",
-            "action_next_button": "Partnerdienste entdecken"
+            "action_next_button": "Partnerdienste entdecken",
         },
         "activity": {
             "description": "Hier ist eine Aufzeichnung der letzten wichtigen Ereignisse in Ihrem Konto.",
             "col_date": "Datum",
             "col_action": "Aktion",
-            "col_details": "Details"
+            "col_details": "Details",
         },
         "transactions": {
             "title": "Transaktionen",
@@ -221,7 +229,7 @@ fake_translations_db = {
             "csv_success": "CSV-Import akzeptiert. Importiert:",
             "csv_skipped_label": "Übersprungen:",
             "csv_select_error": "Bitte wählen Sie eine CSV-Datei aus.",
-            "csv_account_error": "Konto-ID ist erforderlich."
+            "csv_account_error": "Konto-ID ist erforderlich.",
         },
         "documents": {
             "description": "Laden Sie Ihre Belege und Rechnungen hoch und verwalten Sie sie.",
@@ -243,21 +251,53 @@ fake_translations_db = {
             "search_button": "Suchen",
             "all_documents_title": "Alle hochgeladenen Dokumente",
             "uploaded_documents_count": "{count, plural, =0 {Noch keine hochgeladenen Dokumente.} one {# hochgeladenes Dokument} other {# hochgeladene Dokumente}}",
-            "review_queue_count": "{count, plural, =0 {Aktuell sind keine Dokumente zur manuellen OCR-Prüfung offen.} one {# Dokument benötigt eine manuelle OCR-Prüfung.} other {# Dokumente benötigen eine manuelle OCR-Prüfung.}}"
-        }
-    }
+            "review_queue_count": "{count, plural, =0 {Aktuell sind keine Dokumente zur manuellen OCR-Prüfung offen.} one {# Dokument benötigt eine manuelle OCR-Prüfung.} other {# Dokumente benötigen eine manuelle OCR-Prüfung.}}",
+        },
+    },
 }
 
 DEFAULT_LOCALE = "en-GB"
 SUPPORTED_LOCALE_METADATA: dict[str, dict[str, Optional[str]]] = {
-    "en-GB": {"native_name": "English (UK)", "fallback_locale": None, "status": "translated"},
-    "de-DE": {"native_name": "Deutsch (Deutschland)", "fallback_locale": DEFAULT_LOCALE, "status": "translated"},
-    "ru-RU": {"native_name": "Русский", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
-    "uk-UA": {"native_name": "Українська", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
-    "pl-PL": {"native_name": "Polski", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
-    "ro-MD": {"native_name": "Română (Moldova)", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
-    "tr-TR": {"native_name": "Türkçe", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
-    "hu-HU": {"native_name": "Magyar", "fallback_locale": DEFAULT_LOCALE, "status": "fallback_en_gb"},
+    "en-GB": {
+        "native_name": "English (UK)",
+        "fallback_locale": None,
+        "status": "translated",
+    },
+    "de-DE": {
+        "native_name": "Deutsch (Deutschland)",
+        "fallback_locale": DEFAULT_LOCALE,
+        "status": "translated",
+    },
+    "ru-RU": {
+        "native_name": "Русский",
+        "fallback_locale": DEFAULT_LOCALE,
+        "status": "fallback_en_gb",
+    },
+    "uk-UA": {
+        "native_name": "Українська",
+        "fallback_locale": DEFAULT_LOCALE,
+        "status": "fallback_en_gb",
+    },
+    "pl-PL": {
+        "native_name": "Polski",
+        "fallback_locale": DEFAULT_LOCALE,
+        "status": "fallback_en_gb",
+    },
+    "ro-MD": {
+        "native_name": "Română (Moldova)",
+        "fallback_locale": DEFAULT_LOCALE,
+        "status": "fallback_en_gb",
+    },
+    "tr-TR": {
+        "native_name": "Türkçe",
+        "fallback_locale": DEFAULT_LOCALE,
+        "status": "fallback_en_gb",
+    },
+    "hu-HU": {
+        "native_name": "Magyar",
+        "fallback_locale": DEFAULT_LOCALE,
+        "status": "fallback_en_gb",
+    },
 }
 
 LOCALE_FORMAT_STANDARDS: dict[str, dict[str, object]] = {
@@ -331,7 +371,9 @@ DEFAULT_CATALOG_ROOT = FsPath(__file__).resolve().parents[1] / "catalogs"
 CATALOG_ROOT = FsPath(os.getenv("LOCALIZATION_CATALOG_DIR", str(DEFAULT_CATALOG_ROOT)))
 
 
-def _normalize_translation_namespaces(payload: dict[str, object]) -> dict[str, dict[str, str]]:
+def _normalize_translation_namespaces(
+    payload: dict[str, object],
+) -> dict[str, dict[str, str]]:
     normalized: dict[str, dict[str, str]] = {}
     for namespace, namespace_values in payload.items():
         if not isinstance(namespace, str) or not isinstance(namespace_values, dict):
@@ -359,14 +401,21 @@ def _load_catalog_json(path: FsPath) -> dict[str, object] | None:
 
 def _load_catalog_configuration(
     catalog_root: FsPath,
-) -> tuple[str, dict[str, dict[str, Optional[str]]], dict[str, dict[str, dict[str, str]]]] | None:
+) -> (
+    tuple[
+        str, dict[str, dict[str, Optional[str]]], dict[str, dict[str, dict[str, str]]]
+    ]
+    | None
+):
     locales_payload = _load_catalog_json(catalog_root / "locales.json")
     if locales_payload is None:
         return None
 
     default_locale_raw = locales_payload.get("default_locale")
     locales_metadata_raw = locales_payload.get("locales")
-    if not isinstance(default_locale_raw, str) or not isinstance(locales_metadata_raw, dict):
+    if not isinstance(default_locale_raw, str) or not isinstance(
+        locales_metadata_raw, dict
+    ):
         return None
 
     locales_metadata: dict[str, dict[str, Optional[str]]] = {}
@@ -374,7 +423,9 @@ def _load_catalog_configuration(
         if not isinstance(locale_code, str) or not isinstance(metadata, dict):
             continue
         fallback_locale_raw = metadata.get("fallback_locale")
-        fallback_locale = fallback_locale_raw if isinstance(fallback_locale_raw, str) else None
+        fallback_locale = (
+            fallback_locale_raw if isinstance(fallback_locale_raw, str) else None
+        )
         locales_metadata[locale_code] = {
             "native_name": str(metadata.get("native_name") or locale_code),
             "fallback_locale": fallback_locale,
@@ -466,7 +517,9 @@ class LocaleRoadmapResponse(BaseModel):
     items: list[LocaleRoadmapItem]
 
 
-def _merge_locale_data(base: Dict[str, Dict[str, str]], override: Dict[str, Dict[str, str]]) -> Dict[str, Dict[str, str]]:
+def _merge_locale_data(
+    base: Dict[str, Dict[str, str]], override: Dict[str, Dict[str, str]]
+) -> Dict[str, Dict[str, str]]:
     merged = deepcopy(base)
     for namespace, namespace_values in override.items():
         if namespace not in merged:
@@ -519,7 +572,11 @@ def _build_locale_health(
     missing_reference_keys = sorted(reference_keys - localized_reference_keys)
     total_reference_keys = len(reference_keys)
     fallback_keys = len(missing_reference_keys)
-    fallback_hit_rate = round((fallback_keys / total_reference_keys) * 100, 1) if total_reference_keys else 0.0
+    fallback_hit_rate = (
+        round((fallback_keys / total_reference_keys) * 100, 1)
+        if total_reference_keys
+        else 0.0
+    )
 
     fully_untranslated_namespaces_count = sum(
         1 for namespace in base_namespace_map if namespace not in locale_namespace_map
@@ -547,7 +604,9 @@ def _build_locale_health(
 def _resolve_locale_format_standards(locale: str) -> LocaleFormatStandards | None:
     if locale not in SUPPORTED_LOCALE_METADATA:
         return None
-    standards = LOCALE_FORMAT_STANDARDS.get(locale) or LOCALE_FORMAT_STANDARDS.get(DEFAULT_LOCALE)
+    standards = LOCALE_FORMAT_STANDARDS.get(locale) or LOCALE_FORMAT_STANDARDS.get(
+        DEFAULT_LOCALE
+    )
     if standards is None:
         return None
     return LocaleFormatStandards(
@@ -556,8 +615,12 @@ def _resolve_locale_format_standards(locale: str) -> LocaleFormatStandards | Non
         date_style=str(standards.get("date_style") or "medium"),
         time_style=str(standards.get("time_style") or "short"),
         time_zone=str(standards.get("time_zone") or "Europe/London"),
-        number_min_fraction_digits=int(standards.get("number_min_fraction_digits") or 0),
-        number_max_fraction_digits=int(standards.get("number_max_fraction_digits") or 2),
+        number_min_fraction_digits=int(
+            standards.get("number_min_fraction_digits") or 0
+        ),
+        number_max_fraction_digits=int(
+            standards.get("number_max_fraction_digits") or 2
+        ),
     )
 
 
@@ -569,23 +632,33 @@ def _build_locale_roadmap_item(
     metadata = SUPPORTED_LOCALE_METADATA.get(locale, {})
     native_name = str(metadata.get("native_name") or locale)
     fallback_locale = metadata.get("fallback_locale")
-    standards = _resolve_locale_format_standards(locale) or _resolve_locale_format_standards(DEFAULT_LOCALE)
+    standards = _resolve_locale_format_standards(
+        locale
+    ) or _resolve_locale_format_standards(DEFAULT_LOCALE)
     default_currency = standards.default_currency if standards else "GBP"
     time_zone = standards.time_zone if standards else "Europe/London"
     coverage_percent = (
-        round((locale_health.localized_keys / locale_health.total_reference_keys) * 100, 1)
+        round(
+            (locale_health.localized_keys / locale_health.total_reference_keys) * 100, 1
+        )
         if locale_health.total_reference_keys
         else 100.0
     )
     if locale_health.fallback_keys == 0 and str(metadata.get("status")) == "translated":
         rollout_stage = "production_ready"
-        next_step = "Maintain translation freshness and monitor fallback hit-rate drift."
+        next_step = (
+            "Maintain translation freshness and monitor fallback hit-rate drift."
+        )
     elif coverage_percent >= 60.0:
         rollout_stage = "beta"
-        next_step = "Complete remaining high-traffic namespaces before production rollout."
+        next_step = (
+            "Complete remaining high-traffic namespaces before production rollout."
+        )
     else:
         rollout_stage = "planning"
-        next_step = "Prioritize core onboarding, dashboard, and submission namespaces first."
+        next_step = (
+            "Prioritize core onboarding, dashboard, and submission namespaces first."
+        )
 
     return LocaleRoadmapItem(
         code=locale,
@@ -599,12 +672,14 @@ def _build_locale_roadmap_item(
         recommended_next_step=next_step,
     )
 
+
 # --- Endpoints ---
+
 
 @app.get(
     "/translations/locales",
     response_model=list[SupportedLocale],
-    summary="List supported locales and fallback policy"
+    summary="List supported locales and fallback policy",
 )
 async def list_supported_locales():
     return [
@@ -621,7 +696,7 @@ async def list_supported_locales():
 @app.get(
     "/translations/health",
     response_model=TranslationHealthResponse,
-    summary="Get translation health telemetry across locales"
+    summary="Get translation health telemetry across locales",
 )
 async def get_translation_health():
     base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
@@ -638,10 +713,13 @@ async def get_translation_health():
     locale_health_rows.sort(key=lambda item: item.code)
 
     total_locales = len(locale_health_rows)
-    locales_with_fallback = sum(1 for row in locale_health_rows if row.fallback_keys > 0)
+    locales_with_fallback = sum(
+        1 for row in locale_health_rows if row.fallback_keys > 0
+    )
     average_fallback = (
         round(
-            sum(row.estimated_fallback_hit_rate_percent for row in locale_health_rows) / total_locales,
+            sum(row.estimated_fallback_hit_rate_percent for row in locale_health_rows)
+            / total_locales,
             1,
         )
         if total_locales
@@ -663,7 +741,9 @@ async def get_translation_health():
             locales_with_fallback=locales_with_fallback,
             average_fallback_hit_rate_percent=average_fallback,
             highest_fallback_locale=highest.code if highest else None,
-            highest_fallback_hit_rate_percent=highest.estimated_fallback_hit_rate_percent if highest else 0.0,
+            highest_fallback_hit_rate_percent=highest.estimated_fallback_hit_rate_percent
+            if highest
+            else 0.0,
         ),
     )
 
@@ -671,7 +751,7 @@ async def get_translation_health():
 @app.get(
     "/translations/locales/roadmap",
     response_model=LocaleRoadmapResponse,
-    summary="Get locale rollout roadmap for international expansion"
+    summary="Get locale rollout roadmap for international expansion",
 )
 async def get_locale_rollout_roadmap():
     base_locale_data = fake_translations_db.get(DEFAULT_LOCALE, {})
@@ -699,21 +779,21 @@ async def get_locale_rollout_roadmap():
 @app.get(
     "/translations/{locale}/format-standards",
     response_model=LocaleFormatStandards,
-    summary="Get ICU/pluralization formatting standards for locale"
+    summary="Get ICU/pluralization formatting standards for locale",
 )
 async def get_locale_format_standards(locale: str = Path(..., example="en-GB")):
     if standards := _resolve_locale_format_standards(locale):
         return standards
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Formatting standards for locale '{locale}' not found."
+        detail=f"Formatting standards for locale '{locale}' not found.",
     )
 
 
 @app.get(
     "/translations/{locale}/all",
     response_model=Dict[str, Dict[str, str]],
-    summary="Get all translations for a locale"
+    summary="Get all translations for a locale",
 )
 async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB")):
     """
@@ -725,7 +805,7 @@ async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Translations for locale '{locale}' not found."
+        detail=f"Translations for locale '{locale}' not found.",
     )
 
 
@@ -733,11 +813,11 @@ async def get_all_translations_for_locale(locale: str = Path(..., example="en-GB
     "/translations/{locale}/{component}",
     response_model=Dict[str, str],
     summary="Get translations for a component",
-    deprecated=True
+    deprecated=True,
 )
 async def get_translations_by_component(
     locale: str = Path(..., example="en-GB"),
-    component: str = Path(..., example="login")
+    component: str = Path(..., example="login"),
 ):
     """
     Retrieves a key-value map for a given locale and component.
@@ -748,5 +828,5 @@ async def get_translations_by_component(
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
-        detail=f"Translations for locale '{locale}' and component '{component}' not found."
+        detail=f"Translations for locale '{locale}' and component '{component}' not found.",
     )

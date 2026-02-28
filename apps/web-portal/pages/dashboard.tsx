@@ -1,11 +1,14 @@
-import { FormEvent, useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import styles from '../styles/Home.module.css';
+import { useRouter } from 'next/router';
+import { FormEvent, useEffect, useState } from 'react';
+import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useTranslation } from '../hooks/useTranslation';
+import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
+const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:8009';
+const ADVICE_SERVICE_URL = process.env.NEXT_PUBLIC_ADVICE_SERVICE_URL || 'http://localhost:8010';
 
 type DashboardPageProps = {
   token: string;
@@ -97,7 +100,7 @@ function CashFlowChart({ token }: { token: string }) {
   useEffect(() => {
     const fetchForecast = async () => {
       try {
-        const response = await fetch(`${API_GATEWAY_URL}/analytics/forecast/cash-flow`, {
+        const response = await fetch(`${ANALYTICS_SERVICE_URL}/forecast/cash-flow`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ days_to_forecast: 30 }),
@@ -152,7 +155,7 @@ function TrialBanner({ token }: { token: string }) {
   useEffect(() => {
     const fetchSub = async () => {
       try {
-        const response = await fetch(`${API_GATEWAY_URL}/auth/subscription/me`, {
+        const response = await fetch(`${AUTH_SERVICE_URL}/subscription/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (response.ok) {
@@ -211,7 +214,7 @@ function ActionCenter({ token }: { token: string }) {
   useEffect(() => {
     const fetchAdvice = async () => {
       try {
-        const response = await fetch(`${API_GATEWAY_URL}/advice/generate`, {
+        const response = await fetch(`${ADVICE_SERVICE_URL}/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ topic: 'income_protection' }),
