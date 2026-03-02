@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fpdf import FPDF
 from pydantic import BaseModel, Field
@@ -47,6 +48,14 @@ app = FastAPI(
     title="SelfMonitor Advanced Analytics & ML Pipeline",
     description="Enterprise-grade analytics platform with ML pipeline, data science workbench, and real-time business intelligence.",
     version="2.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

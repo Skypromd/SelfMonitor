@@ -8,12 +8,15 @@ from typing import Literal, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
 # --- Configuration ---
-TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me")
+TRANSACTIONS_SERVICE_URL = os.getenv(
+    "TRANSACTIONS_SERVICE_URL", "http://localhost:8002/transactions/me"
+)
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "libs").exists():
@@ -30,24 +33,38 @@ get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 app = FastAPI(
     title="Advice Service",
     description="Provides non-regulated financial insights.",
-    version="1.0.0"
+    version="1.0.0",
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # --- Models ---
 class Transaction(BaseModel):
     date: datetime.date
     amount: float
     description: str
-    category: Optional[str] = None # Добавлено для полного соответствия
+    category: Optional[str] = None  # Добавлено для полного соответствия
+
 
 class AdviceRequest(BaseModel):
-    topic: Literal['spending_analysis', 'savings_potential', 'income_protection']
+    topic: Literal["spending_analysis", "savings_potential", "income_protection"]
+
 
 class AdviceResponse(BaseModel):
-    topic: Literal['spending_analysis', 'savings_potential', 'income_protection']
+    topic: Literal["spending_analysis", "savings_potential", "income_protection"]
     headline: str
     details: str
-    generated_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
+    generated_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC)
+    )
+
 
 # --- Endpoints ---
 @app.get("/health")
@@ -57,7 +74,7 @@ async def health_check():
 
 @app.post("/generate", response_model=AdviceResponse)
 async def generate_advice(
-    request: AdviceRequest, 
+    request: AdviceRequest,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
 ):
@@ -73,10 +90,12 @@ async def generate_advice(
         )
         transactions = [Transaction(**t) for t in transactions_data]
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Could not connect to transactions-service: {exc}") from exc
+        raise HTTPException(
+            status_code=502, detail=f"Could not connect to transactions-service: {exc}"
+        ) from exc
 
     # --- Topic-specific logic ---
-    if request.topic == 'income_protection':
+    if request.topic == "income_protection":
         # 1. Calculate average monthly income over last year
         twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)
         monthly_income = defaultdict(float)
@@ -86,9 +105,9 @@ async def generate_advice(
 
         if not monthly_income:
             return AdviceResponse(
-                topic='income_protection',
+                topic="income_protection",
                 headline="Not enough data for an income protection analysis.",
-                details="We need more historical income data to provide a recommendation."
+                details="We need more historical income data to provide a recommendation.",
             )
 
         average_monthly_income = sum(monthly_income.values()) / len(monthly_income)
@@ -102,12 +121,10 @@ async def generate_advice(
         )
 
         return AdviceResponse(
-            topic='income_protection',
-            headline=headline,
-            details=details
+            topic="income_protection", headline=headline, details=details
         )
 
-    if request.topic == 'spending_analysis':
+    if request.topic == "spending_analysis":
         today = datetime.date.today()
         six_months_ago = today - datetime.timedelta(days=180)
 
@@ -117,27 +134,44 @@ async def generate_advice(
                 monthly_spending[t.date.strftime("%Y-%m")] += abs(t.amount)
 
         if len(monthly_spending) < 2:
-            return AdviceResponse(topic='spending_analysis', headline="Not enough data for spending analysis.", details="We need at least two months of spending data to compare.")
+            return AdviceResponse(
+                topic="spending_analysis",
+                headline="Not enough data for spending analysis.",
+                details="We need at least two months of spending data to compare.",
+            )
 
         current_month_str = today.strftime("%Y-%m")
         current_month_spending = monthly_spending.pop(current_month_str, 0)
 
         if not monthly_spending:
-             return AdviceResponse(topic='spending_analysis', headline="This is your first month!", details=f"You've spent £{current_month_spending:,.2f} so far. We'll have more insights for you next month.")
+            return AdviceResponse(
+                topic="spending_analysis",
+                headline="This is your first month!",
+                details=f"You've spent £{current_month_spending:,.2f} so far. We'll have more insights for you next month.",
+            )
 
         avg_previous_spending = sum(monthly_spending.values()) / len(monthly_spending)
 
-        if current_month_spending > avg_previous_spending * 1.2: # 20% higher
-            headline = f"Your spending is up by {((current_month_spending/avg_previous_spending)-1):.0%} this month."
+        if current_month_spending > avg_previous_spending * 1.2:  # 20% higher
+            headline = f"Your spending is up by {((current_month_spending / avg_previous_spending) - 1):.0%} this month."
             details = f"You've spent £{current_month_spending:,.2f} so far this month, compared to a recent average of £{avg_previous_spending:,.2f}. It might be a good idea to review your recent activity."
         else:
             headline = "Your spending is on track this month."
             details = f"You've spent £{current_month_spending:,.2f}, which is in line with your average of £{avg_previous_spending:,.2f}. Keep up the good work!"
 
-        return AdviceResponse(topic='spending_analysis', headline=headline, details=details)
+        return AdviceResponse(
+            topic="spending_analysis", headline=headline, details=details
+        )
 
-    if request.topic == 'savings_potential':
-        subscription_keywords = ['netflix', 'spotify', 'amazon prime', 'disney+', 'nowtv', 'audible']
+    if request.topic == "savings_potential":
+        subscription_keywords = [
+            "netflix",
+            "spotify",
+            "amazon prime",
+            "disney+",
+            "nowtv",
+            "audible",
+        ]
         found_subscriptions = defaultdict(float)
 
         ninety_days_ago = datetime.date.today() - datetime.timedelta(days=90)
@@ -151,12 +185,20 @@ async def generate_advice(
                         break
 
         if not found_subscriptions:
-            return AdviceResponse(topic='savings_potential', headline="No recurring subscriptions found.", details="We couldn't identify any common subscriptions in your recent transactions.")
+            return AdviceResponse(
+                topic="savings_potential",
+                headline="No recurring subscriptions found.",
+                details="We couldn't identify any common subscriptions in your recent transactions.",
+            )
 
         total_monthly_cost = sum(found_subscriptions.values())
-        headline = f"You could save £{total_monthly_cost:,.2f} per month on subscriptions."
+        headline = (
+            f"You could save £{total_monthly_cost:,.2f} per month on subscriptions."
+        )
         details = f"We found {len(found_subscriptions)} potential recurring subscriptions, including '{list(found_subscriptions.keys())[0]}'. Are you still using all of them?"
 
-        return AdviceResponse(topic='savings_potential', headline=headline, details=details)
+        return AdviceResponse(
+            topic="savings_potential", headline=headline, details=details
+        )
 
     raise HTTPException(status_code=400, detail="Invalid topic")
