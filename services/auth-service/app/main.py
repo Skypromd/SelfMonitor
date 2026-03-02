@@ -29,7 +29,10 @@ logger = logging.getLogger(__name__)
 SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-AUTH_DB_PATH = os.getenv("AUTH_DB_PATH", "/tmp/auth.db")
+AUTH_DB_PATH = os.getenv(
+    "AUTH_DB_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "auth.db"),
+)
 AUTH_ADMIN_EMAIL = os.getenv("AUTH_ADMIN_EMAIL", "admin@example.com")
 AUTH_ADMIN_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin_password")
 AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "true"
