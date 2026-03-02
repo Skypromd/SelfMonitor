@@ -1,0 +1,118 @@
+# SelfMonitor - Start all services
+# Usage: powershell -ExecutionPolicy Bypass -File start-services.ps1
+
+$ROOT = "B:\SelfMonitor\SelfMonitor"
+$VENV = "$ROOT\.venv\Scripts\uvicorn.exe"
+
+$commonEnv = @{
+  AUTH_SECRET_KEY = "dev-local-secret-key-123"
+  PYTHONPATH      = $ROOT
+  TEMP            = $env:TEMP
+  TMP             = $env:TMP
+  PATH            = $env:PATH
+}
+
+Write-Host "Stopping existing services..." -ForegroundColor Yellow
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+Where-Object { $_.LocalPort -in 3000, 8001, 8005, 8006, 8009, 8010, 8012 } |
+ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+Stop-Process -Name node -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+Write-Host "All stopped." -ForegroundColor Gray
+
+# --- auth-service :8001 ---
+$env1 = $commonEnv.Clone()
+$env1["AUTH_DB_PATH"] = "$ROOT\services\auth-service\auth.db"
+$env1["AUTH_BOOTSTRAP_ADMIN"] = "true"
+$env1["AUTH_ADMIN_EMAIL"] = "admin@selfmonitor.app"
+$env1["AUTH_ADMIN_PASSWORD"] = "ChangeMe123!"
+$p1 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8001" `
+  -WorkingDirectory "$ROOT\services\auth-service" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\auth_out.txt" -RedirectStandardError "$ROOT\logs\auth_err.txt" `
+  -Environment $env1
+Write-Host "auth-service       :8001  PID=$($p1.Id)" -ForegroundColor Cyan
+
+# --- localization-service :8012 ---
+$p2 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8012" `
+  -WorkingDirectory "$ROOT\services\localization-service" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\localization_out.txt" -RedirectStandardError "$ROOT\logs\localization_err.txt" `
+  -Environment $commonEnv
+Write-Host "localization-service :8012 PID=$($p2.Id)" -ForegroundColor Cyan
+
+# --- user-profile-service :8005 ---
+$env3 = $commonEnv.Clone()
+$env3["DATABASE_URL"] = "sqlite+aiosqlite:///$ROOT/services/user-profile-service/profile.db"
+$p3 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8005" `
+  -WorkingDirectory "$ROOT\services\user-profile-service" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\profile_out.txt" -RedirectStandardError "$ROOT\logs\profile_err.txt" `
+  -Environment $env3
+Write-Host "user-profile-service :8005 PID=$($p3.Id)" -ForegroundColor Cyan
+
+# --- analytics-service :8009 ---
+$p4 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8009" `
+  -WorkingDirectory "$ROOT\services\analytics-service" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\analytics_out.txt" -RedirectStandardError "$ROOT\logs\analytics_err.txt" `
+  -Environment $commonEnv
+Write-Host "analytics-service  :8009  PID=$($p4.Id)" -ForegroundColor Cyan
+
+# --- advice-service :8010 ---
+$p5 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8010" `
+  -WorkingDirectory "$ROOT\services\advice-service" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\advice_out.txt" -RedirectStandardError "$ROOT\logs\advice_err.txt" `
+  -Environment $commonEnv
+Write-Host "advice-service     :8010  PID=$($p5.Id)" -ForegroundColor Cyan
+
+# --- documents-service :8006 ---
+$env6 = $commonEnv.Clone()
+$env6["DATABASE_URL"] = "sqlite+aiosqlite:///$ROOT/services/documents-service/documents.db"
+$env6["CELERY_BROKER_URL"] = "memory://"
+$env6["CELERY_RESULT_BACKEND"] = "cache+memory://"
+$env6["AWS_ENDPOINT_URL"] = "http://localhost:9000"
+$p6 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8006" `
+  -WorkingDirectory "$ROOT\services\documents-service" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\documents_out.txt" -RedirectStandardError "$ROOT\logs\documents_err.txt" `
+  -Environment $env6
+Write-Host "documents-service  :8006  PID=$($p6.Id)" -ForegroundColor Cyan
+
+# --- web-portal :3000 ---
+$nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
+if ($nodeExe) {
+  Remove-Item "$ROOT\apps\web-portal\.next\dev\lock" -Force -ErrorAction SilentlyContinue
+  $p7 = Start-Process -FilePath $nodeExe `
+    -ArgumentList "$ROOT\apps\web-portal\node_modules\next\dist\bin\next", "dev" `
+    -WorkingDirectory "$ROOT\apps\web-portal" -PassThru -NoNewWindow `
+    -RedirectStandardOutput "$ROOT\logs\portal_out.txt" -RedirectStandardError "$ROOT\logs\portal_err.txt"
+  Write-Host "web-portal         :3000  PID=$($p7.Id)" -ForegroundColor Cyan
+}
+else {
+  Write-Host "node not found in PATH - skipping web-portal" -ForegroundColor Red
+}
+
+Write-Host ""
+Write-Host "Waiting 8 seconds for services to start..." -ForegroundColor Yellow
+Start-Sleep -Seconds 8
+
+# Health check
+$checks = @(
+  @{name = "portal    :3000"; url = "http://localhost:3000" },
+  @{name = "auth      :8001"; url = "http://localhost:8001/health" },
+  @{name = "profile   :8005"; url = "http://localhost:8005/health" },
+  @{name = "documents :8006"; url = "http://localhost:8006/health" },
+  @{name = "analytics :8009"; url = "http://localhost:8009/health" },
+  @{name = "advice    :8010"; url = "http://localhost:8010/health" },
+  @{name = "localize  :8012"; url = "http://localhost:8012/docs" }
+)
+Write-Host ""
+Write-Host "Health check:" -ForegroundColor Yellow
+foreach ($c in $checks) {
+  try {
+    $r = Invoke-WebRequest -Uri $c.url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+    Write-Host "  $($c.name)  OK $($r.StatusCode)" -ForegroundColor Green
+  }
+  catch {
+    Write-Host "  $($c.name)  FAIL" -ForegroundColor Red
+  }
+}
+Write-Host ""
+Write-Host "Logs are in: $ROOT\logs\" -ForegroundColor Gray
+Write-Host "Portal: http://localhost:3000  |  Login: admin@selfmonitor.app / ChangeMe123!" -ForegroundColor White

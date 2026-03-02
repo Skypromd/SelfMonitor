@@ -66,13 +66,17 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const handleRegister = async (e: FormEvent) => {
     e.preventDefault();
     clearFeedback();
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter your email and password.');
+      return;
+    }
     setLoading(true);
 
     try {
       const response = await fetch(`${AUTH_SERVICE_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -95,11 +99,15 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const handleLogin = async (e: FormEvent, totpOverride?: string) => {
     e.preventDefault();
     clearFeedback();
+    if (!email.trim() || !password.trim()) {
+      setError('Please enter your email and password.');
+      return;
+    }
     setLoading(true);
 
     try {
       const formData = new URLSearchParams();
-      formData.append('username', email);
+      formData.append('username', email.trim());
       formData.append('password', password);
 
       const code = totpOverride || totpCode;
@@ -110,7 +118,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
       const response = await fetch(`${AUTH_SERVICE_URL}/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData,
+        body: formData.toString(),
       });
       const data = await response.json();
 
