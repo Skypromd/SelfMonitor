@@ -17,6 +17,20 @@
     "pydantic",
     "alembic",
     "asyncpg",
-    "aiohttp"
+    "aiohttp",
+    "venv",
+    "PYTHONPATH",
+    "urllib",
+    "urlopen",
+    "lucide",
+    "reqres",
+    "dotenv",
+    "middlewares",
+    "sqlalchemy",
+    "passlib",
+    "bcrypt",
+    "multipart",
+    "telemetry",
+    "opentelemetry"
   ]
 }
