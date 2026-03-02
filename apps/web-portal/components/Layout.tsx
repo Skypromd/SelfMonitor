@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Layout.module.css';
 
@@ -23,7 +23,7 @@ type UserSummary = {
 };
 
 type LayoutProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   onLogout: () => void;
   user: UserSummary;
   isDarkMode?: boolean;
@@ -38,21 +38,21 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
 
   const isAdmin = user.is_admin === true;
 
-  const navItems = [
-    { href: '/dashboard',    label: '📊 ' + t('nav.dashboard') },
-    { href: '/activity',     label: '⚡ ' + t('nav.activity') },
-    { href: '/transactions', label: '💸 ' + t('nav.transactions') },
-    { href: '/documents',    label: '📄 ' + t('nav.documents') },
-    { href: '/reports',      label: '📈 ' + t('nav.reports') },
-    { href: '/marketplace',  label: '🛍️ ' + t('nav.marketplace') },
-    { href: '/submission',   label: '📬 ' + t('nav.submission') },
-    { href: '/profile',      label: '👤 ' + t('nav.profile') },
-    { href: '/billing',      label: '💳 Billing' },
-    { href: '/security',     label: '🔒 Security' },
+  const navItems: { href: string; label: string; icon: ReactNode }[] = [
+    { href: '/dashboard',    label: t('nav.dashboard'),    icon: <LayoutDashboard size={17} /> },
+    { href: '/activity',     label: t('nav.activity'),     icon: <Activity size={17} /> },
+    { href: '/transactions', label: t('nav.transactions'), icon: <Wallet size={17} /> },
+    { href: '/documents',    label: t('nav.documents'),    icon: <FileText size={17} /> },
+    { href: '/reports',      label: t('nav.reports'),      icon: <BarChart2 size={17} /> },
+    { href: '/marketplace',  label: t('nav.marketplace'),  icon: <ShoppingBag size={17} /> },
+    { href: '/submission',   label: t('nav.submission'),   icon: <Send size={17} /> },
+    { href: '/profile',      label: t('nav.profile'),      icon: <User size={17} /> },
+    { href: '/billing',      label: 'Billing',             icon: <CreditCard size={17} /> },
+    { href: '/security',     label: 'Security',            icon: <Lock size={17} /> },
   ];
 
   if (isAdmin) {
-    navItems.push({ href: '/admin', label: '⚙️ ' + t('nav.admin') });
+    navItems.push({ href: '/admin', label: t('nav.admin'), icon: <Settings size={17} /> });
   }
 
   return (
@@ -60,9 +60,13 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
       <aside className={styles.sidebar}>
         <h1 className={styles.logo}>FinTech</h1>
         <nav className={styles.nav}>
-          {navItems.map(({ href, label }) => (
+          {navItems.map(({ href, label, icon }) => (
             <Link href={href} key={href} locale={router.locale}>
-              <span className={router.pathname === href ? styles.active : ''}>
+              <span
+                className={router.pathname === href ? styles.active : ''}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}
+              >
+                <span style={{ display: 'flex', flexShrink: 0 }}>{icon}</span>
                 {label}
               </span>
             </Link>
@@ -76,7 +80,7 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
-                fontSize: '1.5rem',
+                fontSize: '0.85rem',
                 padding: '0.5rem',
                 display: 'flex',
                 alignItems: 'center',
@@ -84,6 +88,7 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
                 color: 'var(--lp-text)',
               }}
             >
+              <Globe size={15} />
               {LOCALE_FLAGS[activeLocale || 'en-GB'] || '🌐'}
               <span style={{ fontSize: '0.85rem', color: 'var(--lp-text-muted)' }}>
                 {(activeLocale || 'en-GB').split('-')[0].toUpperCase()}
@@ -134,7 +139,8 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
               </div>
             )}
           </div>
-          <button onClick={onLogout} className={styles.logoutButton}>
+          <button onClick={onLogout} className={styles.logoutButton} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+            <LogOut size={15} />
             {t('common.logout')}
           </button>
         </div>
