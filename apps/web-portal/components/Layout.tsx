@@ -39,19 +39,20 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
   const isAdmin = user.is_admin === true;
 
   const navItems = [
-    { href: '/dashboard', label: t('nav.dashboard') },
-    { href: '/activity', label: t('nav.activity') },
-    { href: '/transactions', label: t('nav.transactions') },
-    { href: '/documents', label: t('nav.documents') },
-    { href: '/reports', label: t('nav.reports') },
-    { href: '/marketplace', label: t('nav.marketplace') },
-    { href: '/submission', label: t('nav.submission') },
-    { href: '/profile', label: t('nav.profile') },
-    { href: '/billing', label: '💳 Billing' },
+    { href: '/dashboard',    label: '📊 ' + t('nav.dashboard') },
+    { href: '/activity',     label: '⚡ ' + t('nav.activity') },
+    { href: '/transactions', label: '💸 ' + t('nav.transactions') },
+    { href: '/documents',    label: '📄 ' + t('nav.documents') },
+    { href: '/reports',      label: '📈 ' + t('nav.reports') },
+    { href: '/marketplace',  label: '🛍️ ' + t('nav.marketplace') },
+    { href: '/submission',   label: '📬 ' + t('nav.submission') },
+    { href: '/profile',      label: '👤 ' + t('nav.profile') },
+    { href: '/billing',      label: '💳 Billing' },
+    { href: '/security',     label: '🔒 Security' },
   ];
 
   if (isAdmin) {
-    navItems.push({ href: '/admin', label: t('nav.admin') });
+    navItems.push({ href: '/admin', label: '⚙️ ' + t('nav.admin') });
   }
 
   return (
