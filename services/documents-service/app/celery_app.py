@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import logging
 import os
 
 import boto3
@@ -24,18 +25,26 @@ from .ocr_pipeline import (
 )
 
 # --- DB & Service URL Setup ---
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://user:password@localhost/db_documents")
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql+asyncpg://user:password@localhost/db_documents"
+)
 QNA_SERVICE_URL = os.getenv("QNA_SERVICE_URL", "http://localhost:8014/index")
-CATEGORIZATION_SERVICE_URL = os.getenv("CATEGORIZATION_SERVICE_URL", "http://categorization-service/categorize")
+CATEGORIZATION_SERVICE_URL = os.getenv(
+    "CATEGORIZATION_SERVICE_URL", "http://categorization-service/categorize"
+)
 TRANSACTIONS_SERVICE_URL = os.getenv(
     "TRANSACTIONS_SERVICE_URL",
     "http://transactions-service/transactions/receipt-drafts",
 )
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.getenv(
+    "AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var"
+)
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "documents-bucket")
 S3_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
-OCR_REVIEW_CONFIDENCE_THRESHOLD = float(os.getenv("OCR_REVIEW_CONFIDENCE_THRESHOLD", "0.75"))
+OCR_REVIEW_CONFIDENCE_THRESHOLD = float(
+    os.getenv("OCR_REVIEW_CONFIDENCE_THRESHOLD", "0.75")
+)
 
 engine = create_async_engine(DATABASE_URL)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -166,7 +175,9 @@ def create_receipt_draft_transaction(
                 return None, None
             transaction = response_payload.get("transaction")
             duplicated = response_payload.get("duplicated")
-            transaction_id = transaction.get("id") if isinstance(transaction, dict) else None
+            transaction_id = (
+                transaction.get("id") if isinstance(transaction, dict) else None
+            )
             resolved_id = str(transaction_id) if transaction_id else None
             resolved_duplicate = bool(duplicated) if duplicated is not None else None
             return resolved_id, resolved_duplicate
@@ -197,9 +208,17 @@ async def _build_extracted_data_from_text(
     transaction_date = extract_transaction_date(text)
     vendor_name = infer_vendor_name(text=text, filename=filename)
     description = " ".join(
-        part for part in [vendor_name or "", filename, build_text_excerpt(text, limit=120) or ""] if part
+        part
+        for part in [
+            vendor_name or "",
+            filename,
+            build_text_excerpt(text, limit=120) or "",
+        ]
+        if part
     )
-    manual_feedback = await _load_manual_feedback(user_id=user_id, vendor_name=vendor_name)
+    manual_feedback = await _load_manual_feedback(
+        user_id=user_id, vendor_name=vendor_name
+    )
     if manual_feedback and isinstance(manual_feedback.get("suggested_category"), str):
         suggested_category = str(manual_feedback["suggested_category"])
         expense_article = (
@@ -250,10 +269,18 @@ async def _build_extracted_data_from_text(
 def _create_index_text(extracted_data: schemas.ExtractedData, raw_text: str) -> str:
     summary_parts = [
         f"Vendor: {extracted_data.vendor_name}" if extracted_data.vendor_name else None,
-        f"Amount: {extracted_data.total_amount}" if extracted_data.total_amount is not None else None,
-        f"Date: {extracted_data.transaction_date}" if extracted_data.transaction_date else None,
-        f"Category: {extracted_data.suggested_category}" if extracted_data.suggested_category else None,
-        f"Expense article: {extracted_data.expense_article}" if extracted_data.expense_article else None,
+        f"Amount: {extracted_data.total_amount}"
+        if extracted_data.total_amount is not None
+        else None,
+        f"Date: {extracted_data.transaction_date}"
+        if extracted_data.transaction_date
+        else None,
+        f"Category: {extracted_data.suggested_category}"
+        if extracted_data.suggested_category
+        else None,
+        f"Expense article: {extracted_data.expense_article}"
+        if extracted_data.expense_article
+        else None,
         (
             f"Potentially deductible: {extracted_data.is_potentially_deductible}"
             if extracted_data.is_potentially_deductible is not None
@@ -264,13 +291,21 @@ def _create_index_text(extracted_data: schemas.ExtractedData, raw_text: str) -> 
             if extracted_data.receipt_draft_transaction_id
             else None
         ),
-        f"OCR confidence: {extracted_data.ocr_confidence}" if extracted_data.ocr_confidence is not None else None,
-        f"Needs review: {extracted_data.needs_review}" if extracted_data.needs_review is not None else None,
-        f"Review reason: {extracted_data.review_reason}" if extracted_data.review_reason else None,
+        f"OCR confidence: {extracted_data.ocr_confidence}"
+        if extracted_data.ocr_confidence is not None
+        else None,
+        f"Needs review: {extracted_data.needs_review}"
+        if extracted_data.needs_review is not None
+        else None,
+        f"Review reason: {extracted_data.review_reason}"
+        if extracted_data.review_reason
+        else None,
     ]
     summary = ". ".join(part for part in summary_parts if part)
     if raw_text.strip():
-        return f"{summary}\n\nOCR text:\n{raw_text[:5000]}" if summary else raw_text[:5000]
+        return (
+            f"{summary}\n\nOCR text:\n{raw_text[:5000]}" if summary else raw_text[:5000]
+        )
     return summary
 
 
@@ -296,12 +331,16 @@ async def _update_document_ocr_state(
 
 
 @celery.task
-def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath: str | None = None):
+def ocr_processing_task(
+    document_id: str, user_id: str, filename: str, filepath: str | None = None
+):
     """
     Processes uploaded document via real OCR provider and stores extracted fields.
     """
     print(f"Starting OCR processing for document: {document_id}")
-    resolved_filepath = filepath or asyncio.run(_load_filepath_for_document(document_id))
+    resolved_filepath = filepath or asyncio.run(
+        _load_filepath_for_document(document_id)
+    )
     if not resolved_filepath:
         extracted_data = schemas.ExtractedData(
             ocr_provider=os.getenv("OCR_PROVIDER", "textract"),
@@ -311,9 +350,17 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
             review_reason="filepath_not_found",
             review_status="pending",
         )
-        asyncio.run(_update_document_ocr_state(document_id=document_id, status="failed", extracted_data=extracted_data))
+        asyncio.run(
+            _update_document_ocr_state(
+                document_id=document_id, status="failed", extracted_data=extracted_data
+            )
+        )
         print(f"OCR failed: file path not found for document {document_id}")
-        return {"document_id": document_id, "status": "failed", "reason": "filepath_not_found"}
+        return {
+            "document_id": document_id,
+            "status": "failed",
+            "reason": "filepath_not_found",
+        }
 
     try:
         file_bytes = _download_document_bytes(resolved_filepath)
@@ -328,11 +375,13 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
                 filename=filename,
             )
         )
-        receipt_transaction_id, receipt_transaction_duplicated = create_receipt_draft_transaction(
-            document_id=document_id,
-            user_id=user_id,
-            filename=filename,
-            extracted_data=extracted_data,
+        receipt_transaction_id, receipt_transaction_duplicated = (
+            create_receipt_draft_transaction(
+                document_id=document_id,
+                user_id=user_id,
+                filename=filename,
+                extracted_data=extracted_data,
+            )
         )
         extracted_data.receipt_draft_transaction_id = receipt_transaction_id
         extracted_data.receipt_draft_duplicated = receipt_transaction_duplicated
@@ -346,7 +395,9 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
             )
         )
 
-        indexed_text = _create_index_text(extracted_data=extracted_data, raw_text=ocr_result.text)
+        indexed_text = _create_index_text(
+            extracted_data=extracted_data, raw_text=ocr_result.text
+        )
         if indexed_text:
             index_document_content(user_id, document_id, filename, indexed_text)
 
@@ -368,6 +419,10 @@ def ocr_processing_task(document_id: str, user_id: str, filename: str, filepath:
             review_reason="ocr_failed",
             review_status="pending",
         )
-        asyncio.run(_update_document_ocr_state(document_id=document_id, status="failed", extracted_data=failed_data))
+        asyncio.run(
+            _update_document_ocr_state(
+                document_id=document_id, status="failed", extracted_data=failed_data
+            )
+        )
         print(f"OCR processing failed for {document_id}: {exc}")
         return {"document_id": document_id, "status": "failed", "reason": str(exc)}

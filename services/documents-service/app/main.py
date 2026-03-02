@@ -4,26 +4,55 @@ import sys
 import uuid
 from pathlib import Path
 from typing import List
-from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, UploadFile, status
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
-from sqlalchemy.ext.asyncio import AsyncSession
+
 import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    status,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
-from .database import get_db
 from .celery_app import ocr_processing_task
+from .database import get_db
 
 # --- File Upload Validation ---
 MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".gif", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".txt"}
+ALLOWED_EXTENSIONS = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".csv",
+    ".txt",
+}
 ALLOWED_CONTENT_TYPES = {
-    "application/pdf", "image/png", "image/jpeg", "image/gif",
-    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "text/csv", "text/plain",
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv",
+    "text/plain",
 }
 
 # --- S3 Configuration ---
@@ -33,15 +62,21 @@ S3_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
 
 # Configure boto3 client
 s3_client = boto3.client(
-    "s3",
-    endpoint_url=S3_ENDPOINT_URL,
-    config=Config(signature_version='s3v4')
+    "s3", endpoint_url=S3_ENDPOINT_URL, config=Config(signature_version="s3v4")
 )
 
 app = FastAPI(
     title="Documents Service",
     description="Handles document uploads, orchestrates OCR processing, and stores extracted data.",
-    version="1.0.0"
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://192.168.0.248:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 for parent in Path(__file__).resolve().parents:
@@ -66,22 +101,34 @@ OCR_MANUAL_OVERRIDES_TOTAL = Counter(
 )
 
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
+
 @app.get("/metrics")
 async def metrics() -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-@app.post("/documents/upload", response_model=schemas.Document, status_code=status.HTTP_201_CREATED)
+
+@app.post(
+    "/documents/upload",
+    response_model=schemas.Document,
+    status_code=status.HTTP_201_CREATED,
+)
 async def upload_document(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Accepts a document, uploads it to S3, creates a DB record, and triggers OCR."""
     # --- Filename sanitization ---
     raw_filename = file.filename or ""
     safe_filename = _sanitize_filename(raw_filename)
     if not safe_filename:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid filename"
+        )
 
     # --- File extension validation ---
     file_extension = os.path.splitext(safe_filename)[1].lower()
@@ -115,7 +162,9 @@ async def upload_document(
     except ClientError as e:
         raise HTTPException(status_code=500, detail=f"Failed to upload file to S3: {e}")
 
-    db_document = await crud.create_document(db, user_id=user_id, filename=safe_filename, filepath=s3_key)
+    db_document = await crud.create_document(
+        db, user_id=user_id, filename=safe_filename, filepath=s3_key
+    )
 
     # Trigger background OCR task with persisted file key.
     ocr_processing_task.delay(
@@ -127,10 +176,10 @@ async def upload_document(
 
     return db_document
 
+
 @app.get("/documents", response_model=List[schemas.Document])
 async def list_documents(
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+    user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)
 ):
     """Lists all documents for the authenticated user from the database."""
     return await crud.get_documents_by_user(db, user_id=user_id, skip=skip, limit=limit)
@@ -156,12 +205,14 @@ async def list_documents_review_queue(
 async def get_document(
     document_id: uuid.UUID,
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     """Retrieves metadata for a specific document."""
     db_document = await crud.get_document_by_id(db, user_id=user_id, doc_id=document_id)
     if db_document is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
     return db_document
 
 
@@ -179,11 +230,15 @@ async def review_document(
         payload=payload,
     )
     if updated is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
 
     uploaded_at = getattr(updated, "uploaded_at", None)
     if isinstance(uploaded_at, datetime.datetime):
-        elapsed_seconds = (datetime.datetime.now(datetime.UTC) - uploaded_at).total_seconds()
+        elapsed_seconds = (
+            datetime.datetime.now(datetime.UTC) - uploaded_at
+        ).total_seconds()
         if elapsed_seconds >= 0:
             OCR_REVIEW_COMPLETION_SECONDS.observe(elapsed_seconds)
 
