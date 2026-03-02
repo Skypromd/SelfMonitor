@@ -121,7 +121,7 @@ export default function InvoicesScreen() {
   };
 
   const togglePaid = async (invoice: Invoice) => {
-    const nextStatus = invoice.status === 'paid' ? 'sent' : 'paid';
+    const nextStatus: Invoice['status'] = invoice.status === 'paid' ? 'sent' : 'paid';
     const updated = invoices.map((item) => item.id === invoice.id ? { ...item, status: nextStatus } : item);
     await saveInvoices(updated);
   };

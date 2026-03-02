@@ -19,7 +19,7 @@ const toneColor = {
 
 export default function BarRow({ label, value, maxValue, valueLabel, tone = 'primary' }: BarRowProps) {
   const percent = maxValue > 0 ? Math.min(Math.abs(value) / maxValue, 1) : 0;
-  const width = `${Math.round(percent * 100)}%`;
+  const width = `${Math.round(percent * 100)}%` as `${number}%`;
 
   return (
     <View style={styles.container}>

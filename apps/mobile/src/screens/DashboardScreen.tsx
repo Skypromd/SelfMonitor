@@ -64,7 +64,7 @@ export default function DashboardScreen() {
       const data: Transaction[] = await response.json();
       if (!data.length) {
         setReadinessScore(0);
-        setReadinessMeta({ missingCategories: 0, missingBusinessUse: 0, total: 0 });
+        setReadinessMeta({ missingCategories: 0, missingBusinessUse: 0, total: 0, uncategorizedExpenses: 0 });
         return;
       }
       const missingCategories = data.filter(item => !item.tax_category && !item.category).length;
@@ -450,6 +450,12 @@ const styles = StyleSheet.create({
   },
   proSubtitle: {
     color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  titleRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
     marginBottom: spacing.sm,
   },
   secondaryButton: {

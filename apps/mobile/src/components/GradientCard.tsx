@@ -12,7 +12,7 @@ type GradientCardProps = {
 
 export default function GradientCard({ children, colors, style }: GradientCardProps) {
   return (
-    <LinearGradient colors={colors} style={[styles.card, style]}>
+    <LinearGradient colors={colors as [string, string, ...string[]]} style={[styles.card, style]}>
       {children}
     </LinearGradient>
   );

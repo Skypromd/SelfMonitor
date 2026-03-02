@@ -2,7 +2,8 @@ import * as Notifications from 'expo-notifications';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
   }),
@@ -44,7 +45,7 @@ export const scheduleReminder = async (title: string, body: string, date: Date) 
         title,
         body,
       },
-      trigger: date,
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date },
     });
   } catch {
     return;

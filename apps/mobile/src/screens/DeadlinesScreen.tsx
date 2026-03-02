@@ -76,7 +76,7 @@ export default function DeadlinesScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
-  const deadlines = useMemo(() => buildDeadlines(t), [t]);
+  const deadlines = useMemo(() => buildDeadlines(t as (key: string) => string), [t]);
 
   useEffect(() => {
     const loadPrefs = async () => {
