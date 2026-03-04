@@ -14,7 +14,7 @@ $commonEnv = @{
 
 Write-Host "Stopping existing services..." -ForegroundColor Yellow
 Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-Where-Object { $_.LocalPort -in 3000, 8001, 8005, 8006, 8009, 8010, 8012 } |
+Where-Object { $_.LocalPort -in 3000, 3001, 8001, 8005, 8006, 8009, 8010, 8012 } |
 ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 Stop-Process -Name node -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
@@ -81,7 +81,8 @@ if ($nodeExe) {
   $p7 = Start-Process -FilePath $nodeExe `
     -ArgumentList "$ROOT\apps\web-portal\node_modules\next\dist\bin\next", "dev" `
     -WorkingDirectory "$ROOT\apps\web-portal" -PassThru -NoNewWindow `
-    -RedirectStandardOutput "$ROOT\logs\portal_out.txt" -RedirectStandardError "$ROOT\logs\portal_err.txt"
+    -RedirectStandardOutput "$ROOT\logs\portal_out.txt" -RedirectStandardError "$ROOT\logs\portal_err.txt" `
+    -Environment $commonEnv
   Write-Host "web-portal         :3000  PID=$($p7.Id)" -ForegroundColor Cyan
 }
 else {
@@ -89,12 +90,17 @@ else {
 }
 
 Write-Host ""
-Write-Host "Waiting 8 seconds for services to start..." -ForegroundColor Yellow
-Start-Sleep -Seconds 8
+Write-Host "Waiting 15 seconds for services to start (Next.js needs ~10s)..." -ForegroundColor Yellow
+Start-Sleep -Seconds 15
 
 # Health check
+# Detect actual portal port (Next.js may fall back to 3001 if 3000 is briefly busy)
+$portalPort = 3000
+try { $null = Invoke-WebRequest -Uri "http://localhost:3000" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop }
+catch { if ((Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)) { $portalPort = 3001 } }
+
 $checks = @(
-  @{name = "portal    :3000"; url = "http://localhost:3000" },
+  @{name = "portal    :$portalPort"; url = "http://localhost:$portalPort" },
   @{name = "auth      :8001"; url = "http://localhost:8001/health" },
   @{name = "profile   :8005"; url = "http://localhost:8005/health" },
   @{name = "documents :8006"; url = "http://localhost:8006/health" },
@@ -115,4 +121,4 @@ foreach ($c in $checks) {
 }
 Write-Host ""
 Write-Host "Logs are in: $ROOT\logs\" -ForegroundColor Gray
-Write-Host "Portal: http://localhost:3000  |  Login: admin@selfmonitor.app / ChangeMe123!" -ForegroundColor White
+Write-Host "Portal: http://localhost:$portalPort  |  Login: admin@selfmonitor.app / ChangeMe123!" -ForegroundColor White
