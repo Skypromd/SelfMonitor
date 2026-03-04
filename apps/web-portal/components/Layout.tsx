@@ -1,3 +1,8 @@
+import {
+    Activity, BarChart2, CreditCard, FileText, Globe,
+    LayoutDashboard, Lock, LogOut, Send, Settings,
+    ShoppingBag, User, Wallet,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ReactNode, useState } from 'react';

@@ -1,20 +1,20 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Share, StyleSheet, Text, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import Screen from '../components/Screen';
-import SectionHeader from '../components/SectionHeader';
-import Card from '../components/Card';
-import InputField from '../components/InputField';
-import PrimaryButton from '../components/PrimaryButton';
-import ListItem from '../components/ListItem';
 import Badge from '../components/Badge';
+import Card from '../components/Card';
 import Chip from '../components/Chip';
 import FadeInView from '../components/FadeInView';
 import InfoRow from '../components/InfoRow';
-import { toCsv } from '../utils/csv';
+import InputField from '../components/InputField';
+import ListItem from '../components/ListItem';
+import PrimaryButton from '../components/PrimaryButton';
+import Screen from '../components/Screen';
+import SectionHeader from '../components/SectionHeader';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors, spacing } from '../theme';
+import { toCsv } from '../utils/csv';
 
 type Client = {
   id: string;

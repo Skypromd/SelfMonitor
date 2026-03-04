@@ -1,20 +1,20 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect, useMemo, useState } from 'react';
+import { StyleSheet, Text } from 'react-native';
 
-import Screen from '../components/Screen';
-import SectionHeader from '../components/SectionHeader';
-import Card from '../components/Card';
-import PrimaryButton from '../components/PrimaryButton';
 import Badge from '../components/Badge';
-import ListItem from '../components/ListItem';
+import Card from '../components/Card';
 import FadeInView from '../components/FadeInView';
 import InfoRow from '../components/InfoRow';
-import { apiRequest } from '../services/api';
-import { cancelAllScheduled, scheduleReminder } from '../services/notifications';
+import ListItem from '../components/ListItem';
+import PrimaryButton from '../components/PrimaryButton';
+import Screen from '../components/Screen';
+import SectionHeader from '../components/SectionHeader';
+import { useAuth } from '../context/AuthContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useTranslation } from '../hooks/useTranslation';
-import { useAuth } from '../context/AuthContext';
+import { apiRequest } from '../services/api';
+import { cancelAllScheduled, scheduleReminder } from '../services/notifications';
 import { colors, spacing } from '../theme';
 
 type DeadlineItem = {

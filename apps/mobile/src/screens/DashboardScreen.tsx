@@ -1,30 +1,30 @@
+import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
 
-import SectionHeader from '../components/SectionHeader';
-import Card from '../components/Card';
-import PrimaryButton from '../components/PrimaryButton';
-import GradientCard from '../components/GradientCard';
-import StatCard from '../components/StatCard';
-import Screen from '../components/Screen';
-import ProgressBar from '../components/ProgressBar';
 import Badge from '../components/Badge';
-import FadeInView from '../components/FadeInView';
-import InfoRow from '../components/InfoRow';
-import PulseDot from '../components/PulseDot';
-import InteractiveLineChart from '../components/InteractiveLineChart';
-import GlassCard from '../components/GlassCard';
-import SyncAnimation from '../components/SyncAnimation';
-import ListItem from '../components/ListItem';
+import Card from '../components/Card';
 import Chip from '../components/Chip';
+import FadeInView from '../components/FadeInView';
+import GlassCard from '../components/GlassCard';
+import GradientCard from '../components/GradientCard';
+import InfoRow from '../components/InfoRow';
+import InteractiveLineChart from '../components/InteractiveLineChart';
+import ListItem from '../components/ListItem';
+import PrimaryButton from '../components/PrimaryButton';
+import ProgressBar from '../components/ProgressBar';
+import PulseDot from '../components/PulseDot';
+import Screen from '../components/Screen';
+import SectionHeader from '../components/SectionHeader';
+import StatCard from '../components/StatCard';
+import SyncAnimation from '../components/SyncAnimation';
+import { useAuth } from '../context/AuthContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
+import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { flushQueue, getQueueCount } from '../services/offlineQueue';
 import { getSyncLogEntries, SyncLogEntry } from '../services/syncLog';
-import { useAuth } from '../context/AuthContext';
-import { useTranslation } from '../hooks/useTranslation';
 import { colors, spacing } from '../theme';
 
 type Transaction = {
