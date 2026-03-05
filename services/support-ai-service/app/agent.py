@@ -35,8 +35,6 @@ def classify_intent(message: str) -> str:
             "operator",
             "real person",
             "help me",
-            "человек",
-            "оператор",
         ]
     ):
         return INTENT_HUMAN
@@ -48,8 +46,6 @@ def classify_intent(message: str) -> str:
             "bug",
             "create issue",
             "submit",
-            "зарегистрируйте",
-            "заявку",
         ]
     ):
         return INTENT_TICKET
@@ -61,7 +57,9 @@ def classify_intent(message: str) -> str:
     return INTENT_UNKNOWN
 
 
-def _call_llm(system_prompt: str, user_message: str, history: list[dict[str, Any]]) -> str:
+def _call_llm(
+    system_prompt: str, user_message: str, history: list[dict[str, Any]]
+) -> str:
     """
     LLM adapter — MOCK implementation.
     ------------------------------------
