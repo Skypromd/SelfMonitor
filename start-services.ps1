@@ -90,8 +90,8 @@ else {
 }
 
 Write-Host ""
-Write-Host "Waiting 15 seconds for services to start (Next.js needs ~10s)..." -ForegroundColor Yellow
-Start-Sleep -Seconds 15
+Write-Host "Waiting 25 seconds for services to start (Next.js needs ~20s to compile)..." -ForegroundColor Yellow
+Start-Sleep -Seconds 25
 
 # Health check
 # Detect actual portal port (Next.js may fall back to 3001 if 3000 is briefly busy)
@@ -99,8 +99,17 @@ $portalPort = 3000
 try { $null = Invoke-WebRequest -Uri "http://localhost:3000" -UseBasicParsing -TimeoutSec 3 -ErrorAction Stop }
 catch { if ((Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue)) { $portalPort = 3001 } }
 
+# Portal health check with retry (first compile takes up to 15s after Ready)
+$portalOk = $false
+for ($i = 0; $i -lt 6; $i++) {
+  try {
+    $null = Invoke-WebRequest -Uri "http://localhost:$portalPort" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+    $portalOk = $true; break
+  } catch { Start-Sleep -Seconds 5 }
+}
+
 $checks = @(
-  @{name = "portal    :$portalPort"; url = "http://localhost:$portalPort" },
+  @{name = "portal    :$portalPort"; url = "http://localhost:$portalPort"; skip = $true; ok = $portalOk },
   @{name = "auth      :8001"; url = "http://localhost:8001/health" },
   @{name = "profile   :8005"; url = "http://localhost:8005/health" },
   @{name = "documents :8006"; url = "http://localhost:8006/health" },
@@ -111,6 +120,11 @@ $checks = @(
 Write-Host ""
 Write-Host "Health check:" -ForegroundColor Yellow
 foreach ($c in $checks) {
+  if ($c.skip) {
+    if ($c.ok) { Write-Host "  $($c.name)  OK 200" -ForegroundColor Green }
+    else        { Write-Host "  $($c.name)  FAIL" -ForegroundColor Red }
+    continue
+  }
   try {
     $r = Invoke-WebRequest -Uri $c.url -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
     Write-Host "  $($c.name)  OK $($r.StatusCode)" -ForegroundColor Green
