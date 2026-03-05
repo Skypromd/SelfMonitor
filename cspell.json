@@ -31,6 +31,14 @@
     "bcrypt",
     "multipart",
     "telemetry",
-    "opentelemetry"
+    "opentelemetry",
+    "monzo",
+    "starling",
+    "barclays",
+    "xero",
+    "quickbooks",
+    "plaid",
+    "websockets",
+    "aiosqlite"
   ]
 }

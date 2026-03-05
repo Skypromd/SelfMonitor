@@ -183,17 +183,15 @@ GREETINGS = [
     "hiya",
     "good morning",
     "good afternoon",
-    "привет",
-    "здравствуйте",
 ]
-THANKS = ["thanks", "thank you", "thx", "cheers", "спасибо", "благодарю"]
-GOODBYES = ["bye", "goodbye", "cya", "see you", "пока", "до свидания"]
+THANKS = ["thanks", "thank you", "thx", "cheers"]
+GOODBYES = ["bye", "goodbye", "cya", "see you"]
 
 
 def search_kb(query: str, top_k: int = 2) -> list[dict[str, Any]]:
     """Simple keyword-based retrieval. Replace with vector search later."""
     q = query.lower()
-    scored = []
+    scored: list[tuple[int, dict[str, Any]]] = []
     for item in FAQ:
         score = sum(1 for kw in item["keywords"] if kw in q)
         if score > 0:
