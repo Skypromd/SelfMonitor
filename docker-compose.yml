@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   graphql-gateway:
@@ -44,7 +44,13 @@ services:
       - analytics-service
       - advice-service
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:4000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -76,6 +82,7 @@ services:
       - qna-service
       - calendar-service
       - agent-service
+      - support-ai-service
     networks:
       - default_network
 
@@ -140,8 +147,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"  # MinIO API
-      - "9001:9001"  # MinIO Console
+      - "9000:9000" # MinIO API
+      - "9001:9001" # MinIO Console
     volumes:
       - minio_data:/data
     healthcheck:
@@ -263,34 +270,34 @@ services:
       MINIO_ACCESS_KEY: "minioadmin"
       MINIO_SECRET_KEY: "minioadmin"
       S3_BUCKET_NAME: "selfmonitor-ml-artifacts"
-      
-      # Database Configuration 
+
+      # Database Configuration
       DB_HOST: "postgres"
       DB_NAME: "mlflow"
       DB_USER: "user"
       DB_PASSWORD: "password"
-      
+
       # Redis Configuration
       REDIS_HOST: "redis"
       REDIS_PORT: "6379"
-      
+
       # Environment
       ENVIRONMENT: "development"
       DEBUG: "true"
       LOG_LEVEL: "INFO"
-      
+
       # Notification (development - no real webhooks)
       SLACK_WEBHOOK_URL: ""
-      
+
       # Model Configuration
       MAX_PARALLEL_TRAINING_JOBS: "2"
-      AUTO_PROMOTE_THRESHOLD: "0.8"  # Lower for development
+      AUTO_PROMOTE_THRESHOLD: "0.8" # Lower for development
       DRIFT_DETECTION_ENABLED: "true"
       PERFORMANCE_MONITORING_ENABLED: "true"
       AB_TESTING_ENABLED: "true"
     ports:
-      - "5000:5000"  # MLflow UI
-      - "8000:8000"  # Metrics endpoint
+      - "5000:5000" # MLflow UI
+      - "8000:8000" # Metrics endpoint
     volumes:
       - mlflow_artifacts:/app/artifacts
     healthcheck:
@@ -341,7 +348,7 @@ services:
       - invoice_pdfs:/app/pdfs
       - ./services/invoice-service/templates:/app/templates
     ports:
-      - "8005:80"  # Direct access for development/testing
+      - "8005:80" # Direct access for development/testing
     depends_on:
       - postgres-master
       - redis-master
@@ -543,7 +550,7 @@ services:
       INTEGRATIONS_SERVICE_URL: "${TAX_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/submit-tax-return}"
       MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL: "${TAX_MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/mtd/quarterly-update}"
       CALENDAR_SERVICE_URL: "${TAX_CALENDAR_SERVICE_URL:-http://calendar-service/events}"
-      TAX_MTD_ITSA_RULES_JSON: "${TAX_MTD_ITSA_RULES_JSON:-[{\"policy_code\":\"UK_MTD_ITSA_2026\",\"effective_from\":\"2026-04-06\",\"threshold\":50000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"},{\"policy_code\":\"UK_MTD_ITSA_2027\",\"effective_from\":\"2027-04-06\",\"threshold\":30000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"},{\"policy_code\":\"UK_MTD_ITSA_2028\",\"effective_from\":\"2028-04-06\",\"threshold\":20000,\"reporting_cadence\":\"quarterly_updates_plus_final_declaration\"}]}"
+      TAX_MTD_ITSA_RULES_JSON: '${TAX_MTD_ITSA_RULES_JSON:-[{"policy_code":"UK_MTD_ITSA_2026","effective_from":"2026-04-06","threshold":50000,"reporting_cadence":"quarterly_updates_plus_final_declaration"},{"policy_code":"UK_MTD_ITSA_2027","effective_from":"2027-04-06","threshold":30000,"reporting_cadence":"quarterly_updates_plus_final_declaration"},{"policy_code":"UK_MTD_ITSA_2028","effective_from":"2028-04-06","threshold":20000,"reporting_cadence":"quarterly_updates_plus_final_declaration"}]}'
       OTEL_SERVICE_NAME: "${TAX_OTEL_SERVICE_NAME:-tax-engine}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${TAX_OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}"
     networks:
@@ -694,9 +701,34 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
+      - "--config.file=/etc/prometheus/prometheus.yml"
     networks:
       - default_network
+
+  support-ai-service:
+    build: ./services/support-ai-service
+    container_name: support-ai-service
+    ports:
+      - "8020:8020"
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SERVICE_URL: "http://auth-service:80"
+      SUPPORT_DB_PATH: "/data/support.db"
+    volumes:
+      - support_data:/data
+    networks:
+      - default_network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8020/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   qna-service:
     build: ./services/qna-service
@@ -761,7 +793,7 @@ services:
     ports:
       - "6831:6831/udp" # Agent
       - "16686:16686" # UI
-      - "4317:4317"   # OTLP gRPC
+      - "4317:4317" # OTLP gRPC
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     networks:
@@ -781,10 +813,10 @@ services:
     restart: on-failure:0
     environment:
       QUERY_DEFAULTS_LIMIT: 25
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
-      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
-      DEFAULT_VECTORIZER_MODULE: 'none' # We will generate vectors ourselves
-      CLUSTER_HOSTNAME: 'node1'
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: "/var/lib/weaviate"
+      DEFAULT_VECTORIZER_MODULE: "none" # We will generate vectors ourselves
+      CLUSTER_HOSTNAME: "node1"
     networks:
       - default_network
 
@@ -874,7 +906,7 @@ services:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: db_user_profile
-      BACKUP_SCHEDULE: "0 2 * * *"  # Daily at 2 AM
+      BACKUP_SCHEDULE: "0 2 * * *" # Daily at 2 AM
       BACKUP_RETENTION_DAYS: 30
       BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-backup_key_2026}
       S3_BUCKET: ${S3_BUCKET:-selfmonitor-backups}
@@ -908,6 +940,7 @@ volumes:
   mlflow_artifacts:
   elasticsearch_data:
   security_logs:
+  support_data:
 
 networks:
   default_network:

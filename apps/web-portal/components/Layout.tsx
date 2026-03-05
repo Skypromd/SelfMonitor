@@ -1,6 +1,6 @@
 import {
     Activity, BarChart2, Bot, CalendarDays, CreditCard, FileText, Gift,
-    Globe, LayoutDashboard, Lock, LogOut, Receipt, Send, Settings,
+    Globe, Headphones, LayoutDashboard, Lock, LogOut, Receipt, Send, Settings,
     ShoppingBag, User, Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -58,6 +58,7 @@ export default function Layout({ children, onLogout, user }: LayoutProps) {
     { href: '/referrals',   label: 'Referrals',           icon: <Gift size={17} /> },
     { href: '/billing',     label: 'Billing',             icon: <CreditCard size={17} /> },
     { href: '/security',    label: 'Security',            icon: <Lock size={17} /> },
+    { href: '/support',     label: 'Support',             icon: <Headphones size={17} /> },
   ];
 
   if (isAdmin) {

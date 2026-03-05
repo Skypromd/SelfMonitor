@@ -92,7 +92,7 @@ const toIsoDate = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-type AdminTab = 'overview' | 'subscriptions' | 'users' | 'billing' | 'leadops' | 'invoices' | 'ai-agent' | 'health';
+type AdminTab = 'overview' | 'subscriptions' | 'users' | 'billing' | 'leadops' | 'invoices' | 'ai-agent' | 'health' | 'support';
 
 const TAB_LABELS: Record<AdminTab, string> = {
   overview: '📊 Overview',
@@ -103,7 +103,25 @@ const TAB_LABELS: Record<AdminTab, string> = {
   invoices: '🧾 Invoices',
   'ai-agent': '🤖 AI Agent',
   health: '🟢 System Health',
+  support: '💬 Support Tickets',
 };
+
+const MOCK_TICKETS = [
+  { id: 'SM-10421', user: 'alice@example.com',    subject: 'Bank connection failing since update', category: 'Technical', priority: 'high',   status: 'open',     created: '2026-03-05 09:14', rating: null },
+  { id: 'SM-10420', user: 'bob@startup.io',        subject: 'How do I export to Xero?',            category: 'Billing',   priority: 'low',    status: 'resolved', created: '2026-03-04 14:30', rating: 5    },
+  { id: 'SM-10419', user: 'charlie@freelance.co',  subject: 'HMRC submission gave error 1046',      category: 'Technical', priority: 'high',   status: 'open',     created: '2026-03-04 11:05', rating: null },
+  { id: 'SM-10418', user: 'diana@consultco.com',   subject: 'Request: dark mode for mobile app',   category: 'Feature',   priority: 'low',    status: 'resolved', created: '2026-03-03 16:50', rating: 4    },
+  { id: 'SM-10417', user: 'evan@photography.me',   subject: 'Charged twice this month',             category: 'Billing',   priority: 'medium', status: 'open',     created: '2026-03-03 10:22', rating: null },
+  { id: 'SM-10416', user: 'fiona@designstudio.uk', subject: 'Can\'t update VAT number in profile',  category: 'Account',   priority: 'medium', status: 'resolved', created: '2026-03-02 09:00', rating: 5    },
+];
+
+const MOCK_FEEDBACK = [
+  { date: '2026-03-05', rating: 5, comment: 'Love the new dashboard! MRR tracking is exactly what I needed.', user: 'diana@consultco.com' },
+  { date: '2026-03-04', rating: 4, comment: 'Bank sync is a bit slow sometimes but overall great product.',   user: 'evan@photography.me' },
+  { date: '2026-03-03', rating: 5, comment: 'The AI assistant saved me hours on my tax return.',             user: 'alice@example.com' },
+  { date: '2026-03-02', rating: 3, comment: 'Would love a bulk transaction editor.',                          user: 'greg@tradie.co.uk' },
+  { date: '2026-03-01', rating: 5, comment: 'Best self-employed finance app I have used. Worth every penny.', user: 'helen@shopowner.com' },
+];
 
 const MOCK_PLAN_STATS = [
   { plan: 'Starter',  price: 9,  count: 187, mrr: 1683, color: '#14b8a6' },
@@ -1744,6 +1762,131 @@ export default function AdminPage({ token }: AdminPageProps) {
                 </tbody>
               </table>
             </div>
+          </div>
+        </>
+      )}
+
+      {activeTab === 'support' && (
+        <>
+          {/* KPI strip */}
+          <div className={styles.kpiGrid}>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Total Tickets</p>
+              <p className={styles.kpiValue}>{MOCK_TICKETS.length}</p>
+              <p className={styles.kpiSub}>All time (demo)</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Open</p>
+              <p className={styles.kpiValue} style={{ color: '#f87171' }}>
+                {MOCK_TICKETS.filter(t => t.status === 'open').length}
+              </p>
+              <p className={styles.kpiSub}>Need response</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Resolved Today</p>
+              <p className={styles.kpiValue} style={{ color: '#34d399' }}>3</p>
+              <p className={styles.kpiSub}>March 5, 2026</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Avg Rating</p>
+              <p className={styles.kpiValue} style={{ color: '#f59e0b' }}>
+                {(MOCK_FEEDBACK.reduce((s, f) => s + f.rating, 0) / MOCK_FEEDBACK.length).toFixed(1)} ⭐
+              </p>
+              <p className={styles.kpiSub}>Last 30 days</p>
+            </div>
+          </div>
+
+          {/* Tickets table */}
+          <div className={styles.subContainer}>
+            <div className={styles.subHeader}>
+              <h3 className={styles.subTitle}>Support Tickets</h3>
+              <a
+                href="http://localhost:3001"
+                target="_blank"
+                rel="noopener noreferrer"
+                className={styles.actionBtn}
+                style={{ textDecoration: 'none' }}
+              >
+                Open AI Support Portal ↗
+              </a>
+            </div>
+            <table className={styles.dataTable}>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>User</th>
+                  <th>Subject</th>
+                  <th>Category</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MOCK_TICKETS.map(t => (
+                  <tr key={t.id}>
+                    <td><code style={{ fontSize: '.8rem' }}>{t.id}</code></td>
+                    <td style={{ fontSize: '.85rem' }}>{t.user}</td>
+                    <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject}</td>
+                    <td>{t.category}</td>
+                    <td>
+                      <span style={{
+                        padding: '.2rem .55rem',
+                        borderRadius: 20,
+                        fontSize: '.78rem',
+                        fontWeight: 600,
+                        background: t.priority === 'high' ? '#7f1d1d' : t.priority === 'medium' ? '#78350f' : '#14532d',
+                        color:      t.priority === 'high' ? '#f87171' : t.priority === 'medium' ? '#fbbf24' : '#34d399',
+                      }}>
+                        {t.priority}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{
+                        padding: '.2rem .55rem',
+                        borderRadius: 20,
+                        fontSize: '.78rem',
+                        fontWeight: 600,
+                        background: t.status === 'open' ? '#1e3a5f' : '#14532d',
+                        color:      t.status === 'open' ? '#93c5fd' : '#34d399',
+                      }}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '.82rem', color: 'var(--text-muted)' }}>{t.created}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Feedback table */}
+          <div className={styles.subContainer} style={{ marginTop: '1.5rem' }}>
+            <div className={styles.subHeader}>
+              <h3 className={styles.subTitle}>Customer Feedback</h3>
+            </div>
+            <table className={styles.dataTable}>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>User</th>
+                  <th>Rating</th>
+                  <th>Comment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {MOCK_FEEDBACK.map((f, i) => (
+                  <tr key={i}>
+                    <td style={{ fontSize: '.82rem', color: 'var(--text-muted)' }}>{f.date}</td>
+                    <td style={{ fontSize: '.85rem' }}>{f.user}</td>
+                    <td>
+                      {'⭐'.repeat(f.rating)}
+                    </td>
+                    <td style={{ fontSize: '.85rem' }}>{f.comment}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}
