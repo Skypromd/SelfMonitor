@@ -1573,9 +1573,7 @@ async def get_cash_flow_forecast(
 ):
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
     if not TRANSACTIONS_SERVICE_URL:
-        raise HTTPException(
-            status_code=500, detail="Transactions service URL not configured"
-        )
+        return CashFlowResponse(forecast=[])
 
     # 1. Fetch transactions
     try:
@@ -1586,10 +1584,8 @@ async def get_cash_flow_forecast(
             timeout=10.0,
         )
         transactions = [Transaction(**t) for t in transactions_data]
-    except httpx.HTTPError as exc:
-        raise HTTPException(
-            status_code=502, detail=f"Could not connect to transactions-service: {exc}"
-        ) from exc
+    except httpx.HTTPError:
+        return CashFlowResponse(forecast=[])
 
     if not transactions:
         return CashFlowResponse(forecast=[])
@@ -2213,6 +2209,8 @@ async def get_mortgage_readiness_report(
 ):
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
     # 1. Fetch transactions (similar to cash flow)
+    if not TRANSACTIONS_SERVICE_URL:
+        raise HTTPException(status_code=503, detail="Transactions service not configured")
     try:
         headers = {"Authorization": f"Bearer {bearer_token}"}
         transactions_data = await get_json_with_retry(
@@ -2223,7 +2221,7 @@ async def get_mortgage_readiness_report(
         transactions = [Transaction(**t) for t in transactions_data]
     except httpx.HTTPError as exc:
         raise HTTPException(
-            status_code=502, detail=f"Could not connect to transactions-service: {exc}"
+            status_code=503, detail=f"Transactions service unavailable: {exc}"
         ) from exc
 
         # 2. Analyze income over the last 12 months

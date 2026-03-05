@@ -120,10 +120,10 @@ function CashFlowChart({ token }: { token: string }) {
   }, [token]);
 
   if (error) {
-    return <p className={styles.error}>{error}</p>;
+    return <p className={styles.info}>Cash flow forecast unavailable — connect a bank account to enable forecasting.</p>;
   }
   if (!data.length) {
-    return <p>Generating forecast...</p>;
+    return <p>No transaction data yet — add transactions to generate a forecast.</p>;
   }
 
   return (
