@@ -253,9 +253,12 @@
 }
 
 .cardIcon {
-  font-size: 1.75rem;
-  margin-bottom: 0.75rem;
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.85rem;
   display: block;
+  color: var(--lp-accent-teal);
+  stroke-width: 1.5;
 }
 
 .cardTitle {

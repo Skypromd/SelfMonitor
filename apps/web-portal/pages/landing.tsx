@@ -1,4 +1,13 @@
 import { motion, useInView } from 'framer-motion';
+import {
+    BarChart3, Bot, Briefcase, Calculator, CalendarClock,
+    Check, ClipboardList, Code2, FileCheck, FileText, FolderLock,
+    Globe, KeyRound, Landmark, Lightbulb, Lock,
+    Palette, PiggyBank, Plug2, Receipt, ScanLine,
+    ScrollText, ShieldAlert, ShieldCheck,
+    Smartphone,
+    Target, TrendingUp, Users, Zap
+} from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -262,10 +271,10 @@ export default function LandingPage() {
               animate={{ opacity: 1 }}
               transition={{ duration: 0.6, delay: 0.6 }}
             >
-              <span className={styles.trustPill}>🔒 Bank-Grade Security</span>
+              <span className={styles.trustPill}><Lock size={13} strokeWidth={2} /> Bank-Grade Security</span>
               <span className={styles.trustPill}>🇬🇧 HMRC Compliant</span>
-              <span className={styles.trustPill}>⚡ AI-Powered</span>
-              <span className={styles.trustPill}>📱 Web + Mobile</span>
+              <span className={styles.trustPill}><Zap size={13} strokeWidth={2} /> AI-Powered</span>
+              <span className={styles.trustPill}><Smartphone size={13} strokeWidth={2} /> Web + Mobile</span>
             </motion.div>
 
             <motion.div
@@ -305,7 +314,7 @@ export default function LandingPage() {
 
             <motion.div className={styles.grid3} {...staggerContainer}>
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>📊</span>
+                <ClipboardList className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>
                   Hours lost on manual bookkeeping
                 </h3>
@@ -318,7 +327,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>💸</span>
+                <PiggyBank className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Missed tax deductions</h3>
                 <p className={styles.cardDesc}>
                   Without AI categorisation, legitimate expenses slip through the
@@ -330,7 +339,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>📄</span>
+                <FileText className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Receipts in a shoebox</h3>
                 <p className={styles.cardDesc}>
                   Paper receipts fade. Email receipts get buried. Audits happen.
@@ -391,64 +400,232 @@ export default function LandingPage() {
                 One Platform. Every Tool You Need.
               </h2>
               <p className={styles.sectionSub}>
-                From bank connection to tax submission — automated.
+                23+ microservices working together — from bank connection to tax submission, invoicing to fraud detection.
               </p>
             </motion.div>
 
-            <motion.div className={styles.grid3} {...staggerContainer}>
+            {/* Row 1 — Banking & Transactions */}
+            <motion.div {...fadeUp} style={{ marginBottom: '0.5rem' }}>
+              <p style={{ color: 'var(--lp-accent-teal)', fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1rem' }}>
+                Banking &amp; Transactions
+              </p>
+            </motion.div>
+            <motion.div className={styles.grid3} {...staggerContainer} style={{ marginBottom: '2.5rem' }}>
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>🏦</span>
-                <h3 className={styles.cardTitle}>Open Banking</h3>
+                <Landmark className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Open Banking Connector</h3>
                 <p className={styles.cardDesc}>
-                  Connect your banks. Transactions import automatically via
-                  secure Open Banking APIs.
+                  Connect to 20,000+ banks globally via secure Open Banking APIs. Transactions sync automatically — no CSV exports.
                 </p>
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>🤖</span>
+                <Bot className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>AI Categorization</h3>
                 <p className={styles.cardDesc}>
-                  Every transaction categorized instantly by AI. No more manual
-                  tagging.
+                  Every transaction categorized instantly by ML. Learns your patterns — 97%+ accuracy from week one.
                 </p>
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>📱</span>
-                <h3 className={styles.cardTitle}>Receipt Scanner</h3>
+                <ShieldCheck className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Fraud Detection</h3>
                 <p className={styles.cardDesc}>
-                  Snap a photo. OCR extracts vendor, amount, and date in
-                  seconds.
-                </p>
-              </motion.div>
-
-              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>💰</span>
-                <h3 className={styles.cardTitle}>Tax Calculator</h3>
-                <p className={styles.cardDesc}>
-                  Real-time UK tax estimates. One-click HMRC submission when
-                  you&rsquo;re ready.
-                </p>
-              </motion.div>
-
-              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>📈</span>
-                <h3 className={styles.cardTitle}>Cash Flow Forecast</h3>
-                <p className={styles.cardDesc}>
-                  30-day AI predictions so you never run out of cash.
-                </p>
-              </motion.div>
-
-              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>🔍</span>
-                <h3 className={styles.cardTitle}>Smart Search</h3>
-                <p className={styles.cardDesc}>
-                  Ask &ldquo;Where did I buy coffee last month?&rdquo; — AI
-                  finds it instantly.
+                  Real-time ML anomaly detection. Every transaction scored for risk. Suspicious activity alerted in seconds.
                 </p>
               </motion.div>
             </motion.div>
+
+            {/* Row 2 — Tax & Compliance */}
+            <motion.div {...fadeUp} style={{ marginBottom: '0.5rem' }}>
+              <p style={{ color: 'var(--lp-accent-teal)', fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1rem' }}>
+                Tax &amp; Compliance
+              </p>
+            </motion.div>
+            <motion.div className={styles.grid3} {...staggerContainer} style={{ marginBottom: '2.5rem' }}>
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <Calculator className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Tax Engine</h3>
+                <p className={styles.cardDesc}>
+                  Real-time UK Income Tax, National Insurance, and VAT calculations. One-click HMRC MTD submission — fully Making Tax Digital compliant.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <CalendarClock className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Tax Calendar &amp; Deadlines</h3>
+                <p className={styles.cardDesc}>
+                  Never miss a deadline. Smart calendar tracks Self Assessment, VAT quarters, and payments on account with push reminders.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <FileCheck className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Compliance &amp; Audit Trail</h3>
+                <p className={styles.cardDesc}>
+                  Full GDPR consent management, AML checks, and immutable audit log. Every action timestamped — HMRC audit-ready in one click.
+                </p>
+              </motion.div>
+            </motion.div>
+
+            {/* Row 3 — Documents & Invoicing */}
+            <motion.div {...fadeUp} style={{ marginBottom: '0.5rem' }}>
+              <p style={{ color: 'var(--lp-accent-teal)', fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1rem' }}>
+                Documents &amp; Invoicing
+              </p>
+            </motion.div>
+            <motion.div className={styles.grid3} {...staggerContainer} style={{ marginBottom: '2.5rem' }}>
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <ScanLine className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Receipt Scanner (OCR)</h3>
+                <p className={styles.cardDesc}>
+                  Snap a photo on mobile. AI extracts vendor, amount, VAT, and date in seconds. Receipts stored encrypted for 5+ years.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <Receipt className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Invoice Management</h3>
+                <p className={styles.cardDesc}>
+                  Create professional invoices in seconds. Send, track, and automatically reconcile payments. Overdue reminders sent automatically.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <FolderLock className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Document Vault</h3>
+                <p className={styles.cardDesc}>
+                  Encrypted S3 storage for contracts, receipts, and certificates. Smart full-text search — find any document in under 2 seconds.
+                </p>
+              </motion.div>
+            </motion.div>
+
+            {/* Row 4 — Analytics & AI */}
+            <motion.div {...fadeUp} style={{ marginBottom: '0.5rem' }}>
+              <p style={{ color: 'var(--lp-accent-teal)', fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1rem' }}>
+                Analytics &amp; AI Intelligence
+              </p>
+            </motion.div>
+            <motion.div className={styles.grid3} {...staggerContainer} style={{ marginBottom: '2.5rem' }}>
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <TrendingUp className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Cash Flow Forecasting</h3>
+                <p className={styles.cardDesc}>
+                  30–90 day AI predictions. Scenario modelling — see the impact of a new client or big expense before it happens.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <BarChart3 className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Business Intelligence</h3>
+                <p className={styles.cardDesc}>
+                  Power BI-style dashboards. P&amp;L, revenue trends, expense breakdowns, and profitability by client — all generated automatically.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <Target className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Predictive Analytics</h3>
+                <p className={styles.cardDesc}>
+                  ML models trained on your financial history predict tax liability, slow months, and growth opportunities months in advance.
+                </p>
+              </motion.div>
+            </motion.div>
+
+            {/* Row 5 — Growth & Integrations */}
+            <motion.div {...fadeUp} style={{ marginBottom: '0.5rem' }}>
+              <p style={{ color: 'var(--lp-accent-teal)', fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: '1rem' }}>
+                Growth &amp; Integrations
+              </p>
+            </motion.div>
+            <motion.div className={styles.grid3} {...staggerContainer}>
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <Plug2 className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Third-Party Integrations</h3>
+                <p className={styles.cardDesc}>
+                  Native connectors for Xero, QuickBooks, Stripe, Zapier, and 50+ tools. GraphQL &amp; REST API for custom workflows.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <Globe className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Multi-Currency &amp; 10 Languages</h3>
+                <p className={styles.cardDesc}>
+                  Support for GBP, EUR, USD, PLN, RON, UAH, and more. Full UI in 10 languages — serve global clients without currency headaches.
+                </p>
+              </motion.div>
+
+              <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
+                <Lightbulb className={styles.cardIcon} />
+                <h3 className={styles.cardTitle}>Recommendation Engine</h3>
+                <p className={styles.cardDesc}>
+                  Personalised financial tips — weekly savings opportunities, tax deduction alerts, and cost-cutting suggestions based on your data.
+                </p>
+              </motion.div>
+            </motion.div>
+          </div>
+        </section>
+
+        {/* ====== AI AGENT SPOTLIGHT ====== */}
+        <section className={styles.section}>
+          <div className={styles.container}>
+            <div className={styles.mobileShowcase}>
+              <motion.div className={styles.mobileContent} {...fadeUp}>
+                <span className={styles.mobileBadge}><Bot size={13} strokeWidth={2} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.35rem' }} /> AI FINANCIAL AGENT</span>
+                <h2 className={styles.sectionHeading} style={{ textAlign: 'left' }}>
+                  Ask Anything. Get Instant Answers.
+                </h2>
+                <p className={styles.mobileDesc}>
+                  SelfMonitor&rsquo;s AI Agent understands natural language. Ask financial questions in plain English — it queries your real data and answers in seconds.
+                </p>
+
+                <ul className={styles.mobileFeatures}>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> &ldquo;How much did I spend on travel this quarter?&rdquo; — answered instantly</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> &ldquo;What&rsquo;s my estimated tax bill for this year?&rdquo; — real number, real time</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> &ldquo;Which clients are most profitable?&rdquo; — ranked list in seconds</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> &ldquo;Flag any unusual expenses last month&rdquo; — fraud &amp; anomaly detection</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Proactive alerts — agent notifies you before problems occur</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Available via web, mobile app, and REST API</li>
+                </ul>
+              </motion.div>
+
+              <motion.div
+                className={styles.mobilePreview}
+                initial={{ opacity: 0, scale: 0.9 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.7 }}
+                viewport={{ once: true }}
+              >
+                <div className={styles.phoneFrame}>
+                  <div className={styles.phoneNotch}></div>
+                  <div className={styles.phoneScreen}>
+                    <div className={styles.phoneHeader}>
+                      <span className={styles.phoneLogo}>AI Agent</span>
+                    </div>
+                    <div className={styles.phoneCard} style={{ background: 'rgba(13,148,136,0.15)', borderLeft: '3px solid var(--lp-accent-teal)' }}>
+                      <p className={styles.phoneCardLabel}>You asked</p>
+                      <p className={styles.phoneCardSub}>&ldquo;What&rsquo;s my tax estimate this year?&rdquo;</p>
+                    </div>
+                    <div className={styles.phoneCard}>
+                      <p className={styles.phoneCardLabel}>AI Answer</p>
+                      <p className={styles.phoneCardValue}>£4,830</p>
+                      <p className={styles.phoneCardSub}>Due 31 Jan 2027 · 3 deductions found</p>
+                    </div>
+                    <div className={styles.phoneCard} style={{ background: 'rgba(234,179,8,0.1)', borderLeft: '3px solid #eab308' }}>
+                      <p className={styles.phoneCardLabel}>💡 Tip</p>
+                      <p className={styles.phoneCardSub}>Claim £480 home office allowance — not yet applied</p>
+                    </div>
+                    <div className={styles.phoneNav}>
+                      <span>🏠</span>
+                      <span>💳</span>
+                      <span>🤖</span>
+                      <span>📊</span>
+                      <span>👤</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
           </div>
         </section>
 
@@ -457,7 +634,7 @@ export default function LandingPage() {
           <div className={styles.container}>
             <div className={styles.mobileShowcase}>
               <motion.div className={styles.mobileContent} {...fadeUp}>
-                <span className={styles.mobileBadge}>📱 MOBILE APP</span>
+                <span className={styles.mobileBadge}><Smartphone size={13} strokeWidth={2} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '0.35rem' }} /> MOBILE APP</span>
                 <h2 className={styles.sectionHeading} style={{ textAlign: 'left' }}>
                   Your Finances in Your Pocket
                 </h2>
@@ -467,12 +644,12 @@ export default function LandingPage() {
                 </p>
 
                 <ul className={styles.mobileFeatures}>
-                  <li><span className={styles.mobileCheck}>✓</span> Scan receipts with your camera — OCR extracts data instantly</li>
-                  <li><span className={styles.mobileCheck}>✓</span> Push notifications for tax deadlines and unusual transactions</li>
-                  <li><span className={styles.mobileCheck}>✓</span> Check your cash flow forecast anytime, anywhere</li>
-                  <li><span className={styles.mobileCheck}>✓</span> Connect bank accounts with biometric authentication</li>
-                  <li><span className={styles.mobileCheck}>✓</span> Offline mode — view your data even without internet</li>
-                  <li><span className={styles.mobileCheck}>✓</span> Dark theme designed for comfortable night-time use</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Scan receipts with your camera — OCR extracts data instantly</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Push notifications for tax deadlines and unusual transactions</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Check your cash flow forecast anytime, anywhere</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Connect bank accounts with biometric authentication</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Offline mode — view your data even without internet</li>
+                  <li><Check size={15} strokeWidth={2.5} className={styles.mobileCheck} /> Dark theme designed for comfortable night-time use</li>
                 </ul>
 
                 <div className={styles.storeButtonsLeft}>
@@ -546,7 +723,7 @@ export default function LandingPage() {
 
             <motion.div className={styles.grid4} {...staggerContainer}>
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>💻</span>
+                <Code2 className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Freelance Developers</h3>
                 <p className={styles.cardDesc}>
                   Track project income, expenses, and IR35 status effortlessly.
@@ -554,7 +731,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>🎨</span>
+                <Palette className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>
                   Designers &amp; Creatives
                 </h3>
@@ -565,7 +742,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>🚗</span>
+                <Briefcase className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Sole Traders</h3>
                 <p className={styles.cardDesc}>
                   Mileage tracking, stock expenses, and quarterly VAT — sorted.
@@ -573,7 +750,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={`${styles.card} ${styles.cardOnElevated}`} {...staggerItem}>
-                <span className={styles.cardIcon}>📋</span>
+                <Users className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Consultants</h3>
                 <p className={styles.cardDesc}>
                   Multi-client billing, expense reports, and tax forecasting in
@@ -595,7 +772,7 @@ export default function LandingPage() {
 
             <motion.div className={styles.grid4} {...staggerContainer}>
               <motion.div className={styles.card} {...staggerItem}>
-                <span className={styles.cardIcon}>🔐</span>
+                <KeyRound className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Two-Factor Auth</h3>
                 <p className={styles.cardDesc}>
                   TOTP-based 2FA with authenticator apps. Your account stays
@@ -604,7 +781,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={styles.card} {...staggerItem}>
-                <span className={styles.cardIcon}>🛡️</span>
+                <ShieldAlert className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Fraud Detection</h3>
                 <p className={styles.cardDesc}>
                   Real-time anomaly detection with ML scoring flags suspicious
@@ -613,7 +790,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={styles.card} {...staggerItem}>
-                <span className={styles.cardIcon}>📋</span>
+                <ScrollText className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Audit Trail</h3>
                 <p className={styles.cardDesc}>
                   Every action logged. Full GDPR compliance baked in from day
@@ -622,7 +799,7 @@ export default function LandingPage() {
               </motion.div>
 
               <motion.div className={styles.card} {...staggerItem}>
-                <span className={styles.cardIcon}>🔒</span>
+                <Lock className={styles.cardIcon} />
                 <h3 className={styles.cardTitle}>Encrypted Storage</h3>
                 <p className={styles.cardDesc}>
                   Vault-secured credentials. S3-encrypted documents. Zero
