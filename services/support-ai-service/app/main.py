@@ -13,10 +13,8 @@ Endpoints:
 """
 
 import logging
-import os
-import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 
 from fastapi import (
     Depends,
@@ -63,7 +61,7 @@ app.add_middleware(
 
 
 # ── In-memory session history (production: use Redis) ─────────────────────────
-_session_history: dict[str, list[dict]] = {}
+_session_history: dict[str, list[dict[str, Any]]] = {}
 
 
 # ── WebSocket chat ─────────────────────────────────────────────────────────────
@@ -147,23 +145,25 @@ def update_ticket_status(
     ticket_id: str,
     status: str = Query(..., regex="^(open|in_progress|resolved|closed)$"),
     db: Session = Depends(get_db),
-):
+) -> dict[str, str]:
     ticket = db.query(TicketORM).filter(TicketORM.id == ticket_id).first()
     if not ticket:
         raise HTTPException(404, "Ticket not found")
-    ticket.status = status
-    ticket.updated_at = datetime.now(timezone.utc)
+    setattr(ticket, "status", status)
+    setattr(ticket, "updated_at", datetime.now(timezone.utc))
     db.commit()
     return {"id": ticket_id, "status": status}
 
 
 # ── Feedback endpoint ──────────────────────────────────────────────────────────
 @app.post("/feedback", status_code=201)
-def submit_feedback(payload: FeedbackCreate, db: Session = Depends(get_db)):
+def submit_feedback(
+    payload: FeedbackCreate, db: Session = Depends(get_db)
+) -> dict[str, Any]:
     fb = FeedbackORM(**payload.model_dump())
     db.add(fb)
     db.commit()
-    return {"ok": True, "id": fb.id}
+    return {"ok": True, "id": str(fb.id)}
 
 
 # ── Stats (admin) ──────────────────────────────────────────────────────────────
@@ -175,13 +175,17 @@ def get_stats(db: Session = Depends(get_db)):
     sessions = db.query(ChatSessionORM).count()
 
     feedbacks = db.query(FeedbackORM).all()
-    avg_rating = sum(f.rating for f in feedbacks) / len(feedbacks) if feedbacks else 0.0
+    avg_rating: float = (
+        sum(cast(int, f.rating) for f in feedbacks) / len(feedbacks)
+        if feedbacks
+        else 0.0
+    )
 
     return ChatStats(
         total_tickets=total,
         open_tickets=open_,
         resolved_tickets=resolved,
-        avg_rating=round(avg_rating, 1),
+        avg_rating=round(float(avg_rating), 1),
         total_sessions=sessions,
     )
 

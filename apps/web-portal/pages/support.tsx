@@ -198,7 +198,7 @@ export default function SupportPage({ token }: SupportPageProps) {
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>⭐ Rate Your Experience</h2>
             <p className={styles.sectionSubtitle}>
-              Quick 30-second feedback helps us prioritise improvements.
+              Quick 30-second feedback helps us prioritize improvements.
             </p>
           </div>
 
@@ -257,13 +257,13 @@ export default function SupportPage({ token }: SupportPageProps) {
           <div className={styles.sectionHeader}>
             <h2 className={styles.sectionTitle}>🎫 Submit a Support Ticket</h2>
             <p className={styles.sectionSubtitle}>
-              Describe your issue in detail. We'll reply to <strong style={{ color: '#f1f5f9' }}>your account email</strong>.
+              Describe your issue in detail. We&apos;ll reply to <strong style={{ color: '#f1f5f9' }}>your account email</strong>.
             </p>
           </div>
 
           {ticketState === 'success' ? (
             <div className={styles.supportSuccessBanner}>
-              ✅ Ticket submitted! You'll receive a confirmation email shortly. Reference: #SM-{Math.floor(Math.random() * 90000) + 10000}
+              ✅ Ticket submitted! You&apos;ll receive a confirmation email shortly. Reference: #SM-{Math.floor(Math.random() * 90000) + 10000}
             </div>
           ) : (
             <form onSubmit={handleTicket} className={styles.ticketForm}>

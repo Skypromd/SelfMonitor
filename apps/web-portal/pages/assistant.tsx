@@ -1,6 +1,8 @@
 import { Bot, Send, User } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import styles from '../styles/Home.module.css';
+
 
 const AI_AGENT_URL =
   process.env.NEXT_PUBLIC_AI_AGENT_SERVICE_URL || 'http://localhost:8019';
@@ -155,11 +157,16 @@ export default function AssistantPage({ token }: AssistantPageProps) {
                 onClick={() => sendMessage(p)}
                 disabled={loading}
                 style={{
-                  textAlign: 'left', padding: '0.45rem 0.7rem',
-                  background: 'var(--lp-bg-surface)', border: '1px solid var(--lp-border)',
-                  borderRadius: 8, cursor: 'pointer', fontSize: '0.8rem', color: 'var(--lp-text)',
+                  textAlign: 'left',
+                  padding: '0.45rem 0.7rem',
+                  background: 'var(--lp-bg-surface)',
+                  border: '1px solid var(--lp-border)',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  color: 'var(--lp-text)',
                   transition: 'border-color 0.15s',
-                }}
+                } as CSSProperties}
               >
                 {p}
               </button>

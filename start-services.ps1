@@ -105,7 +105,8 @@ for ($i = 0; $i -lt 6; $i++) {
   try {
     $null = Invoke-WebRequest -Uri "http://localhost:$portalPort" -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
     $portalOk = $true; break
-  } catch { Start-Sleep -Seconds 5 }
+  }
+  catch { Start-Sleep -Seconds 5 }
 }
 
 $checks = @(
@@ -122,7 +123,7 @@ Write-Host "Health check:" -ForegroundColor Yellow
 foreach ($c in $checks) {
   if ($c.skip) {
     if ($c.ok) { Write-Host "  $($c.name)  OK 200" -ForegroundColor Green }
-    else        { Write-Host "  $($c.name)  FAIL" -ForegroundColor Red }
+    else { Write-Host "  $($c.name)  FAIL" -ForegroundColor Red }
     continue
   }
   try {

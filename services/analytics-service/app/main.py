@@ -2210,7 +2210,9 @@ async def get_mortgage_readiness_report(
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
     # 1. Fetch transactions (similar to cash flow)
     if not TRANSACTIONS_SERVICE_URL:
-        raise HTTPException(status_code=503, detail="Transactions service not configured")
+        raise HTTPException(
+            status_code=503, detail="Transactions service not configured"
+        )
     try:
         headers = {"Authorization": f"Bearer {bearer_token}"}
         transactions_data = await get_json_with_retry(

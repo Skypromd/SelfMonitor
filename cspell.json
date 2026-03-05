@@ -40,6 +40,11 @@
     "quickbooks",
     "plaid",
     "websockets",
-    "aiosqlite"
+    "aiosqlite",
+    "sessionmaker",
+    "autoflush",
+    "onupdate",
+    "sess",
+    "sugg"
   ]
 }
