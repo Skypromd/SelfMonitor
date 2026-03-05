@@ -1,0 +1,260 @@
+import { Bot, Send, User } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import styles from '../styles/Home.module.css';
+
+const AI_AGENT_URL =
+  process.env.NEXT_PUBLIC_AI_AGENT_SERVICE_URL || 'http://localhost:8019';
+
+type Role = 'user' | 'assistant';
+
+type Message = {
+  id: string;
+  role: Role;
+  content: string;
+  timestamp: Date;
+};
+
+type AssistantPageProps = { token: string };
+
+const QUICK_PROMPTS = [
+  'What expenses can I claim as self-employed?',
+  'How do I reduce my tax bill this year?',
+  'Explain Class 2 and Class 4 National Insurance',
+  'What is the trading allowance?',
+  'When are my self assessment deadlines?',
+  'How does the £1,000 property allowance work?',
+];
+
+export default function AssistantPage({ token }: AssistantPageProps) {
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '0',
+      role: 'assistant',
+      content: "Hi! I'm your SelfMonitor AI assistant. I can help with tax questions, expense planning, invoicing, and financial advice for self-employed individuals. What can I help you with today?",
+      timestamp: new Date(),
+    },
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [sessionId] = useState(() => crypto.randomUUID());
+  const [agentStatus, setAgentStatus] = useState<string | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  // Check agent status on mount
+  useEffect(() => {
+    fetch(`${AI_AGENT_URL}/status`, { headers })
+      .then((r) => r.json())
+      .then((d) => setAgentStatus(d?.status || 'online'))
+      .catch(() => setAgentStatus(null));
+  }, []);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || loading) return;
+    const userMsg: Message = { id: crypto.randomUUID(), role: 'user', content: text.trim(), timestamp: new Date() };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput('');
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${AI_AGENT_URL}/chat`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          message: text.trim(),
+          session_id: sessionId,
+          context: { user_type: 'self_employed', currency: 'GBP', region: 'UK' },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const reply: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: data.response || data.message || JSON.stringify(data),
+          timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, reply]);
+      } else if (res.status === 503 || res.status === 500) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: "I'm having trouble connecting right now. Please check that the AI agent service is running, or try again shortly.",
+            timestamp: new Date(),
+          },
+        ]);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: `Error: ${err.detail || res.statusText}`,
+            timestamp: new Date(),
+          },
+        ]);
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: 'Unable to reach the AI service. Please ensure the assistant service is running on port 8019.',
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sendMessage(input);
+  };
+
+  const formatTime = (d: Date) =>
+    d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <div className={styles.container} style={{ display: 'flex', gap: '1.5rem', height: 'calc(100vh - 120px)' }}>
+      {/* Sidebar */}
+      <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div className={styles.card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.5rem' }}>
+            <Bot size={20} style={{ color: 'var(--lp-accent-teal)' }} />
+            <strong style={{ fontSize: '0.95rem' }}>AI Assistant</strong>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: agentStatus === 'online' ? '#34d399' : '#f87171', display: 'inline-block' }} />
+            <span style={{ fontSize: '0.8rem', color: 'var(--lp-text-muted)' }}>
+              {agentStatus === 'online' ? 'Online' : agentStatus ? `Status: ${agentStatus}` : 'Connecting…'}
+            </span>
+          </div>
+        </div>
+
+        <div className={styles.card}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--lp-text-muted)', marginBottom: '0.75rem', fontWeight: 600 }}>QUICK PROMPTS</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {QUICK_PROMPTS.map((p) => (
+              <button
+                key={p}
+                onClick={() => sendMessage(p)}
+                disabled={loading}
+                style={{
+                  textAlign: 'left', padding: '0.45rem 0.7rem',
+                  background: 'var(--lp-bg-surface)', border: '1px solid var(--lp-border)',
+                  borderRadius: 8, cursor: 'pointer', fontSize: '0.8rem', color: 'var(--lp-text)',
+                  transition: 'border-color 0.15s',
+                }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Chat area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        {/* Messages */}
+        <div className={styles.card} style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', padding: '1.25rem' }}>
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              style={{
+                display: 'flex', gap: 10,
+                flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                alignItems: 'flex-start',
+              }}
+            >
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                background: msg.role === 'assistant' ? 'rgba(13,148,136,0.15)' : 'rgba(99,102,241,0.15)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {msg.role === 'assistant'
+                  ? <Bot size={16} style={{ color: 'var(--lp-accent-teal)' }} />
+                  : <User size={16} style={{ color: '#818cf8' }} />}
+              </div>
+              <div style={{ maxWidth: '72%' }}>
+                <div style={{
+                  background: msg.role === 'user' ? 'rgba(99,102,241,0.12)' : 'var(--lp-bg-surface)',
+                  border: '1px solid var(--lp-border)', borderRadius: 12,
+                  padding: '0.6rem 0.9rem',
+                  borderTopRightRadius: msg.role === 'user' ? 4 : 12,
+                  borderTopLeftRadius: msg.role === 'assistant' ? 4 : 12,
+                }}>
+                  <p style={{ margin: 0, fontSize: '0.9rem', lineHeight: 1.55, whiteSpace: 'pre-wrap', color: 'var(--lp-text)' }}>
+                    {msg.content}
+                  </p>
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--lp-text-muted)', marginTop: 3, textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+                  {formatTime(msg.timestamp)}
+                </div>
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(13,148,136,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Bot size={16} style={{ color: 'var(--lp-accent-teal)' }} />
+              </div>
+              <div style={{ background: 'var(--lp-bg-surface)', border: '1px solid var(--lp-border)', borderRadius: 12, borderTopLeftRadius: 4, padding: '0.6rem 1rem' }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center', height: 20 }}>
+                  {[0, 1, 2].map((i) => (
+                    <span key={i} style={{
+                      width: 7, height: 7, borderRadius: '50%', background: 'var(--lp-accent-teal)',
+                      opacity: 0.6, animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+                    }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          <div ref={endRef} />
+        </div>
+
+        {/* Input */}
+        <form onSubmit={handleSubmit} style={{ marginTop: '0.75rem', display: 'flex', gap: 8 }}>
+          <input
+            className={styles.input}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask about tax, invoices, expenses…"
+            disabled={loading}
+            style={{ flex: 1 }}
+          />
+          <button
+            type="submit"
+            className={styles.btn}
+            disabled={!input.trim() || loading}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+          >
+            <Send size={15} /> Send
+          </button>
+        </form>
+
+        <style jsx>{`
+          @keyframes pulse {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.3; }
+            40% { transform: scale(1); opacity: 1; }
+          }
+        `}</style>
+      </div>
+    </div>
+  );
+}

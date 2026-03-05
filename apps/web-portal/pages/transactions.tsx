@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const CATEGORIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_CATEGORIZATION_SERVICE_URL || 'http://localhost:8020';
 
 type Transaction = {
   id: string;
@@ -116,7 +117,11 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const availableCategories = ['groceries', 'transport', 'income', 'food_and_drink', 'subscriptions'];
+  const availableCategories = [
+  'groceries', 'transport', 'income', 'food_and_drink', 'subscriptions',
+  'office_supplies', 'utilities', 'rent', 'insurance', 'professional_services',
+  'advertising', 'entertainment', 'travel', 'equipment', 'software', 'other',
+];
 
   useEffect(() => {
     if (!accountId) return;
@@ -141,6 +146,41 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
       window.clearTimeout(timeoutId);
     };
   }, [accountId, token]);
+
+  const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
+
+  const handleAutoCategorize = async () => {
+    const uncategorized = transactions.filter((t) => !t.category);
+    if (uncategorized.length === 0) return;
+    setIsAutoCategorizing(true);
+    try {
+      const results = await Promise.all(
+        uncategorized.map(async (t) => {
+          try {
+            const res = await fetch(`${CATEGORIZATION_SERVICE_URL}/categorize`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ description: t.description }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              return { id: t.id, category: data.category as string | null };
+            }
+          } catch { /* ignore */ }
+          return { id: t.id, category: null };
+        })
+      );
+      // Apply suggestions back to state
+      setTransactions((prev) =>
+        prev.map((t) => {
+          const hit = results.find((r) => r.id === t.id);
+          return hit?.category ? { ...t, category: hit.category } : t;
+        })
+      );
+    } finally {
+      setIsAutoCategorizing(false);
+    }
+  };
 
   const handleCategoryChange = async (transactionId: string, newCategory: string) => {
     try {
@@ -185,7 +225,22 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
 
   return (
     <div className={styles.subContainer}>
-      <h2>Recent Transactions</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+        <h2 style={{ margin: 0 }}>Recent Transactions</h2>
+        {transactions.some((t) => !t.category) && (
+          <button
+            onClick={handleAutoCategorize}
+            disabled={isAutoCategorizing}
+            style={{
+              padding: '0.35rem 0.85rem', borderRadius: 8, border: '1px solid var(--lp-accent-teal)',
+              background: 'rgba(13,148,136,0.1)', color: 'var(--lp-accent-teal)',
+              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+            }}
+          >
+            {isAutoCategorizing ? 'Categorizing…' : '✦ Auto-Categorize'}
+          </button>
+        )}
+      </div>
       <table className={styles.table}>
         <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th></tr></thead>
         <tbody>

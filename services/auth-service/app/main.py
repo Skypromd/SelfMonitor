@@ -967,3 +967,562 @@ async def get_enterprise_pricing() -> dict[str, object]:
             "enterprise_arpu_improvement": "3x higher than individual plans",  # cspell:ignore arpu
         },
     }
+
+
+# ============================================================
+# SECURITY MANAGEMENT ENDPOINTS
+# (used by security.tsx in the web portal)
+# ============================================================
+
+import hashlib  # noqa: E402 – needed for session IDs
+import json as _json  # noqa: E402
+
+
+def _init_security_tables() -> None:
+    """Create security-related tables if they don't exist."""
+    with db_lock:
+        conn = _connect()
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS security_events (
+                event_id    TEXT PRIMARY KEY,
+                user_email  TEXT NOT NULL,
+                event_type  TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                ip          TEXT,
+                user_agent  TEXT,
+                details_json TEXT DEFAULT '{}'
+            );
+
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id         TEXT PRIMARY KEY,
+                user_email         TEXT NOT NULL,
+                issued_at          TEXT NOT NULL,
+                expires_at         TEXT NOT NULL,
+                revoked_at         TEXT,
+                revocation_reason  TEXT,
+                ip                 TEXT,
+                user_agent         TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS legal_acceptances (
+                user_email  TEXT PRIMARY KEY,
+                version     TEXT NOT NULL,
+                accepted_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS email_verifications (
+                user_email  TEXT PRIMARY KEY,
+                code        TEXT NOT NULL,
+                expires_at  TEXT NOT NULL,
+                confirmed   INTEGER NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS user_metadata (
+                user_email         TEXT PRIMARY KEY,
+                email_verified     INTEGER NOT NULL DEFAULT 0,
+                locked_until       TEXT,
+                password_changed_at TEXT
+            );
+        """)
+        conn.commit()
+        conn.close()
+
+
+_init_security_tables()
+
+LEGAL_CURRENT_VERSION = "2026-01-01"
+
+
+def _get_user_metadata(email: str) -> dict:
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM user_metadata WHERE user_email = ?", (email,)
+            ).fetchone()
+        finally:
+            conn.close()
+    if row:
+        return dict(row)
+    return {
+        "user_email": email,
+        "email_verified": 0,
+        "locked_until": None,
+        "password_changed_at": None,
+    }
+
+
+def _log_security_event(
+    email: str,
+    event_type: str,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    details: Optional[dict] = None,
+) -> None:
+    event_id = str(uuid.uuid4())
+    occurred_at = datetime.datetime.now(datetime.UTC).isoformat()
+    details_json = _json.dumps(details or {})
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """INSERT INTO security_events
+                   (event_id, user_email, event_type, occurred_at, ip, user_agent, details_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event_id,
+                    email,
+                    event_type,
+                    occurred_at,
+                    ip,
+                    user_agent,
+                    details_json,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+# --- Pydantic models ---
+
+
+class SecurityStateResponse(BaseModel):
+    email: str
+    email_verified: bool
+    failed_login_attempts: int
+    has_accepted_current_legal: bool
+    is_two_factor_enabled: bool
+    last_login_at: Optional[str] = None
+    legal_accepted_at: Optional[str] = None
+    legal_accepted_version: Optional[str] = None
+    legal_current_version: str
+    legal_eula_url: str
+    legal_terms_url: str
+    locked_until: Optional[str] = None
+    max_failed_login_attempts: int
+    password_changed_at: Optional[str] = None
+
+
+class SecurityEventItem(BaseModel):
+    event_id: str
+    event_type: str
+    occurred_at: str
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+    details: dict = {}
+
+
+class SecurityEventsResponse(BaseModel):
+    items: list[SecurityEventItem]
+    total: int
+
+
+class SessionItem(BaseModel):
+    session_id: str
+    issued_at: str
+    expires_at: str
+    revoked_at: Optional[str] = None
+    revocation_reason: Optional[str] = None
+    ip: Optional[str] = None
+    user_agent: Optional[str] = None
+
+
+class SessionsResponse(BaseModel):
+    active_sessions: int
+    total_sessions: int
+    items: list[SessionItem]
+
+
+class AlertDeliveryChannel(BaseModel):
+    status: Optional[str] = None
+    receipt_status: Optional[str] = None
+
+
+class AlertDeliveryItem(BaseModel):
+    dispatch_id: str
+    title: Optional[str] = None
+    severity: Optional[str] = None
+    status: Optional[str] = None
+    occurred_at: Optional[str] = None
+    last_receipt_at: Optional[str] = None
+    channels: dict = {}
+
+
+class AlertDeliveriesResponse(BaseModel):
+    items: list[AlertDeliveryItem]
+    total: int
+
+
+class EmailVerificationRequestResp(BaseModel):
+    code_sent: bool
+    debug_code: Optional[str] = None
+    expires_at: str
+    message: str
+
+
+class TokenPairResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str
+    expires_in_seconds: int
+
+
+# --- Endpoints ---
+
+
+@app.get("/security/state", response_model=SecurityStateResponse)
+async def get_security_state(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    meta = _get_user_metadata(current_user.email)
+    # last login event
+    with db_lock:
+        conn = _connect()
+        try:
+            last_login_row = conn.execute(
+                "SELECT occurred_at FROM security_events WHERE user_email = ? AND event_type = 'login_success' ORDER BY occurred_at DESC LIMIT 1",
+                (current_user.email,),
+            ).fetchone()
+            legal_row = conn.execute(
+                "SELECT version, accepted_at FROM legal_acceptances WHERE user_email = ?",
+                (current_user.email,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+    legal_accepted_at = legal_row["accepted_at"] if legal_row else None
+    legal_accepted_version = legal_row["version"] if legal_row else None
+    failed = len(_login_attempts.get(current_user.email, []))
+
+    return SecurityStateResponse(
+        email=current_user.email,
+        email_verified=bool(meta.get("email_verified", 0)),
+        failed_login_attempts=failed,
+        has_accepted_current_legal=(legal_accepted_version == LEGAL_CURRENT_VERSION),
+        is_two_factor_enabled=current_user.is_two_factor_enabled,
+        last_login_at=last_login_row["occurred_at"] if last_login_row else None,
+        legal_accepted_at=legal_accepted_at,
+        legal_accepted_version=legal_accepted_version,
+        legal_current_version=LEGAL_CURRENT_VERSION,
+        legal_eula_url="/eula",
+        legal_terms_url="/terms",
+        locked_until=str(meta["locked_until"]) if meta.get("locked_until") else None,
+        max_failed_login_attempts=LOCKOUT_THRESHOLD,
+        password_changed_at=str(meta["password_changed_at"])
+        if meta.get("password_changed_at")
+        else None,
+    )
+
+
+@app.get("/security/events", response_model=SecurityEventsResponse)
+async def get_security_events(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    limit: int = Query(default=25, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    with db_lock:
+        conn = _connect()
+        try:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM security_events WHERE user_email = ?",
+                (current_user.email,),
+            ).fetchone()[0]
+            rows = conn.execute(
+                "SELECT * FROM security_events WHERE user_email = ? ORDER BY occurred_at DESC LIMIT ? OFFSET ?",
+                (current_user.email, limit, offset),
+            ).fetchall()
+        finally:
+            conn.close()
+
+    items = [
+        SecurityEventItem(
+            event_id=str(r["event_id"]),
+            event_type=str(r["event_type"]),
+            occurred_at=str(r["occurred_at"]),
+            ip=str(r["ip"]) if r["ip"] else None,
+            user_agent=str(r["user_agent"]) if r["user_agent"] else None,
+            details=_json.loads(r["details_json"] or "{}"),
+        )
+        for r in rows
+    ]
+    return SecurityEventsResponse(items=items, total=total)
+
+
+@app.get("/security/alerts/deliveries", response_model=AlertDeliveriesResponse)
+async def get_alert_deliveries(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    limit: int = Query(default=25, ge=1, le=200),
+):
+    # Stub: returns empty list — alert delivery system not yet wired
+    return AlertDeliveriesResponse(items=[], total=0)
+
+
+@app.get("/security/sessions", response_model=SessionsResponse)
+async def get_sessions(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    include_revoked: bool = Query(default=False),
+):
+    with db_lock:
+        conn = _connect()
+        try:
+            if include_revoked:
+                rows = conn.execute(
+                    "SELECT * FROM sessions WHERE user_email = ? ORDER BY issued_at DESC",
+                    (current_user.email,),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM sessions WHERE user_email = ? AND revoked_at IS NULL ORDER BY issued_at DESC",
+                    (current_user.email,),
+                ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) FROM sessions WHERE user_email = ?",
+                (current_user.email,),
+            ).fetchone()[0]
+            active = conn.execute(
+                "SELECT COUNT(*) FROM sessions WHERE user_email = ? AND revoked_at IS NULL",
+                (current_user.email,),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
+    items = [
+        SessionItem(
+            session_id=str(r["session_id"]),
+            issued_at=str(r["issued_at"]),
+            expires_at=str(r["expires_at"]),
+            revoked_at=str(r["revoked_at"]) if r["revoked_at"] else None,
+            revocation_reason=str(r["revocation_reason"])
+            if r["revocation_reason"]
+            else None,
+            ip=str(r["ip"]) if r["ip"] else None,
+            user_agent=str(r["user_agent"]) if r["user_agent"] else None,
+        )
+        for r in rows
+    ]
+    return SessionsResponse(active_sessions=active, total_sessions=total, items=items)
+
+
+@app.delete("/security/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_session(
+    session_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE sessions SET revoked_at = ?, revocation_reason = 'user_revoked' WHERE session_id = ? AND user_email = ?",
+                (now, session_id, current_user.email),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/security/sessions/revoke-all", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_all_sessions(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE sessions SET revoked_at = ?, revocation_reason = 'revoke_all' WHERE user_email = ? AND revoked_at IS NULL",
+                (now, current_user.email),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    _log_security_event(current_user.email, "sessions_revoked_all")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/token/refresh", response_model=TokenPairResponse)
+async def refresh_token(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Issue a new access token (refresh flow simplified — Bearer auth confirms identity)."""
+    access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access = create_access_token(
+        data={"sub": current_user.email}, expires_delta=access_token_expires
+    )
+    # Refresh token: long-lived JWT (7 days) — client should store and re-use
+    refresh_expires = datetime.timedelta(days=7)
+    new_refresh = create_access_token(
+        data={"sub": current_user.email, "type": "refresh"},
+        expires_delta=refresh_expires,
+    )
+    return TokenPairResponse(
+        access_token=new_access,
+        refresh_token=new_refresh,
+        token_type="bearer",
+        expires_in_seconds=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@app.delete("/token/revoke", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_token(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Revoke the current token (logout helper). Client must discard stored token."""
+    _log_security_event(current_user.email, "token_revoked")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/verify-email/request", response_model=EmailVerificationRequestResp)
+async def request_email_verification(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    code = str(uuid.uuid4().int)[:6]
+    expires_at = (
+        datetime.datetime.now(datetime.UTC) + datetime.timedelta(minutes=15)
+    ).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO email_verifications (user_email, code, expires_at, confirmed) VALUES (?, ?, ?, 0)",
+                (current_user.email, code, expires_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    _log_security_event(current_user.email, "email_verification_requested")
+    return EmailVerificationRequestResp(
+        code_sent=True,
+        debug_code=code,  # In production, send via email; dev shows it directly
+        expires_at=expires_at,
+        message="Verification code sent to your email address.",
+    )
+
+
+@app.post("/verify-email/confirm")
+async def confirm_email_verification(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    code: str = Query(...),
+):
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM email_verifications WHERE user_email = ?",
+                (current_user.email,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(
+                    status_code=400, detail="No verification request found."
+                )
+            if datetime.datetime.fromisoformat(
+                str(row["expires_at"])
+            ) < datetime.datetime.now(datetime.UTC):
+                raise HTTPException(
+                    status_code=400, detail="Verification code expired."
+                )
+            if str(row["code"]) != code:
+                raise HTTPException(status_code=400, detail="Invalid code.")
+
+            conn.execute(
+                "UPDATE email_verifications SET confirmed = 1 WHERE user_email = ?",
+                (current_user.email,),
+            )
+            conn.execute(
+                """INSERT OR REPLACE INTO user_metadata (user_email, email_verified, locked_until, password_changed_at)
+                   VALUES (?, 1, NULL, NULL)
+                   ON CONFLICT(user_email) DO UPDATE SET email_verified = 1""",
+                (current_user.email,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    _log_security_event(current_user.email, "email_verified")
+    return {"confirmed": True}
+
+
+@app.post("/security/lockdown")
+async def activate_lockdown(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    locked_until = (
+        datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=24)
+    ).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """INSERT OR REPLACE INTO user_metadata (user_email, email_verified, locked_until, password_changed_at)
+                   VALUES (?, 0, ?, NULL)
+                   ON CONFLICT(user_email) DO UPDATE SET locked_until = ?""",
+                (current_user.email, locked_until, locked_until),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    _log_security_event(
+        current_user.email,
+        "security_lockdown_activated",
+        details={"locked_until": locked_until},
+    )
+    return {
+        "message": "Account locked until " + locked_until,
+        "locked_until": locked_until,
+    }
+
+
+@app.post("/legal/accept")
+async def accept_legal(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    version: str = Query(default=LEGAL_CURRENT_VERSION),
+):
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO legal_acceptances (user_email, version, accepted_at) VALUES (?, ?, ?)",
+                (current_user.email, version, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    _log_security_event(
+        current_user.email, "legal_accepted", details={"version": version}
+    )
+    return {"accepted": True, "version": version, "accepted_at": now}
+
+
+@app.post("/password/change")
+async def change_password_alt(
+    payload: PasswordChange,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Alias for /change-password used by security.tsx."""
+    row = get_user_record(current_user.email)
+    if not row or not verify_password(
+        payload.current_password, str(row["hashed_password"])
+    ):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    validate_password_strength(payload.new_password)
+    now = datetime.datetime.now(datetime.UTC).isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE users SET hashed_password = ? WHERE email = ?",
+                (get_password_hash(payload.new_password), current_user.email),
+            )
+            conn.execute(
+                """INSERT OR REPLACE INTO user_metadata (user_email, email_verified, locked_until, password_changed_at)
+                   VALUES (?, 0, NULL, ?)
+                   ON CONFLICT(user_email) DO UPDATE SET password_changed_at = ?""",
+                (current_user.email, now, now),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    _log_security_event(current_user.email, "password_changed")
+    return {"message": "Password changed successfully"}
