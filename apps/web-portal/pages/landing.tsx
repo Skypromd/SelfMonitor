@@ -15,6 +15,25 @@ import { useRouter } from 'next/router';
 import { useEffect, useRef, useState } from 'react';
 import styles from '../styles/Landing.module.css';
 
+function AppleLogo() {
+  return (
+    <svg viewBox="0 0 814 1000" width="28" height="28" fill="currentColor" aria-label="Apple">
+      <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.9-155.5-127.4C46 790.7 27 743.5 27 700.6c0-225.3 147.5-344.2 284-344.2 74.5 0 136.5 44 183.1 44 44.5 0 114.1-46.5 195.3-46.5zM550.8 136.4c30.6-37.1 51.1-88.2 51.1-139.3 0-7.1-.6-14.3-1.9-20.1-48.5 1.9-106.1 33.1-140.5 75-27.5 32.4-49.3 81.9-49.3 131.3 0 6.4.6 12.8 1.3 19.2 4.5.6 9.6 1.3 14.5 1.3 44.5 0 98.7-29.4 124.8-67.4z" />
+    </svg>
+  );
+}
+
+function GooglePlayLogo() {
+  return (
+    <svg viewBox="0 0 24 24" width="28" height="28" aria-label="Google Play">
+      <path d="M3.18 23.76a2 2 0 0 0 2.08-.21l12.09-6.87-3.12-3.12-11.05 10.2z" fill="#EA4335" />
+      <path d="M21.54 10.02 18.4 8.21 14.96 11.5l3.44 3.44 3.14-1.81a2 2 0 0 0 0-3.11z" fill="#FBBC04" />
+      <path d="M3.18.24A2 2 0 0 0 2 2.02v19.96l11.05-10.2-9.87-11.54z" fill="#4285F4" />
+      <path d="M14.96 11.5 3.18.24 5.26.03a2 2 0 0 1 1.25.4L18.4 8.21l-3.44 3.29z" fill="#34A853" />
+    </svg>
+  );
+}
+
 const LOCALE_FLAGS: Record<string, string> = {
   'en-GB': '🇬🇧',
   'pl-PL': '🇵🇱',
@@ -233,7 +252,7 @@ export default function LandingPage() {
               transition={{ duration: 0.7, delay: 0.3 }}
             >
               <Link href="/register?plan=pro" className={styles.btnPrimary}>
-                Start Free
+                Start 14-Day Free Trial
               </Link>
               <Link href="/" className={styles.btnSecondary}>
                 Sign In
@@ -250,14 +269,14 @@ export default function LandingPage() {
               transition={{ duration: 0.6, delay: 0.5 }}
             >
               <a href="https://apps.apple.com/app/selfmonitor" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
-                <span className={styles.storeIcon}>🍎</span>
+                <span className={styles.storeIcon}><AppleLogo /></span>
                 <span className={styles.storeText}>
                   <small>Download on the</small>
                   <strong>App Store</strong>
                 </span>
               </a>
               <a href="https://play.google.com/store/apps/details?id=com.selfmonitor.app" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
-                <span className={styles.storeIcon}>▶️</span>
+                <span className={styles.storeIcon}><GooglePlayLogo /></span>
                 <span className={styles.storeText}>
                   <small>Get it on</small>
                   <strong>Google Play</strong>
@@ -654,14 +673,14 @@ export default function LandingPage() {
 
                 <div className={styles.storeButtonsLeft}>
                   <a href="https://apps.apple.com/app/selfmonitor" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
-                    <span className={styles.storeIcon}>🍎</span>
+                    <span className={styles.storeIcon}><AppleLogo /></span>
                     <span className={styles.storeText}>
                       <small>Download on the</small>
                       <strong>App Store</strong>
                     </span>
                   </a>
                   <a href="https://play.google.com/store/apps/details?id=com.selfmonitor.app" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
-                    <span className={styles.storeIcon}>▶️</span>
+                    <span className={styles.storeIcon}><GooglePlayLogo /></span>
                     <span className={styles.storeText}>
                       <small>Get it on</small>
                       <strong>Google Play</strong>
@@ -917,42 +936,46 @@ export default function LandingPage() {
                 Simple Pricing. No Surprises.
               </h2>
               <p className={styles.sectionSub}>
-                Start free. Upgrade when you&rsquo;re ready.
+                14-day free trial on every plan. No credit card required.
               </p>
             </motion.div>
 
             <motion.div className={styles.pricingGrid} {...staggerContainer}>
-              {/* Free */}
-              <motion.div className={styles.pricingCard} {...staggerItem}>
-                <p className={styles.pricingName}>Free</p>
-                <p className={styles.pricingPrice}>
-                  £0<span>/mo</span>
-                </p>
-                <ul className={styles.pricingFeatures}>
-                  <li>1 bank connection</li>
-                  <li>200 transactions/month</li>
-                  <li>Basic tax calculator</li>
-                  <li>Email support</li>
-                </ul>
-                <Link href="/register?plan=free" className={styles.btnSecondary}>
-                  Get Started
-                </Link>
-              </motion.div>
-
               {/* Starter */}
               <motion.div className={styles.pricingCard} {...staggerItem}>
+                <p className={styles.pricingTrial}>14-day free trial</p>
                 <p className={styles.pricingName}>Starter</p>
                 <p className={styles.pricingPrice}>
                   £9<span>/mo</span>
                 </p>
                 <ul className={styles.pricingFeatures}>
-                  <li>3 bank connections</li>
-                  <li>1,000 transactions/month</li>
+                  <li>2 bank connections</li>
+                  <li>500 transactions/month</li>
                   <li>AI categorization</li>
                   <li>Receipt OCR</li>
-                  <li>Cash flow forecasting</li>
+                  <li>Email support</li>
                 </ul>
-                <Link href="/register?plan=starter" className={styles.btnPrimary}>
+                <Link href="/register?plan=starter" className={styles.btnSecondary}>
+                  Start Free Trial
+                </Link>
+              </motion.div>
+
+              {/* Growth */}
+              <motion.div className={styles.pricingCard} {...staggerItem}>
+                <p className={styles.pricingTrial}>14-day free trial</p>
+                <p className={styles.pricingName}>Growth</p>
+                <p className={styles.pricingPrice}>
+                  £12<span>/mo</span>
+                </p>
+                <ul className={styles.pricingFeatures}>
+                  <li>3 bank connections</li>
+                  <li>2,000 transactions/month</li>
+                  <li>Cash flow forecasting</li>
+                  <li>Tax calculator</li>
+                  <li>Invoice generator</li>
+                  <li>Priority support</li>
+                </ul>
+                <Link href="/register?plan=growth" className={styles.btnPrimary}>
                   Start Free Trial
                 </Link>
               </motion.div>
@@ -963,17 +986,18 @@ export default function LandingPage() {
                 {...staggerItem}
               >
                 <span className={styles.popularBadge}>Popular</span>
+                <p className={styles.pricingTrial}>14-day free trial</p>
                 <p className={styles.pricingName}>Pro</p>
                 <p className={styles.pricingPrice}>
-                  £19<span>/mo</span>
+                  £15<span>/mo</span>
                 </p>
                 <ul className={styles.pricingFeatures}>
-                  <li>3 bank connections</li>
+                  <li>5 bank connections</li>
                   <li>5,000 transactions/month</li>
                   <li>HMRC auto-submission</li>
                   <li>Smart document search</li>
                   <li>Mortgage readiness reports</li>
-                  <li>Advanced analytics</li>
+                  <li>Advanced analytics &amp; AI</li>
                   <li>API access</li>
                 </ul>
                 <Link href="/register?plan=pro" className={styles.btnPrimaryLg}>
@@ -983,19 +1007,21 @@ export default function LandingPage() {
 
               {/* Business */}
               <motion.div className={styles.pricingCard} {...staggerItem}>
+                <p className={styles.pricingTrial}>14-day free trial</p>
                 <p className={styles.pricingName}>Business</p>
                 <p className={styles.pricingPrice}>
-                  £39<span>/mo</span>
+                  £25<span>/mo</span>
                 </p>
                 <ul className={styles.pricingFeatures}>
                   <li>Everything in Pro</li>
-                  <li>5 team members</li>
+                  <li>10 team members</li>
                   <li>Custom expense policies</li>
                   <li>White-label reports</li>
                   <li>Dedicated success manager</li>
+                  <li>SLA guarantee</li>
                 </ul>
                 <Link href="/register?plan=business" className={styles.btnGold}>
-                  Contact Sales
+                  Start Free Trial
                 </Link>
               </motion.div>
             </motion.div>
@@ -1014,10 +1040,10 @@ export default function LandingPage() {
                 per week.
               </p>
               <Link href="/register?plan=pro" className={styles.btnGoldLg}>
-                Start Free — No Credit Card Required
+                Start Your 14-Day Free Trial
               </Link>
               <small className={styles.ctaSmall}>
-                Free plan includes 200 transactions/month. Upgrade anytime.
+                Plans from £9/mo. No credit card required. Cancel anytime.
               </small>
             </motion.div>
           </div>

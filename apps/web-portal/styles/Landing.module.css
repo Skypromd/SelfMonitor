@@ -337,6 +337,20 @@
   white-space: nowrap;
 }
 
+.pricingTrial {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lp-accent-teal);
+  background: rgba(45, 212, 191, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  border-radius: 20px;
+  padding: 0.2rem 0.65rem;
+  margin: 0 0 0.6rem;
+}
+
 .pricingName {
   font-size: 1.15rem;
   font-weight: 700;
@@ -500,7 +514,12 @@
 }
 
 .storeIcon {
-  font-size: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
 }
 
 .storeText {
