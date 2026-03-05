@@ -955,7 +955,7 @@ export default function LandingPage() {
                   <li>Receipt OCR</li>
                   <li>Email support</li>
                 </ul>
-                <Link href="/register?plan=starter" className={styles.btnSecondary}>
+                <Link href="/register?plan=starter" className={styles.btnPrimary}>
                   Start Free Trial
                 </Link>
               </motion.div>
@@ -1000,7 +1000,7 @@ export default function LandingPage() {
                   <li>Advanced analytics &amp; AI</li>
                   <li>API access</li>
                 </ul>
-                <Link href="/register?plan=pro" className={styles.btnPrimaryLg}>
+                <Link href="/register?plan=pro" className={styles.btnPrimary}>
                   Start Free Trial
                 </Link>
               </motion.div>
@@ -1020,7 +1020,7 @@ export default function LandingPage() {
                   <li>Dedicated success manager</li>
                   <li>SLA guarantee</li>
                 </ul>
-                <Link href="/register?plan=business" className={styles.btnGold}>
+                <Link href="/register?plan=business" className={styles.btnPrimary}>
                   Start Free Trial
                 </Link>
               </motion.div>
