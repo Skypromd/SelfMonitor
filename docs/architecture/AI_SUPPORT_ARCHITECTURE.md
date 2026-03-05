@@ -54,10 +54,11 @@ graph TB
 ## Компоненты
 
 ### 1. `apps/support-portal` — Standalone Next.js App (порт 3001)
+
 Отдельное приложение, независимое от основного веб-портала.
 
 | Вкладка | Описание |
-|---|---|
+| --- | --- |
 | **💬 AI Chat** | WebSocket чат с AI агентом, real-time ответы, markdown рендеринг |
 | **🎫 Submit Ticket** | Форма поддержки (Email, Category, Priority, Subject, Message) |
 | **🟢 System Status** | Статус всех сервисов SelfMonitor |
@@ -71,7 +72,7 @@ graph TB
 #### API Endpoints
 
 | Method | Path | Описание |
-|---|---|---|
+| --- | --- | --- |
 | `WS` | `/ws/chat/{session_id}` | Real-time AI чат |
 | `POST` | `/tickets` | Создать тикет |
 | `GET` | `/tickets` | Список тикетов (admin) |
@@ -82,7 +83,7 @@ graph TB
 
 #### AI Agent — Intent Classification
 
-```
+```text
 Входящее сообщение
         ↓
 Intent Classifier (agent.py)
@@ -101,6 +102,7 @@ Intent Classifier (agent.py)
 ```
 
 #### База знаний (`knowledge_base.py`) — 10 топиков
+
 - Подключение банка (Open Banking)
 - Отмена подписки
 - Безопасность / GDPR
@@ -184,6 +186,7 @@ return resp.content[0].text
 ```
 
 Добавить в `.env`:
+
 ```env
 OPENAI_API_KEY=sk-...
 # или
@@ -195,7 +198,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 ## Production URL Plan
 
 | Компонент | Dev | Production |
-|---|---|---|
+| --- | --- | --- |
 | Web Portal | `http://localhost:3000` | `https://app.selfmonitor.app` |
 | **Support Portal** | `http://localhost:3001` | `https://support.selfmonitor.app` |
 | API Gateway | `http://localhost:8000` | `https://api.selfmonitor.app` |
@@ -205,7 +208,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 ## Файловая структура
 
-```
+```text
 services/support-ai-service/
 ├── Dockerfile
 ├── requirements.txt

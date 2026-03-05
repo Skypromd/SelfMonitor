@@ -4,6 +4,7 @@
   "language": "en",
   "ignorePaths": [
     "services/localization-service/catalogs/translations/*.json",
+    "docs/architecture/*.md",
     "node_modules",
     ".venv",
     "**/*.min.js",
