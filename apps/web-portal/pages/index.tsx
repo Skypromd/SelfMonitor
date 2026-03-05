@@ -80,48 +80,68 @@ const STATS = [
 const PRICING = [
   {
     name: 'Starter',
-    price: 'Free',
-    sub: 'No credit card needed',
+    price: '£9',
+    sub: 'per month · 14-day free trial',
     highlight: false,
     features: [
-      '5 invoices per month',
-      'Manual transaction tracking',
+      '1 bank connection',
+      '500 transactions / month',
+      'AI auto-categorisation',
+      'Receipt OCR scanning',
       'HMRC tax calendar & deadlines',
       'Mobile app (iOS & Android)',
-      'Secure cloud backup',
+      'Email support',
     ],
-    cta: 'Get Started Free',
+    cta: 'Start Free Trial',
   },
   {
-    name: 'Pro',
-    price: '£9.99',
-    sub: 'per month · cancel anytime',
-    highlight: true,
+    name: 'Growth',
+    price: '£12',
+    sub: 'per month · 14-day free trial',
+    highlight: false,
     features: [
+      '2 bank connections',
+      '2,000 transactions / month',
       'Unlimited invoices & PDF export',
-      'AI auto-categorisation',
-      'AI Tax Assistant (unlimited)',
       'Cash flow forecast 30/60/90 days',
-      'Multi-currency support (8+ currencies)',
+      'Tax calculator & liability estimates',
+      'Multi-currency (8+ currencies)',
       'Document storage (5 GB)',
-      'HMRC MTD submission',
       'Priority email support',
     ],
     cta: 'Start Free Trial',
   },
   {
+    name: 'Pro',
+    price: '£15',
+    sub: 'per month · 14-day free trial',
+    highlight: true,
+    features: [
+      '3 bank connections',
+      '5,000 transactions / month',
+      'AI Tax Assistant (unlimited)',
+      'HMRC MTD auto-submission',
+      'Smart document search',
+      'Business Intelligence dashboard',
+      'Document storage (15 GB)',
+      'Phone & priority support',
+    ],
+    cta: 'Start Pro Trial',
+  },
+  {
     name: 'Business',
-    price: '£24.99',
-    sub: 'per month · cancel anytime',
+    price: '£25',
+    sub: 'per month · 14-day free trial',
     highlight: false,
     features: [
+      'Up to 5 bank connections',
       'Everything in Pro',
-      'Business Intelligence dashboard',
+      '10 team members',
       'Compliance & audit trail engine',
       'Partner Marketplace access',
       'Referral Programme',
       'Document storage (25 GB)',
-      'API access',
+      'API access & white-label reports',
       'Dedicated account manager',
     ],
     cta: 'Start Business Trial',
@@ -437,7 +457,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         <div className={styles.lpSectionHeader}>
           <div className={styles.lpChip}>Simple Pricing</div>
           <h2 className={styles.lpSectionH2}>Choose the plan that works for you</h2>
-          <p className={styles.lpSectionSub}>All plans include mobile app access and HMRC compliance. Upgrade or cancel anytime.</p>
+          <p className={styles.lpSectionSub}>All plans include a 14-day free trial, mobile app access and HMRC compliance. No credit card required to start.</p>
         </div>
         <div className={styles.lpPricingGrid}>
           {PRICING.map((plan) => (
@@ -467,7 +487,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             <div className={styles.lpChip}>Join 2,400+ freelancers</div>
             <h2 className={styles.lpAuthH2}>Start managing your finances smarter today</h2>
             <ul className={styles.lpAuthPerks}>
-              {['Free to start — no credit card needed', 'Full access to all 12 modules', 'HMRC MTD compliant on day one', 'Set up in under 5 minutes'].map((p) => (
+              {['14-day free trial — no credit card needed', 'Full access to all 12 modules during trial', 'HMRC MTD compliant on day one', 'Set up in under 5 minutes'].map((p) => (
                 <li key={p}><CheckCircle2 size={16} color="#0d9488" /> {p}</li>
               ))}
             </ul>
