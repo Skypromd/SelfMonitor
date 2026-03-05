@@ -90,6 +90,7 @@ const PRICING = [
       'Receipt OCR scanning',
       'HMRC tax calendar & deadlines',
       'Mobile app (iOS & Android)',
+      '⛳ Secure cloud backup (2 GB)',
       'Email support',
     ],
     cta: 'Start Free Trial',
@@ -106,7 +107,7 @@ const PRICING = [
       'Cash flow forecast 30/60/90 days',
       'Tax calculator & liability estimates',
       'Multi-currency (8+ currencies)',
-      'Document storage (5 GB)',
+      '⛳ Secure cloud backup (5 GB)',
       'Priority email support',
     ],
     cta: 'Start Free Trial',
@@ -123,7 +124,7 @@ const PRICING = [
       'HMRC MTD auto-submission',
       'Smart document search',
       'Business Intelligence dashboard',
-      'Document storage (15 GB)',
+      '⛳ Secure cloud backup (15 GB)',
       'Phone & priority support',
     ],
     cta: 'Start Pro Trial',
@@ -137,10 +138,10 @@ const PRICING = [
       'Up to 5 bank connections',
       'Everything in Pro',
       '10 team members',
-      'Compliance & audit trail engine',
+      'Compliance & full audit trail',
       'Partner Marketplace access',
       'Referral Programme',
-      'Document storage (25 GB)',
+      '⛳ Secure cloud backup (25 GB)',
       'API access & white-label reports',
       'Dedicated account manager',
     ],
@@ -436,6 +437,30 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
               <p className={styles.lpAdvDesc}>{desc}</p>
             </div>
           ))}
+        </div>
+
+        {/* Security guarantee strip */}
+        <div className={styles.lpSecurityStrip}>
+          <div className={styles.lpSecurityItem}>
+            <Lock size={15} color="#0d9488" />
+            <span>AES-256 encryption at rest &amp; in transit</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <ShieldCheck size={15} color="#0d9488" />
+            <span>2FA on every account — no exceptions</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <FolderOpen size={15} color="#0d9488" />
+            <span>Automatic daily cloud backups</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <CheckCircle2 size={15} color="#0d9488" />
+            <span>GDPR compliant · your data is never sold</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <Globe2 size={15} color="#0d9488" />
+            <span>UK data centres · 99.9% uptime SLA</span>
+          </div>
         </div>
       </section>
 
