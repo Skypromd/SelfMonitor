@@ -25,6 +25,78 @@ function getStrength(checks: ReturnType<typeof getPasswordChecks>) {
   return 'weak';
 }
 
+const FEATURES = [
+  {
+    icon: '🧾',
+    title: 'Smart Invoicing',
+    desc: 'Create professional invoices with line items, VAT support, PDF export and one-click send. Track paid, overdue and draft invoices in one place.',
+  },
+  {
+    icon: '📊',
+    title: 'Transaction Analytics',
+    desc: 'Automatically categorise income and expenses via AI. Visualise spending patterns, cash flow and profit trends with interactive charts.',
+  },
+  {
+    icon: '📅',
+    title: 'Tax Calendar',
+    desc: 'Never miss a HMRC deadline. Built-in reminders for Self Assessment (Jan 31), Payment on Account, VAT returns and P60 filing dates.',
+  },
+  {
+    icon: '🤖',
+    title: 'AI Tax Assistant',
+    desc: 'Ask anything about UK self-employment tax, NI thresholds, Trading Allowance or expense deductions — get instant, context-aware answers.',
+  },
+  {
+    icon: '💷',
+    title: 'Cash Flow Forecasting',
+    desc: 'Predict your financial position 30, 60 and 90 days ahead based on recurring income, upcoming invoices and projected expenses.',
+  },
+  {
+    icon: '🔒',
+    title: 'Bank-Grade Security',
+    desc: 'Two-factor authentication (TOTP), device session management, account lockdown, full security event log and encrypted data at rest.',
+  },
+  {
+    icon: '📂',
+    title: 'Document Storage',
+    desc: 'Upload and organise receipts, contracts and tax documents. Instantly retrievable for Self Assessment or accountant review.',
+  },
+  {
+    icon: '🌍',
+    title: 'Multi-Currency Support',
+    desc: 'Invoice clients in GBP, EUR, USD, PLN, RON, UAH and more. Real-time rate conversion for accurate profit tracking across currencies.',
+  },
+  {
+    icon: '🎁',
+    title: 'Referral Programme',
+    desc: 'Earn rewards by referring other freelancers. Share your unique code, track conversions and see your earnings on a live leaderboard.',
+  },
+  {
+    icon: '🏪',
+    title: 'Partner Marketplace',
+    desc: 'Access vetted accountants, legal advisors, insurance providers and fintech tools — all integrated with your financial data.',
+  },
+  {
+    icon: '📈',
+    title: 'Business Intelligence',
+    desc: 'Executive-level dashboards: revenue trends, top clients, expense breakdowns and actionable recommendations powered by ML models.',
+  },
+  {
+    icon: '✅',
+    title: 'Compliance Engine',
+    desc: 'Automated HMRC MTD compliance checks, audit trail logging, consent management and GDPR-ready data controls.',
+  },
+];
+
+const ADVANTAGES = [
+  { icon: '⚡', text: 'Built specifically for UK sole traders & freelancers — not a generic accounting tool' },
+  { icon: '🧠', text: 'AI-powered categorisation reduces manual bookkeeping by up to 90%' },
+  { icon: '📱', text: 'Available on web and mobile (iOS & Android via Expo) — manage finances anywhere' },
+  { icon: '💰', text: 'Save hundreds on accountancy fees with automated tax calculations and reminders' },
+  { icon: '🔗', text: 'Open Banking connector for automatic transaction import (no manual CSV uploads)' },
+  { icon: '🛡️', text: 'SOC 2-aligned security practices with MFA, audit logs and encrypted storage' },
+];
+
 export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -167,11 +239,57 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
     strength === 'strong' ? 'Strong' : strength === 'medium' ? 'Medium' : 'Weak';
 
   return (
-    <div className={styles.container}>
-      <main className={styles.main}>
-        <h1 className={styles.title}>{t('login.title')}</h1>
-        <p className={styles.description}>{t('login.description')}</p>
-        <div className={styles.formContainer}>
+    <div className={styles.landingRoot}>
+      {/* ── LEFT PANEL — product description ── */}
+      <div className={styles.landingLeft}>
+        <div className={styles.landingBrand}>
+          <span className={styles.landingLogo}>SM</span>
+          <span className={styles.landingBrandName}>SelfMonitor</span>
+        </div>
+
+        <h1 className={styles.landingHero}>
+          Your complete financial hub<br />
+          <span className={styles.landingHeroAccent}>for UK self-employed</span>
+        </h1>
+        <p className={styles.landingSubtitle}>
+          Invoicing · Tax Deadlines · AI Advice · Cash Flow · Documents · Analytics
+          — everything in one platform, designed for freelancers and sole traders.
+        </p>
+
+        <div className={styles.landingFeatureGrid}>
+          {FEATURES.map((f) => (
+            <div key={f.title} className={styles.landingFeatureCard}>
+              <span className={styles.landingFeatureIcon}>{f.icon}</span>
+              <div>
+                <div className={styles.landingFeatureTitle}>{f.title}</div>
+                <div className={styles.landingFeatureDesc}>{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <h2 className={styles.landingAdvTitle}>Why SelfMonitor?</h2>
+        <ul className={styles.landingAdvList}>
+          {ADVANTAGES.map((a) => (
+            <li key={a.text} className={styles.landingAdvItem}>
+              <span className={styles.landingAdvIcon}>{a.icon}</span>
+              <span>{a.text}</span>
+            </li>
+          ))}
+        </ul>
+
+        <p className={styles.landingFooter}>
+          Trusted by <strong>2,400+</strong> freelancers across the UK &nbsp;·&nbsp;
+          HMRC MTD ready &nbsp;·&nbsp; GDPR compliant
+        </p>
+      </div>
+
+      {/* ── RIGHT PANEL — auth form ── */}
+      <div className={styles.landingRight}>
+        <main className={styles.main}>
+          <h1 className={styles.title}>{t('login.title')}</h1>
+          <p className={styles.description}>{t('login.description')}</p>
+          <div className={styles.formContainer}>
           {totpRequired ? (
             <form onSubmit={handleTotpSubmit}>
               <div className={styles.totpSection}>
@@ -308,9 +426,10 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             </form>
           )}
         </div>
-        {message && <p className={styles.message} role="alert">{message}</p>}
-        {error && <p className={styles.error} role="alert">{error}</p>}
-      </main>
+          {message && <p className={styles.message} role="alert">{message}</p>}
+          {error && <p className={styles.error} role="alert">{error}</p>}
+        </main>
+      </div>
     </div>
   );
 }
