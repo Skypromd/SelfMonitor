@@ -1647,3 +1647,309 @@
   .lpFooterText { margin: 0; }
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — Tab Navigation
+═══════════════════════════════════════════════════════════════ */
+.adminTabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  background: rgba(15,23,42,0.6);
+  border: 1px solid var(--lp-border);
+  border-radius: 14px;
+  padding: 0.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.adminTab {
+  padding: 0.5rem 1.1rem;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+.adminTab:hover {
+  background: rgba(148,163,184,0.08);
+  color: #f1f5f9;
+}
+.adminTabActive {
+  background: rgba(13,148,136,0.18);
+  color: #14b8a6;
+  font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — KPI sub-label
+═══════════════════════════════════════════════════════════════ */
+.kpiSub {
+  color: #64748b;
+  font-size: 0.75rem;
+  margin: 0.15rem 0 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — MRR Bar Chart
+═══════════════════════════════════════════════════════════════ */
+.mrrBarChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  height: 160px;
+  padding-top: 2rem;
+}
+.mrrBarCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  height: 100%;
+}
+.mrrBarVal {
+  font-size: 0.65rem;
+  color: #64748b;
+  text-align: center;
+  height: 1rem;
+}
+.mrrBarTrack {
+  flex: 1;
+  width: 100%;
+  background: rgba(148,163,184,0.1);
+  border-radius: 4px 4px 0 0;
+  display: flex;
+  align-items: flex-end;
+}
+.mrrBarFill {
+  width: 100%;
+  background: linear-gradient(180deg, #14b8a6 0%, #0d9488 100%);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.4s ease;
+  min-height: 4px;
+}
+.mrrBarMonth {
+  font-size: 0.65rem;
+  color: #64748b;
+  text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — Plan Distribution Cards
+═══════════════════════════════════════════════════════════════ */
+.planDistGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 900px) {
+  .planDistGrid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 500px) {
+  .planDistGrid { grid-template-columns: 1fr; }
+}
+.planDistCard {
+  background: rgba(15,23,42,0.5);
+  border: 1px solid var(--lp-border);
+  border-left-width: 3px;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.planDistHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.planDistName {
+  color: #f1f5f9;
+  font-weight: 700;
+  font-size: 1rem;
+}
+.planDistPrice {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.planDistCount {
+  color: #f1f5f9;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+.planDistMrr {
+  color: #14b8a6;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+}
+.planDistBar {
+  height: 6px;
+  background: rgba(148,163,184,0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+.planDistBarFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.planDistShare {
+  color: #64748b;
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — Plan badge
+═══════════════════════════════════════════════════════════════ */
+.planBadge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 20px;
+  background: rgba(13,148,136,0.15);
+  color: #14b8a6;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — Funnel
+═══════════════════════════════════════════════════════════════ */
+.funnelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+.funnelStep {
+  width: 100%;
+}
+.funnelBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(90deg, rgba(13,148,136,0.25) 0%, rgba(13,148,136,0.05) 100%);
+  border-left: 3px solid #14b8a6;
+  border-radius: 0 8px 8px 0;
+  min-width: 60px;
+  transition: width 0.4s ease;
+}
+.funnelLabel {
+  color: #f1f5f9;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.funnelCount {
+  color: #14b8a6;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — AI Agent
+═══════════════════════════════════════════════════════════════ */
+.agentStatusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.25rem;
+  background: rgba(13,148,136,0.07);
+  border: 1px solid rgba(13,148,136,0.2);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+.agentStatusLabel {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.permMatrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.permRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(15,23,42,0.4);
+  border: 1px solid var(--lp-border);
+  border-radius: 8px;
+  gap: 1rem;
+}
+.permToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  flex: 1;
+}
+.permLabel {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+.permComingSoon {
+  font-size: 0.7rem;
+  color: #f59e0b;
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 20px;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — System Health
+═══════════════════════════════════════════════════════════════ */
+.healthGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+@media (max-width: 900px) {
+  .healthGrid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 500px) {
+  .healthGrid { grid-template-columns: 1fr; }
+}
+.healthCard {
+  background: rgba(15,23,42,0.5);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.healthCardTop {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.healthDot {
+  font-size: 1rem;
+}
+.healthName {
+  color: #f1f5f9;
+  font-size: 0.9rem;
+}
+.healthPort {
+  color: #64748b;
+  font-size: 0.78rem;
+  margin: 0;
+}
+.healthStatus {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0;
+}

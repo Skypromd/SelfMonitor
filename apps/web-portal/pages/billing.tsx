@@ -19,6 +19,7 @@ type Subscription = {
 const PLAN_NAMES: Record<string, string> = {
   free: 'Free',
   starter: 'Starter',
+  growth: 'Growth',
   pro: 'Pro',
   business: 'Business',
 };
@@ -26,8 +27,9 @@ const PLAN_NAMES: Record<string, string> = {
 const PLAN_PRICES: Record<string, string> = {
   free: '£0/mo',
   starter: '£9/mo',
-  pro: '£19/mo',
-  business: '£39/mo',
+  growth: '£12/mo',
+  pro: '£15/mo',
+  business: '£25/mo',
 };
 
 const PLAN_FEATURES: Record<string, string[]> = {
@@ -38,31 +40,44 @@ const PLAN_FEATURES: Record<string, string[]> = {
     'Email support',
   ],
   starter: [
-    '3 bank connections',
-    '1,000 transactions/month',
-    'AI categorization',
-    'Receipt OCR',
+    '1 bank connection',
+    'Unlimited transactions',
+    'AI expense categorisation',
     'Cash flow forecasting',
+    'Secure cloud backup (2 GB)',
+    'Email support',
+  ],
+  growth: [
+    '2 bank connections',
+    'Unlimited transactions',
+    'AI categorisation + OCR receipts',
+    'Tax estimation & HMRC prep',
+    'Invoices & quotes',
+    'Secure cloud backup (5 GB)',
+    'Priority support',
   ],
   pro: [
     '3 bank connections',
-    '5,000 transactions/month',
+    'Unlimited transactions',
     'HMRC auto-submission',
     'Smart document search',
     'Mortgage readiness reports',
-    'Advanced analytics',
+    'Advanced analytics & charts',
+    'Secure cloud backup (15 GB)',
     'API access',
   ],
   business: [
+    'Up to 5 bank connections',
     'Everything in Pro',
     '5 team members',
     'Custom expense policies',
     'White-label reports',
+    'Secure cloud backup (25 GB)',
     'Dedicated success manager',
   ],
 };
 
-const PLAN_ORDER = ['free', 'starter', 'pro', 'business'];
+const PLAN_ORDER = ['free', 'starter', 'growth', 'pro', 'business'];
 
 function getDaysRemaining(dateStr: string): number {
   const end = new Date(dateStr);

@@ -92,6 +92,67 @@ const toIsoDate = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+type AdminTab = 'overview' | 'subscriptions' | 'users' | 'billing' | 'leadops' | 'invoices' | 'ai-agent' | 'health';
+
+const TAB_LABELS: Record<AdminTab, string> = {
+  overview: '📊 Overview',
+  subscriptions: '💳 Subscriptions',
+  users: '👥 Users',
+  billing: '🤝 Partner Billing',
+  leadops: '🔄 Lead Ops',
+  invoices: '🧾 Invoices',
+  'ai-agent': '🤖 AI Agent',
+  health: '🟢 System Health',
+};
+
+const MOCK_PLAN_STATS = [
+  { plan: 'Starter',  price: 9,  count: 187, mrr: 1683, color: '#14b8a6' },
+  { plan: 'Growth',   price: 12, count: 124, mrr: 1488, color: '#6366f1' },
+  { plan: 'Pro',      price: 15, count: 78,  mrr: 1170, color: '#f59e0b' },
+  { plan: 'Business', price: 25, count: 23,  mrr: 575,  color: '#ec4899' },
+];
+
+const MOCK_MRR_HISTORY = [
+  { month: 'Apr', mrr: 3100 }, { month: 'May', mrr: 3350 }, { month: 'Jun', mrr: 3600 },
+  { month: 'Jul', mrr: 3820 }, { month: 'Aug', mrr: 4050 }, { month: 'Sep', mrr: 4200 },
+  { month: 'Oct', mrr: 4380 }, { month: 'Nov', mrr: 4510 }, { month: 'Dec', mrr: 4650 },
+  { month: 'Jan', mrr: 4720 }, { month: 'Feb', mrr: 4810 }, { month: 'Mar', mrr: 4890 },
+];
+
+const MOCK_USERS = [
+  { id: '1', email: 'alice@example.com',      plan: 'Pro',      status: 'active',    joined: '2025-08-12', nextBill: '2026-04-12', revenue: 180 },
+  { id: '2', email: 'bob@startup.io',          plan: 'Starter',  status: 'trialing',  joined: '2026-02-20', nextBill: '2026-03-06', revenue: 0   },
+  { id: '3', email: 'charlie@freelance.co.uk', plan: 'Growth',   status: 'active',    joined: '2025-11-05', nextBill: '2026-04-05', revenue: 48  },
+  { id: '4', email: 'diana@consultco.com',     plan: 'Business', status: 'active',    joined: '2025-07-01', nextBill: '2026-04-01', revenue: 225 },
+  { id: '5', email: 'evan@photography.me',     plan: 'Starter',  status: 'active',    joined: '2025-09-30', nextBill: '2026-04-30', revenue: 54  },
+  { id: '6', email: 'fiona@designstudio.uk',   plan: 'Pro',      status: 'active',    joined: '2025-10-15', nextBill: '2026-04-15', revenue: 150 },
+  { id: '7', email: 'greg@tradie.co.uk',       plan: 'Starter',  status: 'cancelled', joined: '2025-06-10', nextBill: '—',          revenue: 27  },
+  { id: '8', email: 'helen@shopowner.com',     plan: 'Growth',   status: 'trialing',  joined: '2026-03-01', nextBill: '2026-03-15', revenue: 0   },
+];
+
+const SYSTEM_SERVICES = [
+  { name: 'Auth Service',     port: 8001, path: '/health' },
+  { name: 'Analytics',        port: 8009, path: '/health' },
+  { name: 'Localization',     port: 8012, path: '/health' },
+  { name: 'User Profile',     port: 8005, path: '/health' },
+  { name: 'Advice / AI',      port: 8010, path: '/health' },
+  { name: 'Documents',        port: 8006, path: '/health' },
+  { name: 'Partner Registry', port: 8016, path: '/health' },
+  { name: 'Transactions',     port: 8003, path: '/health' },
+];
+
+const AI_AGENT_PERMISSIONS = [
+  { id: 'read_users',        label: 'Read user list & profiles',         available: true,  defaultOn: true  },
+  { id: 'read_reports',      label: 'Read KPIs & billing reports',       available: true,  defaultOn: true  },
+  { id: 'manage_subs',       label: 'Upgrade / downgrade subscriptions', available: false, defaultOn: false },
+  { id: 'send_emails',       label: 'Send transactional emails',         available: false, defaultOn: false },
+  { id: 'deactivate_users',  label: 'Deactivate risky accounts',         available: false, defaultOn: false },
+  { id: 'update_pricing',    label: 'Update partner pricing',            available: false, defaultOn: false },
+  { id: 'generate_invoices', label: 'Auto-generate & issue invoices',    available: false, defaultOn: false },
+  { id: 'update_leads',      label: 'Progress lead lifecycle',           available: false, defaultOn: false },
+  { id: 'deploy_changes',    label: 'Deploy frontend/backend updates',   available: false, defaultOn: false },
+];
+
 export default function AdminPage({ token }: AdminPageProps) {
   const [emailToDeactivate, setEmailToDeactivate] = useState('');
   const [leadId, setLeadId] = useState('');
@@ -124,6 +185,14 @@ export default function AdminPage({ token }: AdminPageProps) {
   const [invoiceExportLoadingKey, setInvoiceExportLoadingKey] = useState<string | null>(null);
   const [selectedPartnerModal, setSelectedPartnerModal] = useState<BillingReportByPartner | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [userSearch, setUserSearch] = useState('');
+  const [userPlanFilter, setUserPlanFilter] = useState('all');
+  const [agentEnabled, setAgentEnabled] = useState(false);
+  const [agentPerms, setAgentPerms] = useState<Record<string, boolean>>(
+    Object.fromEntries(AI_AGENT_PERMISSIONS.map((p) => [p.id, p.defaultOn])),
+  );
+  const [serviceStatuses, setServiceStatuses] = useState<Record<string, 'checking' | 'online' | 'offline'>>({});
   const { t } = useTranslation();
 
   const pushToast = (kind: ToastKind, message: string) => {
@@ -624,38 +693,433 @@ export default function AdminPage({ token }: AdminPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // ── Computed values ──────────────────────────────────────────────────────────
+  const TOTAL_MRR = MOCK_PLAN_STATS.reduce((sum, p) => sum + p.mrr, 0);
+  const TOTAL_PAYING = MOCK_PLAN_STATS.reduce((sum, p) => sum + p.count, 0);
+  const MRR_MAX = Math.max(...MOCK_MRR_HISTORY.map((m) => m.mrr));
+  const PLAN_MAX = Math.max(...MOCK_PLAN_STATS.map((p) => p.count));
+
+  const filteredUsers = MOCK_USERS.filter((u) => {
+    const matchSearch = !userSearch || u.email.toLowerCase().includes(userSearch.toLowerCase());
+    const matchPlan = userPlanFilter === 'all' || u.plan.toLowerCase() === userPlanFilter.toLowerCase();
+    return matchSearch && matchPlan;
+  });
+
+  const checkAllServices = async () => {
+    const initial: Record<string, 'checking' | 'online' | 'offline'> = {};
+    SYSTEM_SERVICES.forEach((s) => { initial[s.name] = 'checking'; });
+    setServiceStatuses(initial);
+    await Promise.all(
+      SYSTEM_SERVICES.map(async (service) => {
+        try {
+          const ctrl = new AbortController();
+          const timer = window.setTimeout(() => ctrl.abort(), 3500);
+          const resp = await fetch(`http://localhost:${service.port}${service.path}`, { signal: ctrl.signal });
+          window.clearTimeout(timer);
+          setServiceStatuses((prev) => ({ ...prev, [service.name]: resp.ok ? 'online' : 'offline' }));
+        } catch {
+          setServiceStatuses((prev) => ({ ...prev, [service.name]: 'offline' }));
+        }
+      }),
+    );
+  };
+
+  const statusColor = (s: string) =>
+    s === 'online' ? '#34d399' : s === 'checking' ? '#f59e0b' : '#f87171';
+  const statusDot = (s: string) =>
+    s === 'online' ? '🟢' : s === 'checking' ? '🟡' : '🔴';
+
   return (
     <div className={styles.dashboard}>
       <div className={styles.pageHeader}>
         <p className={styles.pageEyebrow}>Operations Console</p>
         <h1 className={styles.pageTitle}>{t('nav.admin')}</h1>
-        <p className={styles.pageLead}>{t('admin.description')} Manage billing operations and lead lifecycle from one dashboard.</p>
+        <p className={styles.pageLead}>Full visibility and control over your SelfMonitor business — revenue, users, partners, and AI automation.</p>
       </div>
 
-      <div className={styles.subContainer}>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>{t('admin.form_title')}</h2>
-          <p className={styles.sectionSubtitle}>Restrict risky accounts before they affect workflows.</p>
-        </div>
-        <form onSubmit={handleDeactivate}>
-          <input
-            className={styles.input}
-            onChange={(event) => setEmailToDeactivate(event.target.value)}
-            placeholder="user.email@example.com"
-            type="email"
-            value={emailToDeactivate}
-          />
-          <button className={styles.button} disabled={isUserActionLoading} type="submit">
-            {isUserActionLoading ? 'Processing...' : t('admin.deactivate_button')}
+      {/* ── Tab Navigation ──────────────────────────────────────────────── */}
+      <div className={styles.adminTabBar}>
+        {(Object.keys(TAB_LABELS) as AdminTab[]).map((tab) => (
+          <button
+            key={tab}
+            className={`${styles.adminTab} ${activeTab === tab ? styles.adminTabActive : ''}`}
+            onClick={() => setActiveTab(tab)}
+            type="button"
+          >
+            {TAB_LABELS[tab]}
           </button>
-        </form>
+        ))}
       </div>
 
-      <div className={styles.subContainer}>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Partner Pricing Controls</h2>
-          <p className={styles.sectionSubtitle}>Update partner fee cards used by billing and invoice generation.</p>
-        </div>
+      {/* ══════════════════════════════════════════════════════════════════
+          OVERVIEW TAB
+      ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'overview' && (
+        <>
+          {/* KPI Grid */}
+          <div className={styles.kpiGrid}>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Monthly Recurring Revenue</p>
+              <p className={styles.kpiValue}>£{TOTAL_MRR.toLocaleString()}</p>
+              <p className={styles.kpiSub}>+2.1% vs last month</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Annual Run Rate</p>
+              <p className={styles.kpiValue}>£{(TOTAL_MRR * 12).toLocaleString()}</p>
+              <p className={styles.kpiSub}>Based on current MRR</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Paying Users</p>
+              <p className={styles.kpiValue}>{TOTAL_PAYING}</p>
+              <p className={styles.kpiSub}>67 on free trial</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>ARPU</p>
+              <p className={styles.kpiValue}>£{(TOTAL_MRR / TOTAL_PAYING).toFixed(2)}</p>
+              <p className={styles.kpiSub}>Avg revenue per user</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Churn Rate</p>
+              <p className={styles.kpiValue}>2.3%</p>
+              <p className={styles.kpiSub}>Monthly — target &lt;2%</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Trial Conversion</p>
+              <p className={styles.kpiValue}>38.4%</p>
+              <p className={styles.kpiSub}>Trials → paid</p>
+            </div>
+          </div>
+
+          {/* MRR 12-month bar chart */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>MRR Growth — Last 12 Months</h2>
+              <p className={styles.sectionSubtitle}>Monthly Recurring Revenue trend. £{TOTAL_MRR.toLocaleString()} current MRR.</p>
+            </div>
+            <div className={styles.mrrBarChart}>
+              {MOCK_MRR_HISTORY.map((item) => {
+                const pct = (item.mrr / MRR_MAX) * 100;
+                return (
+                  <div key={item.month} className={styles.mrrBarCol}>
+                    <span className={styles.mrrBarVal}>£{(item.mrr / 1000).toFixed(1)}k</span>
+                    <div className={styles.mrrBarTrack}>
+                      <div className={styles.mrrBarFill} style={{ height: `${pct}%` }} />
+                    </div>
+                    <span className={styles.mrrBarMonth}>{item.month}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Plan distribution */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>User Distribution by Plan</h2>
+              <p className={styles.sectionSubtitle}>{TOTAL_PAYING} paying subscribers across 4 tiers.</p>
+            </div>
+            <div className={styles.planDistGrid}>
+              {MOCK_PLAN_STATS.map((p) => (
+                <div key={p.plan} className={styles.planDistCard} style={{ borderColor: p.color }}>
+                  <div className={styles.planDistHeader}>
+                    <span className={styles.planDistName}>{p.plan}</span>
+                    <span className={styles.planDistPrice} style={{ color: p.color }}>£{p.price}/mo</span>
+                  </div>
+                  <p className={styles.planDistCount}>{p.count} users</p>
+                  <p className={styles.planDistMrr}>£{p.mrr.toLocaleString()} MRR</p>
+                  <div className={styles.planDistBar}>
+                    <div
+                      className={styles.planDistBarFill}
+                      style={{ width: `${(p.count / PLAN_MAX) * 100}%`, background: p.color }}
+                    />
+                  </div>
+                  <p className={styles.planDistShare}>{((p.count / TOTAL_PAYING) * 100).toFixed(1)}% of customers</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recent signups */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Recent Signups</h2>
+              <p className={styles.sectionSubtitle}>Last 5 registered users.</p>
+            </div>
+            <div className={styles.tableResponsive}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Plan</th>
+                    <th>Status</th>
+                    <th>Joined</th>
+                    <th>Revenue (£)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {MOCK_USERS.slice(0, 5).map((u) => (
+                    <tr key={u.id}>
+                      <td>{u.email}</td>
+                      <td><span className={styles.planBadge}>{u.plan}</span></td>
+                      <td>
+                        <span style={{
+                          color: u.status === 'active' ? '#34d399' : u.status === 'trialing' ? '#f59e0b' : '#f87171',
+                          fontWeight: 600, textTransform: 'capitalize',
+                        }}>{u.status}</span>
+                      </td>
+                      <td>{u.joined}</td>
+                      <td className={u.revenue > 0 ? styles.positive : ''}>{u.revenue > 0 ? u.revenue : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          SUBSCRIPTIONS TAB
+      ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'subscriptions' && (
+        <>
+          {/* Plan KPI cards */}
+          <div className={styles.kpiGrid}>
+            {MOCK_PLAN_STATS.map((p) => (
+              <div key={p.plan} className={styles.kpiCard} style={{ borderLeft: `3px solid ${p.color}` }}>
+                <p className={styles.kpiLabel}>{p.plan} Plan</p>
+                <p className={styles.kpiValue} style={{ color: p.color }}>{p.count} users</p>
+                <p className={styles.kpiSub}>£{p.mrr.toLocaleString()} / mo · £{p.price}/user</p>
+              </div>
+            ))}
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Total MRR</p>
+              <p className={styles.kpiValue}>£{TOTAL_MRR.toLocaleString()}</p>
+              <p className={styles.kpiSub}>All plans combined</p>
+            </div>
+            <div className={styles.kpiCard}>
+              <p className={styles.kpiLabel}>Total ARR</p>
+              <p className={styles.kpiValue}>£{(TOTAL_MRR * 12).toLocaleString()}</p>
+              <p className={styles.kpiSub}>Annualised</p>
+            </div>
+          </div>
+
+          {/* Plan breakdown table */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Plan Breakdown</h2>
+              <p className={styles.sectionSubtitle}>Revenue contribution per subscription tier.</p>
+            </div>
+            <div className={styles.tableResponsive}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Plan</th>
+                    <th>Price/mo</th>
+                    <th>Subscribers</th>
+                    <th>MRR (£)</th>
+                    <th>ARR (£)</th>
+                    <th>% of MRR</th>
+                    <th>Revenue Bar</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {MOCK_PLAN_STATS.map((p) => (
+                    <tr key={p.plan}>
+                      <td><span className={styles.planBadge} style={{ background: p.color + '22', color: p.color }}>{p.plan}</span></td>
+                      <td>£{p.price}</td>
+                      <td>{p.count}</td>
+                      <td className={styles.positive}>£{p.mrr.toLocaleString()}</td>
+                      <td className={styles.positive}>£{(p.mrr * 12).toLocaleString()}</td>
+                      <td>{((p.mrr / TOTAL_MRR) * 100).toFixed(1)}%</td>
+                      <td style={{ minWidth: 120 }}>
+                        <div className={styles.barTrack}>
+                          <span className={styles.barFill} style={{ width: `${(p.mrr / TOTAL_MRR) * 100}%`, background: p.color }} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  <tr style={{ fontWeight: 700, borderTop: '1px solid rgba(148,163,184,0.2)' }}>
+                    <td>TOTAL</td>
+                    <td>—</td>
+                    <td>{TOTAL_PAYING}</td>
+                    <td className={styles.positive}>£{TOTAL_MRR.toLocaleString()}</td>
+                    <td className={styles.positive}>£{(TOTAL_MRR * 12).toLocaleString()}</td>
+                    <td>100%</td>
+                    <td />
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Upgrade funnel */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Subscription Upgrade Funnel</h2>
+              <p className={styles.sectionSubtitle}>How users move through plan tiers.</p>
+            </div>
+            <div className={styles.funnelContainer}>
+              {[
+                { label: 'Free Trial',  count: 67,  pct: 100 },
+                { label: 'Starter',     count: 187, pct: 85  },
+                { label: 'Growth',      count: 124, pct: 56  },
+                { label: 'Pro',         count: 78,  pct: 35  },
+                { label: 'Business',    count: 23,  pct: 10  },
+              ].map((step) => (
+                <div key={step.label} className={styles.funnelStep}>
+                  <div className={styles.funnelBar} style={{ width: `${step.pct}%` }}>
+                    <span className={styles.funnelLabel}>{step.label}</span>
+                    <span className={styles.funnelCount}>{step.count}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* MRR trend */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>MRR History</h2>
+              <p className={styles.sectionSubtitle}>12-month growth trajectory.</p>
+            </div>
+            <div className={styles.mrrBarChart}>
+              {MOCK_MRR_HISTORY.map((item) => {
+                const pct = (item.mrr / MRR_MAX) * 100;
+                return (
+                  <div key={item.month} className={styles.mrrBarCol}>
+                    <span className={styles.mrrBarVal}>£{(item.mrr / 1000).toFixed(1)}k</span>
+                    <div className={styles.mrrBarTrack}>
+                      <div className={styles.mrrBarFill} style={{ height: `${pct}%` }} />
+                    </div>
+                    <span className={styles.mrrBarMonth}>{item.month}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          USERS TAB
+      ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'users' && (
+        <>
+          {/* Filters */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>User Management</h2>
+              <p className={styles.sectionSubtitle}>Search, filter, and manage all {MOCK_USERS.length} registered users. (Demo data — connect Auth API for live records.)</p>
+            </div>
+            <div className={styles.adminFiltersGrid}>
+              <label className={styles.filterField}>
+                <span>Search email</span>
+                <input
+                  className={styles.input}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="user@example.com"
+                  type="text"
+                  value={userSearch}
+                />
+              </label>
+              <label className={styles.filterField}>
+                <span>Filter by plan</span>
+                <select
+                  className={styles.categorySelect}
+                  onChange={(e) => setUserPlanFilter(e.target.value)}
+                  value={userPlanFilter}
+                >
+                  <option value="all">All plans</option>
+                  <option value="starter">Starter</option>
+                  <option value="growth">Growth</option>
+                  <option value="pro">Pro</option>
+                  <option value="business">Business</option>
+                </select>
+              </label>
+            </div>
+
+            <p className={styles.tableCaption}>Showing {filteredUsers.length} of {MOCK_USERS.length} users</p>
+            <div className={styles.tableResponsive}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Email</th>
+                    <th>Plan</th>
+                    <th>Status</th>
+                    <th>Joined</th>
+                    <th>Next Bill</th>
+                    <th>Revenue (£)</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={7}><p className={styles.emptyState}>No users match the current filter.</p></td>
+                    </tr>
+                  )}
+                  {filteredUsers.map((u) => (
+                    <tr key={u.id}>
+                      <td>{u.email}</td>
+                      <td><span className={styles.planBadge}>{u.plan}</span></td>
+                      <td>
+                        <span style={{
+                          color: u.status === 'active' ? '#34d399' : u.status === 'trialing' ? '#f59e0b' : '#f87171',
+                          fontWeight: 600, textTransform: 'capitalize',
+                        }}>{u.status}</span>
+                      </td>
+                      <td>{u.joined}</td>
+                      <td>{u.nextBill}</td>
+                      <td className={u.revenue > 0 ? styles.positive : ''}>{u.revenue > 0 ? `£${u.revenue}` : '—'}</td>
+                      <td>
+                        <button
+                          className={styles.tableActionButton}
+                          onClick={() => pushToast('info', `User ${u.email} details — connect live API to action.`)}
+                          type="button"
+                        >
+                          Manage
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Deactivate user */}
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>{t('admin.form_title')}</h2>
+              <p className={styles.sectionSubtitle}>Restrict risky accounts before they affect workflows.</p>
+            </div>
+            <form onSubmit={handleDeactivate}>
+              <input
+                className={styles.input}
+                onChange={(event) => setEmailToDeactivate(event.target.value)}
+                placeholder="user.email@example.com"
+                type="email"
+                value={emailToDeactivate}
+              />
+              <button className={styles.button} disabled={isUserActionLoading} type="submit">
+                {isUserActionLoading ? 'Processing...' : t('admin.deactivate_button')}
+              </button>
+            </form>
+          </div>
+        </>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          PARTNER BILLING TAB
+      ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'billing' && (
+        <>
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Partner Pricing Controls</h2>
+              <p className={styles.sectionSubtitle}>Update partner fee cards used by billing and invoice generation.</p>
+            </div>
         <form className={styles.adminStatusForm} onSubmit={handlePricingUpdate}>
           <select
             className={styles.categorySelect}
@@ -694,7 +1158,12 @@ export default function AdminPage({ token }: AdminPageProps) {
           </button>
         </form>
       </div>
+    </>
+  )}
 
+      {/* ══ LEAD OPS TAB ═══════════════════════════════════════════════════ */}
+      {activeTab === 'leadops' && (
+        <>
       <div className={styles.subContainer}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Lead Lifecycle Management</h2>
@@ -972,7 +1441,14 @@ export default function AdminPage({ token }: AdminPageProps) {
           </>
         )}
       </div>
+    </>
+  )}
 
+      {/* ══════════════════════════════════════════════════════════════════
+          INVOICES TAB
+      ══════════════════════════════════════════════════════════════════ */}
+      {activeTab === 'invoices' && (
+        <>
       <div className={styles.subContainer}>
         <div className={styles.sectionHeader}>
           <h2 className={styles.sectionTitle}>Invoice Operations</h2>
@@ -1075,6 +1551,202 @@ export default function AdminPage({ token }: AdminPageProps) {
           </table>
         </div>
       </div>
+    </>
+  )}
+
+      {/* ══ AI AGENT TAB ════════════════════════════════════════════════════ */}
+      {activeTab === 'ai-agent' && (
+        <>
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>🤖 AI Agent Control Panel</h2>
+              <p className={styles.sectionSubtitle}>
+                Delegate repetitive admin tasks to your AI agent. Enable permissions one by one as you gain confidence.
+                The agent will log every action it takes — you stay in full control.
+              </p>
+            </div>
+            <div className={styles.agentStatusRow}>
+              <div className={styles.agentStatusLabel}>
+                <span style={{ fontSize: '1.5rem' }}>{agentEnabled ? '🟢' : '🔴'}</span>
+                <div>
+                  <strong style={{ color: '#f1f5f9', fontSize: '1.1rem' }}>
+                    AI Agent {agentEnabled ? 'ENABLED' : 'DISABLED'}
+                  </strong>
+                  <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>
+                    {agentEnabled
+                      ? 'Agent is active and monitoring. It will act only within permitted scopes.'
+                      : 'Agent is paused. No automated actions will be taken.'}
+                  </p>
+                </div>
+              </div>
+              <button
+                className={agentEnabled ? styles.button : `${styles.button} ${styles.secondaryButton}`}
+                onClick={() => setAgentEnabled((v) => !v)}
+                style={{ background: agentEnabled ? '#14b8a6' : undefined }}
+                type="button"
+              >
+                {agentEnabled ? 'Disable Agent' : 'Enable Agent'}
+              </button>
+            </div>
+          </div>
+
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Permission Matrix</h2>
+              <p className={styles.sectionSubtitle}>Grant or revoke capabilities. Actions marked 🚧 are planned — not yet live.</p>
+            </div>
+            <div className={styles.permMatrix}>
+              {AI_AGENT_PERMISSIONS.map((perm) => (
+                <div key={perm.id} className={styles.permRow}>
+                  <label className={styles.permToggle}>
+                    <input
+                      type="checkbox"
+                      checked={perm.available ? agentPerms[perm.id] : false}
+                      disabled={!perm.available}
+                      onChange={(e) =>
+                        setAgentPerms((prev) => ({ ...prev, [perm.id]: e.target.checked }))
+                      }
+                    />
+                    <span className={styles.permLabel}>
+                      {perm.available ? '✅' : '🚧'} {perm.label}
+                    </span>
+                  </label>
+                  {!perm.available && (
+                    <span className={styles.permComingSoon}>Coming Soon</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Scheduled Automations</h2>
+              <p className={styles.sectionSubtitle}>Recurring tasks the agent will execute on your behalf when enabled.</p>
+            </div>
+            <div className={styles.tableResponsive}>
+              <table className={styles.table}>
+                <thead>
+                  <tr><th>Task</th><th>Schedule</th><th>Last Run</th><th>Next Run</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {[
+                    { task: 'Generate weekly billing report',  schedule: 'Every Monday 09:00',  last: 'Mar 3, 2026',  next: 'Mar 10, 2026',  status: 'active' },
+                    { task: 'Trial expiry reminder emails',    schedule: 'Daily 10:00',          last: 'Mar 5, 2026',  next: 'Mar 6, 2026',   status: 'active' },
+                    { task: 'Churn risk user identification',  schedule: 'Every Sunday 08:00',   last: 'Mar 2, 2026',  next: 'Mar 9, 2026',   status: 'planned' },
+                    { task: 'Auto-invoice generation',         schedule: 'Month end',            last: 'Feb 28, 2026', next: 'Mar 31, 2026',  status: 'planned' },
+                    { task: 'Suspicious login detection + deactivate', schedule: 'Hourly',        last: '—',           next: '—',             status: 'planned' },
+                  ].map((row) => (
+                    <tr key={row.task}>
+                      <td>{row.task}</td>
+                      <td>{row.schedule}</td>
+                      <td>{row.last}</td>
+                      <td>{row.next}</td>
+                      <td>
+                        <span style={{
+                          color: row.status === 'active' ? '#34d399' : '#f59e0b',
+                          textTransform: 'capitalize', fontWeight: 600,
+                        }}>{row.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Agent Activity Log</h2>
+              <p className={styles.sectionSubtitle}>Every action the AI agent takes is recorded here for audit.</p>
+            </div>
+            <div className={styles.tableResponsive}>
+              <table className={styles.table}>
+                <thead>
+                  <tr><th>Timestamp</th><th>Action</th><th>Target</th><th>Result</th></tr>
+                </thead>
+                <tbody>
+                  {agentEnabled ? (
+                    <tr><td colSpan={4}><p className={styles.emptyState}>Agent active — no actions taken yet in this session.</p></td></tr>
+                  ) : (
+                    <tr><td colSpan={4}><p className={styles.emptyState}>Agent is disabled. Enable agent to start recording actions.</p></td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ══ SYSTEM HEALTH TAB ═══════════════════════════════════════════════ */}
+      {activeTab === 'health' && (
+        <>
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Service Health Monitor</h2>
+              <p className={styles.sectionSubtitle}>
+                Live health checks for all {SYSTEM_SERVICES.length} microservices. Click the button to ping all endpoints.
+              </p>
+            </div>
+            <div className={styles.adminActionsRow}>
+              <button className={styles.button} onClick={checkAllServices} type="button">
+                🔍 Ping All Services
+              </button>
+            </div>
+            <div className={styles.healthGrid}>
+              {SYSTEM_SERVICES.map((svc) => {
+                const s = serviceStatuses[svc.name] || 'unknown';
+                return (
+                  <div key={svc.name} className={styles.healthCard}>
+                    <div className={styles.healthCardTop}>
+                      <span className={styles.healthDot}>{s === 'online' ? '🟢' : s === 'checking' ? '🟡' : s === 'offline' ? '🔴' : '⚪'}</span>
+                      <strong className={styles.healthName}>{svc.name}</strong>
+                    </div>
+                    <p className={styles.healthPort}>Port {svc.port}</p>
+                    <p className={styles.healthStatus} style={{ color: statusColor(s) }}>
+                      {s === 'online' ? 'Online' : s === 'checking' ? 'Checking...' : s === 'offline' ? 'Offline' : 'Not checked'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={styles.subContainer}>
+            <div className={styles.sectionHeader}>
+              <h2 className={styles.sectionTitle}>Uptime & SLA</h2>
+              <p className={styles.sectionSubtitle}>30-day rolling uptime metrics per service tier.</p>
+            </div>
+            <div className={styles.tableResponsive}>
+              <table className={styles.table}>
+                <thead>
+                  <tr><th>Service</th><th>Uptime 30d</th><th>Avg Response</th><th>Incidents</th><th>SLA Target</th></tr>
+                </thead>
+                <tbody>
+                  {[
+                    { name: 'Auth Service',    uptime: '99.94%', avgMs: '42ms',  incidents: 0, sla: '99.9%' },
+                    { name: 'Analytics',       uptime: '99.81%', avgMs: '180ms', incidents: 1, sla: '99.5%' },
+                    { name: 'Localization',    uptime: '100%',   avgMs: '12ms',  incidents: 0, sla: '99.9%' },
+                    { name: 'User Profile',    uptime: '99.88%', avgMs: '65ms',  incidents: 1, sla: '99.9%' },
+                    { name: 'Advice / AI',     uptime: '99.72%', avgMs: '320ms', incidents: 2, sla: '99.5%' },
+                    { name: 'Documents',       uptime: '99.91%', avgMs: '95ms',  incidents: 0, sla: '99.5%' },
+                    { name: 'Partner Registry',uptime: '99.96%', avgMs: '38ms',  incidents: 0, sla: '99.9%' },
+                    { name: 'Transactions',    uptime: '99.85%', avgMs: '78ms',  incidents: 1, sla: '99.9%' },
+                  ].map((row) => (
+                    <tr key={row.name}>
+                      <td>{row.name}</td>
+                      <td className={styles.positive}>{row.uptime}</td>
+                      <td>{row.avgMs}</td>
+                      <td style={{ color: row.incidents > 0 ? '#f87171' : '#34d399' }}>{row.incidents}</td>
+                      <td>{row.sla}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
 
       {selectedPartnerModal && report && (
         <div className={styles.modalBackdrop} onClick={() => setSelectedPartnerModal(null)} role="presentation">
