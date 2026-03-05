@@ -3,10 +3,9 @@ AI Agent core — intent classification + response generation.
 Currently uses a rule-based mock. Replace `_call_llm()` with OpenAI/Anthropic call.
 """
 
-import re
-from typing import Optional
+from typing import Any, Optional
 
-from .knowledge_base import FAQ, GOODBYES, GREETINGS, THANKS, search_kb
+from .knowledge_base import GOODBYES, GREETINGS, THANKS, search_kb
 
 # ── Intent types ──────────────────────────────────────────────────────────────
 INTENT_GREETING = "greeting"
@@ -62,7 +61,7 @@ def classify_intent(message: str) -> str:
     return INTENT_UNKNOWN
 
 
-def _call_llm(system_prompt: str, user_message: str, history: list[dict]) -> str:
+def _call_llm(system_prompt: str, user_message: str, history: list[dict[str, Any]]) -> str:
     """
     LLM adapter — MOCK implementation.
     ------------------------------------
@@ -91,7 +90,7 @@ def _call_llm(system_prompt: str, user_message: str, history: list[dict]) -> str
 
 def generate_response(
     message: str,
-    history: list[dict],
+    history: list[dict[str, Any]],
     user_email: Optional[str] = None,
 ) -> tuple[str, str]:
     """

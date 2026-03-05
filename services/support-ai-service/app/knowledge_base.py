@@ -3,7 +3,9 @@ Knowledge base for the AI support agent.
 Static FAQ + product docs. Swap chunks into a vector DB (Chroma/Weaviate) later.
 """
 
-FAQ: list[dict] = [
+from typing import Any
+
+FAQ: list[dict[str, Any]] = [
     {
         "id": "bank_connect",
         "keywords": [
@@ -188,7 +190,7 @@ THANKS = ["thanks", "thank you", "thx", "cheers", "спасибо", "благо�
 GOODBYES = ["bye", "goodbye", "cya", "see you", "пока", "до свидания"]
 
 
-def search_kb(query: str, top_k: int = 2) -> list[dict]:
+def search_kb(query: str, top_k: int = 2) -> list[dict[str, Any]]:
     """Simple keyword-based retrieval. Replace with vector search later."""
     q = query.lower()
     scored = []
