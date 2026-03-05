@@ -77,6 +77,57 @@ const STATS = [
   { value: '4.8 ★',  label: 'App Store rating' },
 ];
 
+const PRICING = [
+  {
+    name: 'Starter',
+    price: 'Free',
+    sub: 'No credit card needed',
+    highlight: false,
+    features: [
+      '5 invoices per month',
+      'Manual transaction tracking',
+      'HMRC tax calendar & deadlines',
+      'Mobile app (iOS & Android)',
+      'Secure cloud backup',
+    ],
+    cta: 'Get Started Free',
+  },
+  {
+    name: 'Pro',
+    price: '£9.99',
+    sub: 'per month · cancel anytime',
+    highlight: true,
+    features: [
+      'Unlimited invoices & PDF export',
+      'AI auto-categorisation',
+      'AI Tax Assistant (unlimited)',
+      'Cash flow forecast 30/60/90 days',
+      'Multi-currency support (8+ currencies)',
+      'Document storage (5 GB)',
+      'HMRC MTD submission',
+      'Priority email support',
+    ],
+    cta: 'Start Free Trial',
+  },
+  {
+    name: 'Business',
+    price: '£24.99',
+    sub: 'per month · cancel anytime',
+    highlight: false,
+    features: [
+      'Everything in Pro',
+      'Business Intelligence dashboard',
+      'Compliance & audit trail engine',
+      'Partner Marketplace access',
+      'Referral Programme',
+      'Document storage (25 GB)',
+      'API access',
+      'Dedicated account manager',
+    ],
+    cta: 'Start Business Trial',
+  },
+];
+
 export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -224,7 +275,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
           <nav className={styles.lpNavLinks}>
             <a href="#features" className={styles.lpNavLink}>Features</a>
             <a href="#why" className={styles.lpNavLink}>Why Us</a>
-            <a href="#get-started" className={styles.lpNavLink}>Pricing</a>
+            <a href="#pricing" className={styles.lpNavLink}>Pricing</a>
           </nav>
           <a href="#get-started" className={styles.lpNavCta}>Get Started <ArrowRight size={14} /></a>
         </div>
@@ -378,6 +429,34 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         <div className={styles.lpStoreBadges}>
           <div className={styles.lpStoreBadge}><span>▶</span> App Store</div>
           <div className={styles.lpStoreBadge}><span>▶</span> Google Play</div>
+        </div>
+      </section>
+
+      {/* ═══ PRICING ═══ */}
+      <section className={styles.lpSection} id="pricing">
+        <div className={styles.lpSectionHeader}>
+          <div className={styles.lpChip}>Simple Pricing</div>
+          <h2 className={styles.lpSectionH2}>Choose the plan that works for you</h2>
+          <p className={styles.lpSectionSub}>All plans include mobile app access and HMRC compliance. Upgrade or cancel anytime.</p>
+        </div>
+        <div className={styles.lpPricingGrid}>
+          {PRICING.map((plan) => (
+            <div key={plan.name} className={`${styles.lpPricingCard} ${plan.highlight ? styles.lpPricingCardHL : ''}`}>
+              {plan.highlight && <div className={styles.lpPricingBadge}>Most Popular</div>}
+              <div className={styles.lpPricingName}>{plan.name}</div>
+              <div className={styles.lpPricingPrice}>
+                <span className={styles.lpPricingAmount}>{plan.price}</span>
+                {plan.price !== 'Free' && <span className={styles.lpPricingSub}>/mo</span>}
+              </div>
+              <div className={styles.lpPricingNote}>{plan.sub}</div>
+              <ul className={styles.lpPricingFeatures}>
+                {plan.features.map((f) => (
+                  <li key={f}><CheckCircle2 size={14} color={plan.highlight ? '#0d9488' : '#6b7280'} />{f}</li>
+                ))}
+              </ul>
+              <a href="#get-started" className={plan.highlight ? styles.lpCtaPrimary : styles.lpPricingCta}>{plan.cta}</a>
+            </div>
+          ))}
         </div>
       </section>
 

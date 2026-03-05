@@ -1425,6 +1425,127 @@
   padding: 0;
 }
 
+/* ── Pricing ── */
+.lpPricingGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  max-width: 1100px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.lpPricingCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 2rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  position: relative;
+  transition: box-shadow 0.2s;
+}
+
+.lpPricingCard:hover {
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+}
+
+.lpPricingCardHL {
+  border-color: #0d9488;
+  background: linear-gradient(160deg, rgba(13,148,136,0.08) 0%, var(--lp-bg-card) 60%);
+  box-shadow: 0 0 0 1px #0d9488, 0 8px 40px rgba(13,148,136,0.15);
+}
+
+.lpPricingBadge {
+  position: absolute;
+  top: -14px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0d9488;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.3rem 0.9rem;
+  border-radius: 99px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lpPricingName {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--lp-text);
+  margin-bottom: 0.5rem;
+}
+
+.lpPricingPrice {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.lpPricingAmount {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--lp-text);
+  line-height: 1;
+}
+
+.lpPricingSub {
+  font-size: 0.9rem;
+  color: var(--lp-text-muted);
+}
+
+.lpPricingNote {
+  font-size: 0.75rem;
+  color: var(--lp-text-muted);
+  margin-bottom: 1.25rem;
+}
+
+.lpPricingFeatures {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.75rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  flex: 1;
+}
+
+.lpPricingFeatures li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--lp-text);
+  line-height: 1.4;
+}
+
+.lpPricingCta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--lp-border);
+  border-radius: 8px;
+  padding: 0.65rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--lp-text);
+  text-decoration: none;
+  background: transparent;
+  transition: background 0.2s, border-color 0.2s;
+  text-align: center;
+  margin-top: auto;
+}
+
+.lpPricingCta:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: #0d9488;
+}
+
 /* ── Footer ── */
 .lpFooter {
   border-top: 1px solid var(--lp-border);
@@ -1451,6 +1572,13 @@
 @media (max-width: 1024px) {
   .lpHero { gap: 2.5rem; }
   .lpBadge1, .lpBadge2, .lpBadge3 { display: none; }
+}
+
+@media (max-width: 900px) {
+  .lpPricingGrid {
+    grid-template-columns: 1fr;
+    max-width: 420px;
+  }
 }
 
 @media (max-width: 768px) {
