@@ -1746,7 +1746,15 @@
   .lpNavLinks { display: none; }
   .lpNavCta { display: none; }
   .lpNavHamburger { display: flex; }
-  .lpFooterText { margin: 0; }
+  .lpFooter {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1.5rem 1.25rem;
+    gap: 0.75rem;
+  }
+  .lpFooterBrand { justify-content: center; }
+  .lpFooterText { margin: 0; text-align: center; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
