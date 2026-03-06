@@ -186,6 +186,7 @@ class TestReportBuilder:
 @pytest.fixture(scope="module")
 def client():
     """Create a TestClient with mocked Redis and scheduler."""
+    import app.main  # ensure module is in sys.modules before patching  # noqa: F401
     with (
         patch("app.main.create_redis_client", new_callable=AsyncMock) as mock_redis_factory,
         patch("app.main.scheduler") as mock_scheduler,
