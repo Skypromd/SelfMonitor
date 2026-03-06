@@ -1,27 +1,35 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { useInView } from 'framer-motion';
 import {
-  ArrowRight,
-  BarChart3,
-  Bot,
-  CalendarDays,
-  CheckCircle2,
-  ClipboardCheck,
-  CreditCard,
-  FileText,
-  FolderOpen,
-  Gift,
-  Globe2,
-  LineChart,
-  Lock,
-  ReceiptText,
-  ShieldCheck,
-  Smartphone,
-  Store,
-  TrendingUp,
-  Zap,
+    ArrowRight,
+    BarChart3,
+    Bot,
+    CalendarDays,
+    CheckCircle2,
+    ClipboardCheck,
+    CreditCard,
+    FileText,
+    FolderOpen,
+    Gift,
+    Globe2,
+    LineChart,
+    Lock,
+    ReceiptText,
+    ShieldCheck,
+    Smartphone,
+    Store,
+    TrendingUp,
+    Zap,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
+
+const CashFlowChart = dynamic(() => import('../components/charts/CashFlowChart'), { ssr: false });
+const ExpenseChart = dynamic(() => import('../components/charts/ExpenseChart'), { ssr: false });
+const SavingsChart = dynamic(() => import('../components/charts/SavingsChart'), { ssr: false });
+const RevenueVsExpensesChart = dynamic(() => import('../components/charts/RevenueVsExpensesChart'), { ssr: false });
+const TaxSavingsAreaChart = dynamic(() => import('../components/charts/TaxSavingsAreaChart'), { ssr: false });
 
 const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 
@@ -148,6 +156,56 @@ const PRICING = [
     cta: 'Start Business Trial',
   },
 ];
+
+const TESTIMONIALS = [
+  {
+    name: 'Sarah K.',
+    role: 'Freelance Developer, London',
+    initials: 'SK',
+    quote: 'SelfMonitor saved me 6 hours every week. My tax return was filed in 3 clicks. I wish I had found this 5 years ago.',
+    stars: 5,
+  },
+  {
+    name: 'Marcus T.',
+    role: 'Sole Trader, Manchester',
+    initials: 'MT',
+    quote: 'The receipt scanner is magic. I just photograph everything and the AI sorts it out. My accountant was impressed with my records.',
+    stars: 5,
+  },
+  {
+    name: 'Priya D.',
+    role: 'Design Consultant, Birmingham',
+    initials: 'PD',
+    quote: 'Cash flow forecasting changed my business. I can now plan 30 days ahead and never worry about running out of money.',
+    stars: 5,
+  },
+];
+
+const fadeUp = {
+  initial: { opacity: 0, y: 40 },
+  whileInView: { opacity: 1, y: 0 } as object,
+  transition: { duration: 0.7 },
+  viewport: { once: true, margin: '-50px' as string },
+};
+
+function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number; prefix?: string; suffix?: string }) {
+  const ref = useRef(null);
+  const isInView = useInView(ref, { once: true });
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (isInView) {
+      let start = 0;
+      const step = target / (2000 / 16);
+      const timer = setInterval(() => {
+        start += step;
+        if (start >= target) { setCount(target); clearInterval(timer); }
+        else { setCount(Math.floor(start)); }
+      }, 16);
+      return () => clearInterval(timer);
+    }
+  }, [isInView, target]);
+  return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
+}
 
 export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const [email, setEmail] = useState('');
@@ -284,6 +342,13 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const strengthLabel = strength === 'strong' ? 'Strong' : strength === 'medium' ? 'Medium' : 'Weak';
 
   return (
+    <>
+      <Head>
+        <title>SelfMonitor — Financial Freedom for UK Freelancers</title>
+        <meta name="description" content="AI-powered banking, taxes, and insights for UK freelancers and sole traders. From receipt to HMRC submission in minutes." />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+      </Head>
+
     <div className={styles.lpRoot}>
 
       {/* ═══ NAVBAR ═══ */}
@@ -295,6 +360,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
           </div>
           <nav className={styles.lpNavLinks}>
             <a href="#features" className={styles.lpNavLink}>Features</a>
+            <a href="#insights" className={styles.lpNavLink}>Charts</a>
             <a href="#why" className={styles.lpNavLink}>Why Us</a>
             <a href="#pricing" className={styles.lpNavLink}>Pricing</a>
           </nav>
@@ -392,12 +458,115 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
 
       {/* ═══ STATS ═══ */}
       <section className={styles.lpStats}>
-        {STATS.map((s) => (
-          <div key={s.label} className={styles.lpStat}>
-            <div className={styles.lpStatVal}>{s.value}</div>
-            <div className={styles.lpStatLabel}>{s.label}</div>
-          </div>
-        ))}
+        <motion.div className={styles.lpStat} initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0 }}>
+          <div className={styles.lpStatVal}><AnimatedCounter target={2400} suffix="+" /></div>
+          <div className={styles.lpStatLabel}>Active freelancers</div>
+        </motion.div>
+        <motion.div className={styles.lpStat} initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.15 }}>
+          <div className={styles.lpStatVal}>£<AnimatedCounter target={14} suffix="M+" /></div>
+          <div className={styles.lpStatLabel}>Invoices processed</div>
+        </motion.div>
+        <motion.div className={styles.lpStat} initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.3 }}>
+          <div className={styles.lpStatVal}><AnimatedCounter target={94} suffix="%" /></div>
+          <div className={styles.lpStatLabel}>Time saved on bookkeeping</div>
+        </motion.div>
+        <motion.div className={styles.lpStat} initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: 0.45 }}>
+          <div className={styles.lpStatVal}>4.8 ★</div>
+          <div className={styles.lpStatLabel}>App Store rating</div>
+        </motion.div>
+      </section>
+
+      {/* ═══ CHALLENGE ═══ */}
+      <section className={styles.lpSection} style={{ background: 'var(--lp-bg-elevated)' }}>
+        <div className={styles.lpSectionHeader}>
+          <div className={styles.lpChip}>The Problem</div>
+          <h2 className={styles.lpSectionH2}>Self-Employment Shouldn&rsquo;t Mean Self-Struggle</h2>
+          <p className={styles.lpSectionSub}>UK freelancers lose hours every week to admin that AI can handle instantly.</p>
+        </div>
+        <div className={styles.challengeGrid}>
+          <motion.div className={styles.challengeCard} {...fadeUp}>
+            <span className={styles.challengeIcon}>📊</span>
+            <h3 className={styles.challengeCardTitle}>Hours lost on manual bookkeeping</h3>
+            <p className={styles.challengeDesc}>
+              Spreadsheets, bank exports, copy-paste — the admin never ends.
+              <span className={styles.challengeHighlight}>Average freelancer spends 5 hrs/week on admin</span>
+            </p>
+          </motion.div>
+          <motion.div className={styles.challengeCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.15 }}>
+            <span className={styles.challengeIcon}>💸</span>
+            <h3 className={styles.challengeCardTitle}>Missed tax deductions</h3>
+            <p className={styles.challengeDesc}>
+              Without AI categorisation, legitimate expenses slip through the cracks.
+              <span className={styles.challengeHighlight}>UK freelancers overpay £1,200/year in taxes on average</span>
+            </p>
+          </motion.div>
+          <motion.div className={styles.challengeCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.3 }}>
+            <span className={styles.challengeIcon}>📄</span>
+            <h3 className={styles.challengeCardTitle}>Receipts in a shoebox</h3>
+            <p className={styles.challengeDesc}>
+              Paper receipts fade. Email receipts get buried. Audits happen.
+              <span className={styles.challengeHighlight}>HMRC requires 5 years of records — can you find them?</span>
+            </p>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ═══ 6 CHARTS ═══ */}
+      <section className={styles.lpSection} id="insights">
+        <div className={styles.lpSectionHeader}>
+          <div className={styles.lpChip}>Live Data Insights</div>
+          <h2 className={styles.lpSectionH2}>See Your Finances Come Alive</h2>
+          <p className={styles.lpSectionSub}>6 interactive charts powered by real data — AI categorises everything automatically.</p>
+        </div>
+        <div className={styles.chartsGrid}>
+          <motion.div className={styles.chartCard} {...fadeUp}>
+            <p className={styles.chartTitle}>📈 Cash Flow Trend — 12 months</p>
+            <CashFlowChart />
+            <p className={styles.chartCaption}>Track monthly cash flow with AI-powered forecasting and trend detection</p>
+          </motion.div>
+          <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.1 }}>
+            <p className={styles.chartTitle}>📊 Revenue vs Expenses — Monthly</p>
+            <RevenueVsExpensesChart />
+            <p className={styles.chartCaption}>Compare income against spending each month — spot the gap and grow it</p>
+          </motion.div>
+          <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.2 }}>
+            <p className={styles.chartTitle}>💰 Tax Savings Accumulated YTD</p>
+            <TaxSavingsAreaChart />
+            <p className={styles.chartCaption}>Watch your identified deductions grow — average user saves £2,080/year</p>
+          </motion.div>
+          <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.3 }}>
+            <p className={styles.chartTitle}>🏷️ Expense Breakdown by Category</p>
+            <ExpenseChart />
+            <p className={styles.chartCaption}>AI categorises every expense automatically — see exactly where your money goes</p>
+          </motion.div>
+          <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.4 }}>
+            <p className={styles.chartTitle}>🥧 Tax Savings Distribution</p>
+            <SavingsChart />
+            <p className={styles.chartCaption}>Breakdown of how SelfMonitor identifies and maximises your allowable deductions</p>
+          </motion.div>
+          <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.5 }}>
+            <p className={styles.chartTitle}>⚡ Financial Health Summary</p>
+            <div style={{ padding: '1rem 0' }}>
+              {[
+                { label: 'Annual Revenue', value: '£67,200', bar: 100, color: '#14b8a6' },
+                { label: 'Total Expenses',  value: '£18,600', bar: 28,  color: '#f87171' },
+                { label: 'Tax Reserved',    value: '£9,720',  bar: 14,  color: '#d97706' },
+                { label: 'Net Profit',      value: '£48,600', bar: 72,  color: '#4ade80' },
+              ].map((item) => (
+                <div key={item.label} style={{ marginBottom: '1.1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.3rem' }}>
+                    <span style={{ fontSize: '0.82rem', color: '#94a3b8' }}>{item.label}</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: item.color }}>{item.value}</span>
+                  </div>
+                  <div style={{ height: 6, borderRadius: 3, background: 'rgba(148,163,184,0.1)' }}>
+                    <div style={{ height: '100%', borderRadius: 3, background: item.color, width: `${item.bar}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className={styles.chartCaption}>Full-year financial overview — calculated automatically from your transactions</p>
+          </motion.div>
+        </div>
       </section>
 
       {/* ═══ FEATURES ═══ */}
@@ -477,8 +646,68 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         </div>
       </section>
 
+      {/* ═══ TESTIMONIALS ═══ */}
+      <section className={styles.lpSection} id="testimonials" style={{ background: 'var(--lp-bg-elevated)' }}>
+        <div className={styles.lpSectionHeader}>
+          <div className={styles.lpChip}>Customer Stories</div>
+          <h2 className={styles.lpSectionH2}>What Our Users Say</h2>
+          <p className={styles.lpSectionSub}>Trusted by thousands of UK freelancers and sole traders.</p>
+        </div>
+        <div className={styles.testimonialGrid}>
+          {TESTIMONIALS.map((t, i) => (
+            <motion.div
+              key={t.name}
+              className={styles.testimonialCard}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: i * 0.15 }}
+            >
+              <span className={styles.testimonialStars}>{'★'.repeat(t.stars)}</span>
+              <p className={styles.testimonialQuote}>&ldquo;{t.quote}&rdquo;</p>
+              <div className={styles.testimonialAuthor}>
+                <div className={styles.testimonialAvatar}>{t.initials}</div>
+                <div>
+                  <span className={styles.testimonialName}>{t.name}</span>
+                  <span className={styles.testimonialRole}>{t.role}</span>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ ROI CALCULATOR ═══ */}
+      <section className={styles.lpSection}>
+        <div className={styles.lpSectionHeader}>
+          <div className={styles.lpChip}>ROI Calculator</div>
+          <h2 className={styles.lpSectionH2}>See How Much You Save</h2>
+          <p className={styles.lpSectionSub}>SelfMonitor pays for itself in weeks — the numbers speak for themselves.</p>
+        </div>
+        <div className={styles.roiGrid}>
+          <motion.div className={`${styles.roiCol} ${styles.roiColBad}`} {...fadeUp}>
+            <p className={`${styles.roiColTitle} ${styles.roiColTitleBad}`}>❌ Without SelfMonitor</p>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Weekly admin</span><span className={styles.roiRowBad}>5 hrs/week</span></div>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Overpaid tax</span><span className={styles.roiRowBad}>£1,200/yr</span></div>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Accountant fees</span><span className={styles.roiRowBad}>£500/yr</span></div>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Total cost</span><span className={styles.roiRowBad}>£2,700/yr</span></div>
+          </motion.div>
+          <motion.div className={`${styles.roiCol} ${styles.roiColGood}`} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.2 }}>
+            <p className={`${styles.roiColTitle} ${styles.roiColTitleGood}`}>✅ With SelfMonitor</p>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Weekly admin</span><span className={styles.roiRowGood}>30 min/week</span></div>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Overpaid tax</span><span className={styles.roiRowGood}>£0</span></div>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Pro plan</span><span className={styles.roiRowGood}>£15/month</span></div>
+            <div className={styles.roiRow}><span className={styles.roiRowLabel}>Total cost</span><span className={styles.roiRowGood}>£180/yr</span></div>
+          </motion.div>
+        </div>
+        <motion.div {...fadeUp} style={{ marginTop: '2.5rem', textAlign: 'center' }}>
+          <div className={styles.roiSaving}><AnimatedCounter target={2520} prefix="£" />/yr</div>
+          <p className={styles.roiSavingLbl}>That&rsquo;s the average annual saving with SelfMonitor</p>
+        </motion.div>
+      </section>
+
       {/* ═══ PRICING ═══ */}
-      <section className={styles.lpSection} id="pricing">
+      <section className={styles.lpSection} id="pricing" style={{ background: 'var(--lp-bg-elevated)' }}>
         <div className={styles.lpSectionHeader}>
           <div className={styles.lpChip}>Simple Pricing</div>
           <h2 className={styles.lpSectionH2}>Choose the plan that works for you</h2>
@@ -615,5 +844,6 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
       </footer>
 
     </div>
+    </>
   );
 }

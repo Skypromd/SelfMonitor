@@ -2145,3 +2145,175 @@
   flex-wrap: wrap;
 }
 
+/* ═══════════════════════════════════════════════
+   CHARTS SECTION
+═══════════════════════════════════════════════ */
+.chartsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+}
+.chartCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem 1rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.chartCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+}
+.chartTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 0.75rem;
+  letter-spacing: 0.02em;
+}
+.chartCaption {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  margin-top: 0.75rem;
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ═══════════════════════════════════════════════
+   CHALLENGE SECTION
+═══════════════════════════════════════════════ */
+.challengeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+}
+.challengeCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 1.75rem;
+  transition: transform 0.2s;
+}
+.challengeCard:hover { transform: translateY(-3px); }
+.challengeIcon { font-size: 2.5rem; margin-bottom: 1rem; display: block; }
+.challengeCardTitle {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin-bottom: 0.5rem;
+}
+.challengeDesc {
+  font-size: 0.88rem;
+  color: #94a3b8;
+  line-height: 1.6;
+}
+.challengeHighlight {
+  display: block;
+  margin-top: 0.75rem;
+  color: #14b8a6;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  background: rgba(20,184,166,0.08);
+  border-radius: 8px;
+  border-left: 3px solid #14b8a6;
+}
+
+/* ═══════════════════════════════════════════════
+   TESTIMONIALS
+═══════════════════════════════════════════════ */
+.testimonialGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+}
+.testimonialCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 1.75rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.testimonialCard:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.25);
+}
+.testimonialStars {
+  color: #f59e0b;
+  font-size: 1.1rem;
+  letter-spacing: 2px;
+  display: block;
+  margin-bottom: 1rem;
+}
+.testimonialQuote {
+  font-size: 0.92rem;
+  color: #cbd5e1;
+  line-height: 1.65;
+  margin-bottom: 1.25rem;
+  font-style: italic;
+}
+.testimonialAuthor { display: flex; align-items: center; gap: 0.75rem; }
+.testimonialAvatar {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0d9488, #0891b2);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.9rem; font-weight: 700; color: white; flex-shrink: 0;
+}
+.testimonialName { font-weight: 600; font-size: 0.9rem; color: #f1f5f9; display: block; }
+.testimonialRole { font-size: 0.78rem; color: #64748b; }
+
+/* ═══════════════════════════════════════════════
+   ROI CALCULATOR
+═══════════════════════════════════════════════ */
+.roiGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  max-width: 700px;
+  margin: 2.5rem auto 0;
+}
+.roiCol {
+  border-radius: 16px;
+  padding: 1.75rem;
+  border: 1px solid var(--lp-border);
+}
+.roiColBad  { background: rgba(239,68,68,0.06);  border-color: rgba(239,68,68,0.2); }
+.roiColGood { background: rgba(20,184,166,0.07); border-color: rgba(20,184,166,0.25); }
+.roiColTitle { font-size: 0.9rem; font-weight: 700; margin-bottom: 1rem; text-align: center; }
+.roiColTitleBad  { color: #f87171; }
+.roiColTitleGood { color: #2dd4bf; }
+.roiRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--lp-border);
+  font-size: 0.85rem;
+}
+.roiRowLabel  { color: #94a3b8; }
+.roiRowBad    { color: #f87171; font-weight: 600; }
+.roiRowGood   { color: #2dd4bf; font-weight: 600; }
+.roiSaving    { font-size: 2.8rem; font-weight: 800; color: #2dd4bf; text-align: center; line-height: 1; }
+.roiSavingLbl { text-align: center; color: #94a3b8; font-size: 0.9rem; margin-top: 0.5rem; }
+
+/* ═══════════════════════════════════════════════
+   RESPONSIVE — charts / testimonials / challenge
+═══════════════════════════════════════════════ */
+@media (max-width: 1100px) {
+  .chartsGrid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 900px) {
+  .chartsGrid       { grid-template-columns: 1fr; }
+  .challengeGrid    { grid-template-columns: 1fr; }
+  .testimonialGrid  { grid-template-columns: 1fr; }
+  .roiGrid          { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .chartCard    { padding: 1rem; }
+  .testimonialCard { padding: 1.25rem; }
+  .roiCol       { padding: 1.25rem; }
+}
