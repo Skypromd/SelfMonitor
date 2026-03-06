@@ -34,7 +34,6 @@ import {
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
 const CashFlowChart = dynamic(() => import('../components/charts/CashFlowChart'), { ssr: false });
@@ -230,7 +229,6 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const [totpCode, setTotpCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { t } = useTranslation();
 
   const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
   const strength = useMemo(() => getStrength(passwordChecks), [passwordChecks]);
@@ -867,8 +865,8 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
           </div>
           <div className={styles.lpAuthCard}>
             <main className={styles.main}>
-              <h1 className={styles.title}>{t('login.title')}</h1>
-              <p className={styles.description}>{t('login.description')}</p>
+              <h1 className={styles.title}>FinTech App</h1>
+              <p className={styles.description}>Sign up or log in to continue</p>
               <div className={styles.formContainer}>
                 {totpRequired ? (
                   <form onSubmit={handleTotpSubmit}>
@@ -934,13 +932,13 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
                         aria-label="Register a new account"
                         style={isRegistering ? {} : { background: 'transparent', border: '1px solid var(--lp-border)', color: 'var(--lp-text-muted)' }}
                         onClick={(e) => { if (!isRegistering) { setIsRegistering(true); clearFeedback(); } else { handleRegister(e); } }}>
-                        {loading && isRegistering ? 'Registering...' : t('login.register_button')}
+                        {loading && isRegistering ? 'Registering...' : 'Register'}
                       </button>
                       <button type="button" className={styles.button} disabled={loading}
                         aria-label="Log in to your account"
                         style={!isRegistering ? {} : { background: 'transparent', border: '1px solid var(--lp-border)', color: 'var(--lp-text-muted)' }}
                         onClick={(e) => { if (isRegistering) { setIsRegistering(false); clearFeedback(); } else { handleLogin(e); } }}>
-                        {loading && !isRegistering ? 'Logging in...' : t('login.login_button')}
+                        {loading && !isRegistering ? 'Logging in...' : 'Log In'}
                       </button>
                     </div>
                   </form>
