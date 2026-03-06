@@ -5,12 +5,12 @@ Unit tests for core agent functionality including conversation management,
 memory integration, and tool usage.
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from typing import Any, Dict
+from unittest.mock import AsyncMock, Mock, patch
 
-from app.agent.selfmate_agent import SelfMateAgent, AgentResponse
+import pytest
 from app.agent.conversation_manager import ConversationManager
+from app.agent.selfmate_agent import AgentResponse, SelfMateAgent
 from app.memory.memory_manager import MemoryManager
 from app.tools.tool_registry import ToolRegistry
 
@@ -287,7 +287,6 @@ class TestToolRegistry:
         registry = ToolRegistry()
 
         # Create a mock tool
-        from unittest.mock import Mock
         mock_tool = Mock()
         mock_tool.name = "test_tool"
         mock_tool.description = "A test tool"
