@@ -12,7 +12,7 @@ from datetime import date, datetime, timezone
 
 import httpx
 
-from app.redis_bus import publish_event, EventType
+from app.redis_bus import EventType, publish_event
 
 log = logging.getLogger(__name__)
 

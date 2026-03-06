@@ -22,11 +22,11 @@ os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key-for-finops")
 
 from app.mtd.deadlines import (
     MTDQuarter,
+    _quarters_for_tax_year,
+    days_until_deadline,
     get_current_quarter,
     get_next_deadline,
-    days_until_deadline,
     is_mtd_required,
-    _quarters_for_tax_year,
 )
 
 

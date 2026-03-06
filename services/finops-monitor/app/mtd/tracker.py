@@ -19,12 +19,7 @@ import json
 from datetime import date, datetime, timezone
 from typing import Any
 
-from app.mtd.deadlines import (
-    MTDQuarter,
-    get_current_quarter,
-    is_mtd_required,
-)
-
+from app.mtd.deadlines import MTDQuarter, get_current_quarter, is_mtd_required
 
 _REDIS_KEY_PREFIX = "mtd:quarterly"
 _TURNOVER_THRESHOLD = 50_000.0

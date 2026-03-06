@@ -948,6 +948,57 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  mtd-agent:
+    build: ./services/mtd-agent
+    container_name: mtd-agent
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      REDIS_URL: "redis://redis-master:6379/0"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      HMRC_BASE_URL: "${HMRC_BASE_URL:-https://test-api.service.hmrc.gov.uk}"
+      HMRC_CLIENT_ID: "${HMRC_CLIENT_ID:-}"
+      HMRC_CLIENT_SECRET: "${HMRC_CLIENT_SECRET:-}"
+    ports:
+      - "8022:8022"
+    depends_on:
+      - redis-master
+      - finops-monitor
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8022/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
+  voice-gateway:
+    build: ./services/voice-gateway
+    container_name: voice-gateway
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      AGENT_SERVICE_URL: "http://ai-agent-service:80"
+      MTD_AGENT_URL: "http://mtd-agent:8022"
+      WHISPER_MODEL: "whisper-1"
+      WHISPER_LANGUAGE: "en"
+      TTS_MODEL: "tts-1"
+      TTS_VOICE: "nova"
+    ports:
+      - "8023:8023"
+    depends_on:
+      - mtd-agent
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8023/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   # High Availability Database Volumes
   postgres_master_data:

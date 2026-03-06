@@ -5,10 +5,10 @@ Handles short-term and long-term memory, user context, and conversation history.
 Integrates with Redis for fast access and Weaviate for semantic search.
 """
 
-import json
-from typing import Dict, List, Any, Optional, cast
-from datetime import datetime, timezone
 import hashlib
+import json
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, cast
 
 import redis.asyncio as redis
 
@@ -270,37 +270,52 @@ class MemoryManager:
     # --- Financial Context ---
 
     async def get_financial_context(self, user_id: str) -> Dict[str, Any]:
-        """Get user's current financial context"""
+        """
+        Get user's current financial context.
+
+        Reads from FinOps Monitor Redis cache (written every 5 min by finops-monitor service)
+        before falling back to a short-lived agent-local cache.
+        """
         if not self.redis_client:
             return {}
 
         try:
-            # Try cache first
+            # 1. Try short-lived agent cache (5-min TTL — matches finops-monitor update cadence)
             cached_context = cast(Optional[str], await self.redis_client.get(f"financial:{user_id}"))  # type: ignore
             if cached_context:
                 return json.loads(cached_context)
 
-            # Mock financial context (in production, would fetch from financial services)
+            # 2. Read live data from FinOps Monitor Redis keys
+            from ..context.finops_context import get_finops_context
+            finops = await get_finops_context(self.redis_client, user_id)
+
+            balance  = finops.get("balance", 0.0)
+            mtd      = finops.get("mtd", {})
+            income   = mtd.get("income", 0.0)
+            expenses = mtd.get("expenses", 0.0)
+            profit   = mtd.get("net_profit", 0.0)
+
             financial_context: Dict[str, Any] = {
-                "user_id": user_id,
-                "current_balance": 12500.00,
-                "monthly_revenue": 8500.00,
-                "monthly_expenses": 6200.00,
-                "monthly_profit": 2300.00,
-                "tax_due": 3400.00,
-                "outstanding_invoices": 15600.00,
+                "user_id":             user_id,
+                "current_balance":     balance,
+                "monthly_revenue":     income,
+                "monthly_expenses":    expenses,
+                "monthly_profit":      profit,
+                "outstanding_invoices": 0.0,   # populated by invoice_monitor alerts
+                "mtd":                 mtd,
+                "finops_source":       finops.get("source", "unknown"),
                 "metrics": {
-                    "profit_margin": 0.27,
-                    "cash_conversion_cycle": 45,
-                    "debt_to_revenue_ratio": 0.12
+                    "profit_margin":         round(profit / income, 4) if income > 0 else 0.0,
+                    "mtd_required":          mtd.get("mtd_required", False),
+                    "mtd_status":            mtd.get("status", "accumulating"),
                 },
-                "last_updated": datetime.now(timezone.utc).isoformat()
+                "last_updated": finops.get("fetched_at"),
             }
 
-            # Cache for 1 hour (financial data changes frequently)
+            # Cache for 5 minutes
             await self.redis_client.setex(  # type: ignore
                 f"financial:{user_id}",
-                3600,
+                300,
                 json.dumps(financial_context)
             )
 
@@ -324,6 +339,34 @@ class MemoryManager:
             )
         except Exception as e:
             print(f"❌ Error updating financial context: {e}")
+
+    # --- Language Preference ---
+
+    async def get_user_language(self, user_id: str) -> str:
+        """
+        Return the user's preferred UI/response language (ISO-639-1 code).
+        Defaults to 'en' if not set.
+        """
+        if not self.redis_client:
+            return "en"
+        try:
+            lang = cast(Optional[str], await self.redis_client.get(f"user:lang:{user_id}"))  # type: ignore
+            return lang if lang else "en"
+        except Exception:
+            return "en"
+
+    async def set_user_language(self, user_id: str, language: str) -> None:
+        """
+        Persist the user's preferred language.
+        language: ISO-639-1 code (e.g. 'en', 'ru', 'de')
+        """
+        if not self.redis_client:
+            return
+        try:
+            # No TTL — language preference is permanent until changed
+            await self.redis_client.set(f"user:lang:{user_id}", language.lower()[:5])  # type: ignore
+        except Exception as e:
+            print(f"❌ Error setting user language: {e}")
 
     # --- Conversation Management ---
 

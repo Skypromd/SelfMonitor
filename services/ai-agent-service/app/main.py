@@ -1,18 +1,19 @@
 import os
-from typing import Annotated, List, Dict, Any, Optional
-from enum import Enum
-from datetime import datetime, timedelta, timezone
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status, BackgroundTasks
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field
 
-from .agent.selfmate_agent import SelfMateAgent
 from .agent.conversation_manager import ConversationManager
+from .agent.selfmate_agent import SelfMateAgent
 from .memory.memory_manager import MemoryManager
 from .tools.tool_registry import ToolRegistry
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -98,6 +99,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     session_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = None
+    language: str = Field(default="en", description="ISO-639-1 language code: en, ru, de, fr, es, etc.")
 
 class ChatResponse(BaseModel):
     response: str
@@ -220,6 +222,7 @@ async def chat_with_agent(
     agent_response = await agent_instance.process_message(
         user_id=current_user,
         message=request.message,
+        language=request.language,
         context={
             **conversation_context,
             **(request.context or {})

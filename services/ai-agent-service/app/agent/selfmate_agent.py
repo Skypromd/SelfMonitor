@@ -6,19 +6,41 @@ automates tasks, and helps users achieve their financial goals.
 """
 
 import json
-from typing import Dict, List, Any, Optional
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
 
 import openai  # type: ignore
 from langchain.agents import AgentExecutor  # type: ignore
 from langchain.agents.openai_assistant import OpenAIAssistantRunnable  # type: ignore
-from langchain.schema import HumanMessage, AIMessage, SystemMessage  # type: ignore
-from langchain.tools import BaseTool  # type: ignore
 from langchain.memory import ConversationBufferWindowMemory  # type: ignore
+from langchain.schema import AIMessage, HumanMessage, SystemMessage  # type: ignore
+from langchain.tools import BaseTool  # type: ignore
 
 from ..memory.memory_manager import MemoryManager
 from ..tools.tool_registry import ToolRegistry
+
+# ISO-639-1 code → full language name for GPT system prompt injection
+_LANGUAGE_NAMES: Dict[str, str] = {
+    "en": "English",
+    "ru": "Russian",
+    "de": "German",
+    "fr": "French",
+    "es": "Spanish",
+    "it": "Italian",
+    "pl": "Polish",
+    "uk": "Ukrainian",
+    "zh": "Chinese",
+    "ar": "Arabic",
+}
+
+
+def _language_instruction(lang: str) -> str:
+    """Return a system-prompt instruction forcing the response language."""
+    name = _LANGUAGE_NAMES.get(lang.lower(), lang)
+    if lang.lower() == "en":
+        return ""  # default, no extra instruction needed
+    return f"\n\nIMPORTANT: You MUST respond entirely in {name}. All text — explanations, recommendations, and labels — must be in {name}."
 
 
 @dataclass
@@ -144,10 +166,14 @@ class SelfMateAgent:
         self,
         user_id: str,
         message: str,
+        language: str = "en",
         context: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
         """
-        Process user message and generate intelligent response
+        Process user message and generate intelligent response.
+
+        language: ISO-639-1 code (en, ru, de, fr, es …)
+                  The agent will respond entirely in the chosen language.
         """
         start_time = datetime.now(timezone.utc)
 
@@ -158,12 +184,13 @@ class SelfMateAgent:
             financial_context = await self.memory_manager.get_financial_context(user_id)
 
             # Analyze message intent and extract requirements
-            intent = await self._analyze_message_intent(message, context)
+            intent = await self._analyze_message_intent(message, language=language, context=context)
 
             # Generate comprehensive response
             response_data = await self._generate_response(
                 user_id=user_id,
                 message=message,
+                language=language,
                 intent=intent,
                 user_profile=user_profile,
                 financial_context=financial_context,
@@ -200,11 +227,13 @@ class SelfMateAgent:
     async def _analyze_message_intent(
         self,
         message: str,
+        language: str = "en",
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Analyze user message to understand intent and classify request type"""
 
-        system_prompt = """
+        lang_instruction = _language_instruction(language)
+        system_prompt = f"""
         You are analyzing user messages to understand their financial intent.
         Classify the message into these categories and extract key information:
 
@@ -225,6 +254,8 @@ class SelfMateAgent:
 
         Respond with JSON only.
         """
+        if lang_instruction:
+            system_prompt = system_prompt.rstrip() + lang_instruction
 
         try:
             response = await self.openai_client.chat.completions.create(  # type: ignore
@@ -258,7 +289,8 @@ class SelfMateAgent:
         intent: Dict[str, Any],
         user_profile: Dict[str, Any],
         financial_context: Dict[str, Any],
-        conversation_history: List[Dict[str, Any]]
+        conversation_history: List[Dict[str, Any]],
+        language: str = "en",
     ) -> Dict[str, Any]:
         """Generate comprehensive response using GPT-4 with full context"""
 
@@ -305,6 +337,7 @@ class SelfMateAgent:
         - actions: List of actions you recommend taking (tools to call)
         - insights: Key insights discovered from the analysis
         - next_actions: Suggestions for future actions or follow-ups
+        {_language_instruction(language)}
         """
 
         try:

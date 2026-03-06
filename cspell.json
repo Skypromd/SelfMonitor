@@ -49,6 +49,7 @@
     "opentelemetry",
     "passlib",
     "plaid",
+    "popleft",
     "prometheus",
     "pycache",
     "pydantic",
@@ -60,10 +61,11 @@
     "qrcode",
     "quickbooks",
     "redef",
+    "redis",
     "redoc",
     "reexport",
-    "redis",
     "reqres",
+    "selfmate",
     "selfmonitor",
     "sess",
     "sessionmaker",
@@ -81,9 +83,6 @@
     "weaviate",
     "websockets",
     "werkzeug",
-    "xero",
-    "popleft",
-    "cooldowns",
-    "aiosqlite"
+    "xero"
   ]
 }

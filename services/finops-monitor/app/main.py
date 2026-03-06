@@ -26,12 +26,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from app.mtd.deadlines import get_current_quarter, get_next_deadline, days_until_deadline
-from app.mtd.tracker import QuarterlyAccumulator
-from app.redis_bus import create_redis_client, EventType, publish_event
-import app.monitors.fraud_monitor   as fraud_monitor
 import app.monitors.balance_monitor as balance_monitor
+import app.monitors.fraud_monitor as fraud_monitor
 import app.monitors.invoice_monitor as invoice_monitor
+from app.mtd.deadlines import (
+    days_until_deadline,
+    get_current_quarter,
+    get_next_deadline,
+)
+from app.mtd.tracker import QuarterlyAccumulator
+from app.redis_bus import EventType, create_redis_client, publish_event
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -152,8 +156,9 @@ async def mtd_quarterly(user_id: str, quarter_num: str):
         raise HTTPException(422, "quarter_num must be Q1, Q2, Q3, or Q4")
 
     # Determine relevant tax year from current date
-    from app.mtd.deadlines import _quarters_for_tax_year
     import datetime as _dt
+
+    from app.mtd.deadlines import _quarters_for_tax_year
     today = _dt.date.today()
     # Try current and previous tax years
     for year in [today.year, today.year - 1]:

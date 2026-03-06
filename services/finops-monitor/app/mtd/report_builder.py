@@ -15,7 +15,6 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-
 _REPORT_KEY_PREFIX = "mtd:report"
 _REPORT_TTL_SECONDS = 400 * 24 * 3600   # 400 days
 
