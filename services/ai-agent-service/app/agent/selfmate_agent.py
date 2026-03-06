@@ -11,11 +11,23 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import openai  # type: ignore
-from langchain.agents import AgentExecutor  # type: ignore
-from langchain.agents.openai_assistant import OpenAIAssistantRunnable  # type: ignore
-from langchain.memory import ConversationBufferWindowMemory  # type: ignore
-from langchain.schema import AIMessage, HumanMessage, SystemMessage  # type: ignore
-from langchain.tools import BaseTool  # type: ignore
+
+# LangChain is an optional dependency — guard the import so the service
+# still starts when the package is absent (e.g. in unit-test environments).
+try:
+    from langchain.agents import AgentExecutor  # type: ignore
+    from langchain.agents.openai_assistant import (
+        OpenAIAssistantRunnable,  # type: ignore
+    )
+    from langchain.memory import ConversationBufferWindowMemory  # type: ignore
+    from langchain.schema import AIMessage, HumanMessage, SystemMessage  # type: ignore
+    from langchain.tools import BaseTool  # type: ignore
+except ImportError:  # pragma: no cover
+    AgentExecutor = None  # type: ignore
+    OpenAIAssistantRunnable = None  # type: ignore
+    ConversationBufferWindowMemory = None  # type: ignore
+    AIMessage = HumanMessage = SystemMessage = None  # type: ignore
+    BaseTool = None  # type: ignore
 
 from ..memory.memory_manager import MemoryManager
 from ..tools.tool_registry import ToolRegistry
@@ -452,11 +464,14 @@ class SelfMateAgent:
         else:
             self.avg_response_time = processing_time
 
-        # Update success rate
-        if success:
-            self.success_rate = (self.success_rate * (self.interaction_count - 1) + 1.0) / self.interaction_count
+        # Update success rate (guard against division by zero on first error)
+        if self.interaction_count > 0:
+            if success:
+                self.success_rate = (self.success_rate * (self.interaction_count - 1) + 1.0) / self.interaction_count
+            else:
+                self.success_rate = (self.success_rate * (self.interaction_count - 1)) / self.interaction_count
         else:
-            self.success_rate = (self.success_rate * (self.interaction_count - 1)) / self.interaction_count
+            self.success_rate = 1.0 if success else 0.0
 
     async def generate_proactive_insights(self, user_id: str) -> List[Dict[str, Any]]:
         """Generate proactive insights and recommendations for user"""

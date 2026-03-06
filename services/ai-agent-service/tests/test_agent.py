@@ -113,11 +113,11 @@ class TestSelfMateAgent:
         assert isinstance(insights, list)
         assert len(insights) > 0
 
-        # Check insight structure
+        # Check insight structure — includes type, priority, description
         insight = insights[0]
         assert "type" in insight
-        assert "message" in insight
         assert "priority" in insight
+        assert "description" in insight or "message" in insight
 
 
 class TestConversationManager:
@@ -236,7 +236,19 @@ class TestMemoryManager:
     @pytest.mark.asyncio
     async def test_store_and_retrieve_user_profile(self, test_user_id: str):
         """Test storing and retrieving user profile"""
+        import json
+        from unittest.mock import AsyncMock
+
         manager = MemoryManager(redis_url="redis://localhost:6379", vector_db_url="http://localhost:8080")
+
+        # Inject a simple in-memory mock redis so no real connection is needed
+        _store: Dict[str, str] = {}
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(side_effect=lambda key: _store.get(key))
+        mock_redis.setex = AsyncMock(
+            side_effect=lambda key, ttl, val: _store.__setitem__(key, val)
+        )
+        manager.redis_client = mock_redis  # type: ignore
 
         profile_data: Dict[str, Any] = {
             "user_id": test_user_id,

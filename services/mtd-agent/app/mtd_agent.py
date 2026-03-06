@@ -111,8 +111,10 @@ class MTDAgent:
 
     def __init__(self, redis_client: Any, openai_api_key: str = "") -> None:
         self._redis = redis_client
-        api_key = openai_api_key or OPENAI_API_KEY
-        self._openai = openai.AsyncOpenAI(api_key=api_key) if api_key else None
+        # If caller explicitly provides a key (non-None), use it (even if empty).
+        # Only fall back to the environment var when nothing was passed at all.
+        resolved_key = openai_api_key if openai_api_key is not None else OPENAI_API_KEY
+        self._openai = openai.AsyncOpenAI(api_key=resolved_key) if resolved_key else None
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -242,7 +244,10 @@ class MTDAgent:
             elif days_left <= 7:
                 actions.append(f"Submit MTD quarterly return within {days_left} days to avoid late penalty")
             elif days_left <= 30:
-                actions.append(f"Prepare MTD quarterly return — due in {days_left} days")
+                actions.append(f"Prepare MTD quarterly return - due in {days_left} days")
+            else:
+                # Always surface an action when MTD is required, regardless of lead time
+                actions.append(f"MTD quarterly return due in {days_left} days - keep records up to date")
         if not mtd_required and income > 40_000:
             actions.append(f"Turnover approaching £50k MTD threshold (currently £{income:,.0f})")
         return actions
