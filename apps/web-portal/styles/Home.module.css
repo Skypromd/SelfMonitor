@@ -1642,6 +1642,59 @@
   margin: 0 0 0 auto;
 }
 
+/* ── Hamburger button (hidden on desktop) ── */
+.lpNavHamburger {
+  display: none;
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 8px;
+  line-height: 0;
+  margin-left: auto;
+  transition: background 0.15s;
+}
+.lpNavHamburger:hover { background: rgba(255,255,255,0.08); }
+
+/* ── Mobile dropdown menu ── */
+.lpNavMobileMenu {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: rgba(15, 23, 36, 0.98);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid var(--lp-border);
+  padding: 0.5rem 1.25rem 1.25rem;
+}
+.lpNavMobileLink {
+  display: block;
+  padding: 0.85rem 0.25rem;
+  color: #cbd5e1;
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  transition: color 0.15s;
+}
+.lpNavMobileLink:hover { color: #f1f5f9; }
+.lpNavMobileCta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--lp-accent-teal);
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  transition: opacity 0.2s;
+  align-self: flex-start;
+}
+.lpNavMobileCta:hover { opacity: 0.88; }
+
 /* ── Responsive ── */
 @media (max-width: 1024px) {
   .lpHero { gap: 2.5rem; }
@@ -1691,6 +1744,8 @@
   .lpAuthCard { flex: none; width: 100%; max-width: 100%; }
 
   .lpNavLinks { display: none; }
+  .lpNavCta { display: none; }
+  .lpNavHamburger { display: flex; }
   .lpFooterText { margin: 0; }
 }
 

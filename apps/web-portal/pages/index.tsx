@@ -19,6 +19,7 @@ import {
     Landmark,
     LineChart,
     Lock,
+    Menu,
     PieChart,
     ReceiptText,
     ShieldCheck,
@@ -27,6 +28,7 @@ import {
     Store,
     TrendingUp,
     Wallet,
+    X,
     Zap,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -227,6 +229,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpCode, setTotpCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { t } = useTranslation();
 
   const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
@@ -375,7 +378,23 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             <a href="#pricing" className={styles.lpNavLink}>Pricing</a>
           </nav>
           <a href="#get-started" className={styles.lpNavCta}>Get Started <ArrowRight size={14} /></a>
+          <button
+            className={styles.lpNavHamburger}
+            onClick={() => setMenuOpen(o => !o)}
+            aria-label="Toggle menu"
+          >
+            {menuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
         </div>
+        {menuOpen && (
+          <div className={styles.lpNavMobileMenu}>
+            <a href="#features" className={styles.lpNavMobileLink} onClick={() => setMenuOpen(false)}>Features</a>
+            <a href="#insights" className={styles.lpNavMobileLink} onClick={() => setMenuOpen(false)}>Charts</a>
+            <a href="#why" className={styles.lpNavMobileLink} onClick={() => setMenuOpen(false)}>Why Us</a>
+            <a href="#pricing" className={styles.lpNavMobileLink} onClick={() => setMenuOpen(false)}>Pricing</a>
+            <a href="#get-started" className={styles.lpNavMobileCta} onClick={() => setMenuOpen(false)}>Get Started <ArrowRight size={14} /></a>
+          </div>
+        )}
       </header>
 
       {/* ═══ HERO ═══ */}
