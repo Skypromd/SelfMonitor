@@ -859,7 +859,12 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
                 <li key={p}><CheckCircle2 size={16} color="#0d9488" /> {p}</li>
               ))}
             </ul>
-            <a href="#get-started" className={styles.lpCtaGoldLg}>
+            <a
+              href="#email-input"
+              className={styles.lpCtaGoldLg}
+              style={{ marginTop: '0.5rem' }}
+              onClick={() => { setIsRegistering(true); clearFeedback(); }}
+            >
               Start Free Trial — No Credit Card <ArrowRight size={18} />
             </a>
           </div>
