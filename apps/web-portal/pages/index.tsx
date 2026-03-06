@@ -865,7 +865,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
           </div>
           <div className={styles.lpAuthCard}>
             <main className={styles.main}>
-              <h1 className={styles.title}>FinTech App</h1>
+              <h1 className={styles.title}>SelfMonitor</h1>
               <p className={styles.description}>Sign up or log in to continue</p>
               <div className={styles.formContainer}>
                 {totpRequired ? (
