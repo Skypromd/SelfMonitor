@@ -618,50 +618,6 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         </div>
       </section>
 
-      {/* ═══ WHY SELFMONITOR ═══ */}
-      <section className={styles.lpSection} id="why" style={{ background: 'var(--lp-bg-elevated)' }}>
-        <div className={styles.lpSectionHeader}>
-          <div className={styles.lpChip}>Why SelfMonitor</div>
-          <h2 className={styles.lpSectionH2}>Built specifically for how you work</h2>
-          <p className={styles.lpSectionSub}>Not a generic accounting tool. Designed from the ground up for UK sole traders and freelancers.</p>
-        </div>
-        <div className={styles.lpAdvGrid}>
-          {ADVANTAGES.map(({ Icon, title, desc }) => (
-            <div key={title} className={styles.lpAdvCard}>
-              <div className={styles.lpAdvIconRow}>
-                <div className={styles.lpAdvIconWrap}><Icon size={22} color="#0d9488" /></div>
-                <h3 className={styles.lpAdvTitle}>{title}</h3>
-              </div>
-              <p className={styles.lpAdvDesc}>{desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Security guarantee strip */}
-        <div className={styles.lpSecurityStrip}>
-          <div className={styles.lpSecurityItem}>
-            <Lock size={15} color="#0d9488" />
-            <span>AES-256 encryption at rest &amp; in transit</span>
-          </div>
-          <div className={styles.lpSecurityItem}>
-            <ShieldCheck size={15} color="#0d9488" />
-            <span>2FA on every account — no exceptions</span>
-          </div>
-          <div className={styles.lpSecurityItem}>
-            <FolderOpen size={15} color="#0d9488" />
-            <span>Automatic daily cloud backups</span>
-          </div>
-          <div className={styles.lpSecurityItem}>
-            <CheckCircle2 size={15} color="#0d9488" />
-            <span>GDPR compliant · your data is never sold</span>
-          </div>
-          <div className={styles.lpSecurityItem}>
-            <Globe2 size={15} color="#0d9488" />
-            <span>UK data centres · 99.9% uptime SLA</span>
-          </div>
-        </div>
-      </section>
-
       {/* ═══ MOBILE APP DOWNLOAD ═══ */}
       <section className={styles.lpSection}>
         <div className={styles.appDownloadWrap}>
@@ -756,6 +712,50 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
               <div className={styles.lpPhoneHome} />
             </div>
           </motion.div>
+        </div>
+      </section>
+
+      {/* ═══ WHY SELFMONITOR ═══ */}
+      <section className={styles.lpSection} id="why" style={{ background: 'var(--lp-bg-elevated)' }}>
+        <div className={styles.lpSectionHeader}>
+          <div className={styles.lpChip}>Why SelfMonitor</div>
+          <h2 className={styles.lpSectionH2}>Built specifically for how you work</h2>
+          <p className={styles.lpSectionSub}>Not a generic accounting tool. Designed from the ground up for UK sole traders and freelancers.</p>
+        </div>
+        <div className={styles.lpAdvGrid}>
+          {ADVANTAGES.map(({ Icon, title, desc }) => (
+            <div key={title} className={styles.lpAdvCard}>
+              <div className={styles.lpAdvIconRow}>
+                <div className={styles.lpAdvIconWrap}><Icon size={22} color="#0d9488" /></div>
+                <h3 className={styles.lpAdvTitle}>{title}</h3>
+              </div>
+              <p className={styles.lpAdvDesc}>{desc}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Security guarantee strip */}
+        <div className={styles.lpSecurityStrip}>
+          <div className={styles.lpSecurityItem}>
+            <Lock size={15} color="#0d9488" />
+            <span>AES-256 encryption at rest &amp; in transit</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <ShieldCheck size={15} color="#0d9488" />
+            <span>2FA on every account — no exceptions</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <FolderOpen size={15} color="#0d9488" />
+            <span>Automatic daily cloud backups</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <CheckCircle2 size={15} color="#0d9488" />
+            <span>GDPR compliant · your data is never sold</span>
+          </div>
+          <div className={styles.lpSecurityItem}>
+            <Globe2 size={15} color="#0d9488" />
+            <span>UK data centres · 99.9% uptime SLA</span>
+          </div>
         </div>
       </section>
 
