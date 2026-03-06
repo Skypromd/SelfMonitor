@@ -392,7 +392,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             Expense Tracking · Document Storage — in one beautifully designed mobile app.
           </p>
           <div className={styles.lpHeroCtas}>
-            <a href="#get-started" className={styles.lpCtaPrimary}>Start for Free <ArrowRight size={16} /></a>
+            <a href="#get-started" className={styles.lpCtaGold}>Start for Free <ArrowRight size={16} /></a>
             <a href="#features" className={styles.lpCtaSecondary}>See Features</a>
           </div>
           <div className={styles.lpHeroTrust}>
@@ -797,6 +797,9 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         <motion.div {...fadeUp} style={{ marginTop: '2.5rem', textAlign: 'center' }}>
           <div className={styles.roiSaving}><AnimatedCounter target={2520} prefix="£" />/yr</div>
           <p className={styles.roiSavingLbl}>That&rsquo;s the average annual saving with SelfMonitor</p>
+          <a href="#get-started" className={styles.lpCtaGoldLg} style={{ marginTop: '1.5rem', display: 'inline-flex' }}>
+            Start Saving Today <ArrowRight size={18} />
+          </a>
         </motion.div>
       </section>
 
@@ -822,7 +825,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
                   <li key={f}><CheckCircle2 size={14} color={plan.highlight ? '#0d9488' : '#6b7280'} />{f}</li>
                 ))}
               </ul>
-              <a href="#get-started" className={plan.highlight ? styles.lpCtaPrimary : styles.lpPricingCta}>{plan.cta}</a>
+              <a href="#get-started" className={plan.highlight ? styles.lpCtaGold : styles.lpPricingCta}>{plan.cta}</a>
             </div>
           ))}
         </div>
@@ -839,6 +842,9 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
                 <li key={p}><CheckCircle2 size={16} color="#0d9488" /> {p}</li>
               ))}
             </ul>
+            <a href="#get-started" className={styles.lpCtaGoldLg}>
+              Start Free Trial — No Credit Card <ArrowRight size={18} />
+            </a>
           </div>
           <div className={styles.lpAuthCard}>
             <main className={styles.main}>

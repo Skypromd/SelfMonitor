@@ -967,6 +967,53 @@
 }
 .lpCtaSecondary:hover { border-color: var(--lp-text-muted); color: var(--lp-text); }
 
+/* ── Gold / amber accent CTA ── */
+.lpCtaGold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.8rem 1.75rem;
+  background: linear-gradient(135deg, var(--lp-accent-gold), var(--lp-accent-gold-light));
+  color: #fff;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.15s, opacity 0.2s;
+  box-shadow: 0 4px 18px rgba(217,119,6,0.30);
+}
+.lpCtaGold:hover {
+  box-shadow: 0 8px 28px rgba(217,119,6,0.48);
+  transform: translateY(-2px);
+  opacity: 0.95;
+  color: #fff;
+}
+
+.lpCtaGoldLg {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem 2.25rem;
+  background: linear-gradient(135deg, var(--lp-accent-gold), var(--lp-accent-gold-light));
+  color: #fff;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: box-shadow 0.2s, transform 0.15s, opacity 0.2s;
+  box-shadow: 0 6px 24px rgba(217,119,6,0.35);
+}
+.lpCtaGoldLg:hover {
+  box-shadow: 0 10px 36px rgba(217,119,6,0.52);
+  transform: translateY(-2px);
+  opacity: 0.95;
+  color: #fff;
+}
+
 .lpHeroTrust {
   display: flex;
   align-items: center;
