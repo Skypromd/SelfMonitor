@@ -3,12 +3,15 @@ import datetime
 import logging
 import os
 
-import boto3
+import boto3  # type: ignore[import-untyped]
 import httpx
-from botocore.client import Config
-from botocore.exceptions import BotoCoreError, ClientError
-from celery import Celery
-from jose import jwt
+from botocore.client import Config  # type: ignore[import-untyped]
+from botocore.exceptions import (  # type: ignore[import-untyped]
+    BotoCoreError,
+    ClientError,
+)
+from celery import Celery  # type: ignore[import-untyped]
+from jose import jwt  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -29,6 +32,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://user:password@localhost/db_documents"
 )
 QNA_SERVICE_URL = os.getenv("QNA_SERVICE_URL", "http://localhost:8014/index")
+QNA_INTERNAL_TOKEN = os.getenv("QNA_INTERNAL_TOKEN", "")
 CATEGORIZATION_SERVICE_URL = os.getenv(
     "CATEGORIZATION_SERVICE_URL", "http://categorization-service/categorize"
 )
@@ -47,7 +51,7 @@ OCR_REVIEW_CONFIDENCE_THRESHOLD = float(
 )
 
 engine = create_async_engine(DATABASE_URL)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)  # type: ignore[call-overload]
 
 s3_client = boto3.client(
     "s3",
@@ -236,9 +240,9 @@ async def _build_extracted_data_from_text(
             if expense_article is None:
                 expense_article = derived_article
             if is_deductible is None:
-                is_deductible = derived_deductible
+                is_deductible = derived_deductible  # type: ignore[assignment]
     else:
-        suggested_category = suggest_expense_category(description)
+        suggested_category = suggest_expense_category(description)  # type: ignore[assignment]
         expense_article, is_deductible = to_expense_article(suggested_category)
     quality = evaluate_ocr_quality(
         text=text,
@@ -312,7 +316,7 @@ def _create_index_text(extracted_data: schemas.ExtractedData, raw_text: str) -> 
 async def _load_filepath_for_document(document_id: str) -> str | None:
     async with AsyncSessionLocal() as session:
         document = await crud.get_document_for_processing(session, doc_id=document_id)
-        return document.filepath if document else None
+        return document.filepath if document else None  # type: ignore[return-value]
 
 
 async def _update_document_ocr_state(

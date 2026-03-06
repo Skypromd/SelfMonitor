@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 # Database configuration
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
+    "DATABASE_URL",
     "postgresql+asyncpg://user:password@postgres-master/db_invoices"
 )
 
@@ -22,8 +22,8 @@ engine = create_async_engine(
 
 # Create async session maker
 AsyncSessionLocal = sessionmaker(
-    engine, 
-    class_=AsyncSession, 
+    engine,
+    class_=AsyncSession,
     expire_on_commit=False
 )
 

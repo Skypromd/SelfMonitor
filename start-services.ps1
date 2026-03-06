@@ -89,6 +89,22 @@ else {
   Write-Host "node not found in PATH - skipping web-portal" -ForegroundColor Red
 }
 
+# --- proxy-gateway :8000 ---
+$gatewayPy = "$ROOT\proxy_gateway.py"
+if (Test-Path $gatewayPy) {
+  # Kill any existing process on port 8000
+  Get-NetTCPConnection -State Listen -LocalPort 8080 -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+  Start-Sleep -Milliseconds 500
+  $pGW = Start-Process -FilePath "$ROOT\.venv\Scripts\python.exe" -ArgumentList $gatewayPy `
+    -WorkingDirectory $ROOT -PassThru -NoNewWindow `
+    -RedirectStandardOutput "$ROOT\logs\gateway_out.txt" -RedirectStandardError "$ROOT\logs\gateway_err.txt"
+  Write-Host "proxy-gateway      :8000  PID=$($pGW.Id)" -ForegroundColor Cyan
+}
+else {
+  Write-Host "proxy_gateway.py not found - skipping gateway" -ForegroundColor Red
+}
+
 Write-Host ""
 Write-Host "Waiting 25 seconds for services to start (Next.js needs ~20s to compile)..." -ForegroundColor Yellow
 Start-Sleep -Seconds 25
@@ -111,6 +127,7 @@ for ($i = 0; $i -lt 6; $i++) {
 
 $checks = @(
   @{name = "portal    :$portalPort"; url = "http://localhost:$portalPort"; skip = $true; ok = $portalOk },
+  @{name = "gateway   :8080"; url = "http://localhost:8080/health" },
   @{name = "auth      :8001"; url = "http://localhost:8001/health" },
   @{name = "profile   :8005"; url = "http://localhost:8005/health" },
   @{name = "documents :8006"; url = "http://localhost:8006/health" },

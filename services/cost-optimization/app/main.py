@@ -11,7 +11,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Cost Optimization Service", 
+    title="Cost Optimization Service",
     description="Automated infrastructure scaling, cost monitoring, and efficiency optimization.",
     version="1.0.0"
 )
@@ -40,7 +40,7 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
 # --- Models ---
 class CostCategory(str, Enum):
     INFRASTRUCTURE = "infrastructure"
-    SUPPORT = "support" 
+    SUPPORT = "support"
     MARKETING = "marketing"
     OPERATIONS = "operations"
 
@@ -61,7 +61,7 @@ async def get_current_cost_breakdown(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Analyze current monthly costs and identify optimization opportunities"""
-    
+
     # Mock current cost structure
     current_costs: Dict[str, Any] = {
         "infrastructure": {
@@ -87,7 +87,7 @@ async def get_current_cost_breakdown(
         },
         "total_monthly": 19260.0
     }
-    
+
     # Identify optimization opportunities
     optimizations = [
         OptimizationAction(
@@ -115,11 +115,11 @@ async def get_current_cost_breakdown(
             automation_status="fully-automated"
         ),
         OptimizationAction(
-            action_type="api_optimization", 
+            action_type="api_optimization",
             description="Cache frequently requested API calls to reduce third-party costs",
             estimated_monthly_savings=480.0,
             implementation_effort="low",
-            risk_level="low", 
+            risk_level="low",
             automation_status="fully-automated"
         ),
         OptimizationAction(
@@ -131,9 +131,9 @@ async def get_current_cost_breakdown(
             automation_status="fully-automated"
         )
     ]
-    
+
     total_potential_savings = sum(opt.estimated_monthly_savings for opt in optimizations)
-    
+
     return {
         "current_costs": current_costs,
         "optimization_opportunities": optimizations,
@@ -152,7 +152,7 @@ async def implement_cost_optimization(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Implement specific cost optimization strategies"""
-    
+
     implementations: Dict[str, Dict[str, Any]] = {
         "auto_scaling": {
             "description": "Deploy Kubernetes HPA (Horizontal Pod Autoscaler)",
@@ -179,7 +179,7 @@ async def implement_cost_optimization(
         "api_optimization": {
             "description": "Implement intelligent API request caching",
             "actions": [
-                "Identity cacheable endpoints", 
+                "Identity cacheable endpoints",
                 "Set up Redis caching layer",
                 "Configure cache TTL policies",
                 "Monitor cache hit rates"
@@ -188,19 +188,19 @@ async def implement_cost_optimization(
             "implementation_time": "1 week"
         }
     }
-    
+
     implementation = implementations.get(optimization_type)
     if not implementation:
         raise HTTPException(status_code=404, detail="Optimization type not found")
-    
+
     # Schedule background implementation
     background_tasks.add_task(execute_optimization, optimization_type, implementation)
-    
+
     return {
         "optimization_started": optimization_type,
         "implementation_plan": implementation,
         "expected_monthly_savings": implementation["immediate_savings"],
-        "roi_timeline": implementation["implementation_time"], 
+        "roi_timeline": implementation["implementation_time"],
         "status": "Implementation scheduled - monitoring cost reductions"
     }
 
@@ -216,7 +216,7 @@ async def get_cost_efficiency_metrics(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Get cost efficiency and optimization metrics"""
-    
+
     return {
         "current_metrics": {
             "cost_per_customer": 38.50,  # £19,260 / 500 customers
@@ -254,7 +254,7 @@ async def get_automation_recommendations(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Get AI-powered recommendations for further automation"""
-    
+
     return {
         "high_impact_automations": [
             {
@@ -300,16 +300,16 @@ async def deploy_comprehensive_cost_optimization(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Deploy comprehensive cost optimization across all areas"""
-    
+
     optimization_plan: Dict[str, Any] = {
         "infrastructure_optimizations": [
             "Auto-scaling implementation",
-            "Database query optimization", 
+            "Database query optimization",
             "Storage lifecycle automation",
             "Network traffic optimization"
         ],
         "operational_optimizations": [
-            "Support ticket automation", 
+            "Support ticket automation",
             "Compliance reporting automation",
             "Customer onboarding automation",
             "ML pipeline automation"
@@ -327,10 +327,10 @@ async def deploy_comprehensive_cost_optimization(
             "roi_timeline": "Full ROI in 8-9 months"
         }
     }
-    
-    # Schedule comprehensive optimization 
+
+    # Schedule comprehensive optimization
     background_tasks.add_task(execute_comprehensive_optimization, optimization_plan)
-    
+
     return {
         "comprehensive_optimization_initiated": True,
         "optimization_plan": optimization_plan,
@@ -350,12 +350,12 @@ async def execute_comprehensive_optimization(plan: Dict[str, Any]):
     logger.info("Annual savings: £117,360")
     logger.info("New cost per customer: £18.96 (vs £38.50 current)")
 
-@app.get("/optimization-dashboard") 
+@app.get("/optimization-dashboard")
 async def get_optimization_dashboard(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Real-time cost optimization dashboard"""
-    
+
     return {
         "cost_optimization_summary": {
             "baseline_monthly_costs": 19260.0,
@@ -366,7 +366,7 @@ async def get_optimization_dashboard(
         },
         "key_wins": [
             "✅ Auto-scaling deployed: -£720/month",
-            "✅ API caching implemented: -£480/month", 
+            "✅ API caching implemented: -£480/month",
             "✅ Support automation: -£2,100/month",
             "✅ Storage optimization: -£170/month",
             "🔄 Database optimization: in progress"

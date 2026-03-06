@@ -12,7 +12,7 @@ Core Components:
 
 Features:
 - Autonomous financial advisory
-- Real-time insights and recommendations  
+- Real-time insights and recommendations
 - Proactive financial monitoring
 - Cross-service integration
 - Advanced conversation management

@@ -95,7 +95,7 @@ class IPOReadinessScore(BaseModel):
     assessment_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     company_name: str = "SelfMonitor"
     assessment_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     # Financial readiness (30% weight)
     financial_readiness: float = Field(ge=0.0, le=100.0)
     financial_components: Dict[str, float] = {
@@ -105,7 +105,7 @@ class IPOReadinessScore(BaseModel):
         "audit_quality": 0.0,       # Big 4 audit opinion
         "cash_flow": 0.0            # Free cash flow generation
     }
-    
+
     # Corporate governance (25% weight)
     governance_readiness: float = Field(ge=0.0, le=100.0)
     governance_components: Dict[str, float] = {
@@ -115,7 +115,7 @@ class IPOReadinessScore(BaseModel):
         "internal_controls": 0.0,    # Internal control systems
         "ethics_compliance": 0.0     # Code of ethics implementation
     }
-    
+
     # Market readiness (20% weight)
     market_readiness: float = Field(ge=0.0, le=100.0)
     market_components: Dict[str, float] = {
@@ -125,7 +125,7 @@ class IPOReadinessScore(BaseModel):
         "customer_base": 0.0,        # Customer diversity
         "international_presence": 0.0 # Global footprint
     }
-    
+
     # Operational readiness (15% weight)
     operational_readiness: float = Field(ge=0.0, le=100.0)
     operational_components: Dict[str, float] = {
@@ -135,7 +135,7 @@ class IPOReadinessScore(BaseModel):
         "operational_metrics": 0.0,  # KPI tracking
         "scalability": 0.0           # Growth scalability
     }
-    
+
     # Legal and regulatory (10% weight)
     legal_readiness: float = Field(ge=0.0, le=100.0)
     legal_components: Dict[str, float] = {
@@ -145,18 +145,18 @@ class IPOReadinessScore(BaseModel):
         "data_privacy": 0.0,          # Privacy compliance
         "material_contracts": 0.0     # Contract management
     }
-    
+
     # Composite scores
     overall_score: float = Field(ge=0.0, le=100.0)
     readiness_grade: str = "C"  # A+, A, B+, B, C, D
     ipo_timeline_estimate: str = "18-24 months"
     key_improvement_areas: List[str] = []
-    
+
     # Valuation and market metrics
     estimated_valuation: Decimal = Field(ge=0, default=Decimal("200000000"))
     valuation_multiple: str = "revenue"  # revenue, ebitda, etc.
     comparable_companies: List[str] = []
-    
+
     created_by: str
     next_assessment_date: datetime
 
@@ -166,34 +166,34 @@ class BoardMember(BaseModel):
     full_name: str
     title: str
     email: EmailStr
-    
+
     # Board role and classification
     position: Literal["chairman", "ceo", "independent_director", "executive_director", "lead_director"] = "independent_director"
     is_independent: bool = True
     committee_memberships: List[str] = []  # audit, compensation, nominating, risk
-    
+
     # Experience and qualifications
     professional_background: str
     public_company_experience: bool = False
     board_experience_years: int = 0
     industry_expertise: List[str] = []
     key_qualifications: List[str] = []
-    
+
     # Governance and compliance
     conflicts_of_interest: List[str] = []
     equity_holdings: Optional[Decimal] = None
     compensation_structure: Dict[str, Any] = {}
-    
+
     # Performance and engagement
     meeting_attendance_rate: float = Field(ge=0.0, le=1.0, default=1.0)
     performance_rating: Optional[float] = Field(ge=1.0, le=5.0, default=None)
     last_evaluation_date: Optional[datetime] = None
-    
+
     # Term and appointment
     appointment_date: datetime
     term_expiration: datetime
     reelection_eligible: bool = True
-    
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class FinancialReport(BaseModel):
@@ -202,7 +202,7 @@ class FinancialReport(BaseModel):
     report_type: FilingType
     reporting_period: str  # "Q1 2026", "FY 2026"
     report_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     # Financial statements
     revenue: Decimal = Field(ge=0)
     gross_profit: Decimal = Field(ge=0)
@@ -214,7 +214,7 @@ class FinancialReport(BaseModel):
     shareholders_equity: Decimal
     cash_and_equivalents: Decimal = Field(ge=0)
     free_cash_flow: Decimal
-    
+
     # Key metrics
     revenue_growth_yoy: float = 0.0
     gross_margin: float = Field(ge=0.0, le=1.0)
@@ -222,32 +222,32 @@ class FinancialReport(BaseModel):
     net_margin: float
     roe: float = 0.0  # Return on Equity
     roa: float = 0.0  # Return on Assets
-    
+
     # Per share metrics
     earnings_per_share: Optional[Decimal] = None
     book_value_per_share: Optional[Decimal] = None
     shares_outstanding: Optional[int] = None
-    
+
     # Segment reporting
     revenue_by_segment: Dict[str, Decimal] = {}
     revenue_by_geography: Dict[str, Decimal] = {}
-    
+
     # Audit and compliance
     auditor_name: str = "Big 4 Auditing Firm"
     audit_opinion: Literal["unqualified", "qualified", "adverse", "disclaimer"] = "unqualified"
     material_weaknesses: List[str] = []
     going_concern_qualification: bool = False
-    
+
     # Management commentary
     management_discussion: str = ""
     business_outlook: str = ""
     risk_factors: List[str] = []
-    
+
     # Filing details
     sec_filing_number: Optional[str] = None
     filing_status: Literal["draft", "filed", "amended", "withdrawn"] = "draft"
     public_disclosure_date: Optional[datetime] = None
-    
+
     prepared_by: str
     reviewed_by: Optional[str] = None
     approved_by: Optional[str] = None
@@ -258,42 +258,42 @@ class InvestorRelations(BaseModel):
     communication_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     communication_type: Literal["earnings_call", "investor_presentation", "roadshow", "shareholder_letter", "guidance_update"] = "earnings_call"
     title: str
-    
+
     # Audience and targeting
     target_audience: List[InvestorType] = []
     expected_participants: int = 0
     actual_participants: Optional[int] = None
-    
+
     # Content and messaging
     key_messages: List[str] = []
     financial_highlights: Dict[str, Any] = {}
     business_updates: List[str] = []
     forward_guidance: Dict[str, Any] = {}
-    
+
     # Q&A and investor feedback
     questions_received: List[Dict[str, str]] = []
     investor_feedback: List[str] = []
     sentiment_analysis: Optional[str] = "positive"  # positive, neutral, negative
-    
+
     # Performance metrics
     stock_price_impact: Optional[float] = None
     trading_volume_impact: Optional[float] = None
     analyst_rating_changes: List[Dict[str, str]] = []
-    
+
     # Scheduling and logistics
     scheduled_date: datetime
     duration_minutes: int = 60
     presentation_format: Literal["webcast", "conference_call", "in_person", "hybrid"] = "webcast"
-    
+
     # Materials and resources
     presentation_materials: List[str] = []
     transcript_available: bool = False
     recording_available: bool = False
-    
+
     # Follow-up activities
     follow_up_meetings: List[str] = []
     action_items: List[str] = []
-    
+
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -302,37 +302,37 @@ class RegulatoryCompliance(BaseModel):
     compliance_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     regulatory_framework: RegulatoryFramework
     compliance_area: str
-    
+
     # Requirements and obligations
     regulatory_requirements: List[str] = []
     compliance_deadlines: List[datetime] = []  # type: ignore
     reporting_obligations: List[str] = []
-    
+
     # Current status
     compliance_status: Literal["compliant", "non_compliant", "in_progress", "not_applicable"] = "compliant"
     compliance_score: float = Field(ge=0.0, le=100.0, default=100.0)
     last_assessment_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     # Issues and remediation
     identified_gaps: List[str] = []
     remediation_plan: List[str] = []
     remediation_deadline: Optional[datetime] = None
-    
+
     # Documentation and evidence
     supporting_documentation: List[str] = []
     audit_trail: List[Dict[str, Any]] = []
     external_validations: List[str] = []
-    
+
     # Risk assessment
     compliance_risk_level: Literal["low", "medium", "high", "critical"] = "low"
     business_impact: str = ""
     regulatory_penalties: Optional[Decimal] = None
-    
+
     # Monitoring and automation
     automated_monitoring: bool = False
     alert_thresholds: Dict[str, float] = {}
     next_review_date: datetime
-    
+
     compliance_officer: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -347,25 +347,25 @@ class IPOReadinessAssessmentService:
             "operational": 0.15,
             "legal": 0.10
         }
-    
+
     async def conduct_comprehensive_assessment(self) -> IPOReadinessScore:
         """Conduct comprehensive IPO readiness assessment"""
-        
+
         # Financial readiness assessment
         financial_score = await self._assess_financial_readiness()
-        
+
         # Corporate governance assessment
         governance_score = await self._assess_governance_readiness()
-        
+
         # Market readiness assessment
         market_score = await self._assess_market_readiness()
-        
+
         # Operational readiness assessment
         operational_score = await self._assess_operational_readiness()
-        
+
         # Legal and regulatory assessment
         legal_score = await self._assess_legal_readiness()
-        
+
         # Calculate overall score
         overall_score = (
             financial_score * self.assessment_weights["financial"] +
@@ -374,19 +374,19 @@ class IPOReadinessAssessmentService:
             operational_score * self.assessment_weights["operational"] +
             legal_score * self.assessment_weights["legal"]
         )
-        
+
         # Determine readiness grade and timeline
         readiness_grade = self._calculate_readiness_grade(overall_score)
         timeline = self._estimate_ipo_timeline(overall_score)
-        
+
         # Generate improvement recommendations
         improvement_areas = self._generate_improvement_recommendations(
             financial_score, governance_score, market_score, operational_score, legal_score
         )
-        
+
         # Estimate valuation
         estimated_valuation = await self._estimate_company_valuation()
-        
+
         return IPOReadinessScore(
             financial_readiness=financial_score,
             governance_readiness=governance_score,
@@ -401,19 +401,19 @@ class IPOReadinessAssessmentService:
             created_by="ipo_assessment_service",
             next_assessment_date=datetime.now(timezone.utc) + timedelta(days=90)
         )
-    
+
     async def _assess_financial_readiness(self) -> float:
         """Assess financial readiness for IPO"""
-        
+
         # Mock financial data - in production: pull from financial systems
         revenue_growth = 0.45  # 45% CAGR
         ebitda_margin = 0.25   # 25% EBITDA margin
         cash_flow_positive = True
         big4_audit = True
         sox_compliance = 0.85  # 85% SOX readiness
-        
+
         score = 0.0
-        
+
         # Revenue growth (20 points max)
         if revenue_growth >= 0.30:
             score += 20.0
@@ -421,7 +421,7 @@ class IPOReadinessAssessmentService:
             score += 15.0
         else:
             score += 10.0
-        
+
         # Profitability (25 points max)
         if ebitda_margin >= 0.20:
             score += 25.0
@@ -429,50 +429,50 @@ class IPOReadinessAssessmentService:
             score += 20.0
         else:
             score += 10.0
-        
+
         # Cash flow (15 points max)
         score += 15.0 if cash_flow_positive else 5.0
-        
+
         # Audit quality (20 points max)
         score += 20.0 if big4_audit else 10.0
-        
+
         # SOX compliance (20 points max)
         score += sox_compliance * 20.0
-        
+
         return min(score, 100.0)
-    
+
     async def _assess_governance_readiness(self) -> float:
         """Assess corporate governance readiness"""
-        
+
         score = 0.0
-        
+
         # Board independence (25 points)
         independent_ratio = 0.75  # 75% independent directors
         score += independent_ratio * 25.0
-        
+
         # Audit committee (20 points)
         audit_committee_effective = True
         score += 20.0 if audit_committee_effective else 10.0
-        
+
         # Risk management (20 points)
         risk_framework_maturity = 0.80  # 80% mature
         score += risk_framework_maturity * 20.0
-        
+
         # Internal controls (20 points)
         internal_controls_effectiveness = 0.85  # 85% effective
         score += internal_controls_effectiveness * 20.0
-        
+
         # Ethics and compliance (15 points)
         ethics_program_maturity = 0.90  # 90% mature
         score += ethics_program_maturity * 15.0
-        
+
         return min(score, 100.0)
-    
+
     async def _assess_market_readiness(self) -> float:
         """Assess market position and readiness"""
-        
+
         score = 0.0
-        
+
         # Market size (25 points)
         tam_size = 50_000_000_000  # £50B TAM
         if tam_size >= 10_000_000_000:  # £10B+
@@ -481,7 +481,7 @@ class IPOReadinessAssessmentService:
             score += 20.0
         else:
             score += 10.0
-        
+
         # Competitive position (25 points)
         market_share = 0.12  # 12% market share
         if market_share >= 0.10:
@@ -490,11 +490,11 @@ class IPOReadinessAssessmentService:
             score += 20.0
         else:
             score += 10.0
-        
+
         # Brand recognition (20 points)
         brand_strength = 0.78  # 78% brand recognition
         score += brand_strength * 20.0
-        
+
         # Customer diversification (15 points)
         customer_concentration = 0.15  # Top 10 customers = 15% of revenue
         if customer_concentration <= 0.20:
@@ -503,67 +503,67 @@ class IPOReadinessAssessmentService:
             score += 10.0
         else:
             score += 5.0
-        
+
         # International presence (15 points)
         international_revenue_percent = 0.35  # 35% international
         score += min(international_revenue_percent * 15.0 / 0.30, 15.0)
-        
+
         return min(score, 100.0)
-    
+
     async def _assess_operational_readiness(self) -> float:
         """Assess operational readiness and scalability"""
-        
+
         score = 0.0
-        
+
         # Technology platform (30 points)
         tech_scalability = 0.90  # 90% scalable
         score += tech_scalability * 30.0
-        
+
         # Cybersecurity (25 points)
         security_maturity = 0.88  # 88% security maturity
         score += security_maturity * 25.0
-        
+
         # Data governance (20 points)
         data_governance_maturity = 0.82  # 82% mature
         score += data_governance_maturity * 20.0
-        
+
         # Operational metrics (15 points)
         kpi_maturity = 0.85  # 85% KPI tracking maturity
         score += kpi_maturity * 15.0
-        
+
         # Growth scalability (10 points)
         scalability_rating = 0.87  # 87% scalability
         score += scalability_rating * 10.0
-        
+
         return min(score, 100.0)
-    
+
     async def _assess_legal_readiness(self) -> float:
         """Assess legal and regulatory readiness"""
-        
+
         score = 0.0
-        
+
         # Regulatory compliance (30 points)
         compliance_score = 0.92  # 92% compliance
         score += compliance_score * 30.0
-        
+
         # IP portfolio (25 points)
         ip_strength = 0.85  # 85% IP strength
         score += ip_strength * 25.0
-        
+
         # Litigation risk (20 points)
         litigation_risk = 0.10  # Low litigation risk
         score += (1.0 - litigation_risk) * 20.0
-        
+
         # Data privacy (15 points)
         privacy_compliance = 0.95  # 95% privacy compliance
         score += privacy_compliance * 15.0
-        
+
         # Material contracts (10 points)
         contract_management = 0.88  # 88% contract management
         score += contract_management * 10.0
-        
+
         return min(score, 100.0)
-    
+
     def _calculate_readiness_grade(self, score: float) -> str:
         """Calculate letter grade from readiness score"""
         if score >= 95:
@@ -580,7 +580,7 @@ class IPOReadinessAssessmentService:
             return "C"
         else:
             return "D"
-    
+
     def _estimate_ipo_timeline(self, score: float) -> str:
         """Estimate IPO timeline based on readiness score"""
         if score >= 90:
@@ -591,42 +591,42 @@ class IPOReadinessAssessmentService:
             return "18-24 months"
         else:
             return "24+ months"
-    
-    def _generate_improvement_recommendations(self, financial: float, governance: float, 
+
+    def _generate_improvement_recommendations(self, financial: float, governance: float,
                                            market: float, operational: float, legal: float) -> List[str]:  # type: ignore
         """Generate improvement recommendations based on assessment scores"""
         recommendations: List[str] = []  # type: ignore
-        
+
         if financial < 85:
             recommendations.append("Strengthen financial controls and SOX compliance")  # type: ignore
             recommendations.append("Improve revenue growth and profitability metrics")  # type: ignore
-        
+
         if governance < 85:
             recommendations.append("Enhance board independence and committee effectiveness")  # type: ignore
             recommendations.append("Implement comprehensive risk management framework")  # type: ignore
-        
+
         if market < 85:
             recommendations.append("Strengthen competitive position and market share")  # type: ignore
             recommendations.append("Diversify customer base and reduce concentration")  # type: ignore
-        
+
         if operational < 85:
             recommendations.append("Enhance technology platform scalability")  # type: ignore
             recommendations.append("Strengthen cybersecurity and data governance")  # type: ignore
-        
+
         if legal < 85:
             recommendations.append("Improve regulatory compliance across all jurisdictions")  # type: ignore
             recommendations.append("Strengthen intellectual property portfolio")  # type: ignore
-        
+
         return recommendations  # type: ignore  # type: ignore
-    
+
     async def _estimate_company_valuation(self) -> Decimal:
         """Estimate company valuation based on metrics and comparables"""
-        
+
         # Mock financial data for valuation
         annual_revenue = Decimal("45000000")  # £45M ARR
         revenue_growth = 0.45  # 45% growth
         gross_margin = 0.78    # 78% gross margin
-        
+
         # SaaS/FinTech valuation multiples
         if revenue_growth >= 0.40 and gross_margin >= 0.75:
             revenue_multiple = 15.0  # Premium multiple
@@ -634,9 +634,9 @@ class IPOReadinessAssessmentService:
             revenue_multiple = 12.0  # High-growth multiple
         else:
             revenue_multiple = 8.0   # Standard multiple
-        
+
         estimated_valuation = annual_revenue * Decimal(str(revenue_multiple))
-        
+
         # Apply unicorn threshold
         return max(estimated_valuation, TARGET_VALUATION)
 
@@ -644,23 +644,23 @@ class InvestorRelationsService:
     def __init__(self):
         self.investor_database = {}
         self.communication_history = {}
-    
+
     async def create_investor_communication(self, communication: InvestorRelations) -> Dict[str, Any]:
         """Create investor communication and manage outreach"""
-        
+
         # Store communication
         self.communication_history[communication.communication_id] = communication  # type: ignore
-        
+
         # Generate targeting strategy
         targeting_strategy = self._generate_targeting_strategy(communication.target_audience)
-        
+
         # Create communication plan
         communication_plan: Dict[str, Any] = {  # type: ignore
             "pre_event_outreach": self._plan_pre_event_outreach(communication),
             "event_execution": self._plan_event_execution(communication),
             "post_event_follow_up": self._plan_post_event_followup(communication)
         }
-        
+
         return {
             "communication_id": communication.communication_id,
             "targeting_strategy": targeting_strategy,
@@ -672,10 +672,10 @@ class InvestorRelationsService:
                 "analyst_upgrades": 3
             }
         }
-    
+
     def _generate_targeting_strategy(self, target_audiences: List[InvestorType]) -> Dict[str, Any]:
         """Generate targeted outreach strategy for different investor types"""
-        
+
         strategies = {
             InvestorType.VENTURE_CAPITAL: {
                 "key_messages": ["Growth trajectory", "Market opportunity", "Technology innovation"],
@@ -693,12 +693,12 @@ class InvestorRelationsService:
                 "decision_criteria": ["short-term performance", "momentum", "volatility"]
             }
         }
-        
+
         return {
             audience.value: strategies.get(audience, {})
             for audience in target_audiences
         }
-    
+
     def _plan_pre_event_outreach(self, communication: InvestorRelations) -> List[Dict[str, Any]]:
         """Plan pre-event investor outreach activities"""
         return [
@@ -727,7 +727,7 @@ class InvestorRelationsService:
                 "channel": "email_sms"
             }
         ]
-    
+
     def _plan_event_execution(self, communication: InvestorRelations) -> Dict[str, Any]:
         """Plan event execution strategy"""
         return {
@@ -751,7 +751,7 @@ class InvestorRelationsService:
                 "Capital requirements"
             ]
         }
-    
+
     def _plan_post_event_followup(self, communication: InvestorRelations) -> List[Dict[str, Any]]:
         """Plan post-event follow-up activities"""
         return [
@@ -785,17 +785,17 @@ class ComplianceAutomationService:
     def __init__(self):
         self.compliance_frameworks = {}
         self.monitoring_systems = {}
-    
+
     async def assess_regulatory_compliance(self, framework: RegulatoryFramework) -> RegulatoryCompliance:
         """Assess compliance status for regulatory framework"""
-        
+
         compliance_checks = await self._run_compliance_checks(framework)
         compliance_score = self._calculate_compliance_score(compliance_checks)
-        
+
         # Identify gaps and generate remediation plan
         gaps = self._identify_compliance_gaps(compliance_checks)
         remediation_plan = self._generate_remediation_plan(gaps)
-        
+
         return RegulatoryCompliance(
             regulatory_framework=framework,
             compliance_area=self._get_compliance_area(framework),
@@ -808,10 +808,10 @@ class ComplianceAutomationService:
             next_review_date=datetime.now(timezone.utc) + timedelta(days=90),
             compliance_officer="chief_compliance_officer"
         )
-    
+
     async def _run_compliance_checks(self, framework: RegulatoryFramework) -> Dict[str, bool]:
         """Run automated compliance checks for framework"""
-        
+
         if framework == RegulatoryFramework.FCA_UK:
             return {
                 "conduct_rules": True,
@@ -841,22 +841,22 @@ class ComplianceAutomationService:
             }
         else:
             return {"general_compliance": True}
-    
+
     def _calculate_compliance_score(self, checks: Dict[str, bool]) -> float:
         """Calculate overall compliance score"""
         total_checks = len(checks)
         passed_checks = sum(1 for result in checks.values() if result)
         return (passed_checks / total_checks) * 100.0 if total_checks > 0 else 100.0
-    
+
     def _identify_compliance_gaps(self, checks: Dict[str, bool]) -> List[str]:
         """Identify compliance gaps that need attention"""
         return [check_name for check_name, result in checks.items() if not result]
-    
+
     def _generate_remediation_plan(self, gaps: List[str]) -> List[str]:  # type: ignore
         """Generate remediation plan for compliance gaps"""
         if not gaps:
             return []
-        
+
         remediation_actions: List[str] = []  # type: ignore
         for gap in gaps:
             if "financial_reporting" in gap:
@@ -867,9 +867,9 @@ class ComplianceAutomationService:
                 remediation_actions.append("Review and update disclosure procedures")  # type: ignore
             else:
                 remediation_actions.append(f"Address compliance gap: {gap}")  # type: ignore
-        
+
         return remediation_actions  # type: ignore
-    
+
     def _assess_risk_level(self, compliance_score: float) -> str:
         """Assess compliance risk level"""
         if compliance_score >= 95:
@@ -880,7 +880,7 @@ class ComplianceAutomationService:
             return "high"
         else:
             return "critical"
-    
+
     def _get_compliance_area(self, framework: RegulatoryFramework) -> str:
         """Get compliance area description for framework"""
         areas = {
@@ -891,7 +891,7 @@ class ComplianceAutomationService:
             RegulatoryFramework.PCI_DSS: "Payment Card Industry Security"
         }
         return areas.get(framework, "General Regulatory Compliance")
-    
+
     def _get_framework_requirements(self, framework: RegulatoryFramework) -> List[str]:
         """Get key requirements for regulatory framework"""
         requirements = {
@@ -965,9 +965,9 @@ async def get_financial_readiness(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:  # type: ignore
     """Get detailed financial readiness assessment"""
-    
+
     financial_score = await ipo_assessment._assess_financial_readiness()  # type: ignore
-    
+
     return {
         "financial_readiness_score": financial_score,
         "financial_grade": ipo_assessment._calculate_readiness_grade(financial_score),  # type: ignore
@@ -1001,14 +1001,14 @@ async def add_board_member(
     user_id: str = Depends(get_current_user_id)
 ):
     """Add new board member with governance validation"""
-    
+
     # Validate independence requirements
     if member.position == "independent_director" and not member.is_independent:
         raise HTTPException(
             status_code=400,
             detail="Independent directors must have independence qualification"
         )
-    
+
     return member
 
 @app.get("/governance/board-composition", response_model=Dict[str, Any])
@@ -1016,7 +1016,7 @@ async def get_board_composition(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:  # type: ignore
     """Get board composition and governance metrics"""
-    
+
     # Mock board composition - in production: query from governance database
     board_members: List[Dict[str, Any]] = [  # type: ignore
         {
@@ -1048,11 +1048,11 @@ async def get_board_composition(
             "tenure_years": 1
         }
     ]
-    
+
     total_members = len(board_members)  # type: ignore
     independent_members = sum(1 for member in board_members if member["is_independent"])  # type: ignore
     independence_ratio = independent_members / total_members
-    
+
     return {
         "board_composition": {
             "total_members": total_members,
@@ -1101,13 +1101,13 @@ async def create_financial_report(
     user_id: str = Depends(get_current_user_id)
 ):
     """Create quarterly/annual financial report"""
-    
+
     # Auto-calculate financial ratios
     if report.revenue > 0:
         report.gross_margin = float(report.gross_profit / report.revenue)
         report.operating_margin = float(report.operating_income / report.revenue)
         report.net_margin = float(report.net_income / report.revenue)
-    
+
     return report
 
 @app.get("/reporting/dashboard", response_model=Dict[str, Any])
@@ -1115,7 +1115,7 @@ async def get_financial_dashboard(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:  # type: ignore
     """Get comprehensive financial reporting dashboard"""
-    
+
     return {
         "current_period": {
             "period": "Q4 2026",
@@ -1172,7 +1172,7 @@ async def get_investor_relations_dashboard(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:  # type: ignore
     """Get investor relations dashboard and metrics"""
-    
+
     return {
         "shareholder_base": {
             "total_shareholders": 156,
@@ -1226,7 +1226,7 @@ async def get_compliance_dashboard(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:  # type: ignore
     """Get comprehensive regulatory compliance dashboard"""
-    
+
     return {
         "compliance_overview": {
             "overall_compliance_score": 92.5,   # 92.5%
@@ -1271,7 +1271,7 @@ async def get_valuation_analysis(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:  # type: ignore
     """Get comprehensive valuation analysis for IPO planning"""
-    
+
     return {
         "current_valuation": {
             "pre_ipo_valuation": 875000000,     # £875M

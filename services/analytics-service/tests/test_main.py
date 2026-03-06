@@ -1,10 +1,11 @@
+# isort: skip_file
 import os
 import sys
 import time
 import uuid
 
 from fastapi.testclient import TestClient
-from jose import jwt
+from jose import jwt  # type: ignore[import-untyped]
 
 TEST_DB_PATH = "/tmp/analytics_service_test.db"
 os.environ["ANALYTICS_DB_PATH"] = TEST_DB_PATH
@@ -12,7 +13,7 @@ os.environ["ANALYTICS_JOB_DURATION_SECONDS"] = "0.01"
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from app.main import app, reset_analytics_db_for_tests  # noqa: E402
+from app.main import app, reset_analytics_db_for_tests  # noqa: E402  # type: ignore  # pyright: ignore  # pylint: disable=import-error,wrong-import-position  # isort: skip
 
 TEST_AUTH_SECRET = "test-secret"
 TEST_AUTH_ALGORITHM = "HS256"

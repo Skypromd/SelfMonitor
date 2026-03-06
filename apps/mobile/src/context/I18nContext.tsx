@@ -1,13 +1,13 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import * as Localization from 'expo-localization';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Localization from 'expo-localization';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
-import enGB from '../locales/en-GB.json';
 import deDE from '../locales/de-DE.json';
-import ruRU from '../locales/ru-RU.json';
-import roMD from '../locales/ro-MD.json';
-import ukUA from '../locales/uk-UA.json';
+import enGB from '../locales/en-GB.json';
 import plPL from '../locales/pl-PL.json';
+import roMD from '../locales/ro-MD.json';
+import ruRU from '../locales/ru-RU.json';
+import ukUA from '../locales/uk-UA.json';
 
 type Translations = Record<string, Record<string, string>>;
 
@@ -68,7 +68,7 @@ const I18nContext = createContext<I18nContextValue>({
   setLocale: () => {},
 });
 
-const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8080/api';
 const LOCALIZATION_URL = process.env.EXPO_PUBLIC_LOCALIZATION_SERVICE_URL || `${API_GATEWAY_URL}/localization`;
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {

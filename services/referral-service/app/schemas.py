@@ -18,7 +18,7 @@ class ReferralCode(ReferralCodeBase):
     is_active: bool = True
     created_at: datetime.datetime
     expires_at: Optional[datetime.datetime] = None
-    
+
     class Config:
         from_attributes = True
 
@@ -31,7 +31,7 @@ class ReferralUsage(ReferralUsageCreate):
     id: uuid.UUID
     created_at: datetime.datetime
     reward_paid: bool = False
-    
+
     class Config:
         from_attributes = True
 
@@ -53,6 +53,6 @@ class ReferralCampaign(BaseModel):
     is_active: bool = True
     start_date: datetime.datetime
     end_date: Optional[datetime.datetime] = None
-    
+
     class Config:
         from_attributes = True

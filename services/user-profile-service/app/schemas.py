@@ -1,3 +1,4 @@
+"""Pydantic schemas for the user-profile-service API."""
 import datetime
 from typing import Optional
 
@@ -22,6 +23,7 @@ class UserProfileBase(BaseModel):
 
 
 class SubscriptionBase(BaseModel):
+    """Base schema for subscription data."""
     subscription_plan: str = Field(
         default="free", description="Subscription plan (free/pro)."
     )
@@ -42,7 +44,6 @@ class UserProfileUpdate(UserProfileBase):
     subscription_plan: Optional[str] = None
     subscription_status: Optional[str] = None
     billing_cycle: Optional[str] = None
-    pass
 
 
 class SubscriptionUpdate(BaseModel):

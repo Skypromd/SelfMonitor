@@ -1,12 +1,15 @@
 import csv
 import datetime
 import io
+import json
 import os
 import sqlite3
 import sys
 import threading
+import time
 import uuid
 from collections import defaultdict, deque
+from datetime import timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
@@ -15,7 +18,7 @@ import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
-from fpdf import FPDF
+from fpdf import FPDF, XPos, YPos
 from pydantic import BaseModel, Field
 
 for parent in Path(__file__).resolve().parents:
@@ -46,7 +49,10 @@ get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
 app = FastAPI(
     title="SelfMonitor Advanced Analytics & ML Pipeline",
-    description="Enterprise-grade analytics platform with ML pipeline, data science workbench, and real-time business intelligence.",
+    description=(
+        "Enterprise-grade analytics platform with ML pipeline, "
+        "data science workbench, and real-time business intelligence."
+    ),
     version="2.0.0",
 )
 
@@ -984,8 +990,11 @@ def _build_mobile_funnel_csv_payload(funnel: MobileAnalyticsFunnelResponse) -> s
 
 # --- "Database" for jobs ---
 
+ANALYTICS_JOB_DURATION_SECONDS: int = int(
+    os.getenv("ANALYTICS_JOB_DURATION_SECONDS", "5")
+)
 db_lock = threading.Lock()
-fake_jobs_db = {}
+fake_jobs_db: dict[str, object] = {}
 mobile_analytics_events: deque[MobileAnalyticsEventRecord] = deque(
     maxlen=MOBILE_ANALYTICS_MAX_EVENTS
 )
@@ -1107,7 +1116,7 @@ def run_job_worker(job_id: uuid.UUID):
     time.sleep(ANALYTICS_JOB_DURATION_SECONDS)
 
     job.status = "completed"
-    job.finished_at = datetime.now(timezone.utc)
+    job.finished_at = datetime.datetime.now(timezone.utc)
     job.result = {
         "message": f"{job.job_type} finished successfully.",
         "rows_processed": 15000,
@@ -1120,7 +1129,7 @@ def run_job_worker(job_id: uuid.UUID):
 
 @app.post("/jobs", response_model=JobStatus, status_code=status.HTTP_202_ACCEPTED)
 async def trigger_job(
-    request: JobRequest, _user_id: str = Depends(get_current_user_id)
+    request: JobRequest, user_id: str = Depends(get_current_user_id)
 ):
     """
     Accepts a new job request and puts it into a 'pending' state.
@@ -1133,7 +1142,7 @@ async def trigger_job(
 
 @app.get("/jobs/{job_id}", response_model=JobStatus)
 async def get_job_status(
-    job_id: uuid.UUID, _user_id: str = Depends(get_current_user_id)
+    job_id: uuid.UUID, user_id: str = Depends(get_current_user_id)
 ):
     """
     Retrieves the status of a specific job.
@@ -1206,14 +1215,14 @@ async def get_mobile_analytics_funnel(
 @app.get("/mobile/analytics/funnel/export")
 async def export_mobile_analytics_funnel(
     days: int = Query(default=14, ge=1, le=90),
-    format: Literal["json", "csv"] = Query(default="json"),
+    export_format: Literal["json", "csv"] = Query(default="json"),
     _api_guard: None = Depends(_require_mobile_analytics_api_key),
 ):
     """
     Exports mobile funnel metrics for BI tooling (JSON or CSV).
     """
     funnel = _build_mobile_funnel_response(days=days)
-    if format == "json":
+    if export_format == "json":
         return funnel
     csv_payload = _build_mobile_funnel_csv_payload(funnel)
     filename = f"mobile_funnel_{funnel.generated_at.date().isoformat()}.csv"
@@ -1568,7 +1577,7 @@ async def health_check():
 @app.post("/forecast/cash-flow", response_model=CashFlowResponse)
 async def get_cash_flow_forecast(
     request: ForecastRequest,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
 ):
     TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL")
@@ -1657,7 +1666,7 @@ async def generate_mortgage_document_checklist(
         include_adverse_credit_pack=request.include_adverse_credit_pack,
         lender_profile=request.lender_profile,
     )
-    return MortgageChecklistResponse(**checklist)
+    return MortgageChecklistResponse.model_validate(checklist)
 
 
 def _extract_document_filenames(documents: list[dict[str, object]]) -> list[str]:
@@ -1760,57 +1769,68 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 16)
-    pdf.cell(0, 10, "Mortgage Pack Index", 0, 1, "C")
+    pdf.cell(
+        0, 10, "Mortgage Pack Index",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C",
+    )
     pdf.set_font("Helvetica", "", 11)
     generated_at = str(pack_index.get("generated_at", ""))
-    pdf.cell(0, 7, f"Generated at: {generated_at}", 0, 1)
-    pdf.cell(0, 7, f"Mortgage type: {pack_index.get('mortgage_label', '')}", 0, 1)
     pdf.cell(
-        0, 7, f"Lender profile: {pack_index.get('lender_profile_label', '')}", 0, 1
+        0, 7, f"Generated at: {generated_at}",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
     )
     pdf.cell(
-        0, 7, f"Employment profile: {pack_index.get('employment_profile', '')}", 0, 1
+        0, 7, f"Mortgage type: {pack_index.get('mortgage_label', '')}",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+    )
+    pdf.cell(
+        0, 7, f"Lender profile: {pack_index.get('lender_profile_label', '')}",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+    )
+    pdf.cell(
+        0, 7, f"Employment profile: {pack_index.get('employment_profile', '')}",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
     )
     pdf.ln(4)
 
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "Readiness summary", 0, 1)
+    pdf.cell(0, 8, "Readiness summary", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
     pdf.multi_cell(0, 7, str(pack_index.get("readiness_summary", "")))
     pdf.cell(
-        0,
-        7,
+        0, 7,
         f"Required completion: {pack_index.get('required_completion_percent', 0)}%",
-        0,
-        1,
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
     )
     pdf.cell(
-        0,
-        7,
+        0, 7,
         f"Overall completion: {pack_index.get('overall_completion_percent', 0)}%",
-        0,
-        1,
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
     )
-    pdf.cell(0, 7, f"Status: {pack_index.get('readiness_status', '')}", 0, 1)
+    pdf.cell(
+        0, 7, f"Status: {pack_index.get('readiness_status', '')}",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+    )
     pdf.ln(3)
 
     quality_summary = pack_index.get("evidence_quality_summary", {})
     if isinstance(quality_summary, dict):
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "Evidence quality checks", 0, 1)
+        pdf.cell(0, 8, "Evidence quality checks", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.set_font("Helvetica", "", 11)
-        pdf.cell(0, 7, f"Total issues: {quality_summary.get('total_issues', 0)}", 0, 1)
         pdf.cell(
-            0,
-            7,
+            0, 7, f"Total issues: {quality_summary.get('total_issues', 0)}",
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+        )
+        pdf.cell(
+            0, 7,
             (
                 "Critical / Warning / Info: "
                 f"{quality_summary.get('critical_count', 0)} / "
                 f"{quality_summary.get('warning_count', 0)} / "
                 f"{quality_summary.get('info_count', 0)}"
             ),
-            0,
-            1,
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         pdf.ln(2)
         quality_issues = pack_index.get("evidence_quality_issues", [])
@@ -1827,22 +1847,21 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
     submission_gate = pack_index.get("submission_gate", {})
     if isinstance(submission_gate, dict):
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "Compliance and submission gate", 0, 1)
+        pdf.cell(
+            0, 8, "Compliance and submission gate",
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+        )
         pdf.set_font("Helvetica", "", 11)
         pdf.multi_cell(0, 7, str(submission_gate.get("compliance_disclaimer", "")))
         pdf.cell(
-            0,
-            7,
+            0, 7,
             f"Advisor review confirmed: {'yes' if submission_gate.get('advisor_review_confirmed') else 'no'}",
-            0,
-            1,
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         pdf.cell(
-            0,
-            7,
+            0, 7,
             f"Broker submission allowed: {'yes' if submission_gate.get('broker_submission_allowed') else 'no'}",
-            0,
-            1,
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         blockers = submission_gate.get("broker_submission_blockers", [])
         if isinstance(blockers, list) and blockers:
@@ -1851,39 +1870,46 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
                 pdf.multi_cell(0, 6, f"- {blocker}")
         pdf.ln(2)
 
-    refresh_summary = pack_index.get("refresh_reminder_summary", {})
-    if isinstance(refresh_summary, dict):
+    refresh_summary_pdf = pack_index.get("refresh_reminder_summary", {})
+    if isinstance(refresh_summary_pdf, dict):
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "Monthly refresh reminders", 0, 1)
+        pdf.cell(
+            0, 8, "Monthly refresh reminders",
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+        )
         pdf.set_font("Helvetica", "", 11)
         pdf.cell(
-            0, 7, f"Total reminders: {refresh_summary.get('total_reminders', 0)}", 0, 1
+            0, 7,
+            f"Total reminders: {refresh_summary_pdf.get('total_reminders', 0)}",
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         pdf.cell(
-            0,
-            7,
+            0, 7,
             (
                 "Due now / Upcoming: "
-                f"{refresh_summary.get('due_now_count', 0)} / {refresh_summary.get('upcoming_count', 0)}"
+                f"{refresh_summary_pdf.get('due_now_count', 0)} / "
+                f"{refresh_summary_pdf.get('upcoming_count', 0)}"
             ),
-            0,
-            1,
+            new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
-        refresh_reminders = pack_index.get("refresh_reminders", [])
-        if isinstance(refresh_reminders, list):
-            for reminder in refresh_reminders[:6]:
+        refresh_reminders_pdf = pack_index.get("refresh_reminders", [])
+        if isinstance(refresh_reminders_pdf, list):
+            for reminder in refresh_reminders_pdf[:6]:
                 if not isinstance(reminder, dict):
                     continue
-                title = str(reminder.get("title", ""))
-                due_date = str(reminder.get("due_date", ""))
-                status = str(reminder.get("status", "upcoming"))
-                message = str(reminder.get("message", ""))
-                pdf.multi_cell(0, 6, f"[{status}] {title} (due: {due_date})")
-                pdf.multi_cell(0, 6, message)
+                r_title = str(reminder.get("title", ""))
+                r_due = str(reminder.get("due_date", ""))
+                r_status = str(reminder.get("status", "upcoming"))
+                r_msg = str(reminder.get("message", ""))
+                pdf.multi_cell(0, 6, f"[{r_status}] {r_title} (due: {r_due})")
+                pdf.multi_cell(0, 6, r_msg)
         pdf.ln(2)
 
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "Required document evidence", 0, 1)
+    pdf.cell(
+        0, 8, "Required document evidence",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+    )
     pdf.set_font("Helvetica", "", 10)
     required_evidence = pack_index.get("required_document_evidence", [])
     if isinstance(required_evidence, list):
@@ -1891,8 +1917,8 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
             if not isinstance(item, dict):
                 continue
             code = str(item.get("code", ""))
-            title = str(item.get("title", ""))
-            status_value = str(item.get("match_status", "missing"))
+            ev_title = str(item.get("title", ""))
+            ev_status = str(item.get("match_status", "missing"))
             matched_files = item.get("matched_filenames", [])
             matched_files_text = (
                 ", ".join(str(name) for name in matched_files[:4])
@@ -1901,21 +1927,21 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
             )
             if not matched_files_text:
                 matched_files_text = "not detected"
-            pdf.multi_cell(0, 6, f"[{status_value}] {title} ({code})")
+            pdf.multi_cell(0, 6, f"[{ev_status}] {ev_title} ({code})")
             pdf.multi_cell(0, 6, f"Evidence: {matched_files_text}")
             pdf.ln(1)
 
     pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "Immediate actions", 0, 1)
+    pdf.cell(0, 8, "Immediate actions", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 10)
-    next_actions = pack_index.get("next_actions", [])
-    if isinstance(next_actions, list) and next_actions:
-        for action in next_actions:
+    next_actions_pdf = pack_index.get("next_actions", [])
+    if isinstance(next_actions_pdf, list) and next_actions_pdf:
+        for action in next_actions_pdf:
             pdf.multi_cell(0, 6, f"- {action}")
     else:
         pdf.multi_cell(0, 6, "- No immediate actions")
 
-    return pdf.output(dest="S").encode("latin1")
+    return bytes(pdf.output() or b"")
 
 
 @app.post("/mortgage/readiness", response_model=MortgageReadinessResponse)
@@ -1955,40 +1981,46 @@ async def evaluate_mortgage_readiness(
         uploaded_documents=uploaded_documents
     )
     readiness.update(refresh_reminders)
+    _eq_sum_r = quality_checks.get("evidence_quality_summary")
+    eq_sum_r: Optional[dict[str, object]] = _eq_sum_r if isinstance(_eq_sum_r, dict) else None
     submission_gate = build_mortgage_submission_gate(
         readiness_status=str(readiness.get("readiness_status", "")),
-        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
-        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
-        else None,
+        evidence_quality_summary=eq_sum_r,
         advisor_review_confirmed=request.advisor_review_confirmed,
     )
     readiness["submission_gate"] = submission_gate
     quality_summary = quality_checks.get("evidence_quality_summary")
     if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
-        next_actions = list(readiness.get("next_actions", []))
+        _raw_na = readiness.get("next_actions")
+        next_actions: list[Any] = list(_raw_na) if isinstance(_raw_na, list) else []
         blocker_action = (
             "Resolve critical evidence-quality blockers before broker submission."
         )
         if blocker_action not in next_actions:
             readiness["next_actions"] = [blocker_action, *next_actions]
     if not request.advisor_review_confirmed:
-        next_actions = list(readiness.get("next_actions", []))
+        _raw_na2 = readiness.get("next_actions")
+        next_actions2: list[Any] = list(_raw_na2) if isinstance(_raw_na2, list) else []
         advisor_action = (
             "Get a qualified mortgage adviser review before broker submission."
         )
-        if advisor_action not in next_actions:
-            readiness["next_actions"] = [advisor_action, *next_actions]
+        if advisor_action not in next_actions2:
+            readiness["next_actions"] = [advisor_action, *next_actions2]
     refresh_summary = refresh_reminders.get("refresh_reminder_summary")
     if (
         isinstance(refresh_summary, dict)
         and int(refresh_summary.get("due_now_count", 0)) > 0
     ):
-        next_actions = list(readiness.get("next_actions", []))
+        _raw_na3 = readiness.get("next_actions")
+        next_actions3: list[Any] = list(_raw_na3) if isinstance(_raw_na3, list) else []
         due_now_count = int(refresh_summary.get("due_now_count", 0))
-        refresh_action = f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
-        if refresh_action not in next_actions:
-            readiness["next_actions"] = [refresh_action, *next_actions]
-    return MortgageReadinessResponse(**readiness)
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s)"
+            " this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions3:
+            readiness["next_actions"] = [refresh_action, *next_actions3]
+    return MortgageReadinessResponse.model_validate(readiness)
 
 
 @app.post("/mortgage/readiness-matrix", response_model=MortgageReadinessMatrixResponse)
@@ -2013,7 +2045,7 @@ async def evaluate_mortgage_readiness_matrix(
         lender_profile=request.lender_profile,
         uploaded_filenames=filenames,
     )
-    return MortgageReadinessMatrixResponse(**matrix)
+    return MortgageReadinessMatrixResponse.model_validate(matrix)
 
 
 @app.post("/mortgage/lender-fit", response_model=MortgageLenderFitResponse)
@@ -2038,7 +2070,7 @@ async def evaluate_mortgage_lender_fit(
         include_adverse_credit_pack=request.include_adverse_credit_pack,
         uploaded_filenames=filenames,
     )
-    return MortgageLenderFitResponse(**lender_fit)
+    return MortgageLenderFitResponse.model_validate(lender_fit)
 
 
 @app.post("/mortgage/pack-index", response_model=MortgagePackIndexResponse)
@@ -2078,41 +2110,47 @@ async def generate_mortgage_pack_index(
         uploaded_documents=uploaded_documents
     )
     pack_index.update(refresh_reminders)
+    _eq_sum_pi = quality_checks.get("evidence_quality_summary")
+    eq_sum_pi: Optional[dict[str, object]] = _eq_sum_pi if isinstance(_eq_sum_pi, dict) else None
     submission_gate = build_mortgage_submission_gate(
         readiness_status=str(pack_index.get("readiness_status", "")),
-        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
-        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
-        else None,
+        evidence_quality_summary=eq_sum_pi,
         advisor_review_confirmed=request.advisor_review_confirmed,
     )
     pack_index["submission_gate"] = submission_gate
     quality_summary = quality_checks.get("evidence_quality_summary")
     if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
-        next_actions = list(pack_index.get("next_actions", []))
+        _raw_pi1 = pack_index.get("next_actions")
+        next_actions_pi: list[Any] = list(_raw_pi1) if isinstance(_raw_pi1, list) else []
         blocker_action = (
             "Resolve critical evidence-quality blockers before broker submission."
         )
-        if blocker_action not in next_actions:
-            pack_index["next_actions"] = [blocker_action, *next_actions]
+        if blocker_action not in next_actions_pi:
+            pack_index["next_actions"] = [blocker_action, *next_actions_pi]
     if not request.advisor_review_confirmed:
-        next_actions = list(pack_index.get("next_actions", []))
+        _raw_pi2 = pack_index.get("next_actions")
+        next_actions_pi2: list[Any] = list(_raw_pi2) if isinstance(_raw_pi2, list) else []
         advisor_action = (
             "Get a qualified mortgage adviser review before broker submission."
         )
-        if advisor_action not in next_actions:
-            pack_index["next_actions"] = [advisor_action, *next_actions]
+        if advisor_action not in next_actions_pi2:
+            pack_index["next_actions"] = [advisor_action, *next_actions_pi2]
     refresh_summary = refresh_reminders.get("refresh_reminder_summary")
     if (
         isinstance(refresh_summary, dict)
         and int(refresh_summary.get("due_now_count", 0)) > 0
     ):
-        next_actions = list(pack_index.get("next_actions", []))
+        _raw_pi3 = pack_index.get("next_actions")
+        next_actions_pi3: list[Any] = list(_raw_pi3) if isinstance(_raw_pi3, list) else []
         due_now_count = int(refresh_summary.get("due_now_count", 0))
-        refresh_action = f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
-        if refresh_action not in next_actions:
-            pack_index["next_actions"] = [refresh_action, *next_actions]
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s)"
+            " this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions_pi3:
+            pack_index["next_actions"] = [refresh_action, *next_actions_pi3]
     pack_index["generated_at"] = datetime.datetime.now(datetime.UTC)
-    return MortgagePackIndexResponse(**pack_index)
+    return MortgagePackIndexResponse.model_validate(pack_index)
 
 
 @app.post("/mortgage/pack-index.pdf")
@@ -2152,39 +2190,45 @@ async def generate_mortgage_pack_index_pdf(
         uploaded_documents=uploaded_documents
     )
     pack_index.update(refresh_reminders)
+    _eq_sum_pdf = quality_checks.get("evidence_quality_summary")
+    eq_sum_pdf: Optional[dict[str, object]] = _eq_sum_pdf if isinstance(_eq_sum_pdf, dict) else None
     submission_gate = build_mortgage_submission_gate(
         readiness_status=str(pack_index.get("readiness_status", "")),
-        evidence_quality_summary=quality_checks.get("evidence_quality_summary")
-        if isinstance(quality_checks.get("evidence_quality_summary"), dict)
-        else None,
+        evidence_quality_summary=eq_sum_pdf,
         advisor_review_confirmed=request.advisor_review_confirmed,
     )
     pack_index["submission_gate"] = submission_gate
     quality_summary = quality_checks.get("evidence_quality_summary")
     if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
-        next_actions = list(pack_index.get("next_actions", []))
+        _raw_pdfna1 = pack_index.get("next_actions")
+        next_actions_pdf1: list[Any] = list(_raw_pdfna1) if isinstance(_raw_pdfna1, list) else []
         blocker_action = (
             "Resolve critical evidence-quality blockers before broker submission."
         )
-        if blocker_action not in next_actions:
-            pack_index["next_actions"] = [blocker_action, *next_actions]
+        if blocker_action not in next_actions_pdf1:
+            pack_index["next_actions"] = [blocker_action, *next_actions_pdf1]
     if not request.advisor_review_confirmed:
-        next_actions = list(pack_index.get("next_actions", []))
+        _raw_pdfna2 = pack_index.get("next_actions")
+        next_actions_pdf2: list[Any] = list(_raw_pdfna2) if isinstance(_raw_pdfna2, list) else []
         advisor_action = (
             "Get a qualified mortgage adviser review before broker submission."
         )
-        if advisor_action not in next_actions:
-            pack_index["next_actions"] = [advisor_action, *next_actions]
+        if advisor_action not in next_actions_pdf2:
+            pack_index["next_actions"] = [advisor_action, *next_actions_pdf2]
     refresh_summary = refresh_reminders.get("refresh_reminder_summary")
     if (
         isinstance(refresh_summary, dict)
         and int(refresh_summary.get("due_now_count", 0)) > 0
     ):
-        next_actions = list(pack_index.get("next_actions", []))
+        _raw_pdfna3 = pack_index.get("next_actions")
+        next_actions_pdf3: list[Any] = list(_raw_pdfna3) if isinstance(_raw_pdfna3, list) else []
         due_now_count = int(refresh_summary.get("due_now_count", 0))
-        refresh_action = f"Refresh {due_now_count} statement/ID evidence item(s) this month to keep the pack submission-ready."
-        if refresh_action not in next_actions:
-            pack_index["next_actions"] = [refresh_action, *next_actions]
+        refresh_action = (
+            f"Refresh {due_now_count} statement/ID evidence item(s)"
+            " this month to keep the pack submission-ready."
+        )
+        if refresh_action not in next_actions_pdf3:
+            pack_index["next_actions"] = [refresh_action, *next_actions_pdf3]
     generated_at = datetime.datetime.now(datetime.UTC)
     pack_index["generated_at"] = generated_at.isoformat()
     pdf_bytes = _build_mortgage_pack_index_pdf_bytes(pack_index)
@@ -2226,49 +2270,53 @@ async def get_mortgage_readiness_report(
             status_code=503, detail=f"Transactions service unavailable: {exc}"
         ) from exc
 
-        # 2. Analyze income over the last 12 months
-        twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)
-        monthly_income = defaultdict(float)
-        for t in transactions:
-            if t.date >= twelve_months_ago and t.amount > 0:
-                month = t.date.strftime("%Y-%m")
-                monthly_income[month] += t.amount
+    # 2. Analyze income over the last 12 months
+    twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)
+    monthly_income: defaultdict[str, float] = defaultdict(float)
+    for t in transactions:
+        if t.date >= twelve_months_ago and t.amount > 0:
+            month = t.date.strftime("%Y-%m")
+            monthly_income[month] += t.amount
 
-        total_income = sum(monthly_income.values())
-        average_monthly_income = total_income / 12 if total_income > 0 else 0
+    total_income = sum(monthly_income.values())
+    average_monthly_income = total_income / 12 if total_income > 0 else 0
 
-        # 3. Generate PDF
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_font("Helvetica", "B", 16)
-        pdf.cell(0, 10, "Mortgage Readiness Report", 0, 1, "C")
-        pdf.set_font("Helvetica", "", 12)
-        pdf.cell(0, 10, f"Generated for user: {user_id}", 0, 1)
-        pdf.cell(0, 10, f"Date: {datetime.date.today().isoformat()}", 0, 1)
-        pdf.ln(10)
+    # 3. Generate PDF
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(
+        0, 10, "Mortgage Readiness Report",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C",
+    )
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 10, f"Generated for user: {user_id}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(
+        0, 10, f"Date: {datetime.date.today().isoformat()}",
+        new_x=XPos.LMARGIN, new_y=YPos.NEXT,
+    )
+    pdf.ln(10)
 
-        pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, "Income Summary (Last 12 Months)", 0, 1)
-        pdf.set_font("Helvetica", "", 12)
-        pdf.cell(0, 8, f"Total Gross Income: £{total_income:,.2f}", 0, 1)
-        pdf.cell(0, 8, f"Average Monthly Income: £{average_monthly_income:,.2f}", 0, 1)
-        pdf.ln(5)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "Income Summary (Last 12 Months)", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_font("Helvetica", "", 12)
+    pdf.cell(0, 8, f"Total Gross Income: £{total_income:,.2f}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(0, 8, f"Average Monthly Income: £{average_monthly_income:,.2f}", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.ln(5)
 
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(40, 10, "Month", 1)
-        pdf.cell(40, 10, "Income", 1)
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(40, 10, "Month", 1)
+    pdf.cell(40, 10, "Income", 1)
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 12)
+    for month, income in sorted(monthly_income.items()):
+        pdf.cell(40, 10, month, 1)
+        pdf.cell(40, 10, f"£{income:,.2f}", 1)
         pdf.ln()
-        pdf.set_font("Helvetica", "", 12)
-        for month, income in sorted(monthly_income.items()):
-            pdf.cell(40, 10, month, 1)
-            pdf.cell(40, 10, f"£{income:,.2f}", 1)
-            pdf.ln()
 
     # Create a streaming response
-    pdf_bytes = pdf.output(dest="S").encode("latin1")
-    filename = (
-        f"mortgage_report_{'enhanced_' if enhanced else ''}{datetime.date.today()}.pdf"
-    )
+    pdf_bytes = bytes(pdf.output() or b"")
+    filename = f"mortgage_report_{datetime.date.today()}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -2296,14 +2344,14 @@ async def create_ml_model(
         # In production, this would save to PostgreSQL/MongoDB
         return model
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Model creation failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Model creation failed: {str(e)}") from e
 
 
 @app.get("/ml/models", response_model=List[MLModel])
 async def list_ml_models(
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
     model_type: Optional[MLModelType] = None,
-    status: Optional[str] = None,
+    model_status: Optional[str] = None,
 ):
     """List all ML models with optional filtering"""
     # Mock implementation - in production, query from database
@@ -2337,8 +2385,8 @@ async def list_ml_models(
     # Apply filters
     if model_type:
         models = [m for m in models if m.model_type == model_type]
-    if status:
-        models = [m for m in models if m.status == status]
+    if model_status:
+        models = [m for m in models if m.status == model_status]
 
     return models
 
@@ -2349,11 +2397,12 @@ async def train_ml_model(
     user_id: str = Depends(get_current_user_id),
 ):
     """Start training an ML model"""
+    _ = model_id
     job = AnalyticsJobStatus(
         user_id=user_id,
         job_type=AnalyticsJobType.TRAIN_MODEL,
         priority="high",
-        estimated_completion=datetime.now(timezone.utc) + timedelta(minutes=30),
+        estimated_completion=datetime.datetime.now(timezone.utc) + timedelta(minutes=30),
     )
     # Start asynchronous training
     return job
@@ -2363,7 +2412,7 @@ async def train_ml_model(
 async def batch_prediction(
     model_id: str,
     data: Dict[str, Any],
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Run batch predictions using trained model"""
     return {
@@ -2379,7 +2428,7 @@ async def batch_prediction(
 async def realtime_prediction(
     model_id: str,
     features: Dict[str, float],
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Get real-time prediction for single record"""
     if not features:
@@ -2406,7 +2455,7 @@ async def realtime_prediction(
 )
 async def create_data_pipeline(
     pipeline: DataPipeline,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Create new data processing pipeline"""
     # Enhanced pipeline creation with validation
@@ -2415,8 +2464,8 @@ async def create_data_pipeline(
 
 @app.get("/pipelines", response_model=List[DataPipeline])
 async def list_data_pipelines(
-    user_id: str = Depends(get_current_user_id),
-    status: Optional[str] = None,
+    _user_id: str = Depends(get_current_user_id),
+    pipeline_status: Optional[str] = None,
 ):
     """List all data pipelines"""
     pipelines = [
@@ -2435,17 +2484,21 @@ async def list_data_pipelines(
             success_rate=0.98,
         )
     ]
+    _ = pipeline_status
     return pipelines
 
 
 @app.post("/pipelines/{pipeline_id}/run", response_model=AnalyticsJobStatus)
 async def run_pipeline(
     pipeline_id: str,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Execute data pipeline"""
+    _ = pipeline_id
     job = AnalyticsJobStatus(
-        user_id=user_id, job_type=AnalyticsJobType.ETL_TRANSACTIONS, priority="normal"
+        user_id="system",
+        job_type=AnalyticsJobType.ETL_TRANSACTIONS,
+        priority="normal",
     )
     return job
 
@@ -2458,7 +2511,7 @@ async def run_pipeline(
 )
 async def create_analytics_report(
     report: AnalyticsReport,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Create custom analytics report"""
     return report
@@ -2466,7 +2519,7 @@ async def create_analytics_report(
 
 @app.get("/reports", response_model=List[AnalyticsReport])
 async def list_analytics_reports(
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
     report_type: Optional[str] = None,
 ):
     """List available analytics reports"""
@@ -2496,12 +2549,13 @@ async def list_analytics_reports(
 async def generate_report(
     report_id: str,
     filters: Optional[Dict[str, Any]] = None,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Generate analytics report with optional filters"""
+    _ = filters
     return {
         "report_id": report_id,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.datetime.now(timezone.utc).isoformat(),
         "data": {
             "total_revenue": 1247899.50,
             "monthly_growth": 12.4,
@@ -2573,12 +2627,12 @@ async def list_dashboards(
 @app.get("/dashboards/{dashboard_id}/data", response_model=Dict[str, Any])
 async def get_dashboard_data(
     dashboard_id: str,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Get live data for dashboard widgets"""
     return {
         "dashboard_id": dashboard_id,
-        "last_updated": datetime.now(timezone.utc).isoformat(),
+        "last_updated": datetime.datetime.now(timezone.utc).isoformat(),
         "widgets_data": {
             "revenue_metric": {"value": 2100000, "change": "+12.4%"},
             "active_users": {"value": 8456, "change": "+5.2%"},
@@ -2599,6 +2653,7 @@ async def customer_segmentation(
     user_id: str = Depends(get_current_user_id),
 ):
     """Perform customer segmentation analysis"""
+    _ = criteria
     job = AnalyticsJobStatus(
         user_id=user_id, job_type=AnalyticsJobType.SEGMENTATION, priority="normal"
     )
@@ -2635,7 +2690,7 @@ async def customer_segmentation(
 async def cohort_analysis(
     time_period: str = "monthly",
     metric: str = "retention",
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Perform cohort analysis"""
     return {
@@ -2669,6 +2724,7 @@ async def detect_anomalies(
     user_id: str = Depends(get_current_user_id),
 ):
     """Run anomaly detection on specified data source"""
+    _ = sensitivity
     job = AnalyticsJobStatus(
         user_id=user_id, job_type=AnalyticsJobType.ANOMALY_SCAN, priority="high"
     )
@@ -2705,7 +2761,7 @@ async def detect_anomalies(
 @app.get("/metrics/business", response_model=List[BusinessMetric])
 async def get_business_metrics(
     category: Optional[str] = None,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Get current business metrics and KPIs"""
     metrics = [
@@ -2761,7 +2817,7 @@ async def get_business_metrics(
 async def update_business_metric(
     metric_id: str,
     new_value: float,
-    user_id: str = Depends(get_current_user_id),
+    _user_id: str = Depends(get_current_user_id),
 ):
     """Update a business metric value"""
     # Mock implementation - in production, update database
@@ -2771,7 +2827,7 @@ async def update_business_metric(
         category="operational",
         calculation_method="manual_update",
         current_value=new_value,
-        updated_at=datetime.now(timezone.utc),
+        updated_at=datetime.datetime.now(timezone.utc),
     )
 
 
@@ -2785,6 +2841,7 @@ async def run_data_quality_check(
     user_id: str = Depends(get_current_user_id),
 ):
     """Run comprehensive data quality checks"""
+    _ = rules
     job = AnalyticsJobStatus(
         user_id=user_id, job_type=AnalyticsJobType.DATA_QUALITY_CHECK, priority="normal"
     )
@@ -2817,6 +2874,7 @@ async def extract_features(
     user_id: str = Depends(get_current_user_id),
 ):
     """Extract features for ML model training"""
+    _ = source_data
     job = AnalyticsJobStatus(
         user_id=user_id, job_type=AnalyticsJobType.FEATURE_EXTRACTION, priority="normal"
     )

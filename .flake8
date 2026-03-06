@@ -1,0 +1,24 @@
+[flake8]
+# Allow longer lines — many auto-generated strings and URLs legitimately exceed 88 chars.
+max-line-length = 120
+# E203: whitespace before ':' — Black sometimes produces this.
+# W503: line break before binary operator — conflicts with Black style.
+# E402: module level import not at top of file — needed for sys.path manipulation.
+# E501: line too long — handled by max-line-length above, ignore residual hits.
+# W291/W293: trailing whitespace — handled by formatter.
+# B008: Do not perform function calls in default arguments — common FastAPI pattern (Depends).
+# BLE001: Do not catch blind exception — used intentionally in graceful-degradation blocks.
+extend-ignore = E203, W503, E402, E501, W291, W293, B008, BLE001, E711, E712, W504, E741, W605, BLE001
+# Exclude auto-generated and third-party directories.
+exclude =
+    .git,
+    .venv,
+    venv,
+    __pycache__,
+    alembic,
+    migrations,
+    node_modules,
+    apps,
+    *.egg-info,
+    dist,
+    build

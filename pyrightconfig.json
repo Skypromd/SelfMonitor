@@ -1,0 +1,92 @@
+{
+  "pythonVersion": "3.12",
+  "venvPath": ".",
+  "venv": ".venv",
+  "include": [
+    "services",
+    "libs",
+    "proxy_gateway.py",
+    "check-cors.py"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none",
+  "reportMissingTypeStubs": "none",
+  "reportUnknownVariableType": "none",
+  "reportUnknownMemberType": "none",
+  "reportUnknownParameterType": "none",
+  "reportUnknownArgumentType": "none",
+  "reportUnknownLambdaType": "none",
+  "reportPrivateImportUsage": "none",
+  "reportAttributeAccessIssue": "none",
+  "reportUntypedFunctionDecorator": "none",
+  "reportUntypedClassDecorator": "none",
+  "reportUntypedBaseClass": "none",
+  "reportOperatorIssue": "none",
+  "reportReturnType": "none",
+  "reportArgumentType": "none",
+  "reportIndexIssue": "none",
+  "reportCallIssue": "none",
+  "reportAssignmentType": "none",
+  "reportGeneralTypeIssues": "none",
+  "reportRedeclaration": "none",
+  "reportInconsistentOverload": "none",
+  "reportOptionalSubscript": "none",
+  "reportOptionalMemberAccess": "none",
+  "reportOptionalCall": "none",
+  "reportOptionalIterable": "none",
+  "reportOptionalContextManager": "none",
+  "reportOptionalOperand": "none",
+  "reportPossiblyUnbound": "none",
+  "reportIncompatibleMethodOverride": "none",
+  "reportIncompatibleVariableOverride": "none",
+  "reportOverlappingOverload": "none",
+  "reportAbstractUsage": "none",
+  "reportUninitializedInstanceVariable": "none",
+  "reportInvalidStringEscapeSequence": "none",
+  "reportImplicitStringConcatenation": "none",
+  "useLibraryCodeForTypes": true,
+  "executionEnvironments": [
+    {
+      "root": "services/auth-service",
+      "pythonVersion": "3.12",
+      "extraPaths": ["."]
+    },
+    {
+      "root": "services/user-profile-service",
+      "pythonVersion": "3.12",
+      "extraPaths": ["."]
+    },
+    {
+      "root": "services/documents-service",
+      "pythonVersion": "3.12",
+      "extraPaths": ["."]
+    },
+    {
+      "root": "services/analytics-service",
+      "pythonVersion": "3.12",
+      "extraPaths": [".", "services/analytics-service"]
+    },
+    {
+      "root": "services/advice-service",
+      "pythonVersion": "3.12",
+      "extraPaths": ["."]
+    },
+    {
+      "root": "services/localization-service",
+      "pythonVersion": "3.12",
+      "extraPaths": ["."]
+    },
+    {
+      "root": "services/predictive-analytics",
+      "pythonVersion": "3.12",
+      "extraPaths": ["."]
+    },
+    {
+      "root": "services/support-ai-service",
+      "pythonVersion": "3.12",
+      "extraPaths": ["."]
+    }
+  ]
+}
+

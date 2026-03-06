@@ -38,15 +38,15 @@ get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def import_transactions(
-    request: schemas.TransactionImportRequest, 
+    request: schemas.TransactionImportRequest,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Imports a batch of transactions for an account into the database."""
     import_result = await crud.create_transactions(
-        db, 
-        user_id=user_id, 
-        account_id=request.account_id, 
+        db,
+        user_id=user_id,
+        account_id=request.account_id,
         transactions=request.transactions,
         auth_token=auth_token,
     )
@@ -60,13 +60,13 @@ async def import_transactions(
 
 @app.get("/accounts/{account_id}/transactions", response_model=List[schemas.Transaction])
 async def get_transactions_for_account(
-    account_id: uuid.UUID, 
+    account_id: uuid.UUID,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves all transactions for a specific account belonging to the user from the database."""
     transactions = await crud.get_transactions_by_account(db, user_id=user_id, account_id=account_id)
-    
+
     # Emit analytics event for transaction access
     if KAFKA_ENABLED and hasattr(app, 'emit_event') and transactions:
         try:
@@ -84,7 +84,7 @@ async def get_transactions_for_account(
             )
         except Exception as e:
             logger.warning(f"Failed to emit transaction access event: {str(e)}")
-    
+
     return transactions
 
 @app.get("/transactions/me", response_model=List[schemas.Transaction])
@@ -94,13 +94,13 @@ async def get_all_my_transactions(
 ):
     """Retrieves all transactions for the authenticated user across all accounts."""
     transactions = await crud.get_transactions_by_user(db, user_id=user_id)
-    
+
     # Emit analytics event for comprehensive transaction access
     if KAFKA_ENABLED and hasattr(app, 'emit_event') and transactions:
         try:
             await app.emit_event(
                 topic="analytics.events",
-                event_type="transaction_data_accessed", 
+                event_type="transaction_data_accessed",
                 data={
                     "metric_name": "comprehensive_transaction_view",
                     "metric_value": len(transactions),
@@ -110,7 +110,7 @@ async def get_all_my_transactions(
                 },
                 user_id=user_id
             )
-            
+
             # Also track user engagement
             await app.emit_event(
                 topic="user.events",
@@ -124,7 +124,7 @@ async def get_all_my_transactions(
             )
         except Exception as e:
             logger.warning(f"Failed to emit transaction overview events: {str(e)}")
-    
+
     return transactions
 
 @app.patch("/transactions/{transaction_id}", response_model=schemas.Transaction)
@@ -136,14 +136,14 @@ async def update_transaction_category(
 ):
     """Updates the category of a single transaction in the database."""
     updated_transaction = await crud.update_transaction_category(
-        db, 
-        user_id=user_id, 
-        transaction_id=transaction_id, 
+        db,
+        user_id=user_id,
+        transaction_id=transaction_id,
         category=update_request.category
     )
     if not updated_transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-    
+
     # Emit transaction update event
     if KAFKA_ENABLED and hasattr(app, 'emit_event'):
         try:
@@ -162,10 +162,10 @@ async def update_transaction_category(
                 user_id=user_id,
                 correlation_id=f"category_update_{transaction_id}"
             )
-            
+
             # Also emit analytics event for categorization tracking
             await app.emit_event(
-                topic="analytics.events", 
+                topic="analytics.events",
                 event_type="transaction_categorized",
                 data={
                     "metric_name": "transaction_categorization",
@@ -178,7 +178,7 @@ async def update_transaction_category(
             )
         except Exception as e:
             logger.warning(f"Failed to emit transaction update events: {str(e)}")
-    
+
     return updated_transaction
 
 

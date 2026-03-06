@@ -84,7 +84,10 @@ fake_translations_db = {
             "readiness_high": "High readiness",
             "readiness_loading": "Calculating readiness...",
             "action_next_title": "What's next?",
-            "action_next_description": "Explore our marketplace of trusted partners for insurance, accounting, and more.",
+            "action_next_description": (
+                "Explore our marketplace of trusted partners"
+                " for insurance, accounting, and more."
+            ),
             "action_next_button": "Explore Partner Services",
         },
         "activity": {
@@ -136,8 +139,15 @@ fake_translations_db = {
             "search_placeholder": "e.g., 'where did I buy coffee last month?'",
             "search_button": "Search",
             "all_documents_title": "All Uploaded Documents",
-            "uploaded_documents_count": "{count, plural, =0 {No uploaded documents yet.} one {# uploaded document} other {# uploaded documents}}",
-            "review_queue_count": "{count, plural, =0 {No documents currently require manual OCR review.} one {# document requires manual OCR review.} other {# documents require manual OCR review.}}",
+            "uploaded_documents_count": (
+                "{count, plural, =0 {No uploaded documents yet.}"
+                " one {# uploaded document} other {# uploaded documents}}"
+            ),
+            "review_queue_count": (
+                "{count, plural, =0 {No documents currently require manual OCR review.}"
+                " one {# document requires manual OCR review.}"
+                " other {# documents require manual OCR review.}}"
+            ),
         },
     },
     "de-DE": {
@@ -198,7 +208,10 @@ fake_translations_db = {
             "readiness_high": "Hohe Bereitschaft",
             "readiness_loading": "Bereitschaft wird berechnet...",
             "action_next_title": "Was kommt als Nächstes?",
-            "action_next_description": "Entdecken Sie unseren Marktplatz mit vertrauenswürdigen Partnern für Versicherungen, Buchhaltung und mehr.",
+            "action_next_description": (
+                "Entdecken Sie unseren Marktplatz mit vertrauenswürdigen Partnern"
+                " für Versicherungen, Buchhaltung und mehr."
+            ),
             "action_next_button": "Partnerdienste entdecken",
         },
         "activity": {
@@ -250,8 +263,16 @@ fake_translations_db = {
             "search_placeholder": "z.B. 'wo habe ich letzten monat kaffee gekauft?'",
             "search_button": "Suchen",
             "all_documents_title": "Alle hochgeladenen Dokumente",
-            "uploaded_documents_count": "{count, plural, =0 {Noch keine hochgeladenen Dokumente.} one {# hochgeladenes Dokument} other {# hochgeladene Dokumente}}",
-            "review_queue_count": "{count, plural, =0 {Aktuell sind keine Dokumente zur manuellen OCR-Prüfung offen.} one {# Dokument benötigt eine manuelle OCR-Prüfung.} other {# Dokumente benötigen eine manuelle OCR-Prüfung.}}",
+            "uploaded_documents_count": (
+                "{count, plural, =0 {Noch keine hochgeladenen Dokumente.}"
+                " one {# hochgeladenes Dokument} other {# hochgeladene Dokumente}}"
+            ),
+            "review_queue_count": (
+                "{count, plural, =0 {Aktuell sind keine Dokumente"
+                " zur manuellen OCR-Prüfung offen.}"
+                " one {# Dokument benötigt eine manuelle OCR-Prüfung.}"
+                " other {# Dokumente benötigen eine manuelle OCR-Prüfung.}}"
+            ),
         },
     },
 }
@@ -615,10 +636,10 @@ def _resolve_locale_format_standards(locale: str) -> LocaleFormatStandards | Non
         date_style=str(standards.get("date_style") or "medium"),
         time_style=str(standards.get("time_style") or "short"),
         time_zone=str(standards.get("time_zone") or "Europe/London"),
-        number_min_fraction_digits=int(
+        number_min_fraction_digits=int(  # type: ignore
             standards.get("number_min_fraction_digits") or 0
         ),
-        number_max_fraction_digits=int(
+        number_max_fraction_digits=int(  # type: ignore
             standards.get("number_max_fraction_digits") or 2
         ),
     )
@@ -645,7 +666,7 @@ def _build_locale_roadmap_item(
         else 100.0
     )
     if locale_health.fallback_keys == 0 and str(metadata.get("status")) == "translated":
-        rollout_stage = "production_ready"
+        rollout_stage: Literal["production_ready", "beta", "planning"] = "production_ready"
         next_step = (
             "Maintain translation freshness and monitor fallback hit-rate drift."
         )

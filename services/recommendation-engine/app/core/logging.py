@@ -13,11 +13,11 @@ from app.core.config import settings
 
 def setup_logging():
     """Setup logging configuration."""
-    
+
     # Create logs directory if it doesn't exist
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
-    
+
     # Logging configuration
     logging_config: Dict[str, Any] = {
         "version": 1,
@@ -97,19 +97,19 @@ def setup_logging():
             }
         }
     }
-    
+
     # Apply configuration
     logging.config.dictConfig(logging_config)
-    
+
     # Set specific loggers to appropriate levels
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
     logging.getLogger("multipart").setLevel(logging.WARNING)
-    
+
     # Create application logger
     logger = logging.getLogger("recommendation_engine")
     logger.info(f"🔧 Logging configured with level: {settings.LOG_LEVEL}")
-    
+
     return logger
 
 

@@ -16,25 +16,25 @@ logger = logging.getLogger(__name__)
 
 class InvoiceTransactionSync:
     """Handles synchronization between invoice-service and transactions-service"""
-    
+
     def __init__(self, transactions_service_url: str = "http://transactions-service:80"):
         self.transactions_service_url = transactions_service_url
         self.timeout = 30.0
-    
+
     async def sync_invoice_to_transactions(
-        self, 
-        invoice: models.Invoice, 
+        self,
+        invoice: models.Invoice,
         auth_token: str,
         sync_type: str = "created"
     ) -> Dict[str, Any]:
         """
         Sync invoice data to transactions service
-        
+
         Args:
             invoice: Invoice model instance
             auth_token: JWT token for authentication
             sync_type: Type of sync (created, updated, paid, cancelled)
-        
+
         Returns:
             Sync result with status and transaction_id
         """
@@ -43,16 +43,16 @@ class InvoiceTransactionSync:
                 "Authorization": f"Bearer {auth_token}",
                 "Content-Type": "application/json"
             }
-            
+
             # Create transaction payload for invoice
             transaction_payload = self._create_transaction_payload(invoice, sync_type)
-            
+
             async with httpx.AsyncClient() as client:
                 # Check if transaction already exists
                 existing_transaction = await self._find_existing_transaction(
                     client, headers, str(invoice.id)
                 )
-                
+
                 if existing_transaction:
                     # Update existing transaction
                     response = await client.put(
@@ -71,12 +71,12 @@ class InvoiceTransactionSync:
                         timeout=self.timeout
                     )
                     operation = "created"
-                
+
                 response.raise_for_status()
                 transaction_data = response.json()
-                
+
                 logger.info(f"Invoice {invoice.id} successfully synced as transaction {transaction_data.get('id')}")
-                
+
                 return {
                     "status": "success",
                     "operation": operation,
@@ -84,7 +84,7 @@ class InvoiceTransactionSync:
                     "sync_type": sync_type,
                     "invoice_id": invoice.id
                 }
-        
+
         except httpx.RequestError as e:
             logger.error(f"Network error syncing invoice {invoice.id}: {e}")
             return {
@@ -96,7 +96,7 @@ class InvoiceTransactionSync:
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP error syncing invoice {invoice.id}: {e.response.status_code} - {e.response.text}")
             return {
-                "status": "error", 
+                "status": "error",
                 "error_type": "http",
                 "status_code": e.response.status_code,
                 "message": e.response.text,
@@ -110,10 +110,10 @@ class InvoiceTransactionSync:
                 "message": str(e),
                 "invoice_id": invoice.id
             }
-    
+
     def _create_transaction_payload(self, invoice: models.Invoice, sync_type: str) -> Dict[str, Any]:
         """Create transaction payload from invoice data"""
-        
+
         # Base transaction data
         transaction: Dict[str, Any] = {
             "user_id": str(invoice.user_id),
@@ -139,8 +139,8 @@ class InvoiceTransactionSync:
                 "subtotal": float(invoice.subtotal or 0)  # type: ignore
             }
         }
-        
-        # Adjust transaction based on invoice status  
+
+        # Adjust transaction based on invoice status
         invoice_status = str(invoice.status)
         if invoice_status == schemas.InvoiceStatus.PAID.value:
             transaction["status"] = "completed"
@@ -158,7 +158,7 @@ class InvoiceTransactionSync:
             transaction["amount"] = 0
         else:
             transaction["status"] = "draft"
-        
+
         # Add line item details for categorization
         if invoice.line_items:
             line_items_data: List[Dict[str, Any]] = []
@@ -171,17 +171,17 @@ class InvoiceTransactionSync:
                     "unit_price": float(item.unit_price)  # type: ignore
                 })
             transaction["metadata"]["line_items"] = line_items_data
-            
+
             # Use primary line item category if available
             if invoice.line_items[0].category:
                 transaction["subcategory"] = invoice.line_items[0].category
-        
+
         return transaction
-    
+
     async def _find_existing_transaction(
-        self, 
-        client: httpx.AsyncClient, 
-        headers: Dict[str, str], 
+        self,
+        client: httpx.AsyncClient,
+        headers: Dict[str, str],
         invoice_id: str
     ) -> Optional[Dict[str, Any]]:
         """Find existing transaction for this invoice"""
@@ -192,18 +192,18 @@ class InvoiceTransactionSync:
                 params={"metadata.invoice_id": invoice_id, "limit": 1},
                 timeout=self.timeout
             )
-            
+
             if response.status_code == 200:
                 transactions = response.json()
                 return transactions[0] if transactions else None
         except Exception as e:
             logger.warning(f"Could not search for existing transaction: {e}")
-        
+
         return None
-    
+
     async def sync_payment_update(
-        self, 
-        invoice: models.Invoice, 
+        self,
+        invoice: models.Invoice,
         payment: models.InvoicePayment,
         auth_token: str
     ) -> Dict[str, Any]:
@@ -213,7 +213,7 @@ class InvoiceTransactionSync:
                 "Authorization": f"Bearer {auth_token}",
                 "Content-Type": "application/json"
             }
-            
+
             # Create payment transaction
             payment_transaction: Dict[str, Any] = {
                 "user_id": str(invoice.user_id),
@@ -236,7 +236,7 @@ class InvoiceTransactionSync:
                     "client_name": invoice.client_name
                 }
             }
-            
+
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.transactions_service_url}/transactions",
@@ -245,19 +245,19 @@ class InvoiceTransactionSync:
                     timeout=self.timeout
                 )
                 response.raise_for_status()
-                
+
                 transaction_data = response.json()
-                
+
                 # Also update the main invoice transaction
                 await self.sync_invoice_to_transactions(invoice, auth_token, "payment_received")
-                
+
                 return {
                     "status": "success",
                     "payment_transaction_id": transaction_data.get("id"),
                     "payment_amount": payment.amount,
                     "invoice_id": invoice.id
                 }
-                
+
         except Exception as e:
             logger.error(f"Error syncing payment {payment.id}: {e}")
             return {
@@ -265,10 +265,10 @@ class InvoiceTransactionSync:
                 "message": str(e),
                 "payment_id": payment.id
             }
-    
+
     async def bulk_sync_invoices(
-        self, 
-        invoices: List[models.Invoice], 
+        self,
+        invoices: List[models.Invoice],
         auth_token: str
     ) -> Dict[str, Any]:
         """Bulk sync multiple invoices"""
@@ -278,20 +278,20 @@ class InvoiceTransactionSync:
             "failed_syncs": 0,
             "errors": []
         }
-        
+
         # Process in batches to avoid overwhelming the service
         batch_size = 10
         for i in range(0, len(invoices), batch_size):
             batch = invoices[i:i+batch_size]
-            
+
             # Process batch concurrently
             tasks = [
                 self.sync_invoice_to_transactions(invoice, auth_token, "bulk_sync")
                 for invoice in batch
             ]
-            
+
             batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-            
+
             for result in batch_results:
                 if isinstance(result, Exception):
                     results["failed_syncs"] += 1
@@ -304,8 +304,8 @@ class InvoiceTransactionSync:
                         results["errors"].append(result.get("message", "Unknown error"))
                     else:
                         results["errors"].append("Unknown error type")
-            
+
             # Small delay between batches
             await asyncio.sleep(0.1)
-        
+
         return results

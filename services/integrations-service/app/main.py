@@ -1,15 +1,19 @@
-import os
-import sys
-import uuid
 import datetime
 import math
+import os
+import sqlite3
+import sys
+import threading
+import time
+import uuid
 from collections import deque
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, List, Literal, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
+
 from .hmrc_mtd import (
     HMRCMTDQuarterlyReportSpec,
     HMRCMTDQuarterlySubmissionRequest,
@@ -91,6 +95,16 @@ HMRC_SLO_WINDOW_SIZE = _parse_positive_int_env("HMRC_SLO_WINDOW_SIZE", 200)
 HMRC_SLO_SUCCESS_RATE_TARGET_PERCENT = _parse_non_negative_float_env("HMRC_SLO_SUCCESS_RATE_TARGET_PERCENT", 99.0)
 HMRC_SLO_P95_LATENCY_TARGET_MS = _parse_non_negative_float_env("HMRC_SLO_P95_LATENCY_TARGET_MS", 2500.0)
 HMRC_SUBMISSION_EVENTS: deque[dict[str, Any]] = deque(maxlen=HMRC_SLO_WINDOW_SIZE)
+
+# --- SQLite / local DB ---
+INTEGRATIONS_DB_PATH = os.getenv(
+    "INTEGRATIONS_DB_PATH",
+    str(Path(__file__).parent.parent / "integrations.db"),
+)
+INTEGRATIONS_PROCESSING_DELAY_SECONDS = _parse_non_negative_float_env(
+    "INTEGRATIONS_PROCESSING_DELAY_SECONDS", 2.0
+)
+db_lock = threading.Lock()
 
 # --- Models ---
 
@@ -418,7 +432,7 @@ async def health_check():
     status_code=status.HTTP_202_ACCEPTED
 )
 async def submit_tax_return(
-    request: HMRCSubmissionRequest, 
+    request: HMRCSubmissionRequest,
     user_id: str = Depends(get_current_user_id)
 ):
     submission_id = uuid.uuid4()

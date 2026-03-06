@@ -28,7 +28,7 @@ USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://localho
 def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials", 
+        detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -55,10 +55,10 @@ async def create_referral_code(
     existing_code = await crud.get_referral_code_by_user(db, user_id)
     if existing_code and existing_code.is_active:
         return existing_code
-    
+
     # Generate new 6-character code
     code = str(uuid.uuid4())[:8].upper()
-    
+
     db_code = await crud.create_referral_code(db, schemas.ReferralCodeCreate(
         user_id=user_id,
         code=code,
@@ -79,23 +79,23 @@ async def validate_referral_code(
     referral_code = await crud.get_referral_code_by_code(db, request.code)
     if not referral_code or not referral_code.is_active:
         raise HTTPException(status_code=404, detail="Invalid or expired referral code")
-    
+
     # Check if user can use this code
     if referral_code.user_id == user_id:
         raise HTTPException(status_code=400, detail="Cannot use your own referral code")
-    
+
     # Check max uses
     usage_count = await crud.get_referral_usage_count(db, referral_code.id)
     if usage_count >= referral_code.max_uses:
         raise HTTPException(status_code=400, detail="Referral code has reached maximum uses")
-    
+
     # Create referral usage record
     usage = await crud.create_referral_usage(db, schemas.ReferralUsageCreate(
         referral_code_id=referral_code.id,
         referred_user_id=user_id,
         referrer_user_id=referral_code.user_id
     ))
-    
+
     return {
         "status": "valid",
         "referrer_reward": referral_code.reward_amount,
@@ -118,7 +118,7 @@ async def get_referral_stats(
             pending_rewards=0.0,
             conversions_this_month=0
         )
-    
+
     stats = await crud.get_referral_statistics(db, referral_code.id)
     return stats
 
@@ -130,16 +130,16 @@ async def get_referral_leaderboard(
 ):
     """Get top referrers leaderboard (gamification)"""
     leaderboard = await crud.get_referral_leaderboard(db, limit)
-    
+
     # Find current user's position
     user_position = await crud.get_user_referral_rank(db, user_id)
-    
+
     return {
         "leaderboard": leaderboard,
         "your_position": user_position,
         "rewards": {
             "monthly_champion": "3 months Pro free",
-            "top_3": "1 month Pro free", 
+            "top_3": "1 month Pro free",
             "top_10": "£50 credit"
         }
     }
@@ -154,15 +154,15 @@ async def join_referral_campaign(
     campaign = await crud.get_campaign_by_id(db, campaign_id)
     if not campaign or not campaign.is_active:
         raise HTTPException(status_code=404, detail="Campaign not found or inactive")
-    
+
     if campaign.end_date and campaign.end_date < datetime.now(timezone.utc):
         raise HTTPException(status_code=400, detail="Campaign has ended")
-    
+
     # Create/update user's referral code for this campaign
     updated_code = await crud.update_referral_code_for_campaign(
         db, user_id, campaign_id, campaign.reward_multiplier
     )
-    
+
     return {
         "campaign_name": campaign.name,
         "description": campaign.description,

@@ -39,7 +39,7 @@ app = FastAPI(
 
 # Security Configuration
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "ultra_secure_key_for_production")
-AUTH_ALGORITHM = "HS256" 
+AUTH_ALGORITHM = "HS256"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
 THREAT_DETECTION_API_KEY = os.getenv("THREAT_DETECTION_API_KEY", secrets.token_hex(32))
 SOC_ADMIN_TOKEN = os.getenv("SOC_ADMIN_TOKEN", secrets.token_hex(64))
@@ -52,7 +52,7 @@ security_scheme = HTTPBearer()
 class ThreatLevel(str, Enum):
     """Threat severity classification based on NIST framework"""
     LOW = "low"
-    MEDIUM = "medium" 
+    MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
     CATASTROPHIC = "catastrophic"
@@ -63,7 +63,7 @@ class SecurityEventType(str, Enum):
     PRIVILEGE_ESCALATION = "privilege_escalation"
     DATA_EXFILTRATION = "data_exfiltration"
     MALWARE_DETECTION = "malware_detection"
-    NETWORK_INTRUSION = "network_intrusion" 
+    NETWORK_INTRUSION = "network_intrusion"
     VULNERABILITY_EXPLOIT = "vulnerability_exploit"
     POLICY_VIOLATION = "policy_violation"
     ANOMALOUS_BEHAVIOR = "anomalous_behavior"
@@ -84,7 +84,7 @@ class VulnerabilitySeverity(str, Enum):
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
-    HIGH = "high" 
+    HIGH = "high"
     CRITICAL = "critical"
 
 class IncidentStatus(str, Enum):
@@ -190,15 +190,15 @@ class AdvancedEncryption:
     def __init__(self):
         self.key = ENCRYPTION_KEY.encode()  # ENCRYPTION_KEY is always string
         self.cipher = Fernet(self.key)
-    
+
     def encrypt_sensitive_data(self, data: str) -> str:
         """Encrypt sensitive data using Fernet (AES 128 in CBC mode)"""
         return self.cipher.encrypt(data.encode()).decode()
-    
+
     def decrypt_sensitive_data(self, encrypted_data: str) -> str:
         """Decrypt sensitive data"""
         return self.cipher.decrypt(encrypted_data.encode()).decode()
-    
+
     def generate_secure_token(self, length: int = 32) -> str:
         """Generate cryptographically secure random token"""
         return secrets.token_hex(length)
@@ -207,14 +207,14 @@ class ThreatDetectionEngine:
     def __init__(self):
         self.ml_models_loaded = False
         self.threat_signatures = self._load_threat_signatures()
-    
+
     def _load_threat_signatures(self) -> Dict[str, Any]:
         """Load known threat signatures and IOCs"""
         return {
             "malicious_ips": ["192.168.1.100", "10.0.0.50"],  # Mock IPs
             "suspicious_patterns": [
                 r"(?i).*(union|select|insert|delete|drop|exec).*",  # SQL injection
-                r"(?i).*(<script|javascript:|vbscript:).*",         # XSS 
+                r"(?i).*(<script|javascript:|vbscript:).*",         # XSS
                 r"(?i).*(\.\.\/|\.\.\\).*"                          # Directory traversal
             ],
             "anomaly_thresholds": {
@@ -223,35 +223,35 @@ class ThreatDetectionEngine:
                 "api_request_rate": 1000
             }
         }
-    
+
     async def analyze_security_event(self, event_data: Dict[str, Any]) -> SecurityThreatIntelligence:
         """Analyze security event using ML and rule-based detection"""
-        
+
         # Extract key indicators
         source_ip = event_data.get("source_ip", "unknown")
         _user_agent = event_data.get("user_agent", "")
         request_pattern = event_data.get("request_pattern", "")
-        
+
         # Threat scoring algorithm
         threat_score = 0.0
         indicators: List[str] = []
-        
+
         # Check against blacklisted IPs
         if source_ip in self.threat_signatures["malicious_ips"]:
             threat_score += 0.8
             indicators.append(f"Known malicious IP: {source_ip}")  # type: ignore  # type: ignore
-        
+
         # Pattern matching for attacks
         for pattern in self.threat_signatures["suspicious_patterns"]:
             import re
             if re.search(pattern, request_pattern):
                 threat_score += 0.6
                 indicators.append(f"Suspicious pattern detected: {pattern}")  # type: ignore  # type: ignore
-        
+
         # Behavioral analysis (mock ML model predictions)
         behavioral_score = await self._behavioral_anomaly_detection(event_data)
         threat_score += behavioral_score
-        
+
         # Determine threat level
         if threat_score >= 0.9:
             threat_level = ThreatLevel.CATASTROPHIC
@@ -263,7 +263,7 @@ class ThreatDetectionEngine:
             threat_level = ThreatLevel.MEDIUM
         else:
             threat_level = ThreatLevel.LOW
-        
+
         return SecurityThreatIntelligence(
             threat_type=SecurityEventType.ANOMALOUS_BEHAVIOR,
             threat_level=threat_level,
@@ -273,44 +273,44 @@ class ThreatDetectionEngine:
             confidence_score=min(threat_score, 1.0),
             mitigation_actions=self._generate_mitigation_actions(threat_level)
         )
-    
+
     async def _behavioral_anomaly_detection(self, event_data: Dict[str, Any]) -> float:
         """ML-based behavioral anomaly detection"""
         # Mock ML model - in production would use real ML models
         import random
         _user_id = event_data.get("user_id", "")
         base_score = random.uniform(0.0, 0.3)
-        
+
         # Time-based anomaly
         current_hour = datetime.now().hour
         if current_hour < 6 or current_hour > 22:  # Outside business hours
             base_score += 0.2
-        
+
         # Volume anomaly
         request_count = event_data.get("request_count", 0)
         if request_count > self.threat_signatures["anomaly_thresholds"]["api_request_rate"]:
             base_score += 0.3
-        
+
         return min(base_score, 1.0)
-    
+
     def _generate_mitigation_actions(self, threat_level: ThreatLevel) -> List[str]:
         """Generate appropriate mitigation actions based on threat level"""
         base_actions = ["Log security event", "Alert security team"]
-        
+
         if threat_level in [ThreatLevel.HIGH, ThreatLevel.CRITICAL, ThreatLevel.CATASTROPHIC]:
             base_actions.extend([
                 "Block source IP",
                 "Invalidate user sessions",
                 "Enable enhanced monitoring"
             ])
-        
+
         if threat_level in [ThreatLevel.CRITICAL, ThreatLevel.CATASTROPHIC]:
             base_actions.extend([
                 "Isolate affected systems",
                 "Activate incident response team",
                 "Notify regulatory authorities"
             ])
-        
+
         return base_actions
 
 class ComplianceAutomation:
@@ -321,7 +321,7 @@ class ComplianceAutomation:
             ComplianceFramework.GDPR: self._gdpr_controls(),
             ComplianceFramework.FCA_SYSC: self._fca_sysc_controls()
         }
-    
+
     def _sox_controls(self) -> List[Dict[str, Any]]:
         """Sarbanes-Oxley compliance controls"""
         return [
@@ -338,7 +338,7 @@ class ComplianceAutomation:
                 "automation_level": 0.80
             }
         ]
-    
+
     def _pci_dss_controls(self) -> List[Dict[str, Any]]:
         """PCI DSS compliance controls"""
         return [
@@ -355,7 +355,7 @@ class ComplianceAutomation:
                 "automation_level": 0.90
             }
         ]
-    
+
     def _gdpr_controls(self) -> List[Dict[str, Any]]:
         """GDPR compliance controls"""
         return [
@@ -372,7 +372,7 @@ class ComplianceAutomation:
                 "automation_level": 0.85
             }
         ]
-    
+
     def _fca_sysc_controls(self) -> List[Dict[str, Any]]:
         """FCA SYSC compliance controls"""
         return [
@@ -400,17 +400,17 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
     )
     try:
         payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
-        
+
         # Additional token validation
         user_id = payload.get("sub")
         if not user_id:
             raise credentials_exception
-        
+
         # Check token expiration with buffer
         exp = payload.get("exp")
         if exp and datetime.fromtimestamp(exp, timezone.utc) < datetime.now(timezone.utc):
             raise credentials_exception
-        
+
         # Validate token signature integrity
         token_hash = payload.get("signature_hash")
         expected_hash = hashlib.sha256((user_id + str(exp)).encode()).hexdigest()
@@ -419,9 +419,9 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token integrity validation failed"
             )
-        
+
         return user_id
-        
+
     except JWTError as exc:
         raise credentials_exception from exc
 
@@ -436,16 +436,16 @@ async def verify_security_clearance(
         "soc_analyst_001": "soc_analyst",
         "elevated_user": "elevated"
     }
-    
+
     user_clearance = mock_clearances.get(user_id, "basic")
-    
+
     clearance_levels = {
         "basic": 1,
-        "elevated": 2, 
+        "elevated": 2,
         "soc_analyst": 3,
         "admin": 4
     }
-    
+
     return clearance_levels.get(user_clearance, 1) >= clearance_levels.get(required_clearance, 1)
 
 # --- Security Operations Endpoints ---
@@ -467,14 +467,14 @@ async def security_dashboard(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Comprehensive security operations dashboard"""
-    
+
     # Verify SOC analyst clearance
     if not await verify_security_clearance(user_id, "soc_analyst"):
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail="SOC analyst clearance required"
         )
-    
+
     return {
         "threat_landscape": {
             "active_threats": 7,
@@ -523,10 +523,10 @@ async def analyze_security_threat(
     user_id: str = Depends(get_current_user_id)
 ):
     """Real-time threat detection and analysis"""
-    
+
     # Analyze the security event
     threat_intel = await threat_engine.analyze_security_event(event_data)
-    
+
     # If high risk, trigger automated response
     if threat_intel.threat_level in [ThreatLevel.HIGH, ThreatLevel.CRITICAL, ThreatLevel.CATASTROPHIC]:
         background_tasks.add_task(
@@ -534,7 +534,7 @@ async def analyze_security_threat(
             threat_intel,
             user_id
         )
-    
+
     return threat_intel
 
 async def execute_automated_response(threat_intel: SecurityThreatIntelligence, analyst_id: str):
@@ -542,12 +542,12 @@ async def execute_automated_response(threat_intel: SecurityThreatIntelligence, a
     print(f"🚨 SECURITY ALERT: {threat_intel.threat_level} threat detected")
     print(f"📊 Threat ID: {threat_intel.threat_id}")
     print(f"🎯 Source: {threat_intel.source_ip}")
-    
+
     for action in threat_intel.mitigation_actions:
         print(f"⚡ Executing: {action}")
         # In production: integrate with SOAR platform
         await asyncio.sleep(0.1)  # Simulate action execution
-    
+
     print(f"✅ Automated response completed by analyst: {analyst_id}")
 
 @app.get("/security/vulnerabilities", response_model=List[VulnerabilityAssessment])
@@ -556,7 +556,7 @@ async def get_vulnerability_assessment(
     user_id: str = Depends(get_current_user_id)
 ):
     """Get current vulnerability assessment results"""
-    
+
     # Mock vulnerability data - in production, integrate with vulnerability scanners
     vulnerabilities = [
         VulnerabilityAssessment(
@@ -587,10 +587,10 @@ async def get_vulnerability_assessment(
             compliance_implications=[ComplianceFramework.GDPR]
         )
     ]
-    
+
     if severity:
         vulnerabilities = [v for v in vulnerabilities if v.severity == severity]
-    
+
     return vulnerabilities
 
 @app.post("/security/incidents", response_model=SecurityIncident, status_code=status.HTTP_201_CREATED)
@@ -600,7 +600,7 @@ async def create_security_incident(
     user_id: str = Depends(get_current_user_id)
 ) -> SecurityIncident:
     """Create and track security incident"""
-    
+
     incident = SecurityIncident(
         title=incident_data.get("title", "Security Incident"),
         description=incident_data.get("description", ""),
@@ -610,10 +610,10 @@ async def create_security_incident(
         assigned_analyst=user_id,
         affected_systems=incident_data.get("affected_systems", [])
     )
-    
+
     # Start incident response workflow
     background_tasks.add_task(initiate_incident_response, incident)
-    
+
     return incident
 
 async def initiate_incident_response(incident: SecurityIncident):
@@ -621,14 +621,14 @@ async def initiate_incident_response(incident: SecurityIncident):
     print(f"📋 INCIDENT RESPONSE: {incident.incident_id}")
     print(f"🚨 Severity: {incident.severity}")
     print(f"📝 Type: {incident.incident_type}")
-    
+
     # Automated response actions based on severity
     if incident.severity == ThreatLevel.CRITICAL:
         print("⚡ CRITICAL: Activating emergency response protocol")
         print("🔒 Isolating affected systems")
         print("📞 Notifying executive team")
         print("🏛️ Preparing regulatory notifications")
-    
+
     print("✅ Incident response initiated")
 
 @app.get("/security/compliance", response_model=List[ComplianceControl])
@@ -637,10 +637,10 @@ async def get_compliance_controls(
     user_id: str = Depends(get_current_user_id)
 ) -> List[ComplianceControl]:
     """Get compliance control assessments"""
-    
+
     controls: List[ComplianceControl] = []
     frameworks_to_check = [framework] if framework else list(ComplianceFramework)
-    
+
     for fw in frameworks_to_check:
         if fw in compliance_automation.frameworks:
             for control_data in compliance_automation.frameworks[fw]:
@@ -655,7 +655,7 @@ async def get_compliance_controls(
                     responsible_party="Security Team",
                     automation_level=control_data.get("automation_level", 0.5)  # type: ignore
                 ))
-    
+
     return controls
 
 @app.post("/security/encryption/encrypt", response_model=Dict[str, str])
@@ -664,17 +664,17 @@ async def encrypt_sensitive_data(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, str]:
     """Encrypt sensitive data using enterprise-grade encryption"""
-    
+
     if not await verify_security_clearance(user_id, "elevated"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Elevated clearance required for encryption operations"
         )
-    
+
     encrypted_data = {}
     for key, value in data.items():
         encrypted_data[key] = encryption_service.encrypt_sensitive_data(value)
-    
+
     return {
         "encrypted_data": json.dumps(encrypted_data),
         "encryption_algorithm": "Fernet (AES 128 CBC)",
@@ -687,7 +687,7 @@ async def evaluate_zero_trust_access(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Evaluate access request against zero-trust policies"""
-    
+
     # Mock zero-trust evaluation
     risk_factors = {
         "device_trust": 0.85,
@@ -695,10 +695,10 @@ async def evaluate_zero_trust_access(
         "behavior_trust": 0.78,
         "identity_trust": 0.94
     }
-    
+
     overall_trust_score = sum(risk_factors.values()) / len(risk_factors)
     access_granted = overall_trust_score > 0.75
-    
+
     return {
         "access_request_id": str(uuid.uuid4()),
         "user_id": user_id,
@@ -718,7 +718,7 @@ async def get_security_financial_impact(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Comprehensive security ROI and monetization metrics"""
-    
+
     return {
         "threat_prevention_value": {
             "ransomware_attacks_blocked": 12,
@@ -771,7 +771,7 @@ async def get_enterprise_security_readiness(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Enterprise security readiness assessment for unicorn trajectory"""
-    
+
     return {
         "security_maturity": {
             "current_level": "Advanced (Level 4/5)",
@@ -785,7 +785,7 @@ async def get_enterprise_security_readiness(
         },
         "certification_status": {
             "iso27001": {"status": "Certified", "expiry": "2025-12-01"},
-            "soc2_type2": {"status": "Certified", "expiry": "2025-08-15"}, 
+            "soc2_type2": {"status": "Certified", "expiry": "2025-08-15"},
             "pci_dss": {"status": "Compliant", "next_audit": "2024-06-01"},
             "cyber_essentials_plus": {"status": "Certified", "expiry": "2024-11-30"}
         },

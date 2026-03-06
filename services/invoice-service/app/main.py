@@ -74,17 +74,17 @@ async def create_invoice(
         # Calculate totals
         calculator = InvoiceCalculator()
         calculated_invoice = calculator.calculate_totals(invoice_data)
-        
+
         # Create invoice
         invoice = await crud.create_invoice(db, user_id=user_id, invoice_data=calculated_invoice)
-        
+
         # Sync to transactions service in background
         background_tasks.add_task(
             sync_invoice_to_transactions,
             invoice.id,
             token
         )
-        
+
         return invoice
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create invoice: {str(e)}")
@@ -109,7 +109,7 @@ async def list_invoices(
         client_name=client_name,
         company_id=company_id
     )
-    
+
     invoices = await crud.get_invoices_filtered(db, user_id=user_id, filters=filters, skip=skip, limit=limit)
     return invoices
 
@@ -136,11 +136,11 @@ async def update_invoice(
     invoice = await crud.get_invoice(db, invoice_id=invoice_id, user_id=user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
     # Prevent editing paid invoices
     if invoice.status == schemas.InvoiceStatus.PAID:
         raise HTTPException(status_code=400, detail="Cannot modify paid invoice")
-    
+
     updated_invoice = await crud.update_invoice(db, invoice_id=invoice_id, invoice_update=invoice_update)
     return updated_invoice
 
@@ -154,10 +154,10 @@ async def delete_invoice(
     invoice = await crud.get_invoice(db, invoice_id=invoice_id, user_id=user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
     if invoice.status != schemas.InvoiceStatus.DRAFT:
         raise HTTPException(status_code=400, detail="Can only delete draft invoices")
-    
+
     await crud.delete_invoice(db, invoice_id=invoice_id)
     return {"message": "Invoice deleted successfully"}
 
@@ -171,22 +171,22 @@ async def send_invoice(
     invoice = await crud.get_invoice(db, invoice_id=invoice_id, user_id=user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
     if invoice.status != schemas.InvoiceStatus.DRAFT:
         raise HTTPException(status_code=400, detail="Can only send draft invoices")
-    
+
     # Generate PDF if not exists
     pdf_generator = PDFGenerator()
     if not invoice.pdf_file_path:
         pdf_path = await pdf_generator.generate_invoice_pdf(invoice)
         await crud.update_invoice_pdf_path(db, invoice_id=invoice_id, pdf_path=pdf_path)
-    
+
     # Update status to sent
     update_data = schemas.InvoiceUpdate(status=schemas.InvoiceStatus.SENT)
     updated_invoice = await crud.update_invoice(db, invoice_id=invoice_id, invoice_update=update_data)
-    
+
     # TODO: Trigger email sending via message queue
-    
+
     return updated_invoice
 
 # === PAYMENT ENDPOINTS ===
@@ -202,13 +202,13 @@ async def add_payment(
     invoice = await crud.get_invoice(db, invoice_id=invoice_id, user_id=user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
     # Create payment record
     payment = await crud.create_payment(db, invoice_id=invoice_id, payment_data=payment_data)
-    
+
     # Update invoice status based on payments
     await crud.update_invoice_status_from_payments(db, invoice_id=invoice_id)
-    
+
     return payment
 
 @app.get("/invoices/{invoice_id}/payments", response_model=List[schemas.InvoicePayment], tags=["payments"])
@@ -221,7 +221,7 @@ async def get_invoice_payments(
     invoice = await crud.get_invoice(db, invoice_id=invoice_id, user_id=user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
     return invoice.payments
 
 # === TEMPLATE ENDPOINTS ===
@@ -269,7 +269,7 @@ async def update_template(
     template = await crud.get_template(db, template_id=template_id, user_id=user_id)
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-    
+
     updated_template = await crud.update_template(db, template_id=template_id, template_update=template_update)
     return updated_template
 
@@ -289,7 +289,7 @@ async def get_invoice_summary(
         start_date = datetime.utcnow() - timedelta(days=365)
     if not end_date:
         end_date = datetime.utcnow()
-    
+
     reporting_service = InvoiceReportingService(db)
     summary = await reporting_service.generate_summary_report(
         user_id=user_id,
@@ -341,24 +341,24 @@ async def generate_pdf(
     invoice = await crud.get_invoice(db, invoice_id=invoice_id, user_id=user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
     pdf_generator = PDFGenerator()
-    
+
     # Get template if specified
     template = None
     if pdf_request.template_id:
         template = await crud.get_template(db, template_id=pdf_request.template_id, user_id=user_id)
-    
+
     # Generate PDF
     pdf_path = await pdf_generator.generate_invoice_pdf(
         invoice=invoice,
         template=template,
         custom_styling=pdf_request.custom_styling
     )
-    
+
     # Update invoice with PDF path
     await crud.update_invoice_pdf_path(db, invoice_id=invoice_id, pdf_path=pdf_path)
-    
+
     return schemas.PDFGenerationResponse(
         pdf_url=f"/invoices/{invoice_id}/pdf/download",
         file_path=pdf_path,
@@ -375,10 +375,10 @@ async def download_pdf(
     invoice = await crud.get_invoice(db, invoice_id=invoice_id, user_id=user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    
+
     if not invoice.pdf_file_path or not os.path.exists(invoice.pdf_file_path):
         raise HTTPException(status_code=404, detail="PDF not found")
-    
+
     filename = f"Invoice-{invoice.invoice_number}.pdf"
     return FileResponse(
         path=invoice.pdf_file_path,

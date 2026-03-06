@@ -6,7 +6,7 @@ from enum import Enum
 
 class InvoiceStatus(str, Enum):
     DRAFT = "draft"
-    SENT = "sent" 
+    SENT = "sent"
     PAID = "paid"
     OVERDUE = "overdue"
     CANCELLED = "cancelled"
@@ -51,7 +51,7 @@ class InvoiceLineItem(InvoiceLineItemBase):
     id: str
     line_total: Decimal
     vat_amount: Decimal
-    
+
     class Config:
         from_attributes = True
 
@@ -70,7 +70,7 @@ class InvoicePayment(InvoicePaymentBase):
     id: str
     invoice_id: str
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -80,12 +80,12 @@ class InvoiceBase(BaseModel):
     client_email: Optional[EmailStr] = Field(None, description="Client email")
     client_address: Optional[str] = Field(None, max_length=1000)
     client_vat_number: Optional[str] = Field(None, max_length=50)
-    
+
     due_date: datetime = Field(..., description="Payment due date")
-    
+
     vat_rate: Decimal = Field(default=20.0, ge=0, le=100, description="Default VAT rate")
     currency: str = Field(default="GBP", max_length=3, description="Invoice currency")
-    
+
     notes: Optional[str] = Field(None, max_length=2000)
     terms_conditions: Optional[str] = Field(None, max_length=5000)
 
@@ -99,13 +99,13 @@ class InvoiceUpdate(BaseModel):
     client_email: Optional[EmailStr] = None
     client_address: Optional[str] = Field(None, max_length=1000)
     client_vat_number: Optional[str] = Field(None, max_length=50)
-    
+
     due_date: Optional[datetime] = None
     status: Optional[InvoiceStatus] = None
-    
+
     vat_rate: Optional[Decimal] = Field(None, ge=0, le=100)
     currency: Optional[str] = Field(None, max_length=3)
-    
+
     notes: Optional[str] = Field(None, max_length=2000)
     terms_conditions: Optional[str] = Field(None, max_length=5000)
 
@@ -114,23 +114,23 @@ class Invoice(InvoiceBase):
     invoice_number: str
     user_id: str
     company_id: Optional[str]
-    
+
     issue_date: datetime
     payment_date: Optional[datetime]
-    
+
     subtotal: Decimal
     vat_amount: Decimal
     total_amount: Decimal
-    
+
     status: InvoiceStatus
     pdf_file_path: Optional[str]
-    
+
     created_at: datetime
     updated_at: datetime
-    
+
     line_items: List[InvoiceLineItem] = []
     payments: List[InvoicePayment] = []
-    
+
     class Config:
         from_attributes = True
 
@@ -145,14 +145,14 @@ class InvoiceTemplateBase(BaseModel):
     company_logo_url: Optional[str] = Field(None, max_length=500)
     vat_registration_number: Optional[str] = Field(None, max_length=50)
     companies_house_number: Optional[str] = Field(None, max_length=50)
-    
+
     default_vat_rate: Decimal = Field(default=20.0, ge=0, le=100)
     default_currency: str = Field(default="GBP", max_length=3)
     payment_terms_days: int = Field(default=30, ge=1, le=365)
-    
+
     default_terms: Optional[str] = Field(None, max_length=5000)
     default_notes: Optional[str] = Field(None, max_length=2000)
-    
+
     color_scheme: Optional[dict] = Field(None, description="Color scheme for PDF")
     font_settings: Optional[dict] = Field(None, description="Font preferences")
 
@@ -178,7 +178,7 @@ class InvoiceTemplate(InvoiceTemplateBase):
     is_default: bool
     created_at: datetime
     updated_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -203,7 +203,7 @@ class RecurringInvoice(RecurringInvoiceBase):
     is_active: bool
     created_at: datetime
     template: Optional[InvoiceTemplate] = None
-    
+
     class Config:
         from_attributes = True
 
@@ -224,7 +224,7 @@ class InvoiceStats(BaseModel):
     outstanding_amount: Decimal
     overdue_amount: Decimal
     average_payment_time: Optional[float]  # Days
-    
+
 class InvoiceReportSummary(BaseModel):
     period_start: datetime
     period_end: datetime
@@ -238,7 +238,7 @@ class PDFGenerationRequest(BaseModel):
     invoice_id: str
     template_id: Optional[str] = None
     custom_styling: Optional[dict] = None
-    
+
 class PDFGenerationResponse(BaseModel):
     pdf_url: str
     file_path: str
@@ -269,9 +269,9 @@ class CalculatedInvoice(BaseModel):
     terms_conditions: Optional[str] = None
     company_id: Optional[str] = None
     template_id: Optional[str] = None
-    
+
     line_items: List[CalculatedLineItem]
-    
+
     # Calculated totals
     subtotal: Decimal
     total_vat: Decimal

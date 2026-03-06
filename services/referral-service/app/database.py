@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 
 # Database URL from environment variable
 DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
+    "DATABASE_URL",
     "postgresql+asyncpg://postgres:password@postgres/db_referral"
 )
 

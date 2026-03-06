@@ -1,13 +1,16 @@
 import datetime
 import os
+
+# --- Helpers ---
+import re
 import sys
 import uuid
 from pathlib import Path
 from typing import List
 
-import boto3
-from botocore.client import Config
-from botocore.exceptions import ClientError
+import boto3  # type: ignore[import-untyped]
+from botocore.client import Config  # type: ignore[import-untyped]
+from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 from fastapi import (
     Depends,
     FastAPI,
@@ -22,9 +25,21 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import crud, models, schemas
+from . import crud, schemas
 from .celery_app import ocr_processing_task
 from .database import get_db
+
+
+def _sanitize_filename(filename: str) -> str:
+    """Strip path components and dangerous characters from a filename."""
+    # Take only the base name
+    filename = os.path.basename(filename.replace("\\", "/"))
+    # Remove null bytes and control characters
+    filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)
+    # Replace characters that are problematic on filesystems or in URLs
+    filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
+    return filename.strip()
+
 
 # --- File Upload Validation ---
 MAX_FILE_SIZE_MB = 50
@@ -86,7 +101,9 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
-from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.jwt_fastapi import (  # noqa: E402,I001,I002,C0411
+    build_jwt_auth_dependencies,
+)
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 OCR_REVIEW_COMPLETION_SECONDS = Histogram(
@@ -133,9 +150,10 @@ async def upload_document(
     # --- File extension validation ---
     file_extension = os.path.splitext(safe_filename)[1].lower()
     if file_extension not in ALLOWED_EXTENSIONS:
+        allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File extension '{file_extension}' is not allowed. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            detail=f"File extension '{file_extension}' is not allowed. Allowed: {allowed}",
         )
 
     # --- Content-type validation ---
@@ -160,7 +178,9 @@ async def upload_document(
     try:
         s3_client.upload_fileobj(file.file, S3_BUCKET_NAME, s3_key)
     except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload file to S3: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to upload file to S3: {e}"
+        ) from e
 
     db_document = await crud.create_document(
         db, user_id=user_id, filename=safe_filename, filepath=s3_key
@@ -179,7 +199,10 @@ async def upload_document(
 
 @app.get("/documents", response_model=List[schemas.Document])
 async def list_documents(
-    user_id: str = Depends(get_current_user_id), db: AsyncSession = Depends(get_db)
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=1000),
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
 ):
     """Lists all documents for the authenticated user from the database."""
     return await crud.get_documents_by_user(db, user_id=user_id, skip=skip, limit=limit)
@@ -198,7 +221,10 @@ async def list_documents_review_queue(
         limit=limit,
         offset=offset,
     )
-    return schemas.DocumentReviewQueueResponse(total=total, items=items)
+    return schemas.DocumentReviewQueueResponse(
+        total=total,
+        items=[schemas.Document.model_validate(item) for item in items],
+    )
 
 
 @app.get("/documents/{document_id}", response_model=schemas.Document)

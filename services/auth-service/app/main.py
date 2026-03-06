@@ -1,3 +1,4 @@
+# isort: skip_file
 import datetime
 import io
 import logging
@@ -11,13 +12,13 @@ from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any, Optional
 
-import pyotp
-import qrcode
+import pyotp  # type: ignore[import-untyped]
+import qrcode  # type: ignore[import-untyped]
 from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from jose import JWTError, jwt  # type: ignore[import-untyped]
+from passlib.context import CryptContext  # type: ignore[import-untyped]
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, EmailStr, Field
 
@@ -305,12 +306,12 @@ def get_subscription(email: str) -> dict[str, Any]:
 def create_subscription(email: str, plan: str) -> dict[str, Any]:
     now = datetime.datetime.now(datetime.UTC).isoformat()
     trial_end = None
-    status = "active"
+    sub_status = "active"
     if plan != "free":
         trial_end = (
             datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=TRIAL_DAYS)
         ).isoformat()
-        status = "trialing"
+        sub_status = "trialing"
     with db_lock:
         conn = _connect()
         try:
@@ -319,12 +320,12 @@ def create_subscription(email: str, plan: str) -> dict[str, Any]:
                 INSERT OR REPLACE INTO subscriptions (user_email, plan, status, trial_end, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             """,
-                (email, plan, status, trial_end, now, now),
+                (email, plan, sub_status, trial_end, now, now),
             )
             conn.commit()
         finally:
             conn.close()
-    return {"user_email": email, "plan": plan, "status": status, "trial_end": trial_end}
+    return {"user_email": email, "plan": plan, "status": sub_status, "trial_end": trial_end}
 
 
 def _expire_trial(email: str) -> None:
@@ -402,8 +403,8 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
         if email is None:
             raise credentials_exception
         token_data = TokenData(email=email)
-    except JWTError:
-        raise credentials_exception
+    except JWTError as exc:
+        raise credentials_exception from exc
     if token_data.email is None:
         raise credentials_exception
     user = get_user(email=token_data.email)
@@ -688,7 +689,7 @@ async def change_password(
 
 @app.post("/users/{user_email}/deactivate", response_model=User)
 async def deactivate_user(
-    user_email: EmailStr, admin_user: Annotated[User, Depends(require_admin)]
+    user_email: EmailStr, _admin_user: Annotated[User, Depends(require_admin)]
 ):
     """
     Deactivates a user. This action is restricted to administrators.
@@ -939,7 +940,7 @@ async def create_organization(
             }
         except Exception as e:
             logger.error("Failed to create organization: %s", e)
-            raise HTTPException(status_code=500, detail="Failed to create organization")
+            raise HTTPException(status_code=500, detail="Failed to create organization") from e
         finally:
             conn.close()
 
@@ -974,8 +975,7 @@ async def get_enterprise_pricing() -> dict[str, object]:
 # (used by security.tsx in the web portal)
 # ============================================================
 
-import hashlib  # noqa: E402 – needed for session IDs
-import json as _json  # noqa: E402
+import json as _json  # noqa: E402,C0411  # isort: skip  # pylint: disable=wrong-import-order,wrong-import-position
 
 
 def _init_security_tables() -> None:
@@ -1181,7 +1181,9 @@ async def get_security_state(
         conn = _connect()
         try:
             last_login_row = conn.execute(
-                "SELECT occurred_at FROM security_events WHERE user_email = ? AND event_type = 'login_success' ORDER BY occurred_at DESC LIMIT 1",
+                "SELECT occurred_at FROM security_events"
+                " WHERE user_email = ? AND event_type = 'login_success'"
+                " ORDER BY occurred_at DESC LIMIT 1",
                 (current_user.email,),
             ).fetchone()
             legal_row = conn.execute(
@@ -1251,8 +1253,8 @@ async def get_security_events(
 
 @app.get("/security/alerts/deliveries", response_model=AlertDeliveriesResponse)
 async def get_alert_deliveries(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    limit: int = Query(default=25, ge=1, le=200),
+    _current_user: Annotated[User, Depends(get_current_active_user)],
+    _limit: int = Query(default=25, ge=1, le=200),
 ):
     # Stub: returns empty list — alert delivery system not yet wired
     return AlertDeliveriesResponse(items=[], total=0)
@@ -1314,7 +1316,9 @@ async def revoke_session(
         conn = _connect()
         try:
             conn.execute(
-                "UPDATE sessions SET revoked_at = ?, revocation_reason = 'user_revoked' WHERE session_id = ? AND user_email = ?",
+                "UPDATE sessions SET revoked_at = ?,"
+                " revocation_reason = 'user_revoked'"
+                " WHERE session_id = ? AND user_email = ?",
                 (now, session_id, current_user.email),
             )
             conn.commit()
@@ -1332,7 +1336,9 @@ async def revoke_all_sessions(
         conn = _connect()
         try:
             conn.execute(
-                "UPDATE sessions SET revoked_at = ?, revocation_reason = 'revoke_all' WHERE user_email = ? AND revoked_at IS NULL",
+                "UPDATE sessions SET revoked_at = ?,"
+                " revocation_reason = 'revoke_all'"
+                " WHERE user_email = ? AND revoked_at IS NULL",
                 (now, current_user.email),
             )
             conn.commit()
@@ -1386,7 +1392,8 @@ async def request_email_verification(
         conn = _connect()
         try:
             conn.execute(
-                "INSERT OR REPLACE INTO email_verifications (user_email, code, expires_at, confirmed) VALUES (?, ?, ?, 0)",
+                "INSERT OR REPLACE INTO email_verifications"
+                " (user_email, code, expires_at, confirmed) VALUES (?, ?, ?, 0)",
                 (current_user.email, code, expires_at),
             )
             conn.commit()

@@ -74,8 +74,10 @@ FAQ: list[dict[str, Any]] = [
         ],
         "question": "How does HMRC auto-submission work?",
         "answer": (
-            "On **Pro and Business plans**, SelfMonitor submits your Self Assessment return directly to HMRC via the MTD API. "
-            "You always review and **approve before anything is sent** — we never submit without your explicit confirmation."
+            "On **Pro and Business plans**, SelfMonitor submits your Self Assessment"
+            " return directly to HMRC via the MTD API. "
+            "You always review and **approve before anything is sent**"
+            " — we never submit without your explicit confirmation."
         ),
     },
     {
@@ -93,8 +95,10 @@ FAQ: list[dict[str, Any]] = [
         "keywords": ["trial", "free", "14 days", "expire", "plan", "billing"],
         "question": "What happens when my free trial ends?",
         "answer": (
-            "After 14 days your account switches to the **Free plan** automatically — no charge unless you entered payment details. "
-            "You can upgrade anytime from the **Billing** page. All your data is preserved."
+            "After 14 days your account switches to the **Free plan** automatically"
+            " — no charge unless you entered payment details. "
+            "You can upgrade anytime from the **Billing** page."
+            " All your data is preserved."
         ),
     },
     {
@@ -154,7 +158,8 @@ FAQ: list[dict[str, Any]] = [
         "answer": (
             "Click **Forgot password** on the login page and enter your email. "
             "You'll receive a reset link within 2 minutes (check spam). "
-            "If you still can't access your account, create a support ticket below and we'll help within 1 business day."
+            "If you still can't access your account, create a support ticket below"
+            " and we'll help within 1 business day."
         ),
     },
     {

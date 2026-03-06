@@ -17,29 +17,29 @@ class RevenueDataPoint:
 
 class InvoiceReportingService:
     """Service for generating invoice reports and analytics"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
     async def generate_summary_report(
-        self, 
-        user_id: str, 
-        start_date: date, 
+        self,
+        user_id: str,
+        start_date: date,
         end_date: date,
         company_id: Optional[str] = None
     ) -> schemas.InvoiceReportSummary:
         """Generate comprehensive invoice summary report"""
-        
+
         # Base query filter
         base_filter = and_(
             models.Invoice.user_id == user_id,
             models.Invoice.invoice_date >= start_date,
             models.Invoice.invoice_date <= end_date
         )
-        
+
         if company_id:
             base_filter = and_(base_filter, models.Invoice.company_id == company_id)
-        
+
         # Get basic statistics
         stats_result = await self.db.execute(
             select(
@@ -51,7 +51,7 @@ class InvoiceReportingService:
             .where(base_filter)
         )
         stats = stats_result.first()
-        
+
         # Status breakdown
         status_result = await self.db.execute(
             select(
@@ -62,14 +62,14 @@ class InvoiceReportingService:
             .where(base_filter)
             .group_by(models.Invoice.status)
         )
-        
+
         status_summary = {}
         for row in status_result.fetchall():
             status_summary[row.status.value] = {
                 'count': row.count,
                 'amount': float(row.amount or 0)
             }
-        
+
         # Category breakdown
         category_result = await self.db.execute(
             select(
@@ -82,14 +82,14 @@ class InvoiceReportingService:
             .where(models.InvoiceLineItem.category.isnot(None))
             .group_by(models.InvoiceLineItem.category)
         )
-        
+
         category_breakdown = {}
         for row in category_result.fetchall():
             category_breakdown[row.category] = {
                 'total_amount': float(row.total_amount or 0),
                 'item_count': row.item_count
             }
-        
+
         # Top clients
         client_result = await self.db.execute(
             select(
@@ -102,7 +102,7 @@ class InvoiceReportingService:
             .order_by(func.sum(models.Invoice.total_amount).desc())
             .limit(10)
         )
-        
+
         top_clients = []
         for row in client_result.fetchall():
             top_clients.append({
@@ -110,7 +110,7 @@ class InvoiceReportingService:
                 'invoice_count': row.invoice_count,
                 'total_amount': float(row.total_amount or 0)
             })
-        
+
         return schemas.InvoiceReportSummary(
             period_start=start_date,
             period_end=end_date,
@@ -123,14 +123,14 @@ class InvoiceReportingService:
             category_breakdown=category_breakdown,
             top_clients=top_clients
         )
-    
+
     async def generate_aging_report(
-        self, 
-        user_id: str, 
+        self,
+        user_id: str,
         company_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate accounts receivable aging report"""
-        
+
         # Get all unpaid/partially paid invoices
         base_filter = and_(
             models.Invoice.user_id == user_id,
@@ -140,31 +140,31 @@ class InvoiceReportingService:
                 schemas.InvoiceStatus.OVERDUE
             ])
         )
-        
+
         if company_id:
             base_filter = and_(base_filter, models.Invoice.company_id == company_id)
-        
+
         result = await self.db.execute(
             select(models.Invoice)
             .where(base_filter)
             .order_by(models.Invoice.due_date.asc())
         )
-        
+
         invoices = result.scalars().all()
-        
+
         aging_buckets = {
             'current': {'count': 0, 'amount': 0},
             '1-30_days': {'count': 0, 'amount': 0},
-            '31-60_days': {'count': 0, 'amount': 0}, 
+            '31-60_days': {'count': 0, 'amount': 0},
             '61-90_days': {'count': 0, 'amount': 0},
             '90+_days': {'count': 0, 'amount': 0}
         }
-        
+
         today = date.today()
-        
+
         for invoice in invoices:
             outstanding = invoice.total_amount - (invoice.paid_amount or Decimal(0))
-            
+
             if not invoice.due_date or invoice.due_date >= today:
                 bucket = 'current'
             else:
@@ -177,25 +177,25 @@ class InvoiceReportingService:
                     bucket = '61-90_days'
                 else:
                     bucket = '90+_days'
-            
+
             aging_buckets[bucket]['count'] += 1
             aging_buckets[bucket]['amount'] += float(outstanding)
-        
+
         return {
             'generated_at': datetime.now(timezone.utc),
             'aging_buckets': aging_buckets,
             'total_outstanding': sum(bucket['amount'] for bucket in aging_buckets.values())
         }
-    
+
     async def generate_revenue_report(
-        self, 
-        user_id: str, 
-        start_date: date, 
+        self,
+        user_id: str,
+        start_date: date,
         end_date: date,
         grouping: str = "month"
     ) -> List[Dict[str, Any]]:
         """Generate revenue analytics over time"""
-        
+
         if grouping == "day":
             date_trunc = func.date(models.Invoice.invoice_date)
             date_format = "%Y-%m-%d"
@@ -203,12 +203,12 @@ class InvoiceReportingService:
             date_trunc = func.date_trunc('week', models.Invoice.invoice_date)
             date_format = "Week of %Y-%m-%d"
         elif grouping == "quarter":
-            date_trunc = func.date_trunc('quarter', models.Invoice.invoice_date) 
+            date_trunc = func.date_trunc('quarter', models.Invoice.invoice_date)
             date_format = "Q%q %Y"
         else:  # month
             date_trunc = func.date_trunc('month', models.Invoice.invoice_date)
             date_format = "%B %Y"
-        
+
         result = await self.db.execute(
             select(
                 date_trunc.label('period'),
@@ -226,7 +226,7 @@ class InvoiceReportingService:
             .group_by(date_trunc)
             .order_by(date_trunc)
         )
-        
+
         revenue_data = []
         for row in result.fetchall():
             period_date = row.period
@@ -234,26 +234,26 @@ class InvoiceReportingService:
                 period_str = period_date
             else:
                 period_str = period_date.strftime(date_format)
-            
+
             revenue_data.append({
                 'period': period_str,
                 'revenue': float(row.revenue or 0),
                 'invoice_count': row.invoice_count,
                 'avg_invoice_value': float(row.avg_invoice_value or 0)
             })
-        
+
         return revenue_data
-    
+
     async def generate_tax_report(
-        self, 
-        user_id: str, 
+        self,
+        user_id: str,
         tax_year: int
     ) -> Dict[str, Any]:
         """Generate tax report for HMRC filing"""
-        
+
         start_date = date(tax_year, 4, 6)  # UK tax year starts April 6th
         end_date = date(tax_year + 1, 4, 5)
-        
+
         # Get all tax data for the year
         result = await self.db.execute(
             select(
@@ -273,9 +273,9 @@ class InvoiceReportingService:
                 )
             )
         )
-        
+
         tax_summary = result.first()
-        
+
         # VAT breakdown by rate
         vat_breakdown_result = await self.db.execute(
             select(
@@ -298,7 +298,7 @@ class InvoiceReportingService:
             )
             .group_by(models.InvoiceLineItem.tax_rate)
         )
-        
+
         vat_breakdown = {}
         for row in vat_breakdown_result.fetchall():
             rate = row.tax_rate or 0
@@ -306,7 +306,7 @@ class InvoiceReportingService:
                 'net_amount': float(row.net_amount or 0),
                 'vat_amount': float(row.vat_amount or 0)
             }
-        
+
         return {
             'tax_year': f"{tax_year}/{tax_year + 1}",
             'period_start': start_date,
@@ -316,14 +316,14 @@ class InvoiceReportingService:
             'vat_breakdown': vat_breakdown,
             'generated_at': datetime.utcnow()
         }
-    
+
     async def sync_to_transactions_service(self, user_id: str, invoice_id: Optional[str] = None) -> Dict[str, Any]:
         """Sync invoice data to main transactions service for comprehensive reporting"""
-        
+
         base_filter = models.Invoice.user_id == user_id
         if invoice_id:
             base_filter = and_(base_filter, models.Invoice.id == invoice_id)
-        
+
         # Get invoices to sync
         invoices_result = await self.db.execute(
             select(models.Invoice)
@@ -333,9 +333,9 @@ class InvoiceReportingService:
             )
             .where(base_filter)
         )
-        
+
         invoices = invoices_result.scalars().all()
-        
+
         sync_data = []
         for invoice in invoices:
             # Convert invoice to transaction format
@@ -356,7 +356,7 @@ class InvoiceReportingService:
                     'currency': invoice.currency
                 }
             }
-            
+
             # Add detailed line items
             for line_item in invoice.line_items:
                 line_transaction = {
@@ -377,7 +377,7 @@ class InvoiceReportingService:
                     }
                 }
                 sync_data.append(line_transaction)
-        
+
         # TODO: Send to transactions service via HTTP API
         # For now, return the sync payload
         return {
@@ -386,16 +386,16 @@ class InvoiceReportingService:
             'transaction_count': len(sync_data),
             'sync_data': sync_data
         }
-    
+
     async def generate_self_employment_report(self, user_id: str, tax_year: int) -> Dict[str, Any]:
         """Generate comprehensive report for self-employed tax filing"""
-        
+
         start_date = date(tax_year, 4, 6)
         end_date = date(tax_year + 1, 4, 5)
-        
+
         # Get invoice summary
         summary = await self.generate_summary_report(user_id, start_date, end_date)
-        
+
         # Get category breakdown for expense categorization
         category_result = await self.db.execute(
             select(
@@ -413,7 +413,7 @@ class InvoiceReportingService:
             )
             .group_by(models.InvoiceLineItem.category)
         )
-        
+
         income_by_category = {}
         for row in category_result.fetchall():
             if row.category:
@@ -421,7 +421,7 @@ class InvoiceReportingService:
                     'total': float(row.total),
                     'count': row.count
                 }
-        
+
         return {
             'tax_year': f"{tax_year}/{tax_year + 1}",
             'summary': summary,

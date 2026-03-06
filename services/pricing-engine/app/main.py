@@ -44,7 +44,7 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
 # --- Models ---
 class PricingTier(str, Enum):
     FREE = "free"
-    STARTER = "starter" 
+    STARTER = "starter"
     PRO = "pro"
     BUSINESS = "business"
     ENTERPRISE = "enterprise"
@@ -101,7 +101,7 @@ async def health_check():
 @app.get("/pricing-plans", response_model=List[PricingPlan])
 async def get_pricing_plans():
     """Get all available pricing plans with smart value positioning"""
-    
+
     plants = [
         PricingPlan(
             tier=PricingTier.FREE,
@@ -118,7 +118,7 @@ async def get_pricing_plans():
                 UsageMetric.TEAM_MEMBERS: 1
             },
             features=[
-                "1 bank connection", 
+                "1 bank connection",
                 "200 transactions/month",
                 "Manual categorization",
                 "Basic tax calculation",
@@ -127,7 +127,7 @@ async def get_pricing_plans():
             target_customer="New freelancers testing the waters",
             value_proposition="Get started free, see immediate value"
         ),
-        
+
         PricingPlan(
             tier=PricingTier.STARTER,
             name="Starter",
@@ -144,7 +144,7 @@ async def get_pricing_plans():
             },
             features=[
                 "3 bank connections",
-                "1,000 transactions/month", 
+                "1,000 transactions/month",
                 "AI categorization",
                 "Monthly HMRC submission",
                 "Receipt OCR",
@@ -154,12 +154,12 @@ async def get_pricing_plans():
             target_customer="Active freelancers, small side-hustles",
             value_proposition="Save 3+ hours/month, £9 pays for itself in 1 saved hour"
         ),
-        
+
         PricingPlan(
             tier=PricingTier.PRO,
             name="Pro",
             monthly_price_gbp=19,
-            annual_price_gbp=189,  # 17% discount  
+            annual_price_gbp=189,  # 17% discount
             annual_discount_percent=17,
             limits={
                 UsageMetric.BANK_CONNECTIONS: -1,  # Unlimited
@@ -174,7 +174,7 @@ async def get_pricing_plans():
                 "Unlimited bank connections",
                 "5,000 transactions/month",
                 "Advanced ML categorization",
-                "Automatic HMRC submission", 
+                "Automatic HMRC submission",
                 "Unlimited documents + smart search",
                 "Mortgage readiness reports",
                 "Advanced analytics & forecasting",
@@ -184,7 +184,7 @@ async def get_pricing_plans():
             target_customer="Serious freelancers, consultants earning £3k+/month",
             value_proposition="Complete automation - pay for itself in tax savings alone"
         ),
-        
+
         PricingPlan(
             tier=PricingTier.BUSINESS,
             name="Business",
@@ -213,7 +213,7 @@ async def get_pricing_plans():
             target_customer="Small agencies, teams, high-earning freelancers",
             value_proposition="Scale your business, not your admin overhead"
         ),
-        
+
         PricingPlan(
             tier=PricingTier.ENTERPRISE,
             name="Enterprise",
@@ -234,7 +234,7 @@ async def get_pricing_plans():
                 "SSO & advanced security",
                 "Custom integrations",
                 "Dedicated infrastructure",
-                "SLA guarantees", 
+                "SLA guarantees",
                 "Legal & compliance consultation",
                 "Custom contract terms",
                 "24/7 priority support"
@@ -243,32 +243,32 @@ async def get_pricing_plans():
             value_proposition="Enterprise-grade solution with guaranteed ROI"
         )
     ]
-    
+
     return plants
 
-@app.get("/usage/{user_id}", response_model=UserUsage)  
+@app.get("/usage/{user_id}", response_model=UserUsage)
 async def get_user_usage(
     user_id: str,
     current_user: str = Depends(get_current_user_id)
 ):
     """Get current usage statistics for user"""
-    
+
     # Get usage from Redis
     usage_key = f"usage:{user_id}:{datetime.datetime.now().strftime('%Y-%m')}"
     usage_data = redis_client.hgetall(usage_key)
-    
+
     # Convert to proper format
     usage_this_month = {}
     for metric in UsageMetric:
         usage_this_month[metric] = int(usage_data.get(metric.value, 0))
-    
+
     # Get user's current plan (mock data for demo)
     current_tier = PricingTier.STARTER
-    
+
     # Get limits for current tier
     plans = await get_pricing_plans()
     current_plan = next(p for p in plans if p.tier == current_tier)
-    
+
     return UserUsage(
         user_id=user_id,
         current_tier=current_tier,
@@ -287,19 +287,19 @@ async def track_usage_event(
     current_user: str = Depends(get_current_user_id)
 ):
     """Track a usage event for billing/limits"""
-    
+
     current_month = datetime.datetime.now().strftime('%Y-%m')
     usage_key = f"usage:{user_id}:{current_month}"
-    
+
     # Increment usage counter
     new_count = redis_client.hincrby(usage_key, metric.value, quantity)
-    
+
     # Set expiry for automatic cleanup
     redis_client.expire(usage_key, 86400 * 40)  # 40 days
-    
+
     # Check if user hit limits and needs upgrade nudge
     user_usage = await get_user_usage(user_id, current_user)
-    
+
     warnings = []
     if user_usage.usage_limits.get(metric, 0) > 0:  # Has a limit
         limit = user_usage.usage_limits[metric]
@@ -307,7 +307,7 @@ async def track_usage_event(
             warnings.append(f"Approaching {metric.value} limit ({new_count}/{limit})")
         if new_count >= limit:
             warnings.append(f"Exceeded {metric.value} limit! Consider upgrading.")
-    
+
     return {
         "metric": metric.value,
         "new_total": new_count,
@@ -321,16 +321,16 @@ async def get_pricing_recommendation(
     current_user: str = Depends(get_current_user_id)
 ):
     """AI-powered pricing recommendation based on usage patterns"""
-    
+
     usage = await get_user_usage(user_id, current_user)
     plans = await get_pricing_plans()
-    
+
     current_plan = next(p for p in plans if p.tier == usage.current_tier)
-    
+
     # Analyze usage patterns
     total_usage_score = 0
     exceeded_limits = []
-    
+
     for metric, count in usage.usage_this_month.items():
         limit = usage.usage_limits.get(metric, -1)
         if limit > 0 and count > limit:
@@ -338,7 +338,7 @@ async def get_pricing_recommendation(
             total_usage_score += 2  # Heavy penalty for exceeded limits
         elif limit > 0 and count > limit * 0.7:
             total_usage_score += 1  # Approaching limit
-    
+
     # Recommendation logic
     if len(exceeded_limits) >= 2:
         # Heavy user, recommend significant upgrade
@@ -371,7 +371,7 @@ async def get_pricing_recommendation(
         reason = "Current plan is optimal for your usage."
         potential_additional_revenue = 0.0
         confidence_score = 0.6
-    
+
     return PricingRecommendation(
         current_tier=usage.current_tier,
         recommended_tier=recommended_tier,
@@ -388,45 +388,45 @@ async def get_dynamic_pricing(
     current_user: str = Depends(get_current_user_id)
 ):
     """Get personalized pricing with smart discounts"""
-    
+
     plans = await get_pricing_plans()
     target_plan = next(p for p in plans if p.tier == target_tier)
     base_price = target_plan.monthly_price_gbp
-    
+
     # Personalization factors
     usage = await get_user_usage(user_id, current_user)
     days_to_billing = (usage.next_billing_date - datetime.datetime.now()).days
-    
+
     discount_percent = 0
     discount_reason = ""
     urgency_factor = ""
-    
+
     # Churn risk discount
     if usage.current_tier == PricingTier.FREE and target_tier == PricingTier.STARTER:
         discount_percent = 25  # First month 25% off
         discount_reason = "New customer welcome offer"
-        
+
     # Urgency discounts
     elif days_to_billing <= 3:
         discount_percent = 15
-        discount_reason = "Limited time: upgrade before billing cycle"  
+        discount_reason = "Limited time: upgrade before billing cycle"
         urgency_factor = "Expires in 3 days"
-        
+
     # Volume discount for high usage
-    elif (usage.usage_this_month.get(UsageMetric.TRANSACTIONS_PROCESSED, 0) > 
+    elif (usage.usage_this_month.get(UsageMetric.TRANSACTIONS_PROCESSED, 0) >
           usage.usage_limits.get(UsageMetric.TRANSACTIONS_PROCESSED, 0)):
         discount_percent = 20
         discount_reason = "Heavy user discount - thank you for growing with us!"
-        
+
     # Annual plan incentive
     annual_discount = target_plan.annual_discount_percent
     if annual_discount > discount_percent:
         discount_percent = annual_discount
         discount_reason = f"Annual plan - save {annual_discount}% vs monthly billing"
-    
+
     personalized_price = base_price * (1 - discount_percent / 100)
     expires_at = datetime.datetime.now() + datetime.timedelta(days=7)
-    
+
     return DynamicPricing(
         base_price=base_price,
         personalized_price=round(personalized_price, 2),
@@ -441,7 +441,7 @@ async def get_pricing_analytics(
     current_user: str = Depends(get_current_user_id)
 ):
     """Analytics dashboard for pricing optimization"""
-    
+
     return {
         "conversion_rates": {
             "free_to_starter": 0.23,  # 23% convert within 30 days
@@ -459,7 +459,7 @@ async def get_pricing_analytics(
             "improvement_opportunity": "+30.3%",
             "key_levers": [
                 "Free trial extension (14 → 30 days): +8% conversion",
-                "Usage-based upgrade nudges: +12% Pro upgrades", 
+                "Usage-based upgrade nudges: +12% Pro upgrades",
                 "Annual billing incentives: +15% revenue per customer",
                 "Enterprise pilot program: +£2.5k/month potential"
             ]

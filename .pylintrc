@@ -1,0 +1,126 @@
+[MASTER]
+# Ignore third-party directories and auto-generated files
+ignore=.venv,venv,node_modules,__pycache__,migrations,alembic,apps
+
+[MESSAGES CONTROL]
+# Disable rules that are intentional patterns in this FastAPI codebase:
+#   broad-exception-caught (W0703): used in graceful-degradation try/except blocks
+#   unused-argument (W0613): FastAPI Depends() params are used by the framework,
+#       not necessarily by function body; underscore-prefixed params are intentional
+#   function-redefined (E0102): conditional import fallback stubs redefine symbols
+#   redefined-outer-name (W0621): loop vars in __main__ blocks
+#   missing-module-docstring (C0114): many service modules lack top-level docstrings
+#   missing-class-docstring (C0115): many Pydantic/SQLAlchemy models lack docstrings
+#   missing-function-docstring (C0116): many route handlers lack docstrings
+#   too-many-lines (C0302): large FastAPI service files exceed 1000 lines by design
+#   wrong-import-position (C0413): sys.path manipulation before imports is required
+#   invalid-name (C0103): UPPER_CASE module-level configs and short loop vars
+disable=broad-exception-caught,
+        W0703,
+        broad-except,
+        unused-argument,
+        W0613,
+        function-redefined,
+        E0102,
+        redefined-outer-name,
+        W0621,
+        missing-module-docstring,
+        C0114,
+        missing-class-docstring,
+        C0115,
+        missing-function-docstring,
+        C0116,
+        too-many-lines,
+        C0302,
+        wrong-import-position,
+        C0413,
+        invalid-name,
+        C0103,
+        too-many-arguments,
+        R0913,
+        too-many-locals,
+        R0914,
+        too-many-branches,
+        R0912,
+        too-many-statements,
+        R0915,
+        too-many-instance-attributes,
+        R0902,
+        too-many-public-methods,
+        R0904,
+        too-many-return-statements,
+        R0911,
+        too-many-boolean-expressions,
+        R0916,
+        too-few-public-methods,
+        R0903,
+        line-too-long,
+        C0301,
+        trailing-whitespace,
+        C0303,
+        fixme,
+        W0511,
+        global-statement,
+        W0603,
+        protected-access,
+        W0212,
+        import-outside-toplevel,
+        C0415,
+        useless-super-delegation,
+        W0235,
+        no-else-return,
+        R1705,
+        consider-using-f-string,
+        C0209,
+        use-dict-literal,
+        R1735,
+        use-list-literal,
+        R1734,
+        unspecified-encoding,
+        W1514,
+        logging-fstring-interpolation,
+        W1202,
+        logging-format-interpolation,
+        W1201,
+        super-with-arguments,
+        R1725,
+        unnecessary-pass,
+        W0107,
+        raise-missing-from,
+        W0707,
+        consider-using-with,
+        R1732,
+        duplicate-code,
+        R0801,
+        import-error,
+        E0401,
+        wrong-import-order,
+        C0411,
+        ungrouped-imports,
+        C0412,
+        missing-final-newline,
+        C0304,
+        trailing-newlines,
+        C0305,
+        multiple-statements,
+        C0321,
+        pointless-string-statement,
+        W0105,
+        unnecessary-lambda,
+        W0108,
+        use-implicit-booleaness-not-comparison,
+        C1802,
+        use-implicit-booleaness-not-len,
+        C1801
+
+[VARIABLES]
+# Treat any variable starting with _ as a dummy/intentionally unused variable
+dummy-variables-rgx=_+$|_+[a-zA-Z0-9_]*$
+
+[FORMAT]
+max-line-length=120
+
+[TYPECHECK]
+# Ignore missing module members for third-party packages without stubs
+ignored-modules=boto3,botocore,celery,jose,passlib,qrcode,prometheus_fastapi_instrumentator,pyotp,aiohttp,asyncpg,redis,kafka,aiokafka,weaviate,openai,anthropic,transformers,torch,sklearn,pandas,numpy,scipy,cv2,PIL,sqlalchemy,alembic,fastapi,pydantic,uvicorn,starlette
+ignored-classes=SQLAlchemy,scoped_session,sessionmaker,DeclarativeBase,Base

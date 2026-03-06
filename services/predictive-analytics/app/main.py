@@ -1,3 +1,4 @@
+# isort: skip_file
 import json
 import os
 from datetime import datetime, timedelta, timezone
@@ -6,7 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Dict, List, Optional, Union, c
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jose import JWTError, jwt  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field
 
 # OpenTelemetry integration for distributed tracing
@@ -25,31 +26,33 @@ try:
 except ImportError:
     telemetry_available = False
 
-    from typing import Callable
-    from typing import TypeVar as _TypeVar
+    from typing import Callable  # noqa: C0412,I001,E402  # isort: skip  # pylint: disable=ungrouped-imports,wrong-import-position
+    from typing import TypeVar as _TypeVar  # noqa: C0412,I001,E402  # isort: skip  # pylint: disable=ungrouped-imports,wrong-import-position
 
     _F = _TypeVar("_F")
 
-    def get_tracer(name: str) -> None:  # noqa: F811
+    def get_tracer(name: str) -> None:  # noqa: F811  # type: ignore
         return None
 
-    def trace_async_function(operation_name: str) -> "Callable[[_F], _F]":  # noqa: F811
+    def trace_async_function(  # noqa: F811  # type: ignore
+        operation_name: str,
+    ) -> "Callable[[_F], _F]":
         def decorator(func: "_F") -> "_F":
             return func  # type: ignore[return-value]
 
         return decorator  # type: ignore[return-value]
 
-    def add_span_attributes(**attributes: object) -> None:  # noqa: F811
+    def add_span_attributes(**attributes: object) -> None:  # noqa: F811  # type: ignore
         pass
 
-    class TelemetryConfig:  # noqa: F811  # type: ignore[misc]
+    class TelemetryConfig:  # noqa: F811  # type: ignore
         def __init__(self, **kwargs: object) -> None:
             pass
 
         def setup_tracing(self) -> None:
             pass
 
-        def instrument_fastapi(self, app: object) -> None:
+        def instrument_fastapi(self, app: object) -> None:  # pylint: disable=redefined-outer-name
             pass
 
         def instrument_libraries(self) -> None:
@@ -67,7 +70,7 @@ try:
 except ImportError:
     kafka_available = False
 
-    class KafkaEventProducer:  # noqa: F811  # type: ignore[misc]
+    class KafkaEventProducer:  # noqa: F811  # type: ignore
         def __init__(self, **kwargs: object) -> None:
             pass
 
@@ -101,7 +104,10 @@ except ImportError:
 
 app = FastAPI(
     title="SelfMonitor Real-time Recommendation Engine",
-    description="AI-powered real-time recommendations for financial optimization, investment strategies, and business growth.",
+    description=(
+        "AI-powered real-time recommendations for financial optimization,"
+        " investment strategies, and business growth."
+    ),
     version="2.0.0",
 )
 
@@ -119,7 +125,7 @@ else:
 
 # Initialize Kafka event producer
 if kafka_available:
-    event_producer = KafkaEventProducer(service_name="predictive-analytics")
+    event_producer: Optional[KafkaEventProducer] = KafkaEventProducer(service_name="predictive-analytics")
 else:
     event_producer = None
 
@@ -148,12 +154,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 # Initialize Redis for caching recommendations
 try:
     if redis_available and redis is not None:
-        redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)  # type: ignore
+        redis_client: Optional[Any] = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB)  # type: ignore
         redis_client.ping()  # type: ignore
     else:
-        redis_client = None
-except Exception:
-    redis_client = None
+        redis_client = None  # type: ignore[assignment]
+except Exception:  # pylint: disable=broad-exception-caught
+    redis_client = None  # type: ignore[assignment]
 
 
 def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
@@ -270,7 +276,7 @@ async def get_user_data(user_id: str) -> Dict[str, Any]:
             )  # type: ignore
             if analytics_response.status_code == 200:  # type: ignore
                 user_data["analytics"] = analytics_response.json()  # type: ignore
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         # If external services fail, use cached or default data
         pass
 
@@ -298,7 +304,10 @@ def generate_financial_recommendations(
                 id=f"cash_flow_opt_{user_id}",
                 type=RecommendationType.CASH_FLOW_MANAGEMENT,
                 title="Optimize Cash Flow Management",
-                description="Your expenses are approaching 90% of your income. Consider implementing cash flow optimization strategies.",
+                description=(
+                    "Your expenses are approaching 90% of your income."
+                    " Consider implementing cash flow optimization strategies."
+                ),
                 priority=Priority.HIGH,
                 estimated_impact={
                     "financial": monthly_income * 0.1,
@@ -480,7 +489,7 @@ async def health_check() -> Dict[str, Any]:
 async def get_real_time_recommendations(
     user_id: str,
     refresh: bool = False,
-    current_user: str = Depends(get_current_user_id),
+    _current_user: str = Depends(get_current_user_id),
 ) -> RecommendationResponse:
     """Get personalized real-time recommendations for financial optimization"""
 
@@ -506,7 +515,7 @@ async def get_real_time_recommendations(
                 )  # type: ignore
                 cached_recommendations = json.loads(cached_str)
                 return RecommendationResponse(**cached_recommendations)
-            except Exception:
+            except Exception:  # pylint: disable=broad-exception-caught
                 pass
 
     # Fetch fresh user data
@@ -595,7 +604,7 @@ async def get_real_time_recommendations(
                     else 0,
                 },
             )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Failed to send recommendation event: {e}")
 
     return response
@@ -605,7 +614,7 @@ async def get_real_time_recommendations(
 async def get_category_recommendations(
     user_id: str,
     category: RecommendationType,
-    current_user: str = Depends(get_current_user_id),
+    _current_user: str = Depends(get_current_user_id),
 ) -> List[Recommendation]:
     """Get recommendations for a specific category"""
 
@@ -668,7 +677,7 @@ async def take_recommendation_action(
 
 @app.get("/recommendations/analytics/performance")
 async def get_recommendation_performance(
-    current_user: str = Depends(get_current_user_id),
+    _current_user: str = Depends(get_current_user_id),
 ) -> Dict[str, Any]:
     """Get performance analytics for recommendation engine"""
 
@@ -711,7 +720,7 @@ async def get_recommendation_performance(
 @app.get("/churn-prediction/{user_id}", response_model=ChurnPrediction)
 @trace_async_function("predict_churn_risk")
 async def predict_churn_risk(
-    user_id: str, current_user: str = Depends(get_current_user_id)
+    user_id: str, _current_user: str = Depends(get_current_user_id)
 ):
     """Predict churn risk for a specific user using ML models"""
 
@@ -837,7 +846,7 @@ async def predict_churn_risk(
                     "onboarding_completion": onboarding_completion,
                 },
             )
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             print(f"Failed to send churn prediction event: {e}")
 
     return ChurnPrediction(
@@ -854,7 +863,7 @@ async def predict_churn_risk(
 
 @app.get("/cohort-churn-analysis")
 async def analyze_cohort_churn(
-    cohort_month: str = "2026-01", current_user: str = Depends(get_current_user_id)
+    cohort_month: str = "2026-01", _current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Analyze churn patterns across user cohorts"""
 
@@ -919,7 +928,7 @@ async def analyze_cohort_churn(
 async def launch_intervention_campaign(
     campaign_type: str,
     target_risk_level: ChurnRisk = ChurnRisk.HIGH,
-    current_user: str = Depends(get_current_user_id),
+    _current_user: str = Depends(get_current_user_id),
 ) -> Dict[str, Any]:
     """Launch targeted retention campaigns based on churn predictions"""
 
@@ -986,7 +995,7 @@ async def launch_intervention_campaign(
 
 @app.get("/ml-model-performance")
 async def get_churn_model_performance(
-    current_user: str = Depends(get_current_user_id),
+    _current_user: str = Depends(get_current_user_id),
 ) -> Dict[str, Any]:
     """Get performance metrics for churn prediction ML models"""
 

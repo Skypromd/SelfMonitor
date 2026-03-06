@@ -27,7 +27,7 @@ def get_db():
 
 
 # ── ORM models ─────────────────────────────────────────────────────────────────
-class TicketORM(Base):
+class TicketORM(Base):  # type: ignore
     __tablename__ = "tickets"
 
     id = Column(
@@ -47,7 +47,7 @@ class TicketORM(Base):
     )
 
 
-class FeedbackORM(Base):
+class FeedbackORM(Base):  # type: ignore
     __tablename__ = "feedback"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -57,7 +57,7 @@ class FeedbackORM(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
-class ChatSessionORM(Base):
+class ChatSessionORM(Base):  # type: ignore
     __tablename__ = "chat_sessions"
 
     session_id = Column(String, primary_key=True)

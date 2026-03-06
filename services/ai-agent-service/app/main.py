@@ -19,21 +19,21 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan"""
     # Startup
     global agent_instance, conversation_manager, memory_manager, tool_registry
-    
+
     # Initialize Memory Manager
     memory_manager = MemoryManager(
         redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/8"),
         vector_db_url=os.getenv("WEAVIATE_URL", "http://weaviate:8080")
     )
     await memory_manager.initialize()
-    
+
     # Initialize Tool Registry
     tool_registry = ToolRegistry()
     await tool_registry.discover_services()
-    
+
     # Initialize Conversation Manager
     conversation_manager = ConversationManager(memory_manager)
-    
+
     # Initialize Main Agent
     agent_instance = SelfMateAgent(
         memory_manager=memory_manager,
@@ -41,11 +41,11 @@ async def lifespan(app: FastAPI):
         openai_api_key=os.getenv("OPENAI_API_KEY", "default_key"),
         model="gpt-4-turbo-preview"
     )
-    
+
     print("🤖 SelfMate AI Agent initialized successfully!")
-    
+
     yield
-    
+
     # Shutdown
     if memory_manager:
         await memory_manager.close()  # type: ignore
@@ -147,7 +147,7 @@ async def get_agent_status(current_user: str = Depends(get_current_user_id)) -> 
     """Get comprehensive agent status"""
     if not agent_instance:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    
+
     return AgentStatus(
         status="active" if agent_instance.is_ready() else "initializing",
         active_sessions=conversation_manager.get_active_session_count() if conversation_manager else 0,
@@ -203,19 +203,19 @@ async def chat_with_agent(
     """Main chat interface with SelfMate Agent"""
     if not agent_instance:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    
+
     start_time = datetime.now(timezone.utc)
     session_id = request.session_id or f"session_{current_user}_{int(datetime.now(timezone.utc).timestamp())}"
-    
+
     # Get conversation context
     if conversation_manager is None:
         raise HTTPException(status_code=503, detail="Conversation manager not initialized")
-        
+
     conversation_context = await conversation_manager.get_conversation_context(
         user_id=current_user,
         session_id=session_id
     )
-    
+
     # Process message through AI Agent
     agent_response = await agent_instance.process_message(
         user_id=current_user,
@@ -225,7 +225,7 @@ async def chat_with_agent(
             **(request.context or {})
         }
     )
-    
+
     # Save conversation
     message_id = f"msg_{current_user}_{int(datetime.now(timezone.utc).timestamp())}"
     await conversation_manager.save_conversation_turn(
@@ -238,16 +238,16 @@ async def chat_with_agent(
             "confidence": agent_response.confidence_score
         }
     )
-    
+
     # Schedule background tasks
     background_tasks.add_task(
         process_agent_insights,
         current_user,
         agent_response.insights
     )
-    
+
     processing_time = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
-    
+
     return ChatResponse(
         response=agent_response.response,
         session_id=session_id,
@@ -267,12 +267,12 @@ async def get_conversation_history(
     """Get conversation history for a session"""
     if not conversation_manager:
         raise HTTPException(status_code=503, detail="Conversation manager not initialized")
-    
+
     history = await conversation_manager.get_conversation_history(
         user_id=current_user,
         session_id=session_id
     )
-    
+
     return {
         "session_id": session_id,
         "user_id": current_user,
@@ -288,9 +288,9 @@ async def get_proactive_insights(
     """Get proactive insights and alerts for user"""
     if not agent_instance:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    
+
     insights = await agent_instance.generate_proactive_insights(user_id=current_user)
-    
+
     return {
         "user_id": current_user,
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -309,14 +309,14 @@ async def submit_feedback(
     """Submit feedback for agent improvement"""
     if not agent_instance:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    
+
     await agent_instance.process_feedback(
         user_id=current_user,
         message_id=message_id,
         rating=rating,
         feedback=feedback
     )
-    
+
     return {
         "status": "feedback_received",
         "message": "Thank you for your feedback! SelfMate will learn from this."
@@ -338,10 +338,10 @@ async def trigger_agent_retraining(
     # TODO: Add admin role check
     if not agent_instance:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    
+
     # Schedule retraining in background
     await agent_instance.schedule_retraining()
-    
+
     return {
         "status": "retraining_scheduled",
         "message": "Agent retraining has been scheduled. This may take several hours."
@@ -355,9 +355,9 @@ async def get_agent_metrics(
     # TODO: Add admin role check
     if not agent_instance:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    
+
     metrics = await agent_instance.get_performance_metrics()
-    
+
     return {
         "collection_time": datetime.now(timezone.utc).isoformat(),
         "metrics": metrics

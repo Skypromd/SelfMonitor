@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8080/api';
 const CACHE_PREFIX = 'api.cache.v1.';
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 

@@ -1,15 +1,14 @@
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-import httpx
-from typing import Annotated, List, Optional, Dict, Any
+from datetime import datetime, timezone
 from enum import Enum
-from dataclasses import dataclass
+from typing import Annotated, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status, BackgroundTasks
-from fastapi.security import OAuth2PasswordBearer 
-from jose import JWTError, jwt
-from pydantic import BaseModel, Field
+import httpx
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt  # type: ignore[import-untyped]
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +23,11 @@ AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
-# --- Configuration --- 
+# --- Configuration ---
 USER_PROFILE_SERVICE_URL = os.getenv("USER_PROFILE_SERVICE_URL", "http://localhost:8001")
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://localhost:8002")
 ANALYTICS_SERVICE_URL = os.getenv("ANALYTICS_SERVICE_URL", "http://localhost:8012")
+
 
 def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
     credentials_exception = HTTPException(
@@ -45,6 +45,7 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
         raise credentials_exception
     return user_id
 
+
 # --- Models ---
 class OnboardingStage(str, Enum):
     REGISTRATION = "registration"
@@ -55,21 +56,24 @@ class OnboardingStage(str, Enum):
     SUCCESS_MILESTONE = "success_milestone"
     POWER_USER = "power_user"
 
+
 class ChurnRisk(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
 
+
 class UserJourney(BaseModel):
     user_id: str
     current_stage: OnboardingStage
     stages_completed: List[OnboardingStage] = []
     days_since_registration: int
-    last_login: datetime.datetime
+    last_login: datetime
     engagement_score: float  # 0-100
     churn_risk: ChurnRisk
     success_actions_taken: List[str] = []
+
 
 class SuccessMetrics(BaseModel):
     time_to_first_value: Optional[int] = None  # days to first categorized transaction
@@ -77,6 +81,7 @@ class SuccessMetrics(BaseModel):
     features_adopted: List[str] = []
     support_tickets: int = 0
     sentiment_score: float = 0.5  # 0-1, neutral at 0.5
+
 
 class ProactiveAction(BaseModel):
     action_type: str
@@ -86,20 +91,22 @@ class ProactiveAction(BaseModel):
     trigger_reason: str
     suggested_message: str
 
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
 
+
 @app.get("/user-journey/{user_id}", response_model=UserJourney)
 async def get_user_journey(
     user_id: str,
-    current_user: str = Depends(get_current_user_id)
+    _current_user: str = Depends(get_current_user_id),
 ):
     """Analyze user's current stage in onboarding journey"""
-    
+
     # In production, this would fetch from database
     # For now, simulating intelligent analysis
-    
+
     try:
         async with httpx.AsyncClient() as client:
             # Check if they have profile
@@ -108,42 +115,42 @@ async def get_user_journey(
                 headers={"Authorization": f"Bearer {oauth2_scheme}"},
                 timeout=5.0
             )
-            
+
             # Check transaction history
             transactions_response = await client.get(
                 f"{TRANSACTIONS_SERVICE_URL}/transactions/me",
                 headers={"Authorization": f"Bearer {oauth2_scheme}"},
                 timeout=5.0
             )
-            
+
             has_profile = profile_response.status_code == 200
             transactions_data = transactions_response.json() if transactions_response.status_code == 200 else []
-            
+
             # Intelligent stage detection
             stages_completed = [OnboardingStage.REGISTRATION]
             current_stage = OnboardingStage.PROFILE_SETUP
-            
+
             if has_profile:
                 stages_completed.append(OnboardingStage.PROFILE_SETUP)
                 current_stage = OnboardingStage.BANK_CONNECTION
-            
+
             if transactions_data and len(transactions_data) > 0:
                 stages_completed.append(OnboardingStage.BANK_CONNECTION)
-                stages_completed.append(OnboardingStage.FIRST_TRANSACTIONS) 
+                stages_completed.append(OnboardingStage.FIRST_TRANSACTIONS)
                 current_stage = OnboardingStage.FIRST_CATEGORIZATION
-                
+
             categorized_count = len([t for t in transactions_data if t.get("category")])
             if categorized_count > 5:
                 stages_completed.append(OnboardingStage.FIRST_CATEGORIZATION)
                 current_stage = OnboardingStage.SUCCESS_MILESTONE
-                
+
             if categorized_count > 50:
                 stages_completed.append(OnboardingStage.SUCCESS_MILESTONE)
                 current_stage = OnboardingStage.POWER_USER
-            
+
             # Calculate engagement score
             engagement_score = min(100, len(stages_completed) * 15 + categorized_count * 2)
-            
+
             # Determine churn risk
             if engagement_score > 70:
                 churn_risk = ChurnRisk.LOW
@@ -153,7 +160,7 @@ async def get_user_journey(
                 churn_risk = ChurnRisk.HIGH
             else:
                 churn_risk = ChurnRisk.CRITICAL
-            
+
             return UserJourney(
                 user_id=user_id,
                 current_stage=current_stage,
@@ -164,8 +171,8 @@ async def get_user_journey(
                 churn_risk=churn_risk,
                 success_actions_taken=["profile_completed", "first_bank_connected"]
             )
-            
-    except Exception as e:
+
+    except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         logger.warning("Could not fetch user journey for %s, returning default: %s", user_id, e)
         return UserJourney(
             user_id=user_id,
@@ -177,38 +184,44 @@ async def get_user_journey(
             churn_risk=ChurnRisk.MEDIUM
         )
 
+
 @app.post("/proactive-intervention")
 async def trigger_proactive_intervention(
     user_id: str,
     background_tasks: BackgroundTasks,
-    current_user: str = Depends(get_current_user_id)
+    _current_user: str = Depends(get_current_user_id),
 ):
     """Trigger proactive intervention for at-risk users"""
-    
-    journey = await get_user_journey(user_id, current_user)
+    journey = await get_user_journey(user_id, _current_user)
     interventions = []
-    
+
     # Churn risk interventions
     if journey.churn_risk == ChurnRisk.CRITICAL:
         interventions.append(ProactiveAction(
             action_type="urgent_outreach",
             description="Personal call from customer success manager",
-            priority="high", 
+            priority="high",
             user_id=user_id,
             trigger_reason="Critical churn risk detected",
-            suggested_message="Hi! I noticed you might be having trouble getting started. Let me personally help you save 5+ hours per month on accounting!"
+            suggested_message=(
+                "Hi! I noticed you might be having trouble getting started."
+                " Let me personally help you save 5+ hours per month on accounting!"
+            )
         ))
-        
+
     elif journey.churn_risk == ChurnRisk.HIGH:
         interventions.append(ProactiveAction(
             action_type="targeted_tutorial",
             description="Send personalized video tutorial based on current stage",
             priority="medium",
-            user_id=user_id, 
+            user_id=user_id,
             trigger_reason="High churn risk - user stuck in onboarding",
-            suggested_message="Here's a 2-minute video showing exactly how to connect your bank and start saving time immediately!"
+            suggested_message=(
+                "Here's a 2-minute video showing exactly how to connect your bank"
+                " and start saving time immediately!"
+            )
         ))
-    
+
     # Stage-specific interventions
     if journey.current_stage == OnboardingStage.BANK_CONNECTION:
         interventions.append(ProactiveAction(
@@ -217,22 +230,28 @@ async def trigger_proactive_intervention(
             priority="medium",
             user_id=user_id,
             trigger_reason="User hesitating on bank connection",
-            suggested_message="⭐ Your data is protected by the same encryption banks use. Connect in 30 seconds and see £500+ in missed deductions this year!"
+            suggested_message=(
+                "⭐ Your data is protected by the same encryption banks use."
+                " Connect in 30 seconds and see £500+ in missed deductions this year!"
+            )
         ))
-    
+
     elif journey.current_stage == OnboardingStage.FIRST_CATEGORIZATION:
         interventions.append(ProactiveAction(
             action_type="gamification",
             description="Show potential tax savings from categorizing transactions",
             priority="high",
             user_id=user_id,
-            trigger_reason="User has transactions but not categorizing", 
-            suggested_message="💰 I found £847 in potential tax deductions in your uncategorized expenses! Want to see them?"
+            trigger_reason="User has transactions but not categorizing",
+            suggested_message=(
+                "💰 I found £847 in potential tax deductions"
+                " in your uncategorized expenses! Want to see them?"
+            )
         ))
-    
+
     # Schedule background interventions
     background_tasks.add_task(execute_interventions, interventions)
-    
+
     return {
         "interventions_triggered": len(interventions),
         "estimated_retention_improvement": "15-25%",
@@ -240,19 +259,26 @@ async def trigger_proactive_intervention(
         "message": f"Triggered {len(interventions)} success interventions for user {user_id}"
     }
 
+
 async def execute_interventions(interventions: List[ProactiveAction]):
     """Execute proactive interventions (send emails, create tasks, etc.)"""
     for intervention in interventions:
         # In production: send email, create calendar task, trigger notification
-        logger.info("Executing %s for %s: %s", intervention.action_type, intervention.user_id, intervention.suggested_message)
+        logger.info(
+            "Executing %s for %s: %s",
+            intervention.action_type,
+            intervention.user_id,
+            intervention.suggested_message,
+        )
+
 
 @app.get("/success-metrics/{user_id}", response_model=SuccessMetrics)
 async def get_success_metrics(
-    user_id: str,
-    current_user: str = Depends(get_current_user_id)
+    _user_id: str,
+    _current_user: str = Depends(get_current_user_id),
 ):
     """Get comprehensive success metrics for a user"""
-    
+
     # Mock success metrics calculation
     return SuccessMetrics(
         time_to_first_value=3,  # 3 days to first categorized transaction
@@ -262,13 +288,14 @@ async def get_success_metrics(
         sentiment_score=0.8
     )
 
+
 @app.get("/cohort-analysis")
 async def get_cohort_analysis(
     period: str = "monthly",
-    current_user: str = Depends(get_current_user_id)
+    _current_user: str = Depends(get_current_user_id),
 ):
     """Analyze user cohorts for retention patterns"""
-    
+
     # In production: real cohort analysis from database
     return {
         "period": period,
@@ -281,7 +308,7 @@ async def get_cohort_analysis(
                 "month_12_retention": 0.51
             },
             "2026-01": {
-                "initial_users": 1890, 
+                "initial_users": 1890,
                 "month_1_retention": 0.82,  # Improved with success service
                 "month_3_retention": 0.71,  # +6% improvement
                 "estimated_ltv_improvement": "+23%"
@@ -295,14 +322,15 @@ async def get_cohort_analysis(
         }
     }
 
+
 @app.post("/automated-success-campaigns/{campaign_type}")
 async def launch_automated_campaign(
     campaign_type: str,
     target_segment: str = "at_risk_users",
-    current_user: str = Depends(get_current_user_id)
+    _current_user: str = Depends(get_current_user_id),
 ):
     """Launch automated success campaigns"""
-    
+
     campaigns = {
         "weekly_value_reminder": {
             "description": "Send weekly emails showing value delivered (time saved, money found)",
@@ -311,7 +339,7 @@ async def launch_automated_campaign(
         },
         "feature_discovery": {
             "description": "Progressive feature introduction based on user behavior",
-            "target": "growing_users", 
+            "target": "growing_users",
             "expected_impact": "+18% feature adoption"
         },
         "reactivation_sequence": {
@@ -320,16 +348,16 @@ async def launch_automated_campaign(
             "expected_impact": "+25% reactivation rate"
         }
     }
-    
+
     if campaign_type not in campaigns:
         raise HTTPException(status_code=404, detail="Campaign type not found")
-    
+
     campaign = campaigns[campaign_type]
-    
+
     return {
         "campaign_launched": campaign_type,
         "target_segment": target_segment,
-        "description": campaign["description"], 
+        "description": campaign["description"],
         "expected_impact": campaign["expected_impact"],
         "automation_savings": "£1,200/month vs manual customer success",
         "roi_projection": "3.2x ROI within 6 months"

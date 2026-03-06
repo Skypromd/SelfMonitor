@@ -12,7 +12,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Business Intelligence Service", 
+    title="Business Intelligence Service",
     description="Advanced analytics and data monetization platform for comprehensive business insights.",
     version="1.0.0"
 )
@@ -65,7 +65,7 @@ async def get_revenue_intelligence(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Comprehensive revenue intelligence and optimization insights"""
-    
+
     return {
         "revenue_overview": {
             "total_revenue": 267000.0,  # £267k current month
@@ -105,7 +105,7 @@ async def get_revenue_intelligence(
                 "time_to_impact": "2-3 months"
             },
             {
-                "opportunity": "API monetization enhancement", 
+                "opportunity": "API monetization enhancement",
                 "potential_revenue": 34500.0,
                 "implementation_effort": "low",
                 "time_to_impact": "3-4 weeks"
@@ -137,7 +137,7 @@ async def get_customer_intelligence(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Advanced customer behavior analytics and segmentation insights"""
-    
+
     return {
         "customer_segmentation": {
             "high_value_customers": {
@@ -155,7 +155,7 @@ async def get_customer_intelligence(
                 "characteristics": ["Expanding usage", "Feature adoption", "Engagement growth"]
             },
             "stable_customers": {
-                "count": 478, 
+                "count": 478,
                 "percentage": 0.33,
                 "avg_monthly_revenue": 89.0,
                 "retention_rate": 0.84,
@@ -213,7 +213,7 @@ async def get_market_intelligence(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Market trends and competitive intelligence analytics"""
-    
+
     return {
         "market_trends": {
             "fintech_market_growth": 0.23,  # 23% annual growth
@@ -228,7 +228,7 @@ async def get_market_intelligence(
             "market_leaders": ["FreeAgent", "Xero", "QuickBooks"],
             "competitive_gaps": [
                 "Real-time fraud detection",
-                "Advanced predictive analytics", 
+                "Advanced predictive analytics",
                 "Comprehensive automation",
                 "API marketplace ecosystem"
             ]
@@ -280,7 +280,7 @@ async def get_data_monetization_analytics(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Advanced data monetization strategies and revenue opportunities"""
-    
+
     return {
         "data_assets_valuation": {
             "customer_behavior_data": {
@@ -295,7 +295,7 @@ async def get_data_monetization_analytics(
             },
             "industry_insights": {
                 "estimated_value": 156000.0,
-                "monetization_potential": "High", 
+                "monetization_potential": "High",
                 "use_cases": ["Market intelligence", "Trend analysis", "Competitive intelligence"]
             }
         },
@@ -369,7 +369,7 @@ async def generate_business_insights(
     background_tasks: Optional[BackgroundTasks] = None
 ) -> Dict[str, Any]:
     """AI-powered business insights generation and recommendations"""
-    
+
     # Define insight generation algorithms
     insight_generators: Dict[str, Dict[str, Any]] = {
         "revenue_optimization": {
@@ -388,9 +388,9 @@ async def generate_business_insights(
             "impact_score": 0.82
         }
     }
-    
+
     generator: Dict[str, Any] = insight_generators.get(analysis_type, insight_generators["revenue_optimization"])
-    
+
     # Mock AI-generated insights
     insights: List[Dict[str, Any]] = [
         {
@@ -420,11 +420,11 @@ async def generate_business_insights(
             "estimated_revenue_impact": 67800.0
         }
     ]
-    
+
     # Schedule background insight processing
     if background_tasks is not None:
         background_tasks.add_task(process_advanced_insights, analysis_type, generator)
-    
+
     return {
         "analysis_type": analysis_type,
         "time_range": time_range,
@@ -447,7 +447,7 @@ async def get_executive_dashboard(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Executive-level business intelligence dashboard with KPIs and strategic insights"""
-    
+
     return {
         "key_performance_indicators": {
             "monthly_recurring_revenue": 189450.0,

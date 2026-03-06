@@ -12,16 +12,16 @@ from .invoice_calculator import InvoiceCalculator
 # === INVOICE CRUD OPERATIONS ===
 
 async def create_invoice(
-    db: AsyncSession, 
-    user_id: str, 
+    db: AsyncSession,
+    user_id: str,
     invoice_data: schemas.InvoiceCreate
 ) -> models.Invoice:
     """Create new invoice with line items"""
-    
+
     # Generate invoice number if not provided
     if not invoice_data.invoice_number:
         invoice_data.invoice_number = await generate_invoice_number(db, user_id)
-    
+
     # Create invoice object
     db_invoice = models.Invoice(
         id=str(uuid4()),
@@ -44,10 +44,10 @@ async def create_invoice(
         notes=invoice_data.notes,
         status=schemas.InvoiceStatus.DRAFT
     )
-    
+
     db.add(db_invoice)
     await db.flush()  # Get the ID
-    
+
     # Add line items
     for line_item_data in invoice_data.line_items:
         db_line_item = models.InvoiceLineItem(
@@ -62,7 +62,7 @@ async def create_invoice(
             tax_amount=line_item_data.tax_amount
         )
         db.add(db_line_item)
-    
+
     await db.commit()
     await db.refresh(db_invoice)
     return db_invoice
@@ -83,40 +83,40 @@ async def get_invoice(db: AsyncSession, invoice_id: str, user_id: str) -> Option
     return result.scalar_one_or_none()
 
 async def get_invoices_filtered(
-    db: AsyncSession, 
-    user_id: str, 
+    db: AsyncSession,
+    user_id: str,
     filters: schemas.InvoiceReportFilters,
-    skip: int = 0, 
+    skip: int = 0,
     limit: int = 50
 ) -> List[models.Invoice]:
     """Get filtered list of invoices"""
     query = select(models.Invoice).where(models.Invoice.user_id == user_id)
-    
+
     # Apply filters
     if filters.start_date:
         query = query.where(models.Invoice.invoice_date >= filters.start_date)
-    
+
     if filters.end_date:
         query = query.where(models.Invoice.invoice_date <= filters.end_date)
-    
+
     if filters.status:
         query = query.where(models.Invoice.status.in_(filters.status))
-    
+
     if filters.client_name:
         query = query.where(models.Invoice.client_name.ilike(f"%{filters.client_name}%"))
-    
+
     if filters.company_id:
         query = query.where(models.Invoice.company_id == filters.company_id)
-    
+
     # Add pagination and ordering
     query = query.order_by(desc(models.Invoice.created_at)).offset(skip).limit(limit)
-    
+
     result = await db.execute(query)
     return result.scalars().all()
 
 async def update_invoice(
-    db: AsyncSession, 
-    invoice_id: str, 
+    db: AsyncSession,
+    invoice_id: str,
     invoice_update: schemas.InvoiceUpdate
 ) -> models.Invoice:
     """Update invoice"""
@@ -124,15 +124,15 @@ async def update_invoice(
         select(models.Invoice).where(models.Invoice.id == invoice_id)
     )
     invoice = result.scalar_one_or_none()
-    
+
     if not invoice:
         return None
-    
+
     # Update fields
     update_data = invoice_update.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(invoice, field, value)
-    
+
     await db.commit()
     await db.refresh(invoice)
     return invoice
@@ -143,10 +143,10 @@ async def delete_invoice(db: AsyncSession, invoice_id: str) -> bool:
         select(models.Invoice).where(models.Invoice.id == invoice_id)
     )
     invoice = result.scalar_one_or_none()
-    
+
     if not invoice:
         return False
-    
+
     await db.delete(invoice)
     await db.commit()
     return True
@@ -157,7 +157,7 @@ async def update_invoice_pdf_path(db: AsyncSession, invoice_id: str, pdf_path: s
         select(models.Invoice).where(models.Invoice.id == invoice_id)
     )
     invoice = result.scalar_one_or_none()
-    
+
     if invoice:
         invoice.pdf_file_path = pdf_path
         await db.commit()
@@ -166,7 +166,7 @@ async def generate_invoice_number(db: AsyncSession, user_id: str) -> str:
     """Generate next invoice number for user"""
     # Get current year
     current_year = datetime.now().year
-    
+
     # Find highest invoice number for current year
     result = await db.execute(
         select(func.max(models.Invoice.invoice_number))
@@ -176,20 +176,20 @@ async def generate_invoice_number(db: AsyncSession, user_id: str) -> str:
         ))
     )
     last_number = result.scalar() or f"INV-{current_year}-0000"
-    
+
     # Extract sequence number and increment
     try:
         sequence = int(last_number.split("-")[2]) + 1
     except (IndexError, ValueError):
         sequence = 1
-    
+
     return f"INV-{current_year}-{sequence:04d}"
 
 # === PAYMENT OPERATIONS ===
 
 async def create_payment(
-    db: AsyncSession, 
-    invoice_id: str, 
+    db: AsyncSession,
+    invoice_id: str,
     payment_data: schemas.InvoicePaymentCreate
 ) -> models.InvoicePayment:
     """Create payment record"""
@@ -202,7 +202,7 @@ async def create_payment(
         reference_number=payment_data.reference_number,
         notes=payment_data.notes
     )
-    
+
     db.add(db_payment)
     await db.commit()
     await db.refresh(db_payment)
@@ -217,27 +217,27 @@ async def update_invoice_status_from_payments(db: AsyncSession, invoice_id: str)
         .where(models.Invoice.id == invoice_id)
     )
     invoice = result.scalar_one_or_none()
-    
+
     if not invoice:
         return
-    
+
     # Calculate total payments
     total_paid = sum(payment.amount for payment in invoice.payments)
     invoice.paid_amount = total_paid
-    
+
     # Update status
     if total_paid >= invoice.total_amount:
         invoice.status = schemas.InvoiceStatus.PAID
     elif total_paid > 0:
         invoice.status = schemas.InvoiceStatus.PARTIALLY_PAID
-    
+
     await db.commit()
 
 # === TEMPLATE OPERATIONS ===
 
 async def create_template(
-    db: AsyncSession, 
-    user_id: str, 
+    db: AsyncSession,
+    user_id: str,
     template_data: schemas.InvoiceTemplateCreate
 ) -> models.InvoiceTemplate:
     """Create invoice template"""
@@ -253,15 +253,15 @@ async def create_template(
         styling_options=template_data.styling_options,
         is_default=template_data.is_default or False
     )
-    
+
     db.add(db_template)
     await db.commit()
     await db.refresh(db_template)
     return db_template
 
 async def get_templates(
-    db: AsyncSession, 
-    user_id: str, 
+    db: AsyncSession,
+    user_id: str,
     company_id: Optional[str] = None
 ) -> List[models.InvoiceTemplate]:
     """Get user's invoice templates"""
@@ -271,13 +271,13 @@ async def get_templates(
             models.InvoiceTemplate.is_system_template == True
         )
     )
-    
+
     result = await db.execute(query.order_by(asc(models.InvoiceTemplate.name)))
     return result.scalars().all()
 
 async def get_template(
-    db: AsyncSession, 
-    template_id: str, 
+    db: AsyncSession,
+    template_id: str,
     user_id: str
 ) -> Optional[models.InvoiceTemplate]:
     """Get specific template"""
@@ -295,8 +295,8 @@ async def get_template(
     return result.scalar_one_or_none()
 
 async def update_template(
-    db: AsyncSession, 
-    template_id: str, 
+    db: AsyncSession,
+    template_id: str,
     template_update: schemas.InvoiceTemplateUpdate
 ) -> models.InvoiceTemplate:
     """Update template"""
@@ -304,15 +304,15 @@ async def update_template(
         select(models.InvoiceTemplate).where(models.InvoiceTemplate.id == template_id)
     )
     template = result.scalar_one_or_none()
-    
+
     if not template:
         return None
-    
+
     # Update fields
     update_data = template_update.dict(exclude_unset=True)
     for field, value in update_data.items():
         setattr(template, field, value)
-    
+
     await db.commit()
     await db.refresh(template)
     return template
@@ -331,13 +331,13 @@ async def get_invoice_categories(db: AsyncSession, user_id: str) -> List[str]:
     return [row[0] for row in result.fetchall()]
 
 async def get_invoice_summary_stats(
-    db: AsyncSession, 
-    user_id: str, 
-    start_date: date, 
+    db: AsyncSession,
+    user_id: str,
+    start_date: date,
     end_date: date
 ) -> Dict[str, Any]:
     """Get summary statistics for invoices"""
-    
+
     # Total invoices and amounts
     result = await db.execute(
         select(
@@ -354,7 +354,7 @@ async def get_invoice_summary_stats(
         )
     )
     summary = result.first()
-    
+
     # Status breakdown
     status_result = await db.execute(
         select(
@@ -371,14 +371,14 @@ async def get_invoice_summary_stats(
         )
         .group_by(models.Invoice.status)
     )
-    
+
     status_breakdown = {}
     for row in status_result.fetchall():
         status_breakdown[row.status] = {
             'count': row.count,
             'amount': float(row.amount or 0)
         }
-    
+
     return {
         'total_invoices': summary.total_invoices or 0,
         'total_amount': float(summary.total_amount or 0),
@@ -391,7 +391,7 @@ async def get_invoice_summary_stats(
 
 async def create_system_templates(db: AsyncSession):
     """Create default system templates for self-employed users"""
-    
+
     templates = [
         {
             "name": "Фрилансер - IT Услуги",
@@ -408,7 +408,7 @@ async def create_system_templates(db: AsyncSession):
             ]
         },
         {
-            "name": "Консультант", 
+            "name": "Консультант",
             "description": "Шаблон для консультационных услуг",
             "template_type": "consultant",
             "default_line_items": [
@@ -452,7 +452,7 @@ async def create_system_templates(db: AsyncSession):
         {
             "name": "Маркетолог",
             "description": "Шаблон для маркетинговых услуг",
-            "template_type": "marketer", 
+            "template_type": "marketer",
             "default_line_items": [
                 {
                     "description": "Маркетинговая стратегия",
@@ -464,7 +464,7 @@ async def create_system_templates(db: AsyncSession):
             ]
         }
     ]
-    
+
     for template_data in templates:
         # Check if template already exists
         existing = await db.execute(
@@ -475,7 +475,7 @@ async def create_system_templates(db: AsyncSession):
                 )
             )
         )
-        
+
         if not existing.scalar_one_or_none():
             template = models.InvoiceTemplate(
                 id=str(uuid4()),
@@ -488,5 +488,5 @@ async def create_system_templates(db: AsyncSession):
                 is_default=False
             )
             db.add(template)
-    
+
     await db.commit()

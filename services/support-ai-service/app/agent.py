@@ -57,7 +57,7 @@ def classify_intent(message: str) -> str:
     return INTENT_UNKNOWN
 
 
-def _call_llm(
+def _call_llm(  # pylint: disable=unused-argument
     system_prompt: str, user_message: str, history: list[dict[str, Any]]
 ) -> str:
     """
@@ -66,7 +66,11 @@ def _call_llm(
     To switch to OpenAI GPT-4o:
         import openai
         client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": user_message}]
+        messages = (
+            [{"role": "system", "content": system_prompt}]
+            + history
+            + [{"role": "user", "content": user_message}]
+        )
         resp = client.chat.completions.create(model="gpt-4o", messages=messages)
         return resp.choices[0].message.content
 
@@ -121,7 +125,8 @@ def generate_response(
         return (
             "I'll connect you with a human agent right away. "
             "**Expected wait time: under 2 hours** (Mon–Fri, 9am–6pm UK time). "
-            "Outside business hours, please submit a support ticket using the form below and we'll respond by the next business day.",
+            "Outside business hours, please submit a support ticket using the form "
+            "below and we'll respond by the next business day.",
             intent,
         )
 
@@ -139,14 +144,17 @@ def generate_response(
             answer = item["answer"]
             return (
                 answer
-                + "\n\nIs this what you were looking for? If not, feel free to ask a follow-up or create a support ticket.",
+                + "\n\nIs this what you were looking for? If not, feel free to ask "
+                "a follow-up or create a support ticket.",
                 intent,
             )
 
     # Unknown — try LLM
     system = (
-        "You are a helpful customer support assistant for SelfMonitor — a UK FinTech app for self-employed individuals. "
-        "Be concise, friendly, and accurate. If you don't know the answer, say so honestly and offer to create a ticket. "
+        "You are a helpful customer support assistant for SelfMonitor"
+        " — a UK FinTech app for self-employed individuals. "
+        "Be concise, friendly, and accurate. If you don't know the answer, "
+        "say so honestly and offer to create a ticket. "
         "Format responses with markdown for clarity."
     )
     response = _call_llm(system, message, history)

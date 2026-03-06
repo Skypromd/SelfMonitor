@@ -17,14 +17,14 @@ async def get_recommendation_service(request: Request):  # type: ignore
         service = getattr(request.app.state, "recommendation_service", None)
         if service is None:
             raise HTTPException(
-                status_code=500, 
+                status_code=500,
                 detail="Recommendation service not available"
             )
         return service
     except Exception as e:
         logger.error(f"Failed to get recommendation service: {e}")
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail="Service temporarily unavailable"
         )
 
@@ -50,19 +50,19 @@ async def validate_recommendation_request(request: Request) -> Dict[str, Any]:
         limit = int(request.query_params.get("limit", 10))
         if limit <= 0 or limit > 50:
             raise ValueError("Limit must be between 1 and 50")
-        
+
         # Get recommendation type
         rec_type = request.query_params.get("type", "general")
         valid_types = ["general", "spending", "saving", "investment", "budgeting"]
         if rec_type not in valid_types:
             raise ValueError(f"Invalid recommendation type. Must be one of: {valid_types}")
-        
+
         # Get time horizon
         time_horizon = request.query_params.get("time_horizon", "short_term")
         valid_horizons = ["short_term", "medium_term", "long_term"]
         if time_horizon not in valid_horizons:
             raise ValueError(f"Invalid time horizon. Must be one of: {valid_horizons}")
-        
+
         return {
             "limit": limit,
             "type": rec_type,
@@ -70,7 +70,7 @@ async def validate_recommendation_request(request: Request) -> Dict[str, Any]:
             "include_reasoning": request.query_params.get("include_reasoning", "false").lower() == "true",
             "personalization_level": request.query_params.get("personalization_level", "medium")
         }
-    
+
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -80,19 +80,19 @@ async def validate_recommendation_request(request: Request) -> Dict[str, Any]:
 
 class RateLimiter:
     """Simple in-memory rate limiter for recommendations."""
-    
+
     def __init__(self, max_requests: int = 100, window_seconds: int = 3600):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.user_requests: Dict[str, List[float]] = {}
-    
+
     async def check_rate_limit(self, user_id: str) -> bool:
         """Check if user has exceeded rate limit."""
         import time
-        
+
         current_time = time.time()
         window_start = current_time - self.window_seconds
-        
+
         # Clean up old entries
         if user_id in self.user_requests:
             self.user_requests[user_id] = [
@@ -101,12 +101,12 @@ class RateLimiter:
             ]
         else:
             self.user_requests[user_id] = []
-        
+
         # Check if limit exceeded
         request_count = len(self.user_requests[user_id])
         if request_count >= self.max_requests:
             return False
-        
+
         # Add current request
         self.user_requests[user_id].append(current_time)
         return True

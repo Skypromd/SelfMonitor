@@ -35,19 +35,19 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
     logger.info("🚀 Starting SelfMonitor Recommendation Engine...")
-    
+
     # Initialize services
     try:
         # Initialize recommendation service
         recommendation_service = RecommendationService()  # type: ignore
         await recommendation_service.initialize()  # type: ignore
-        
+
         # Store in app state
         app.state.recommendation_service = recommendation_service
-        
+
         logger.info("✅ Recommendation Engine started successfully")
         yield
-        
+
     except Exception as e:
         logger.error(f"❌ Failed to start Recommendation Engine: {e}")
         raise
@@ -88,7 +88,7 @@ app.include_router(health.router, prefix="/health", tags=["health"])  # type: ig
 app.include_router(recommendations.router, prefix="/api/v1/recommendations", tags=["recommendations"])  # type: ignore
 app.include_router(metrics.router, prefix="/api/v1/metrics", tags=["metrics"])  # type: ignore
 
-# Add Prometheus metrics endpoint 
+# Add Prometheus metrics endpoint
 metrics_app = make_asgi_app()  # type: ignore
 app.mount("/metrics", metrics_app)  # type: ignore
 
@@ -103,7 +103,7 @@ async def root() -> Dict[str, Any]:
         "features": [
             "Real-time personalized recommendations",
             "Multi-model ML ensemble",
-            "A/B testing framework", 
+            "A/B testing framework",
             "Vector similarity search",
             "Performance monitoring"
         ]

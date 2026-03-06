@@ -98,7 +98,7 @@ async def generate_advice(
     if request.topic == "income_protection":
         # 1. Calculate average monthly income over last year
         twelve_months_ago = datetime.date.today() - datetime.timedelta(days=365)
-        monthly_income = defaultdict(float)
+        monthly_income: defaultdict[str, float] = defaultdict(float)
         for t in transactions:
             if t.date >= twelve_months_ago and t.amount > 0:
                 monthly_income[t.date.strftime("%Y-%m")] += t.amount
@@ -113,11 +113,16 @@ async def generate_advice(
         average_monthly_income = sum(monthly_income.values()) / len(monthly_income)
 
         # New, more persuasive text based on the "Problem -> Solution" formula
-        headline = f"Your average income is £{average_monthly_income:,.0f}/month. What if it suddenly stopped?"
+        headline = (
+            f"Your average income is £{average_monthly_income:,.0f}/month."
+            " What if it suddenly stopped?"
+        )
         details = (
             "As a self-employed professional, you don't have paid sick leave. "
-            "This means any illness or injury preventing you from working can directly impact your financial stability. "
-            "Income protection is your safety net, replacing a significant portion of your income so you can focus on recovery, not bills."
+            "This means any illness or injury preventing you from working can "
+            "directly impact your financial stability. "
+            "Income protection is your safety net, replacing a significant portion "
+            "of your income so you can focus on recovery, not bills."
         )
 
         return AdviceResponse(
@@ -128,7 +133,7 @@ async def generate_advice(
         today = datetime.date.today()
         six_months_ago = today - datetime.timedelta(days=180)
 
-        monthly_spending = defaultdict(float)
+        monthly_spending: defaultdict[str, float] = defaultdict(float)
         for t in transactions:
             if t.date >= six_months_ago and t.amount < 0:
                 monthly_spending[t.date.strftime("%Y-%m")] += abs(t.amount)
@@ -147,17 +152,29 @@ async def generate_advice(
             return AdviceResponse(
                 topic="spending_analysis",
                 headline="This is your first month!",
-                details=f"You've spent £{current_month_spending:,.2f} so far. We'll have more insights for you next month.",
+                details=(
+                    f"You've spent £{current_month_spending:,.2f} so far."
+                    " We'll have more insights for you next month."
+                ),
             )
 
         avg_previous_spending = sum(monthly_spending.values()) / len(monthly_spending)
 
         if current_month_spending > avg_previous_spending * 1.2:  # 20% higher
-            headline = f"Your spending is up by {((current_month_spending / avg_previous_spending) - 1):.0%} this month."
-            details = f"You've spent £{current_month_spending:,.2f} so far this month, compared to a recent average of £{avg_previous_spending:,.2f}. It might be a good idea to review your recent activity."
+            pct = (current_month_spending / avg_previous_spending) - 1
+            headline = f"Your spending is up by {pct:.0%} this month."
+            details = (
+                f"You've spent £{current_month_spending:,.2f} so far this month,"
+                f" compared to a recent average of £{avg_previous_spending:,.2f}."
+                " It might be a good idea to review your recent activity."
+            )
         else:
             headline = "Your spending is on track this month."
-            details = f"You've spent £{current_month_spending:,.2f}, which is in line with your average of £{avg_previous_spending:,.2f}. Keep up the good work!"
+            details = (
+                f"You've spent £{current_month_spending:,.2f}, which is in line"
+                f" with your average of £{avg_previous_spending:,.2f}."
+                " Keep up the good work!"
+            )
 
         return AdviceResponse(
             topic="spending_analysis", headline=headline, details=details
@@ -195,7 +212,11 @@ async def generate_advice(
         headline = (
             f"You could save £{total_monthly_cost:,.2f} per month on subscriptions."
         )
-        details = f"We found {len(found_subscriptions)} potential recurring subscriptions, including '{list(found_subscriptions.keys())[0]}'. Are you still using all of them?"
+        first_sub = list(found_subscriptions.keys())[0]
+        details = (
+            f"We found {len(found_subscriptions)} potential recurring subscriptions,"
+            f" including '{first_sub}'. Are you still using all of them?"
+        )
 
         return AdviceResponse(
             topic="savings_potential", headline=headline, details=details

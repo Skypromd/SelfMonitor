@@ -10,7 +10,7 @@ service_dir = Path(__file__).parent / "invoice-service"
 # Add service to path with underscored name for imports
 if service_dir.exists():
     sys.modules[__name__ + ".invoice_service"] = sys.modules[__name__]
-    
+
 # Re-export the app module
 try:
     from .invoice_service import app as invoice_service_app

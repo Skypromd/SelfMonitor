@@ -88,7 +88,7 @@ def sample_conversation_history() -> List[Dict[str, Any]]:
             "metadata": {}
         },
         {
-            "timestamp": "2026-02-20T10:05:00Z", 
+            "timestamp": "2026-02-20T10:05:00Z",
             "user_message": "Can you help with tax planning?",
             "agent_response": "I'd be happy to help with tax planning!",
             "metadata": {}

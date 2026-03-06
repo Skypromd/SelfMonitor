@@ -51,7 +51,7 @@ class PartnershipType(str, Enum):
     """Types of strategic partnerships"""
     INTEGRATION_PARTNER = "integration_partner"      # Technical integrations
     CHANNEL_PARTNER = "channel_partner"             # Sales and distribution
-    TECHNOLOGY_PARTNER = "technology_partner"       # Technology alliances  
+    TECHNOLOGY_PARTNER = "technology_partner"       # Technology alliances
     STRATEGIC_ALLIANCE = "strategic_alliance"       # Strategic partnerships
     RESELLER_PARTNER = "reseller_partner"          # Reseller network
     OEM_PARTNER = "oem_partner"                     # OEM/White-label
@@ -62,7 +62,7 @@ class PartnerTier(str, Enum):
     """Partner tier classification"""
     STARTUP = "startup"          # Emerging partners
     GROWTH = "growth"            # Growing partners
-    ESTABLISHED = "established"  # Established partners  
+    ESTABLISHED = "established"  # Established partners
     ENTERPRISE = "enterprise"    # Large enterprise partners
     STRATEGIC = "strategic"      # Strategic tier-1 partners
 
@@ -110,29 +110,29 @@ class Partner(BaseModel):
     commission_rate: Decimal = Field(ge=0.0, le=1.0, default=PARTNER_COMMISSION_RATE)
     target_markets: List[str] = []
     integration_type: Optional[IntegrationType] = None
-    
+
     # Financial tracking
     estimated_annual_value: Decimal = Field(ge=0, default=Decimal("0"))
     actual_revenue_generated: Decimal = Field(ge=0, default=Decimal("0"))
     customers_referred: int = 0
     deals_closed: int = 0
-    
+
     # Partnership details
     signed_date: Optional[datetime] = None
     contract_start_date: Optional[datetime] = None
     contract_end_date: Optional[datetime] = None
     renewal_date: Optional[datetime] = None
-    
+
     # Capabilities and resources
     technical_capabilities: List[str] = []
     market_reach: Dict[str, Any] = {}
     certifications: List[str] = []
-    
+
     # Performance metrics
     performance_score: float = Field(ge=0.0, le=100.0, default=75.0)
     satisfaction_rating: Optional[float] = Field(ge=1.0, le=5.0, default=None)
     last_activity_date: Optional[datetime] = None
-    
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -143,30 +143,30 @@ class Partnership(BaseModel):
     partnership_type: PartnershipType
     title: str
     description: str
-    
+
     # Commercial terms
     revenue_model: RevenueModel
     commission_structure: Dict[str, Any] = {}
     minimum_commitment: Optional[Decimal] = None
     exclusivity_terms: Optional[str] = None
     territory_restrictions: List[str] = []
-    
+
     # Technical requirements
     integration_requirements: List[str] = []
     certification_requirements: List[str] = []
     sla_requirements: Dict[str, Any] = {}
-    
+
     # Contract terms
     contract_duration_months: int = 12
     auto_renewal: bool = True
     termination_notice_days: int = 30
-    
+
     # Status and lifecycle
     status: PartnershipStatus = PartnershipStatus.NEGOTIATING
     signed_date: Optional[datetime] = None
     effective_date: Optional[datetime] = None
     next_review_date: Optional[datetime] = None
-    
+
     created_by: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -177,29 +177,29 @@ class DealRegistration(BaseModel):
     deal_title: str
     customer_name: str
     customer_email: EmailStr
-    
+
     # Deal details
     deal_value: Decimal = Field(ge=0)
     currency: str = "GBP"
     estimated_close_date: datetime
     probability: float = Field(ge=0.0, le=1.0)
     deal_stage: Literal["prospecting", "qualified", "proposal", "negotiation", "closed_won", "closed_lost"] = "prospecting"
-    
+
     # Partner involvement
     partner_role: Literal["lead", "influencer", "implementer", "referral"] = "lead"
     partner_commission_amount: Optional[Decimal] = None
     partner_services_included: List[str] = []
-    
+
     # Tracking
     lead_source: str
     first_contact_date: datetime
     last_activity_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     # Competition and context
     competitors_involved: List[str] = []
     decision_criteria: List[str] = []
     key_stakeholders: List[Dict[str, str]] = []
-    
+
     # Status tracking
     created_by: str
     assigned_sales_rep: Optional[str] = None
@@ -211,18 +211,18 @@ class APIUsageMetrics(BaseModel):
     partner_id: str
     api_endpoint: str
     usage_date: date
-    
+
     # Usage statistics
     total_calls: int = 0
     successful_calls: int = 0
     failed_calls: int = 0
     average_response_time_ms: float = 0.0
-    
+
     # Billing
     billable_calls: int = 0
     cost_per_call: Decimal = API_USAGE_PRICING
     total_cost: Decimal = Field(ge=0)
-    
+
     # Performance
     error_rate: float = Field(ge=0.0, le=1.0, default=0.0)
     uptime_percentage: float = Field(ge=0.0, le=100.0, default=99.9)
@@ -232,33 +232,33 @@ class WhiteLabelConfiguration(BaseModel):
     config_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     partner_id: str
     solution_name: str
-    
+
     # Branding
     brand_name: str
     logo_url: Optional[str] = None
     primary_color: str = "#1f2937"  # Default color
     secondary_color: str = "#3b82f6"
     custom_domain: Optional[str] = None
-    
+
     # Features enabled
     enabled_features: List[str] = []
     disabled_features: List[str] = []
     custom_features: List[str] = []
-    
+
     # Pricing and billing
     monthly_license_fee: Decimal = Field(ge=0)
     usage_based_pricing: bool = False
     custom_pricing_tiers: List[Dict[str, Any]] = []
-    
+
     # Technical configuration
     api_access_level: Literal["basic", "standard", "premium", "enterprise"] = "standard"
     rate_limits: Dict[str, int] = {}
     webhook_endpoints: List[str] = []
-    
+
     # Status
     status: Literal["development", "testing", "live", "suspended"] = "development"
     go_live_date: Optional[datetime] = None
-    
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ChannelProgram(BaseModel):
@@ -266,32 +266,32 @@ class ChannelProgram(BaseModel):
     program_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     program_name: str
     description: str
-    
+
     # Program structure
     tier_requirements: Dict[str, List[str]] = {}
     benefits_by_tier: Dict[str, List[str]] = {}
     commission_structure: Dict[str, Decimal] = {}
-    
+
     # Training and certification
     required_certifications: List[str] = []
     training_modules: List[str] = []
     certification_validity_months: int = 12
-    
+
     # Support and resources
     dedicated_support: bool = False
     marketing_resources: List[str] = []
     co_marketing_budget: Optional[Decimal] = None
-    
+
     # Performance requirements
     minimum_revenue_annual: Decimal = Field(ge=0, default=Decimal("25000"))
     minimum_customers_annual: int = 5
     satisfaction_threshold: float = 4.0
-    
+
     # Program management
     program_manager: str
     is_active: bool = True
     enrollment_open: bool = True
-    
+
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # --- Service Classes ---
@@ -301,7 +301,7 @@ class PartnershipManagementService:
         self.partners: Dict[str, Partner] = {}  # In production: use database
         self.partnerships: Dict[str, Partnership] = {}
         self.deals: Dict[str, DealRegistration] = {}
-    
+
     async def create_partner(self, partner: Partner) -> Partner:
         """Create new strategic partner"""
         # Validate partner requirements
@@ -310,74 +310,74 @@ class PartnershipManagementService:
                 status_code=400,
                 detail=f"Enterprise partners require minimum £{MIN_ENTERPRISE_DEAL_SIZE} annual value"
             )
-        
+
         # Store partner (in production: save to database)
         self.partners[partner.partner_id] = partner  # type: ignore
-        
+
         # Trigger onboarding workflow
         await self._trigger_partner_onboarding(partner)
-        
+
         return partner
-    
+
     async def _trigger_partner_onboarding(self, partner: Partner):
         """Trigger partner onboarding workflow"""
         print(f"🤝 Partner onboarding initiated for {partner.company_name}")
         print(f"📧 Sending welcome email to {partner.primary_contact_email}")
         print(f"📚 Assigning training materials for {partner.partnership_type}")
         print(f"🎯 Setting up performance tracking")
-    
+
     def calculate_partner_performance_score(self, partner_id: str) -> float:
         """Calculate comprehensive partner performance score"""
         partner = self.partners.get(partner_id)  # type: ignore
         if not partner:
             return 0.0
-        
+
         score: float = 0.0
-        
+
         # Revenue performance (40% weight)
         if partner.estimated_annual_value > 0:  # type: ignore
             revenue_achievement = min(float(partner.actual_revenue_generated) / float(partner.estimated_annual_value), 1.0)  # type: ignore
             score += revenue_achievement * 40
-        
+
         # Customer acquisition (25% weight)
         customer_score = min(partner.customers_referred / 10, 1.0) * 25  # Max 10 customers for full score  # type: ignore
         score += customer_score
-        
+
         # Deal closure rate (20% weight)
         if partner.customers_referred > 0:  # type: ignore
             closure_rate = partner.deals_closed / partner.customers_referred  # type: ignore
             score += closure_rate * 20  # type: ignore
-        
+
         # Satisfaction rating (15% weight)
         if partner.satisfaction_rating:  # type: ignore
             satisfaction_score = (partner.satisfaction_rating / 5.0) * 15  # type: ignore
             score += satisfaction_score  # type: ignore
-        
+
         return min(score, 100.0)  # type: ignore
-    
+
     def get_partnership_recommendations(self, partner: Partner) -> List[str]:
         """Get AI-powered partnership optimization recommendations"""
         recommendations: List[str] = []
-        
+
         performance_score = self.calculate_partner_performance_score(partner.partner_id)
-        
+
         if performance_score < 50:
             recommendations.append("Schedule performance review meeting")  # type: ignore
             recommendations.append("Provide additional training and support")  # type: ignore
             recommendations.append("Review commission structure and incentives")  # type: ignore
-        
+
         if partner.customers_referred == 0:
             recommendations.append("Implement lead generation support program")  # type: ignore
             recommendations.append("Provide marketing development funds")  # type: ignore
-        
+
         if not partner.technical_capabilities:
             recommendations.append("Enroll in technical certification program")  # type: ignore
             recommendations.append("Assign technical success manager")  # type: ignore
-        
+
         if partner.satisfaction_rating and partner.satisfaction_rating < 3.5:
             recommendations.append("Conduct satisfaction survey and action plan")  # type: ignore
             recommendations.append("Escalate to partnership management team")  # type: ignore
-        
+
         return recommendations
 
 class APIMarketplaceService:
@@ -402,17 +402,17 @@ class APIMarketplaceService:
                 "rate_limits": {"basic": 800, "premium": 3000, "enterprise": 30000}
             }
         }
-    
+
     def calculate_api_revenue(self, partner_id: str, usage_metrics: List[APIUsageMetrics]) -> Decimal:
         """Calculate API marketplace revenue for partner"""
         total_revenue = Decimal("0")
-        
+
         for metrics in usage_metrics:
             if metrics.partner_id == partner_id:
                 total_revenue += metrics.total_cost
-        
+
         return total_revenue
-    
+
     def generate_usage_analytics(self, partner_id: str) -> Dict[str, Any]:
         """Generate comprehensive API usage analytics"""
         # Mock analytics - in production: query actual usage data
@@ -439,18 +439,18 @@ class APIMarketplaceService:
 class RevenueOptimizationService:
     def __init__(self):
         self.revenue_models: Dict[str, Any] = {}
-    
+
     def optimize_partner_pricing(self, partner: Partner, historical_data: Dict[str, Any]) -> Dict[str, Any]:
         """AI-powered partner pricing optimization"""
-        
+
         # Analyze partner performance and market data
         performance_score = historical_data.get("performance_score", 75)
         revenue_generated = historical_data.get("revenue_generated", 50000)
         customer_satisfaction = historical_data.get("customer_satisfaction", 4.2)
-        
+
         # Calculate optimal commission rate
         base_commission = 0.15
-        
+
         # Performance adjustments
         if performance_score > 90:
             performance_bonus = 0.02
@@ -458,7 +458,7 @@ class RevenueOptimizationService:
             performance_bonus = 0.01
         else:
             performance_bonus = 0.0
-        
+
         # Revenue tier adjustments
         if revenue_generated > 200000:
             volume_bonus = 0.02
@@ -466,13 +466,13 @@ class RevenueOptimizationService:
             volume_bonus = 0.01
         else:
             volume_bonus = 0.0
-        
+
         # Satisfaction bonus
         satisfaction_bonus = 0.01 if customer_satisfaction > 4.5 else 0.0
-        
+
         optimal_commission = base_commission + performance_bonus + volume_bonus + satisfaction_bonus
         optimal_commission = min(optimal_commission, 0.25)  # Cap at 25%
-        
+
         return {
             "current_commission": float(partner.commission_rate),
             "optimal_commission": optimal_commission,
@@ -515,11 +515,11 @@ async def get_partner_api_key(api_key: Optional[str] = Depends(api_key_header)) 
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Partner API key required"
         )
-    
+
     # In production: validate against partner API key database
     if api_key.startswith("partner_"):
         return api_key
-    
+
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid partner API key"
@@ -547,13 +547,13 @@ async def create_partner(
 ) -> Partner:
     """Create new strategic partner"""
     created_partner = await partnership_service.create_partner(partner)
-    
+
     # Background task for partner onboarding
     background_tasks.add_task(
         partnership_service._trigger_partner_onboarding,  # type: ignore
         created_partner
     )
-    
+
     return created_partner
 
 @app.get("/partners", response_model=List[Partner])
@@ -564,7 +564,7 @@ async def list_partners(
     user_id: str = Depends(get_current_user_id)
 ) -> List[Partner]:
     """List strategic partners with filtering"""
-    
+
     # Mock partners data - in production: query from database
     mock_partners = [
         Partner(
@@ -599,7 +599,7 @@ async def list_partners(
             satisfaction_rating=4.7
         )
     ]
-    
+
     # Apply filters
     filtered_partners = mock_partners
     if partnership_type:
@@ -608,7 +608,7 @@ async def list_partners(
         filtered_partners = [p for p in filtered_partners if p.partner_tier == partner_tier]
     if status:
         filtered_partners = [p for p in filtered_partners if p.status == status]
-    
+
     return filtered_partners
 
 @app.get("/partners/{partner_id}/performance", response_model=Dict[str, Any])
@@ -617,10 +617,10 @@ async def get_partner_performance(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Get comprehensive partner performance analytics"""
-    
+
     # Calculate performance score
     performance_score = partnership_service.calculate_partner_performance_score(partner_id)
-    
+
     # Get recommendations
     partner = partnership_service.partners.get(partner_id, Partner(
         company_name="Sample Partner",
@@ -630,9 +630,9 @@ async def get_partner_performance(
         primary_contact_name="Contact Name",
         revenue_model=RevenueModel.COMMISSION_BASED
     ))
-    
+
     recommendations = partnership_service.get_partnership_recommendations(partner)  # type: ignore
-    
+
     return {
         "partner_id": partner_id,
         "performance_score": performance_score,
@@ -677,15 +677,15 @@ async def register_deal(
     user_id: str = Depends(get_current_user_id)
 ) -> DealRegistration:
     """Register new partner deal opportunity"""
-    
+
     # Calculate partner commission
     partner = partnership_service.partners.get(deal.partner_id)  # type: ignore
     if partner:
         deal.partner_commission_amount = deal.deal_value * partner.commission_rate
-    
+
     # Store deal (in production: save to database)
     partnership_service.deals[deal.deal_id] = deal  # type: ignore
-    
+
     return deal
 
 @app.get("/deals", response_model=List[DealRegistration])
@@ -695,7 +695,7 @@ async def list_deals(
     user_id: str = Depends(get_current_user_id)
 ) -> List[DealRegistration]:
     """List registered deals with filtering"""
-    
+
     # Mock deals data
     mock_deals = [
         DealRegistration(
@@ -715,14 +715,14 @@ async def list_deals(
             assigned_sales_rep="sales_rep_001"
         )
     ]
-    
+
     # Apply filters
     filtered_deals = mock_deals
     if partner_id:
         filtered_deals = [d for d in filtered_deals if d.partner_id == partner_id]
     if deal_stage:
         filtered_deals = [d for d in filtered_deals if d.deal_stage == deal_stage]
-    
+
     return filtered_deals
 
 # === API MARKETPLACE ENDPOINTS ===
@@ -755,11 +755,11 @@ async def record_api_usage(
     api_key: str = Depends(get_partner_api_key)
 ) -> APIUsageMetrics:
     """Record API usage metrics for billing"""
-    
+
     # Calculate cost
     usage.total_cost = usage.billable_calls * usage.cost_per_call
     usage.error_rate = (usage.failed_calls / usage.total_calls) if usage.total_calls > 0 else 0.0
-    
+
     return usage
 
 # === WHITE-LABEL ENDPOINTS ===
@@ -778,7 +778,7 @@ async def get_white_label_config(
     user_id: str = Depends(get_current_user_id)
 ) -> WhiteLabelConfiguration:
     """Get white-label configuration for partner"""
-    
+
     # Mock white-label configuration
     return WhiteLabelConfiguration(
         partner_id=partner_id,
@@ -800,7 +800,7 @@ async def list_channel_programs(
     user_id: str = Depends(get_current_user_id)
 ) -> List[ChannelProgram]:
     """List available channel partner programs"""
-    
+
     return [
         ChannelProgram(
             program_name="Elite Partner Program",
@@ -836,14 +836,14 @@ async def optimize_partner_revenue(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Get AI-powered revenue optimization recommendations for partner"""
-    
+
     # Mock historical data
     historical_data: Dict[str, Any] = {
         "performance_score": 85.5,
         "revenue_generated": 87500,
         "customer_satisfaction": 4.3
     }
-    
+
     partner = partnership_service.partners.get(partner_id, Partner(
         company_name="Sample Partner",
         partnership_type=PartnershipType.CHANNEL_PARTNER,
@@ -852,9 +852,9 @@ async def optimize_partner_revenue(
         primary_contact_name="Contact Name",
         revenue_model=RevenueModel.COMMISSION_BASED
     ))
-    
+
     optimization = revenue_optimizer.optimize_partner_pricing(partner, historical_data)  # type: ignore
-    
+
     return {
         "partner_id": partner_id,
         "optimization_analysis": optimization,
@@ -878,7 +878,7 @@ async def get_partnership_dashboard(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Comprehensive partnership analytics dashboard"""
-    
+
     return {
         "partnership_overview": {
             "total_partners": 47,
@@ -927,7 +927,7 @@ async def get_partnership_roi_analysis(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Partnership ROI and financial impact analysis"""
-    
+
     return {
         "roi_analysis": {
             "partnership_program_investment": 450_000.0,   # £450K investment
@@ -945,7 +945,7 @@ async def get_partnership_roi_analysis(
         },
         "value_drivers": {
             "revenue_acceleration": 0.78,     # 78% faster revenue growth
-            "market_expansion": 0.45,         # 45% faster market expansion  
+            "market_expansion": 0.45,         # 45% faster market expansion
             "customer_acquisition_cost_reduction": 0.35,  # 35% CAC reduction
             "sales_cycle_acceleration": 0.28  # 28% faster sales cycles
         },

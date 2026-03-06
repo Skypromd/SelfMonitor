@@ -10,26 +10,26 @@ from . import schemas
 
 class PDFGenerator:
     """Generate professional PDF invoices with customizable templates"""
-    
+
     def __init__(self):
         self.template_dir = Path(__file__).parent / "templates"
         self.static_dir = Path(__file__).parent / "static"
         self.output_dir = Path(os.getenv("PDF_OUTPUT_DIR", "/tmp/invoices"))
-        
+
         # Ensure directories exist
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Setup Jinja2 environment
         self.jinja_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(str(self.template_dir)),
             autoescape=jinja2.select_autoescape(['html', 'xml'])
         )
-        
+
         # Add custom filters
         self.jinja_env.filters['currency'] = self._format_currency
         self.jinja_env.filters['date'] = self._format_date
         self.jinja_env.filters['percentage'] = self._format_percentage
-    
+
     async def generate_invoice_pdf(
         self,
         invoice: schemas.Invoice,
@@ -37,32 +37,32 @@ class PDFGenerator:
         custom_styling: Optional[Dict[str, Any]] = None
     ) -> str:
         """Generate PDF for invoice and return file path"""
-        
+
         # Prepare template context
         context = self._prepare_template_context(invoice, template)
-        
+
         # Select template
         template_name = "default_invoice.html"
         if template and template.template_content:
             # Use custom template (would need to be saved as file)
             template_name = f"custom_{template.id}.html"
-        
+
         # Render HTML
         html_content = self._render_template(template_name, context, custom_styling)
-        
+
         # Generate PDF
         pdf_path = await self._generate_pdf_from_html(html_content, invoice.invoice_number)
-        
+
         return str(pdf_path)
-    
+
     def _prepare_template_context(self, invoice: schemas.Invoice, template: Optional[schemas.InvoiceTemplate]) -> Dict[str, Any]:
         """Prepare context data for template rendering"""
-        
+
         # Calculate aging if overdue
         aging_days = 0
         if invoice.due_date:
             aging_days = max(0, (datetime.now().date() - invoice.due_date).days)
-        
+
         # Company information (would come from user profile in real app)
         company_info = {
             "name": "Your Company Ltd",
@@ -76,11 +76,11 @@ class PDFGenerator:
             "vat_number": "GB123456789",
             "company_number": "12345678"
         }
-        
+
         # Override with template company info if available
         if template and template.company_details:
             company_info.update(template.company_details)
-        
+
         return {
             "invoice": invoice,
             "company": company_info,
@@ -90,7 +90,7 @@ class PDFGenerator:
             "payment_url": f"https://pay.selfmonitor.com/invoice/{invoice.id}",
             "qr_code_url": f"https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://pay.selfmonitor.com/invoice/{invoice.id}"
         }
-    
+
     def _render_template(self, template_name: str, context: Dict[str, Any], custom_styling: Optional[Dict[str, Any]] = None) -> str:
         """Render HTML template with context"""
         try:
@@ -98,31 +98,31 @@ class PDFGenerator:
         except jinja2.TemplateNotFound:
             # Fallback to default template
             template = self.jinja_env.get_template("default_invoice.html")
-        
+
         # Add custom styling to context
         if custom_styling:
             context['custom_styling'] = custom_styling
-        
+
         return template.render(**context)
-    
+
     async def _generate_pdf_from_html(self, html_content: str, invoice_number: str) -> Path:
         """Convert HTML to PDF using WeasyPrint"""
-        
+
         # Output file path
         filename = f"invoice-{invoice_number}-{int(datetime.utcnow().timestamp())}.pdf"
         pdf_path = self.output_dir / filename
-        
+
         # CSS styling
         css_content = self._get_default_css()
-        
+
         # Generate PDF
         html_doc = HTML(string=html_content, base_url=str(self.template_dir))
         css_doc = CSS(string=css_content)
-        
+
         html_doc.write_pdf(str(pdf_path), stylesheets=[css_doc])
-        
+
         return pdf_path
-    
+
     def _get_default_css(self) -> str:
         """Get default CSS styling for invoice PDFs"""
         return """
@@ -135,62 +135,62 @@ class PDFGenerator:
                 color: #666;
             }
         }
-        
+
         body {
             font-family: 'Helvetica', Arial, sans-serif;
             font-size: 11pt;
             line-height: 1.4;
             color: #333;
         }
-        
+
         .header {
             margin-bottom: 30px;
             display: flex;
             justify-content: space-between;
         }
-        
+
         .company-info {
             text-align: right;
         }
-        
+
         .company-name {
             font-size: 20pt;
             font-weight: bold;
             color: #2c3e50;
             margin-bottom: 10px;
         }
-        
+
         .invoice-title {
             font-size: 28pt;
             font-weight: bold;
             color: #e74c3c;
             margin-bottom: 20px;
         }
-        
+
         .invoice-details {
             display: flex;
             justify-content: space-between;
             margin-bottom: 30px;
         }
-        
+
         .client-info {
             max-width: 45%;
         }
-        
+
         .invoice-meta {
             text-align: right;
         }
-        
+
         .invoice-meta table {
             margin-left: auto;
         }
-        
+
         .invoice-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 30px;
         }
-        
+
         .invoice-table th {
             background-color: #34495e;
             color: white;
@@ -198,49 +198,49 @@ class PDFGenerator:
             text-align: left;
             font-weight: bold;
         }
-        
+
         .invoice-table td {
             padding: 10px 8px;
             border-bottom: 1px solid #ecf0f1;
         }
-        
+
         .invoice-table tr:nth-child(even) {
             background-color: #f8f9fa;
         }
-        
+
         .text-right {
             text-align: right;
         }
-        
+
         .text-center {
             text-align: center;
         }
-        
+
         .totals-table {
             width: 300px;
             margin-left: auto;
             margin-bottom: 30px;
         }
-        
+
         .totals-table td {
             padding: 8px 12px;
             border-bottom: 1px solid #ecf0f1;
         }
-        
+
         .total-row {
             background-color: #34495e;
             color: white;
             font-weight: bold;
             font-size: 12pt;
         }
-        
+
         .payment-info {
             background-color: #f8f9fa;
             padding: 20px;
             border-left: 4px solid #3498db;
             margin-bottom: 20px;
         }
-        
+
         .overdue-notice {
             background-color: #fff5f5;
             border: 2px solid #e74c3c;
@@ -248,7 +248,7 @@ class PDFGenerator:
             margin-bottom: 20px;
             border-radius: 4px;
         }
-        
+
         .footer {
             margin-top: 40px;
             padding-top: 20px;
@@ -256,17 +256,17 @@ class PDFGenerator:
             font-size: 9pt;
             color: #666;
         }
-        
+
         .qr-code {
             float: right;
             margin-left: 20px;
         }
-        
+
         .currency {
             font-family: 'Courier New', monospace;
         }
         """
-    
+
     def _format_currency(self, value: Decimal, currency: str = "GBP") -> str:
         """Format decimal as currency"""
         if currency == "GBP":
@@ -277,17 +277,17 @@ class PDFGenerator:
             return f"€{value:,.2f}"
         else:
             return f"{value:,.2f} {currency}"
-    
+
     def _format_date(self, value, format_string: str = "%d %B %Y") -> str:
         """Format date"""
         if isinstance(value, str):
             value = datetime.fromisoformat(value.replace('Z', '+00:00'))
         return value.strftime(format_string)
-    
+
     def _format_percentage(self, value: Decimal) -> str:
         """Format decimal as percentage"""
         return f"{value:.1f}%"
-    
+
     def create_default_template(self) -> str:
         """Create and return the default invoice template HTML"""
         template_content = """
@@ -316,17 +316,17 @@ class PDFGenerator:
             {% if company.vat_number %}<div>VAT: {{ company.vat_number }}</div>{% endif %}
         </div>
     </div>
-    
+
     <!-- Invoice Title -->
     <div class="invoice-title">INVOICE</div>
-    
+
     <!-- Overdue Notice -->
     {% if is_overdue %}
     <div class="overdue-notice">
         <strong>OVERDUE NOTICE:</strong> This invoice is {{ aging_days }} days overdue. Please arrange payment immediately.
     </div>
     {% endif %}
-    
+
     <!-- Invoice Details -->
     <div class="invoice-details">
         <div class="client-info">
@@ -347,7 +347,7 @@ class PDFGenerator:
             </table>
         </div>
     </div>
-    
+
     <!-- Line Items -->
     <table class="invoice-table">
         <thead>
@@ -374,7 +374,7 @@ class PDFGenerator:
             {% endfor %}
         </tbody>
     </table>
-    
+
     <!-- Totals -->
     <table class="totals-table">
         <tr>
@@ -406,7 +406,7 @@ class PDFGenerator:
         </tr>
         {% endif %}
     </table>
-    
+
     <!-- Payment Information -->
     <div class="payment-info">
         <h3>Payment Information</h3>
@@ -417,12 +417,12 @@ class PDFGenerator:
         </p>
         {% endif %}
         <p><strong>Online Payment:</strong> <a href="{{ payment_url }}">{{ payment_url }}</a></p>
-        
+
         <div class="qr-code">
             <img src="{{ qr_code_url }}" alt="QR Code for payment" style="width: 100px; height: 100px;">
         </div>
     </div>
-    
+
     <!-- Notes -->
     {% if invoice.notes %}
     <div style="margin-bottom: 30px;">
@@ -430,7 +430,7 @@ class PDFGenerator:
         <p>{{ invoice.notes | nl2br }}</p>
     </div>
     {% endif %}
-    
+
     <!-- Footer -->
     <div class="footer">
         <p>Thank you for your business!</p>

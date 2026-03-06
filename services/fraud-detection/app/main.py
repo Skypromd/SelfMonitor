@@ -12,7 +12,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="Fraud Detection Service", 
+    title="Fraud Detection Service",
     description="Real-time fraud detection and risk monitoring for enhanced security monetization.",
     version="1.0.0"
 )
@@ -66,11 +66,11 @@ async def assess_fraud_risk(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Real-time fraud risk assessment for user transactions and behavior"""
-    
+
     # Mock fraud detection algorithm (in production: ML models + rule engine)
     import random
     random.seed(hash(user_id) % 1000)
-    
+
     # Analyze user behavior patterns
     risk_indicators: Dict[str, Any] = {
         "unusual_transaction_patterns": random.choice([True, False]),
@@ -82,35 +82,35 @@ async def assess_fraud_risk(
         "transaction_frequency": random.uniform(0.1, 5.0),
         "average_transaction_amount": random.uniform(10.0, 5000.0)
     }
-    
+
     # Calculate fraud score
     fraud_score = 0.0
     risk_factors: List[str] = []
-    
+
     if risk_indicators["unusual_transaction_patterns"]:
         fraud_score += 0.25
         risk_factors.append("Unusual transaction pattern detected")
-        
+
     if risk_indicators["device_fingerprint_anomaly"]:
         fraud_score += 0.35
         risk_factors.append("Unrecognized device or suspicious device characteristics")
-        
+
     if risk_indicators["geographical_inconsistency"]:
         fraud_score += 0.20
         risk_factors.append("Geographic location inconsistent with user profile")
-        
+
     if risk_indicators["velocity_check_failed"]:
         fraud_score += 0.30
         risk_factors.append("High transaction velocity outside normal patterns")
-        
+
     if risk_indicators["known_fraud_network"]:
         fraud_score += 0.50
         risk_factors.append("Associated with known fraudulent network")
-        
+
     if risk_indicators["account_age_days"] < 30:
         fraud_score += 0.15
         risk_factors.append("New account with limited history")
-    
+
     # Determine risk level
     if fraud_score < 0.2:
         risk_level = RiskLevel.LOW
@@ -120,7 +120,7 @@ async def assess_fraud_risk(
         risk_level = RiskLevel.HIGH
     else:
         risk_level = RiskLevel.CRITICAL
-        
+
     # Generate recommended actions
     recommended_actions: List[str] = []
     if risk_level == RiskLevel.MEDIUM:
@@ -129,12 +129,12 @@ async def assess_fraud_risk(
         recommended_actions.extend(["Manual review", "Additional authentication", "Transaction limits"])
     elif risk_level == RiskLevel.CRITICAL:
         recommended_actions.extend(["Block transaction", "Account freeze", "Investigation escalation"])
-    
+
     # Calculate estimated loss prevented
     avg_fraud_loss = 1240.0  # £1,240 average fraud loss
     prevention_effectiveness = 0.87  # 87% fraud prevention rate
     estimated_loss_prevented = avg_fraud_loss * fraud_score * prevention_effectiveness
-    
+
     return {
         "user_id": user_id,
         "fraud_score": round(fraud_score, 3),
@@ -157,9 +157,9 @@ async def create_fraud_alert(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Create and process fraud alert with automated response"""
-    
+
     alert_id = f"FA-{datetime.now().strftime('%Y%m%d%H%M%S')}-{user_id[:8]}"
-    
+
     # Define fraud response strategies
     fraud_responses: Dict[str, Dict[str, Any]] = {
         "transaction_fraud": {
@@ -169,7 +169,7 @@ async def create_fraud_alert(
         },
         "account_takeover": {
             "immediate_actions": ["Force password reset", "Disable sessions", "Security team alert"],
-            "investigation_priority": "critical", 
+            "investigation_priority": "critical",
             "estimated_loss_prevented": 2150.0
         },
         "identity_theft": {
@@ -183,16 +183,16 @@ async def create_fraud_alert(
             "estimated_loss_prevented": 680.0
         }
     }
-    
+
     response_plan = fraud_responses.get(fraud_type, {
         "immediate_actions": ["Enhanced monitoring", "Manual review"],
         "investigation_priority": "medium",
         "estimated_loss_prevented": 400.0
     })
-    
+
     # Schedule background response execution
     background_tasks.add_task(execute_fraud_response, alert_id, response_plan, user_id)
-    
+
     return {
         "alert_created": alert_id,
         "fraud_type": fraud_type,
@@ -217,7 +217,7 @@ async def get_fraud_analytics(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Comprehensive fraud analytics and prevention metrics"""
-    
+
     return {
         "fraud_prevention_metrics": {
             "total_fraud_attempts_blocked": 2847,
@@ -256,7 +256,7 @@ async def get_compliance_monitoring(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Real-time compliance monitoring and AML/KYC automation"""
-    
+
     return {
         "aml_compliance": {
             "screening_completion_rate": 0.996,  # 99.6% completion
@@ -297,7 +297,7 @@ async def automated_compliance_check(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Automated compliance checking for transactions and user activities"""
-    
+
     compliance_checks = {
         "aml_screening": True,
         "sanction_list_check": True,
@@ -305,25 +305,25 @@ async def automated_compliance_check(
         "kyc_status": True,
         "enhanced_due_diligence": transaction_amount > 5000.0
     }
-    
+
     compliance_score = sum(compliance_checks.values()) / len(compliance_checks)
-    
+
     # Determine required actions
     required_actions: List[str] = []
     if not compliance_checks["transaction_limit_check"]:
         required_actions.append("Enhanced transaction monitoring required")
     if compliance_checks["enhanced_due_diligence"]:
         required_actions.append("Enhanced due diligence documentation needed")
-        
+
     # Calculate compliance cost savings
     manual_compliance_cost = 45.0  # £45 per manual check
     automated_compliance_cost = 2.80  # £2.80 per automated check
     cost_savings = manual_compliance_cost - automated_compliance_cost
-    
+
     # Schedule background compliance actions
     if required_actions:
         background_tasks.add_task(execute_compliance_actions, user_id, required_actions)
-    
+
     return {
         "user_id": user_id,
         "transaction_amount": transaction_amount,
@@ -347,7 +347,7 @@ async def get_security_monetization_metrics(
     current_user: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Security and compliance monetization impact metrics"""
-    
+
     return {
         "revenue_protection": {
             "fraud_losses_prevented": 892450.0,  # £892k prevented losses

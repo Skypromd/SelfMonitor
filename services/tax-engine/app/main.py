@@ -404,7 +404,7 @@ async def metrics() -> Response:
 
 @app.post("/calculate", response_model=TaxCalculationResult)
 async def calculate_tax(
-    request: TaxCalculationRequest, 
+    request: TaxCalculationRequest,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
 ):

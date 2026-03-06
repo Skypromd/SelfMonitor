@@ -24,5 +24,5 @@ for name, url, method in tests:
     except urllib.error.HTTPError as e:
         cors = e.headers.get("Access-Control-Allow-Origin", "MISSING")
         print(f"{name}: HTTP {e.code}  CORS={cors}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001  # pylint: disable=broad-exception-caught
         print(f"{name}: ERROR {e}")

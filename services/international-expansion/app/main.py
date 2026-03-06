@@ -55,7 +55,7 @@ REGULATORY_FRAMEWORKS = ["GDPR", "CCPA", "PIPEDA", "SOX", "MIFID2", "PCI_DSS"]
 class SupportedLanguage(str, Enum):
     """Supported languages for localization"""
     EN_GB = "en-GB"  # English (UK)
-    EN_US = "en-US"  # English (US) 
+    EN_US = "en-US"  # English (US)
     FR_FR = "fr-FR"  # French (France)
     FR_CA = "fr-CA"  # French (Canada)
     DE_DE = "de-DE"  # German (Germany)
@@ -144,7 +144,7 @@ class RegionalConfiguration(BaseModel):
     date_format: str = "dd/MM/yyyy"
     time_format: str = "HH:mm"
     number_format: str = "#,##0.00"
-    
+
 class InternationalPayment(BaseModel):
     """Cross-border payment processing"""
     payment_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -199,17 +199,17 @@ class LocalizationService:
     def __init__(self):
         self.translations = {}
         self.load_translations()
-    
+
     def load_translations(self):
         """Load all translation files"""
         # Base translations path (reserved for future implementation)
         _ = "/app/translations"
-        
+
         # Mock translations - in production, load from files/database
         self.translations = {
             SupportedLanguage.EN_GB: {
                 "common.submit": "Submit",
-                "common.cancel": "Cancel", 
+                "common.cancel": "Cancel",
                 "common.welcome": "Welcome to SelfMonitor",
                 "common.currency": "Currency",
                 "dashboard.title": "Financial Dashboard",
@@ -248,20 +248,20 @@ class LocalizationService:
                 "auth.login": "Iniciar Sesión"
             }
         }
-    
+
     def get_translation(self, key: str, language: SupportedLanguage, fallback: SupportedLanguage = SupportedLanguage.EN_GB) -> str:
         """Get translated string for key and language"""
         if language in self.translations:
             if key in self.translations[language]:
                 return self.translations[language][key]
-        
+
         # Fallback to English
         if fallback in self.translations and key in self.translations[fallback]:
             return self.translations[fallback][key]
-        
+
         # Last resort: return the key itself
         return key
-    
+
     def get_all_translations(self, language: SupportedLanguage) -> Dict[str, str]:
         """Get all translations for a language"""
         return self.translations.get(language, {})
@@ -274,28 +274,28 @@ class CurrencyService:
             "GBP": {"USD": 1.27, "EUR": 1.17, "CAD": 1.58, "AUD": 1.71, "JPY": 139.5},
             "EUR": {"USD": 1.18, "GBP": 0.85, "CAD": 1.35, "AUD": 1.46, "JPY": 119.0},
         }
-    
+
     def get_exchange_rate(self, from_currency: SupportedCurrency, to_currency: SupportedCurrency) -> Decimal:
         """Get current exchange rate between two currencies"""
         if from_currency == to_currency:
             return Decimal("1.0")
-        
+
         # Mock rate lookup
         if from_currency.value in self.exchange_rates:
             if to_currency.value in self.exchange_rates[from_currency.value]:
                 return Decimal(str(self.exchange_rates[from_currency.value][to_currency.value]))
-        
+
         # Default mock rate
         return Decimal("1.0")
-    
+
     def convert_currency(self, amount: Decimal, from_currency: SupportedCurrency, to_currency: SupportedCurrency) -> CurrencyConversion:
         """Convert amount from one currency to another"""
         exchange_rate = self.get_exchange_rate(from_currency, to_currency)
         converted_amount = amount * exchange_rate
-        
+
         # Calculate conversion fee (0.5% for cross-border)
         conversion_fee = converted_amount * Decimal("0.005") if from_currency != to_currency else Decimal("0")
-        
+
         return CurrencyConversion(
             from_currency=from_currency,
             to_currency=to_currency,
@@ -304,7 +304,7 @@ class CurrencyService:
             converted_amount=converted_amount,
             conversion_fee=conversion_fee
         )
-    
+
     def format_currency(self, amount: Decimal, currency: SupportedCurrency, locale: str = "en_GB") -> str:
         """Format currency amount according to locale conventions"""
         # Mock formatting - in production, use Babel for proper locale formatting
@@ -316,10 +316,10 @@ class CurrencyService:
             "AUD": "A$",
             "JPY": "¥"
         }
-        
+
         symbol = currency_symbols.get(currency.value, currency.value)
         formatted_amount = f"{amount:,.2f}"
-        
+
         if locale.startswith("en"):
             return f"{symbol}{formatted_amount}"
         elif locale.startswith("fr"):
@@ -330,7 +330,7 @@ class CurrencyService:
 class RegionalComplianceService:
     def __init__(self):
         self.compliance_requirements = self._load_compliance_requirements()
-    
+
     def _load_compliance_requirements(self) -> Dict[str, Dict[str, Any]]:
         """Load regional compliance requirements"""
         return {
@@ -374,26 +374,26 @@ class RegionalComplianceService:
                 }
             }
         }
-    
+
     def assess_compliance(self, region: RegionalMarket, framework: ComplianceFramework) -> RegionalCompliance:
         """Assess compliance status for region and framework"""
-        
+
         # Mock compliance assessment
         requirements_map = self.compliance_requirements.get(region.value, {})
         framework_reqs = requirements_map.get(framework.value, {})
-        
+
         total_requirements = len(framework_reqs)
         met_requirements = sum(1 for _, status in framework_reqs.items() if status)
-        
+
         compliance_score = met_requirements / total_requirements if total_requirements > 0 else 0.0
-        
+
         if compliance_score >= 0.95:
             compliance_level = "fully_compliant"
         elif compliance_score >= 0.80:
             compliance_level = "partially_compliant"
         else:
             compliance_level = "in_progress"
-        
+
         return RegionalCompliance(
             region=region,
             framework=framework,
@@ -407,7 +407,7 @@ class RegionalComplianceService:
 class MarketExpansionService:
     def __init__(self):
         self.market_data = self._load_market_data()
-    
+
     def _load_market_data(self) -> Dict[str, Dict[str, Any]]:
         """Load market research data for target regions"""
         return {
@@ -447,21 +447,21 @@ class MarketExpansionService:
                 "customer_acquisition_cost": 45.30
             }
         }
-    
+
     def create_expansion_plan(self, target_market: RegionalMarket, investment_budget: Decimal) -> MarketExpansionPlan:
         """Create comprehensive market expansion plan"""
-        
+
         market_info = self.market_data.get(target_market.value, {})
         market_size = market_info.get("market_size_billions", 10.0) * 1_000_000_000  # Convert to actual value
         cac = market_info.get("customer_acquisition_cost", 75.0)
-        
+
         # Calculate projections based on investment
         potential_customers = int(investment_budget / Decimal(str(cac)) * Decimal("0.3"))  # 30% conversion
         revenue_per_customer = Decimal("450")  # Annual revenue per customer
         projected_revenue = potential_customers * revenue_per_customer
-        
+
         roi_estimate = (projected_revenue - investment_budget) / investment_budget if investment_budget > 0 else Decimal("0")
-        
+
         return MarketExpansionPlan(
             target_market=target_market,
             priority_level="high" if roi_estimate > Decimal("2.0") else "medium",
@@ -514,7 +514,7 @@ async def health_check() -> Dict[str, Any]:
     return {
         "status": "ready_for_global_expansion",
         "supported_languages": len(SupportedLanguage),
-        "supported_currencies": len(SupportedCurrency), 
+        "supported_currencies": len(SupportedCurrency),
         "target_markets": len(RegionalMarket),
         "compliance_frameworks": len(ComplianceFramework)
     }
@@ -577,7 +577,7 @@ async def get_exchange_rates(
         if target_currency != base_currency:
             rate = currency_service.get_exchange_rate(base_currency, target_currency)
             rates[target_currency.value] = float(rate)
-    
+
     return {
         "base_currency": base_currency.value,
         "rates": rates,
@@ -632,12 +632,12 @@ async def get_compliance_status(
 ) -> List[RegionalCompliance]:  # type: ignore
     """Get comprehensive compliance status across all regions"""
     compliance_status = []
-    
+
     for region in RegionalMarket:
         for framework in ComplianceFramework:
             assessment = compliance_service.assess_compliance(region, framework)
             compliance_status.append(assessment)  # type: ignore
-    
+
     return compliance_status  # type: ignore
 
 # === MARKET EXPANSION ENDPOINTS ===
@@ -668,10 +668,10 @@ async def get_expansion_roi_analysis(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Get ROI analysis for all potential markets"""
-    
+
     base_investment = Decimal("500000")  # £500K base investment
     roi_analysis = {}
-    
+
     for market in RegionalMarket:
         plan = expansion_service.create_expansion_plan(market, base_investment)
         roi_analysis[market.value] = {
@@ -683,10 +683,10 @@ async def get_expansion_roi_analysis(
             "priority": plan.priority_level,
             "customers_projected": plan.projected_customers_year1
         }
-    
+
     # Sort by ROI
     sorted_markets: List[tuple[Any, Any]] = sorted(roi_analysis.items(), key=lambda x: x[1]["roi_estimate"], reverse=True)  # type: ignore
-    
+
     return {
         "analysis_date": datetime.now(timezone.utc).isoformat(),
         "base_investment": float(base_investment),
@@ -707,19 +707,19 @@ async def process_international_payment(
     user_id: str = Depends(get_current_user_id)
 ):
     """Process international cross-border payment"""
-    
+
     conversion = currency_service.convert_currency(amount, from_currency, to_currency)
-    
+
     # Calculate international fees
     base_fee = Decimal("2.50")
     percentage_fee = conversion.converted_amount * Decimal("0.015")  # 1.5%
     total_fees = base_fee + percentage_fee + (conversion.conversion_fee or Decimal("0"))
-    
+
     compliance_checks = ["AML screening", "Sanctions check", "KYC verification"]
-    
+
     return InternationalPayment(
         from_country=from_country,
-        to_country=to_country, 
+        to_country=to_country,
         from_currency=from_currency,
         to_currency=to_currency,
         amount=amount,
@@ -737,7 +737,7 @@ async def process_international_payment(
 @app.get("/config/regional/{region}", response_model=RegionalConfiguration)
 async def get_regional_configuration(region: RegionalMarket):
     """Get regional configuration for specified market"""
-    
+
     # Mock regional configurations
     configs = {
         RegionalMarket.UK: RegionalConfiguration(
@@ -761,7 +761,7 @@ async def get_regional_configuration(region: RegionalMarket):
             business_hours={"monday": "09:00-18:00", "friday": "09:00-18:00"}
         ),
         RegionalMarket.US: RegionalConfiguration(
-            region=RegionalMarket.US, 
+            region=RegionalMarket.US,
             primary_language=SupportedLanguage.EN_US,
             primary_currency=SupportedCurrency.USD,
             accepted_currencies=[SupportedCurrency.USD, SupportedCurrency.CAD],
@@ -770,7 +770,7 @@ async def get_regional_configuration(region: RegionalMarket):
             business_hours={"monday": "09:00-17:00", "friday": "09:00-17:00"}
         )
     }
-    
+
     return configs.get(region, configs[RegionalMarket.UK])
 
 # === FINANCIAL IMPACT & MONETIZATION ===
@@ -780,7 +780,7 @@ async def get_expansion_financial_impact(
     user_id: str = Depends(get_current_user_id)
 ) -> Dict[str, Any]:
     """Comprehensive financial impact analysis for international expansion"""
-    
+
     return {
         "revenue_projections": {
             "year_1_total_markets": 4_500_000.0,  # £4.5M across all markets
@@ -791,7 +791,7 @@ async def get_expansion_financial_impact(
         },
         "market_specific_projections": {
             "nordics": {"year_1": 890_000.0, "roi": 3.2, "priority": 1},
-            "eu": {"year_1": 1_560_000.0, "roi": 2.8, "priority": 2}, 
+            "eu": {"year_1": 1_560_000.0, "roi": 2.8, "priority": 2},
             "australia": {"year_1": 780_000.0, "roi": 2.5, "priority": 3},
             "canada": {"year_1": 650_000.0, "roi": 2.3, "priority": 4},
             "us": {"year_1": 620_000.0, "roi": 1.9, "priority": 5}

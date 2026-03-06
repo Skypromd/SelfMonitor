@@ -12,23 +12,23 @@ async def test_import():
         import redis.asyncio as redis
         from fastapi import FastAPI
         import uvicorn
-        
+
         print("✅ All dependencies imported successfully")
-        
+
         # Test that app can be imported
         sys.path.insert(0, "/app")
         from app.main import app, tenant_router
-        
+
         print("✅ Tenant router service imported successfully")
         print("✅ FastAPI app created successfully")
-        
+
         # Basic validation
         assert app.title == "Tenant Router Service"
         print("✅ App configuration verified")
-        
+
         print("\n🎉 Tenant Router Service is ready for deployment!")
         return True
-        
+
     except Exception as e:
         print(f"❌ Error: {e}")
         return False

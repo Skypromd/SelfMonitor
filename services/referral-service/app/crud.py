@@ -49,7 +49,7 @@ async def get_referral_statistics(db: AsyncSession, referral_code_id: uuid.UUID)
         .where(models.ReferralUsage.referral_code_id == referral_code_id)
     )
     total_referrals = total_result.scalar()
-    
+
     # Get this month's conversions
     current_month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     monthly_result = await db.execute(
@@ -58,19 +58,19 @@ async def get_referral_statistics(db: AsyncSession, referral_code_id: uuid.UUID)
         .where(models.ReferralUsage.created_at >= current_month_start)
     )
     monthly_conversions = monthly_result.scalar()
-    
+
     # Get referral code details for reward calculation
     code_result = await db.execute(
         select(models.ReferralCode).where(models.ReferralCode.id == referral_code_id)
     )
     referral_code = code_result.scalar_one_or_none()
-    
+
     reward_amount = referral_code.reward_amount if referral_code else 0.0
     total_earned = total_referrals * reward_amount
-    
+
     # For now, assume 20% pending (realistic for payment processing)
     pending_rewards = total_earned * 0.2
-    
+
     return schemas.ReferralStats(
         total_referrals=total_referrals,
         active_referrals=total_referrals,
@@ -82,7 +82,7 @@ async def get_referral_statistics(db: AsyncSession, referral_code_id: uuid.UUID)
 async def get_referral_leaderboard(db: AsyncSession, limit: int = 10) -> List[dict]:
     # Complex query to get top referrers
     result = await db.execute(text("""
-        SELECT 
+        SELECT
             rc.user_id,
             rc.code,
             COUNT(ru.id) as referral_count,
@@ -94,7 +94,7 @@ async def get_referral_leaderboard(db: AsyncSession, limit: int = 10) -> List[di
         ORDER BY referral_count DESC, total_earned DESC
         LIMIT :limit
     """), {"limit": limit})
-    
+
     return [
         {
             "user_id": row.user_id,
@@ -108,7 +108,7 @@ async def get_referral_leaderboard(db: AsyncSession, limit: int = 10) -> List[di
 async def get_user_referral_rank(db: AsyncSession, user_id: str) -> int:
     result = await db.execute(text("""
         WITH user_stats AS (
-            SELECT 
+            SELECT
                 rc.user_id,
                 COUNT(ru.id) as referral_count
             FROM referral_codes rc
@@ -117,7 +117,7 @@ async def get_user_referral_rank(db: AsyncSession, user_id: str) -> int:
             GROUP BY rc.user_id
         ),
         ranked_users AS (
-            SELECT 
+            SELECT
                 user_id,
                 referral_count,
                 ROW_NUMBER() OVER (ORDER BY referral_count DESC) as rank
@@ -125,7 +125,7 @@ async def get_user_referral_rank(db: AsyncSession, user_id: str) -> int:
         )
         SELECT rank FROM ranked_users WHERE user_id = :user_id
     """), {"user_id": user_id})
-    
+
     rank_result = result.scalar()
     return rank_result or 999
 
@@ -134,21 +134,21 @@ async def get_campaign_by_id(db: AsyncSession, campaign_id: str) -> Optional[mod
         campaign_uuid = uuid.UUID(campaign_id)
     except ValueError:
         return None
-        
+
     result = await db.execute(
         select(models.ReferralCampaign).where(models.ReferralCampaign.id == campaign_uuid)
     )
     return result.scalar_one_or_none()
 
 async def update_referral_code_for_campaign(
-    db: AsyncSession, 
-    user_id: str, 
-    campaign_id: str, 
+    db: AsyncSession,
+    user_id: str,
+    campaign_id: str,
     multiplier: float
 ) -> models.ReferralCode:
     # Get existing code or create new
     referral_code = await get_referral_code_by_user(db, user_id)
-    
+
     if referral_code:
         # Update with campaign multiplier
         referral_code.reward_amount = 25.0 * multiplier
@@ -163,7 +163,7 @@ async def update_referral_code_for_campaign(
             reward_amount=25.0 * multiplier
         )
         db.add(referral_code)
-    
+
     await db.commit()
     await db.refresh(referral_code)
     return referral_code
