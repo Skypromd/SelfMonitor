@@ -2350,7 +2350,7 @@
 .appStoreBtns {
   display: flex;
   gap: 0.875rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .appStoreBtnApple,
 .appStoreBtnGoogle {
@@ -2402,6 +2402,25 @@
     grid-template-columns: 1fr;
   }
   .appDownloadPhone { display: none; }
+}
+
+@media (max-width: 480px) {
+  .appStoreBtns {
+    gap: 0.5rem;
+    width: 100%;
+  }
+  .appStoreBtnApple,
+  .appStoreBtnGoogle {
+    flex: 1;
+    padding: 0.6rem 0.75rem;
+    gap: 0.5rem;
+    justify-content: center;
+    font-size: 0.9rem;
+  }
+  .appStoreBtnApple svg,
+  .appStoreBtnGoogle svg {
+    flex-shrink: 0;
+  }
 }
 
 .challengeGrid {
