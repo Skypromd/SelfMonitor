@@ -1,26 +1,36 @@
-import { useInView } from 'framer-motion';
+import { motion, useInView } from 'framer-motion';
 import {
+    Archive,
     ArrowRight,
+    BadgePercent,
+    BarChart2,
     BarChart3,
     Bot,
     CalendarDays,
     CheckCircle2,
     ClipboardCheck,
+    Clock,
     CreditCard,
+    Download,
     FileText,
     FolderOpen,
     Gift,
     Globe2,
+    Landmark,
     LineChart,
     Lock,
+    PieChart,
     ReceiptText,
     ShieldCheck,
     Smartphone,
+    Star,
     Store,
     TrendingUp,
+    Wallet,
     Zap,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
+import Head from 'next/head';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
@@ -485,7 +495,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         </div>
         <div className={styles.challengeGrid}>
           <motion.div className={styles.challengeCard} {...fadeUp}>
-            <span className={styles.challengeIcon}>📊</span>
+            <div className={styles.challengeIconBox}><Clock size={28} color="#14b8a6" /></div>
             <h3 className={styles.challengeCardTitle}>Hours lost on manual bookkeeping</h3>
             <p className={styles.challengeDesc}>
               Spreadsheets, bank exports, copy-paste — the admin never ends.
@@ -493,7 +503,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             </p>
           </motion.div>
           <motion.div className={styles.challengeCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.15 }}>
-            <span className={styles.challengeIcon}>💸</span>
+            <div className={styles.challengeIconBox}><BadgePercent size={28} color="#d97706" /></div>
             <h3 className={styles.challengeCardTitle}>Missed tax deductions</h3>
             <p className={styles.challengeDesc}>
               Without AI categorisation, legitimate expenses slip through the cracks.
@@ -501,7 +511,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             </p>
           </motion.div>
           <motion.div className={styles.challengeCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.3 }}>
-            <span className={styles.challengeIcon}>📄</span>
+            <div className={styles.challengeIconBox}><Archive size={28} color="#7c3aed" /></div>
             <h3 className={styles.challengeCardTitle}>Receipts in a shoebox</h3>
             <p className={styles.challengeDesc}>
               Paper receipts fade. Email receipts get buried. Audits happen.
@@ -520,32 +530,32 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         </div>
         <div className={styles.chartsGrid}>
           <motion.div className={styles.chartCard} {...fadeUp}>
-            <p className={styles.chartTitle}>📈 Cash Flow Trend — 12 months</p>
+            <div className={styles.chartTitleRow}><TrendingUp size={16} color="#14b8a6" /><span>Cash Flow Trend — 12 months</span></div>
             <CashFlowChart />
             <p className={styles.chartCaption}>Track monthly cash flow with AI-powered forecasting and trend detection</p>
           </motion.div>
           <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.1 }}>
-            <p className={styles.chartTitle}>📊 Revenue vs Expenses — Monthly</p>
+            <div className={styles.chartTitleRow}><BarChart2 size={16} color="#7c3aed" /><span>Revenue vs Expenses — Monthly</span></div>
             <RevenueVsExpensesChart />
             <p className={styles.chartCaption}>Compare income against spending each month — spot the gap and grow it</p>
           </motion.div>
           <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.2 }}>
-            <p className={styles.chartTitle}>💰 Tax Savings Accumulated YTD</p>
+            <div className={styles.chartTitleRow}><Wallet size={16} color="#d97706" /><span>Tax Savings Accumulated YTD</span></div>
             <TaxSavingsAreaChart />
             <p className={styles.chartCaption}>Watch your identified deductions grow — average user saves £2,080/year</p>
           </motion.div>
           <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.3 }}>
-            <p className={styles.chartTitle}>🏷️ Expense Breakdown by Category</p>
+            <div className={styles.chartTitleRow}><ReceiptText size={16} color="#0891b2" /><span>Expense Breakdown by Category</span></div>
             <ExpenseChart />
             <p className={styles.chartCaption}>AI categorises every expense automatically — see exactly where your money goes</p>
           </motion.div>
           <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.4 }}>
-            <p className={styles.chartTitle}>🥧 Tax Savings Distribution</p>
+            <div className={styles.chartTitleRow}><PieChart size={16} color="#16a34a" /><span>Tax Savings Distribution</span></div>
             <SavingsChart />
             <p className={styles.chartCaption}>Breakdown of how SelfMonitor identifies and maximises your allowable deductions</p>
           </motion.div>
           <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.5 }}>
-            <p className={styles.chartTitle}>⚡ Financial Health Summary</p>
+            <div className={styles.chartTitleRow}><Landmark size={16} color="#f59e0b" /><span>Financial Health Summary</span></div>
             <div style={{ padding: '1rem 0' }}>
               {[
                 { label: 'Annual Revenue', value: '£67,200', bar: 100, color: '#14b8a6' },
@@ -633,16 +643,100 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         </div>
       </section>
 
-      {/* ═══ APP STORE STRIP ═══ */}
-      <section className={styles.lpAppStrip}>
-        <Smartphone size={28} color="#0d9488" />
-        <div>
-          <div className={styles.lpAppStripTitle}>Available on iOS &amp; Android</div>
-          <div className={styles.lpAppStripSub}>Built with React Native · Expo SDK 51 · Works offline</div>
-        </div>
-        <div className={styles.lpStoreBadges}>
-          <div className={styles.lpStoreBadge}><span>▶</span> App Store</div>
-          <div className={styles.lpStoreBadge}><span>▶</span> Google Play</div>
+      {/* ═══ MOBILE APP DOWNLOAD ═══ */}
+      <section className={styles.lpSection}>
+        <div className={styles.appDownloadWrap}>
+          <motion.div className={styles.appDownloadContent} {...fadeUp}>
+            <div className={styles.lpChip}><Smartphone size={13} /> Available Now</div>
+            <h2 className={styles.lpSectionH2} style={{ textAlign: 'left', marginTop: '1rem' }}>
+              Take SelfMonitor<br />Everywhere You Go
+            </h2>
+            <p className={styles.lpSectionSub} style={{ textAlign: 'left' }}>
+              Full access on iOS &amp; Android. Scan receipts with your camera, check cash flow on the go,
+              submit to HMRC from anywhere. Works offline too.
+            </p>
+            <ul className={styles.appDownloadFeatures}>
+              <li><CheckCircle2 size={15} color="#0d9488" /> Scan receipts instantly with OCR camera</li>
+              <li><CheckCircle2 size={15} color="#0d9488" /> Push alerts for tax deadlines &amp; anomalies</li>
+              <li><CheckCircle2 size={15} color="#0d9488" /> Biometric login — Face ID &amp; fingerprint</li>
+              <li><CheckCircle2 size={15} color="#0d9488" /> Offline mode — works without internet</li>
+              <li><CheckCircle2 size={15} color="#0d9488" /> Dark theme &amp; accessibility support</li>
+            </ul>
+            <div className={styles.appStoreBtns}>
+              <a
+                href="https://apps.apple.com/app/selfmonitor"
+                className={styles.appStoreBtnApple}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+                </svg>
+                <div>
+                  <div style={{ fontSize: '0.65rem', opacity: 0.8, lineHeight: 1 }}>Download on the</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, lineHeight: 1.2 }}>App Store</div>
+                </div>
+              </a>
+              <a
+                href="https://play.google.com/store/apps/details?id=com.selfmonitor.app"
+                className={styles.appStoreBtnGoogle}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M3.18 23.76c.3.17.65.22 1.01.14l12.19-7.03-2.68-2.68-10.52 9.57zm-1.87-20.2a1.94 1.94 0 0 0-.31 1.07v18.74c0 .39.11.74.31 1.04l.06.06 10.5-10.5v-.25L1.37 3.5l-.06.06zm20.5 8.98-2.86-1.65-3.01 3.01 3.01 3.01 2.88-1.66c.82-.47.82-1.24-.02-1.71zm-18.63 9.22 10.52-10.52-2.68-2.68L1.31 19.49l.87.27z"/>
+                </svg>
+                <div>
+                  <div style={{ fontSize: '0.65rem', opacity: 0.8, lineHeight: 1 }}>Get it on</div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, lineHeight: 1.2 }}>Google Play</div>
+                </div>
+              </a>
+            </div>
+            <div className={styles.appRating}>
+              {[...Array(5)].map((_, i) => <Star key={i} size={14} color="#f59e0b" fill="#f59e0b" />)}
+              <span>4.8 · 2,400+ reviews</span>
+            </div>
+          </motion.div>
+
+          <motion.div
+            className={styles.appDownloadPhone}
+            initial={{ opacity: 0, scale: 0.92, y: 20 }}
+            whileInView={{ opacity: 1, scale: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.75, delay: 0.2 }}
+          >
+            <div className={styles.lpPhone}>
+              <div className={styles.lpPhoneNotch} />
+              <div className={styles.lpPhoneScreen}>
+                <div className={styles.lpAppBar}>
+                  <span className={styles.lpAppBarTitle}>SelfMonitor</span>
+                  <div className={styles.lpAppBarAvatar}><Download size={12} /></div>
+                </div>
+                <div className={styles.lpAppCards}>
+                  <div className={styles.lpAppCard} style={{ background: 'linear-gradient(135deg,#0d9488,#0891b2)' }}>
+                    <div className={styles.lpAppCardLabel}>Net Profit This Month</div>
+                    <div className={styles.lpAppCardVal}>£4,280</div>
+                    <div className={styles.lpAppCardSub}>↑ 12% vs last month</div>
+                  </div>
+                </div>
+                {[
+                  { icon: '📸', action: 'Scan Receipt', sub: 'OCR in 2 seconds' },
+                  { icon: '📊', action: 'View Cash Flow', sub: 'Live charts' },
+                  { icon: '🏦', action: 'HMRC Submit', sub: 'MTD compliant' },
+                  { icon: '🔔', action: 'Tax Deadline', sub: 'VAT due in 14 days' },
+                ].map((item) => (
+                  <div key={item.action} className={styles.lpAppTx}>
+                    <span style={{ fontSize: '1rem', width: 22, textAlign: 'center' }}>{item.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#f1f5f9' }}>{item.action}</div>
+                      <div style={{ fontSize: '0.65rem', color: '#64748b' }}>{item.sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className={styles.lpPhoneHome} />
+            </div>
+          </motion.div>
         </div>
       </section>
 
