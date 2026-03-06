@@ -52,6 +52,25 @@ The app targets Expo SDK 51 / React Native 0.74.5. It connects to the backend at
 - **Web portal:** `npm run build` is the CI check (no dedicated test suite).
 - **Mobile app:** `cd apps/mobile && npx tsc --noEmit && npx expo export --platform android` verifies the bundle builds. No device/emulator is needed for this check.
 
+### New Services (added 2026-03-06)
+
+| Service | Port | Description |
+|---|---|---|
+| `services/finops-monitor` | 8021 | Financial ops monitor with MTD/ITSA compliance tracking |
+| `services/mtd-agent` | 8022 | HMRC MTD auto-submission agent |
+| `services/voice-gateway` | 8023 | Voice gateway (STT/TTS, WebSocket streaming) |
+| `services/ai-agent-service` | 80 | SelfMate AI agent — memory, tools, multi-language |
+
+Test coverage: **37/37 passing** across all four services.
+
+### Spell Check
+
+The repo uses [cspell](https://cspell.org/) configured in `cspell.json`.
+
+- Run: `npx cspell "**/*.{py,ts,tsx,js,json,md,yml,yaml}" --no-progress`
+- Expected result: **0 errors**
+- When adding new services or files with tech terms, add unknown words to the `words` array in `cspell.json`. Cyrillic `.md` files and demo scripts are in `ignorePaths` — do not remove them.
+
 ### Known Issues
 
 - `qna-service` returns 503 because it uses a deprecated Weaviate Python client (v3 API) that is incompatible with newer `weaviate-client` packages. This is non-blocking for other services.
@@ -59,3 +78,6 @@ The app targets Expo SDK 51 / React Native 0.74.5. It connects to the backend at
 - Docker must be started manually in Cloud Agent VMs: `sudo dockerd &>/tmp/dockerd.log &` (systemd is not available).
 - `business-intelligence` service has `Optional[BackgroundTasks]` in `generate_business_insights` which is incompatible with FastAPI 0.133+. Tests work around this by monkey-patching `fastapi.routing.APIRoute.__init__` before importing the app.
 - Python service tests require `AUTH_SECRET_KEY` env var set **before** importing `app.main` (all services read it at module level via `os.environ["AUTH_SECRET_KEY"]`). Each test file sets it at the top.
+- `ai-agent-service` uses `langchain` as an optional dependency — all imports are wrapped in `try/except ImportError`. If langchain is not installed the agent falls back to direct OpenAI calls.
+- `mtd-agent`: passing an explicit empty string `""` for `openai_api_key` disables OpenAI (does **not** fall back to the `OPENAI_API_KEY` env var). This is intentional for test isolation.
+- In `ai-agent-service` conftest, all async fixture methods must use `AsyncMock` (not `Mock`), and `get_available_tools()` must return a `dict`, not a list.

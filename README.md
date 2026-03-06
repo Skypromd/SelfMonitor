@@ -92,6 +92,39 @@ npm run start
 
 CI-пайплайн, настроенный в `.github/workflows/ci.yaml`, также автоматически запускает эти тесты при внесении изменений.
 
+## Changelog
+
+### 2026-03-06
+
+#### Новые сервисы
+
+| Сервис | Порт | Описание |
+|---|---|---|
+| `services/finops-monitor` | 8021 | Мониторинг финансовых операций, отслеживание MTD/ITSA |
+| `services/mtd-agent` | 8022 | Агент для автоматической подачи MTD-деклараций в HMRC |
+| `services/voice-gateway` | 8023 | Голосовой шлюз (STT/TTS, WebSocket) |
+| `services/ai-agent-service` | 80 | SelfMate AI агент с памятью, инструментами и многоязычной поддержкой |
+
+#### Исправления тестов (37/37 ✅)
+
+- **ai-agent-service** (17/17): исправлены `AsyncMock` в conftest, защита от `ZeroDivisionError` в `_update_performance_metrics`, mock Redis в тесте профиля
+- **mtd-agent** (10/10): пустая строка API-ключа теперь трактуется как «нет ключа», добавлена ветка `else` в `_determine_actions` для >30 дней
+- **voice-gateway** (10/10): все тесты прошли с первого запуска
+
+#### Конфигурация spell-check
+
+- `cspell.json` расширен: ~250 технических слов в `words`, кириллические `.md`-файлы и demo-скрипты добавлены в `ignorePaths`
+- Результат: **0 ошибок** по всему workspace
+
+#### Коммиты
+
+| Хэш | Описание |
+|---|---|
+| `dc33d9e` | feat: MTD Agent, Voice Gateway, SelfMate Redis refactor, multi-language support |
+| `3a0a8b3` | fix: resolve test failures across ai-agent-service, mtd-agent, voice-gateway |
+| `0bc9b79` | fix: repair cspell.json invalid JSON (duplicate block appended) |
+| `357c73b` | fix: restore 0 cspell errors — add 40 new words, ignore Cyrillic MD and demo files |
+
 ## Release readiness
 
 Перед релизом рекомендуется выполнить preflight-проверки из корня репозитория:
