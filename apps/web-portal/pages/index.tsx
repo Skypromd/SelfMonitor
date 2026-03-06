@@ -499,7 +499,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             <h3 className={styles.challengeCardTitle}>Hours lost on manual bookkeeping</h3>
             <p className={styles.challengeDesc}>
               Spreadsheets, bank exports, copy-paste — the admin never ends.
-              <span className={styles.challengeHighlight}>Average freelancer spends 5 hrs/week on admin</span>
+              <span className={styles.challengeHighlight}>Average freelancer spends <strong>5 hrs/week</strong> on admin</span>
             </p>
           </motion.div>
           <motion.div className={styles.challengeCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.15 }}>
@@ -507,7 +507,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             <h3 className={styles.challengeCardTitle}>Missed tax deductions</h3>
             <p className={styles.challengeDesc}>
               Without AI categorisation, legitimate expenses slip through the cracks.
-              <span className={styles.challengeHighlight}>UK freelancers overpay £1,200/year in taxes on average</span>
+              <span className={styles.challengeHighlight}>UK freelancers overpay <strong>£1,200/year</strong> in taxes on average</span>
             </p>
           </motion.div>
           <motion.div className={styles.challengeCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.3 }}>
@@ -515,7 +515,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             <h3 className={styles.challengeCardTitle}>Receipts in a shoebox</h3>
             <p className={styles.challengeDesc}>
               Paper receipts fade. Email receipts get buried. Audits happen.
-              <span className={styles.challengeHighlight}>HMRC requires 5 years of records — can you find them?</span>
+              <span className={styles.challengeHighlight}>HMRC requires <strong>5 years</strong> of records — can you find them?</span>
             </p>
           </motion.div>
         </div>

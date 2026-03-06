@@ -2368,15 +2368,30 @@
   line-height: 1.6;
 }
 .challengeHighlight {
-  display: block;
-  margin-top: 0.75rem;
-  color: #14b8a6;
-  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: #fff;
+  font-size: 0.85rem;
   font-weight: 600;
-  padding: 0.4rem 0.75rem;
-  background: rgba(20,184,166,0.08);
-  border-radius: 8px;
-  border-left: 3px solid #14b8a6;
+  padding: 0.65rem 1rem;
+  background: linear-gradient(135deg, rgba(217,119,6,0.18), rgba(245,158,11,0.12));
+  border-radius: 10px;
+  border-left: 3px solid var(--lp-accent-gold);
+  box-shadow: 0 2px 12px rgba(217,119,6,0.12);
+  line-height: 1.4;
+}
+.challengeHighlight::before {
+  content: '⚠️';
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.challengeHighlight strong {
+  color: var(--lp-accent-gold-light);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 /* ═══════════════════════════════════════════════
