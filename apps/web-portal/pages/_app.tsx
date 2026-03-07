@@ -97,7 +97,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
       setToken(storedToken);
       setUser(decodeUserFromToken(storedToken));
       fetchUserInfo(storedToken);
-    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register' && router.pathname !== '/login' && router.pathname !== '/welcome') {
+    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register' && router.pathname !== '/login' && router.pathname !== '/welcome' && router.pathname !== '/checkout-success' && router.pathname !== '/checkout-cancel') {
       router.replace('/');
     }
   }, [router.pathname, router]);
@@ -117,7 +117,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     router.push('/');
   };
 
-  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome') {
+  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel') {
     return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }
 

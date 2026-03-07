@@ -43,6 +43,8 @@ const SavingsChart = dynamic(() => import('../components/charts/SavingsChart'), 
 const RevenueVsExpensesChart = dynamic(() => import('../components/charts/RevenueVsExpensesChart'), { ssr: false });
 const TaxSavingsAreaChart = dynamic(() => import('../components/charts/TaxSavingsAreaChart'), { ssr: false });
 
+const BILLING_SERVICE_URL = process.env.NEXT_PUBLIC_BILLING_SERVICE_URL || 'http://localhost:8024';
+
 type IndexPageProps = Record<string, never>;
 
 
@@ -206,8 +208,30 @@ function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number;
 export default function HomePage(_props: IndexPageProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [checkoutError, setCheckoutError] = useState('');
   const router = useRouter();
   const { locales, locale: activeLocale } = router;
+
+  const handleCheckout = async (planKey: string) => {
+    setCheckoutError('');
+    setCheckoutLoading(planKey);
+    try {
+      const res = await fetch(`${BILLING_SERVICE_URL}/checkout/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ plan: planKey }),
+      });
+      if (!res.ok) throw new Error('Could not start checkout. Please try again.');
+      const data = await res.json();
+      window.location.href = data.checkout_url;
+    } catch {
+      // Fallback: billing service unavailable — go straight to register
+      router.push(`/register?plan=${planKey}`);
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
   const LOCALE_FLAGS: Record<string, string> = { 'en-GB': '🇬🇧', 'pl-PL': '🇵🇱', 'ro-RO': '🇷🇴', 'uk-UA': '🇺🇦', 'ru-RU': '🇷🇺', 'es-ES': '🇪🇸', 'it-IT': '🇮🇹', 'pt-PT': '🇵🇹', 'tr-TR': '🇹🇷', 'bn-BD': '🇧🇩' };
 
   return (
@@ -663,7 +687,14 @@ export default function HomePage(_props: IndexPageProps) {
                   <li key={f}><CheckCircle2 size={14} color={plan.highlight ? '#0d9488' : '#6b7280'} />{f}</li>
                 ))}
               </ul>
-              <a href={`/register?plan=${plan.name.toLowerCase()}`} className={plan.highlight ? styles.lpCtaGold : styles.lpPricingCta}>{plan.cta}</a>
+              <button
+                onClick={() => handleCheckout(plan.name.toLowerCase())}
+                disabled={checkoutLoading === plan.name.toLowerCase()}
+                className={plan.highlight ? styles.lpCtaGold : styles.lpPricingCta}
+                style={{ width: '100%', cursor: checkoutLoading ? 'wait' : 'pointer', border: 'none' }}
+              >
+                {checkoutLoading === plan.name.toLowerCase() ? 'Loading…' : plan.cta}
+              </button>
             </div>
           ))}
         </div>

@@ -27,6 +27,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
   const planName = PLAN_NAMES[plan] || 'Starter';
   const planPrice = PLAN_PRICES[plan] || '£9/mo';
   const isTrial = plan !== 'free';
+  const paymentConfirmed = router.query.payment === 'success';
 
   const [step, setStep] = useState<Step>('account');
   const [accessToken, setAccessToken] = useState('');
@@ -237,9 +238,14 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
               {isTrial ? (
                 <>
                   <h1 className={styles.title} style={{ fontSize: '1.75rem' }}>
-                    Start your 14-day {planName} trial
+                    {paymentConfirmed ? `${planName} Plan Activated!` : `Start your 14-day ${planName} trial`}
                   </h1>
-                  <p className={styles.description}>Full {planName} access ({planPrice}) — no credit card required</p>
+                  <p className={styles.description}>
+                    {paymentConfirmed
+                      ? <span style={{ color: '#14b8a6' }}>✓ Payment confirmed — {planName} ({planPrice})</span>
+                      : <>Full {planName} access ({planPrice}) — no credit card required</>
+                    }
+                  </p>
                 </>
               ) : (
                 <>
@@ -248,7 +254,18 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
                 </>
               )}
 
-              {isTrial && (
+              {paymentConfirmed ? (
+                <div style={{
+                  width: '100%', padding: '1rem', borderRadius: 12,
+                  background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.45)',
+                  marginBottom: '1.5rem', fontSize: '0.875rem', color: '#14b8a6', lineHeight: 1.8,
+                }}>
+                  <div style={{ fontWeight: 600, marginBottom: '0.25rem' }}>✓ Payment successful</div>
+                  <div>✓ Your {planName} subscription is confirmed</div>
+                  <div>✓ 14-day free trial starts today</div>
+                  <div>✓ No charge until trial ends — cancel anytime</div>
+                </div>
+              ) : isTrial ? (
                 <div style={{
                   width: '100%', padding: '1rem', borderRadius: 12,
                   background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.3)',
@@ -258,7 +275,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
                   <div>✓ Full {planName} access for 14 days</div>
                   <div>✓ Downgrade or cancel anytime</div>
                 </div>
-              )}
+              ) : null}
 
               <form onSubmit={handleRegister} style={{ width: '100%' }}>
                 <label htmlFor="reg-name">Full name <span style={{ color: '#64748b', fontWeight: 400 }}>(optional)</span></label>
