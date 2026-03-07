@@ -43,6 +43,11 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         setLoading(false);
         return;
       }
+      if (res.status === 403 && data.detail === 'ADMIN_2FA_SETUP_REQUIRED') {
+        setError('Admin accounts require two-factor authentication. Please enable 2FA in Security settings first, then log in again.');
+        setLoading(false);
+        return;
+      }
       if (!res.ok) throw new Error(data.detail || 'Login failed');
       onLoginSuccess(data.access_token);
     } catch (err: unknown) {

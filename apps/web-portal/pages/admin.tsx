@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
@@ -259,6 +259,26 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, TOAST_DURATION_MS);
   };
+
+  // ── Inactivity auto-logout: 15 minutes of no user activity ─────────────────
+  const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    const TIMEOUT_MS = 15 * 60 * 1000;
+    const reset = () => {
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+      inactivityTimer.current = setTimeout(() => {
+        sessionStorage.removeItem('authToken');
+        window.location.replace('/?reason=inactivity');
+      }, TIMEOUT_MS);
+    };
+    const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'];
+    events.forEach((ev) => window.addEventListener(ev, reset, { passive: true }));
+    reset(); // start timer immediately
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, reset));
+      if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
+    };
+  }, []);
 
   // ── Fetch real billing/subscription stats ────────────────────────────────────
   useEffect(() => {

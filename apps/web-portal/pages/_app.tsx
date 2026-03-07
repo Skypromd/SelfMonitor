@@ -43,6 +43,7 @@ function decodeUserFromToken(token: string): AuthUser {
 function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser>({ email: '', is_admin: false });
+  const [isUserLoaded, setIsUserLoaded] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const router = useRouter();
 
@@ -81,6 +82,8 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
       }
     } catch {
       // Fall back to JWT-decoded values
+    } finally {
+      setIsUserLoaded(true);
     }
   };
 
@@ -114,13 +117,26 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     sessionStorage.removeItem('authToken');
     setToken(null);
     setUser({ email: '', is_admin: false });
+    setIsUserLoaded(false);
     router.push('/');
   };
 
-  // ── Hard guard: /admin is only accessible to is_admin users ─────────────────
-  if (router.pathname === '/admin' && token && !user.is_admin) {
-    router.replace('/dashboard');
-    return null;
+  // ── Hard guard: /admin — is_admin + session freshness (< 60 min) ─────────────
+  if (router.pathname === '/admin' && token) {
+    if (!isUserLoaded) return null; // wait for /me before deciding
+    if (!user.is_admin) {
+      router.replace('/dashboard');
+      return null;
+    }
+    // If token was issued more than 60 minutes ago, force re-login
+    try {
+      const p = token.split('.')[1];
+      const pl = JSON.parse(atob((p.replace(/-/g, '+').replace(/_/g, '/')) + '=='));
+      if (pl.iat && (Date.now() / 1000 - pl.iat) / 60 > 60) {
+        handleLogout();
+        return null;
+      }
+    } catch { /* ignore */ }
   }
 
   if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel') {

@@ -37,6 +37,7 @@ AUTH_DB_PATH = os.getenv(
 AUTH_ADMIN_EMAIL = os.getenv("AUTH_ADMIN_EMAIL", "admin@example.com")
 AUTH_ADMIN_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin_password")
 AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "true"
+REQUIRE_ADMIN_2FA = os.getenv("AUTH_REQUIRE_ADMIN_2FA", "true").lower() == "true"
 
 app = FastAPI(
     title="Auth Service",
@@ -124,11 +125,12 @@ def create_access_token(
     data: dict[str, object], expires_delta: Optional[timedelta] = None
 ) -> str:
     to_encode: dict[str, object] = data.copy()
+    now = datetime.datetime.now(datetime.UTC)
     if expires_delta:
-        expire = datetime.datetime.now(datetime.UTC) + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.datetime.now(datetime.UTC) + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
+        expire = now + timedelta(minutes=15)
+    to_encode.update({"exp": expire, "iat": now})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -518,10 +520,19 @@ async def login_for_access_token(
         if not totp.verify(totp_code):
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
 
+    # --- Enforce 2FA for admin accounts ---
+    if user.is_admin and REQUIRE_ADMIN_2FA and not user.is_two_factor_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ADMIN_2FA_SETUP_REQUIRED",
+            headers={"X-Admin-2FA-Required": "setup"},
+        )
+
     clear_failed_attempts(form_data.username)
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, "is_admin": user.is_admin},
+        expires_delta=access_token_expires,
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
