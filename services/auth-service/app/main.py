@@ -223,6 +223,15 @@ def init_auth_db() -> None:
             )
             """
         )
+        # Add phone columns if they don't exist yet (safe migration)
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0")
+        except Exception:
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS subscriptions (
                 user_email TEXT PRIMARY KEY,
@@ -646,7 +655,106 @@ async def disable_two_factor_auth(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@app.get("/me", response_model=User)
+# --- Phone Verification Endpoints ---
+
+import random as _random  # noqa: E402
+
+# In-memory store: email -> (code, phone, expires_at_unix)
+_phone_codes: dict[str, tuple[str, str, float]] = {}
+_PHONE_CODE_TTL = 600  # 10 minutes
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN  = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE_FROM  = os.getenv("TWILIO_PHONE_FROM", "")
+SMS_DEV_MODE = not (TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_FROM)
+
+
+def _send_sms(to: str, body: str) -> None:
+    """Send SMS via Twilio if configured, otherwise log to console (dev mode)."""
+    if SMS_DEV_MODE:
+        logger.info("[DEV SMS] To %s: %s", to, body)
+        return
+    try:
+        from twilio.rest import Client  # type: ignore[import]
+        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        client.messages.create(body=body, from_=TWILIO_PHONE_FROM, to=to)
+    except Exception as exc:
+        logger.error("SMS send failed: %s", exc)
+        raise HTTPException(status_code=503, detail="SMS delivery failed. Please try again.")
+
+
+class PhoneSendRequest(BaseModel):
+    email: EmailStr
+    phone: str = Field(..., min_length=7, max_length=20)
+
+
+class PhoneVerifyRequest(BaseModel):
+    email: EmailStr
+    code: str = Field(..., min_length=6, max_length=6)
+
+
+@app.post("/phone/send-code")
+async def phone_send_code(payload: PhoneSendRequest):
+    """
+    Generate a 6-digit SMS verification code and send it to the given phone number.
+    In development (no Twilio env vars), the code is returned in the response for testing.
+    """
+    if not get_user_record(str(payload.email)):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    code = str(_random.randint(100000, 999999))
+    expires_at = time.time() + _PHONE_CODE_TTL
+    _phone_codes[str(payload.email)] = (code, payload.phone, expires_at)
+
+    _send_sms(
+        to=payload.phone,
+        body=f"Your SelfMonitor verification code is: {code}. Valid for 10 minutes.",
+    )
+
+    response: dict[str, Any] = {"sent": True}
+    if SMS_DEV_MODE:
+        response["dev_code"] = code  # expose only in dev — remove in production
+    return response
+
+
+@app.post("/phone/verify")
+async def phone_verify_code(
+    payload: PhoneVerifyRequest,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Verify the SMS code and mark the user's phone as verified."""
+    email = str(payload.email)
+    if email != current_user.email:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    entry = _phone_codes.get(email)
+    if not entry:
+        raise HTTPException(status_code=400, detail="No verification code found. Request a new one.")
+
+    code, phone, expires_at = entry
+    if time.time() > expires_at:
+        _phone_codes.pop(email, None)
+        raise HTTPException(status_code=400, detail="Code expired. Please request a new one.")
+
+    if payload.code != code:
+        raise HTTPException(status_code=400, detail="Incorrect code. Please try again.")
+
+    _phone_codes.pop(email, None)
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE users SET phone = ?, phone_verified = 1 WHERE email = ?",
+                (phone, email),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    return {"verified": True, "phone": phone}
+
+
+
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):

@@ -34,7 +34,7 @@ import {
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const CashFlowChart = dynamic(() => import('../components/charts/CashFlowChart'), { ssr: false });
@@ -43,28 +43,8 @@ const SavingsChart = dynamic(() => import('../components/charts/SavingsChart'), 
 const RevenueVsExpensesChart = dynamic(() => import('../components/charts/RevenueVsExpensesChart'), { ssr: false });
 const TaxSavingsAreaChart = dynamic(() => import('../components/charts/TaxSavingsAreaChart'), { ssr: false });
 
-const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
+type IndexPageProps = Record<string, never>;
 
-type IndexPageProps = {
-  onLoginSuccess: (newToken: string) => void;
-};
-
-function getPasswordChecks(password: string) {
-  return {
-    length: password.length >= 8,
-    uppercase: /[A-Z]/.test(password),
-    lowercase: /[a-z]/.test(password),
-    digit: /\d/.test(password),
-    special: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(password),
-  };
-}
-
-function getStrength(checks: ReturnType<typeof getPasswordChecks>) {
-  const passed = Object.values(checks).filter(Boolean).length;
-  if (passed >= 5) return 'strong';
-  if (passed >= 3) return 'medium';
-  return 'weak';
-}
 
 const FEATURES = [
   { Icon: ReceiptText,    title: 'Smart Invoicing',        color: '#0d9488', desc: 'Professional invoices with line-items, VAT & PDF export. Track draft, sent, paid and overdue at a glance.' },
@@ -223,143 +203,12 @@ function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number;
   return <span ref={ref}>{prefix}{count.toLocaleString()}{suffix}</span>;
 }
 
-export default function HomePage({ onLoginSuccess }: IndexPageProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
-  const [totpRequired, setTotpRequired] = useState(false);
-  const [totpCode, setTotpCode] = useState('');
-  const [loading, setLoading] = useState(false);
+export default function HomePage(_props: IndexPageProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
   const router = useRouter();
   const { locales, locale: activeLocale } = router;
   const LOCALE_FLAGS: Record<string, string> = { 'en-GB': '🇬🇧', 'pl-PL': '🇵🇱', 'ro-RO': '🇷🇴', 'uk-UA': '🇺🇦', 'ru-RU': '🇷🇺', 'es-ES': '🇪🇸', 'it-IT': '🇮🇹', 'pt-PT': '🇵🇹', 'tr-TR': '🇹🇷', 'bn-BD': '🇧🇩' };
-
-  const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
-  const strength = useMemo(() => getStrength(passwordChecks), [passwordChecks]);
-
-  const clearFeedback = () => {
-    setMessage('');
-    setError('');
-  };
-
-  const formatErrorMessage = (detail: string): string => {
-    if (/locked/i.test(detail)) {
-      return 'Account temporarily locked. Please try again later.';
-    }
-    if (/password must/i.test(detail)) {
-      const missing: string[] = [];
-      if (!passwordChecks.length) missing.push('at least 8 characters');
-      if (!passwordChecks.uppercase) missing.push('an uppercase letter');
-      if (!passwordChecks.lowercase) missing.push('a lowercase letter');
-      if (!passwordChecks.digit) missing.push('a number');
-      if (!passwordChecks.special) missing.push('a special character');
-      return missing.length
-        ? `Password must contain: ${missing.join(', ')}.`
-        : detail;
-    }
-    return detail;
-  };
-
-  const handleRegister = async (e: FormEvent) => {
-    e.preventDefault();
-    clearFeedback();
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter your email and password.');
-      return;
-    }
-    setLoading(true);
-
-    try {
-      const response = await fetch(`${AUTH_SERVICE_URL}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || 'Registration failed');
-      }
-      setMessage(`User ${data.email} registered successfully! You can now log in.`);
-      setIsRegistering(false);
-    } catch (err: unknown) {
-      if (err instanceof TypeError && err.message === 'Failed to fetch') {
-        setError('Connection failed. Please try again.');
-      } else {
-        const details = err instanceof Error ? err.message : 'Registration failed';
-        setError(formatErrorMessage(details));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleLogin = async (e: FormEvent, totpOverride?: string) => {
-    e.preventDefault();
-    clearFeedback();
-    if (!email.trim() || !password.trim()) {
-      setError('Please enter your email and password.');
-      return;
-    }
-    setLoading(true);
-
-    try {
-      const formData = new URLSearchParams();
-      formData.append('username', email.trim());
-      formData.append('password', password);
-
-      const code = totpOverride || totpCode;
-      if (code) {
-        formData.append('scope', `totp:${code}`);
-      }
-
-      const response = await fetch(`${AUTH_SERVICE_URL}/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-      });
-      const data = await response.json();
-
-      if (response.status === 403 && data.detail === '2FA_REQUIRED') {
-        setTotpRequired(true);
-        setTotpCode('');
-        setLoading(false);
-        return;
-      }
-
-      if (!response.ok) {
-        throw new Error(data.detail || 'Login failed');
-      }
-
-      onLoginSuccess(data.access_token);
-    } catch (err: unknown) {
-      if (err instanceof TypeError && err.message === 'Failed to fetch') {
-        setError('Connection failed. Please try again.');
-      } else {
-        const details = err instanceof Error ? err.message : 'Login failed';
-        setError(formatErrorMessage(details));
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleTotpSubmit = (e: FormEvent) => {
-    handleLogin(e);
-  };
-
-  const handleBackToLogin = () => {
-    setTotpRequired(false);
-    setTotpCode('');
-    clearFeedback();
-  };
-
-  const strengthClass = strength === 'strong' ? styles.strengthStrong : strength === 'medium' ? styles.strengthMedium : styles.strengthWeak;
-  const strengthLabel = strength === 'strong' ? 'Strong' : strength === 'medium' ? 'Medium' : 'Weak';
 
   return (
     <>
@@ -409,7 +258,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
               </div>
             )}
           </div>
-          <a href="#get-started" className={styles.lpNavCta}>Get Started <ArrowRight size={14} /></a>
+          <a href="/register" className={styles.lpNavCta}>Get Started <ArrowRight size={14} /></a>
           <button
             className={styles.lpNavHamburger}
             onClick={() => setMenuOpen(o => !o)}
@@ -424,7 +273,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             <a href="#insights" className={styles.lpNavMobileLink} onClick={() => setMenuOpen(false)}>Charts</a>
             <a href="#why" className={styles.lpNavMobileLink} onClick={() => setMenuOpen(false)}>Why Us</a>
             <a href="#pricing" className={styles.lpNavMobileLink} onClick={() => setMenuOpen(false)}>Pricing</a>
-            <a href="#get-started" className={styles.lpNavMobileCta} onClick={() => setMenuOpen(false)}>Get Started <ArrowRight size={14} /></a>
+            <a href="/register" className={styles.lpNavMobileCta} onClick={() => setMenuOpen(false)}>Get Started <ArrowRight size={14} /></a>
           </div>
         )}
       </header>
@@ -443,7 +292,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             Expense Tracking · Document Storage — in one beautifully designed mobile app.
           </p>
           <div className={styles.lpHeroCtas}>
-            <a href="#get-started" className={styles.lpCtaGold}>Start for Free <ArrowRight size={16} /></a>
+            <a href="/register" className={styles.lpCtaGold}>Start for Free <ArrowRight size={16} /></a>
             <a href="#features" className={styles.lpCtaSecondary}>See Features</a>
           </div>
           <div className={styles.lpHeroTrust}>
@@ -786,7 +635,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         <motion.div {...fadeUp} style={{ marginTop: '2.5rem', textAlign: 'center' }}>
           <div className={styles.roiSaving}><AnimatedCounter target={2520} prefix="£" />/yr</div>
           <p className={styles.roiSavingLbl}>That&rsquo;s the average annual saving with SelfMonitor</p>
-          <a href="#get-started" className={styles.lpCtaGoldLg} style={{ marginTop: '1.5rem', display: 'inline-flex' }}>
+          <a href="/register" className={styles.lpCtaGoldLg} style={{ marginTop: '1.5rem', display: 'inline-flex' }}>
             Start Saving Today <ArrowRight size={18} />
           </a>
         </motion.div>
@@ -814,7 +663,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
                   <li key={f}><CheckCircle2 size={14} color={plan.highlight ? '#0d9488' : '#6b7280'} />{f}</li>
                 ))}
               </ul>
-              <a href="#get-started" className={plan.highlight ? styles.lpCtaGold : styles.lpPricingCta}>{plan.cta}</a>
+              <a href={`/register?plan=${plan.name.toLowerCase()}`} className={plan.highlight ? styles.lpCtaGold : styles.lpPricingCta}>{plan.cta}</a>
             </div>
           ))}
         </div>
@@ -917,112 +766,31 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         </div>
       </section>
 
-      {/* ═══ AUTH / GET STARTED ═══ */}
-      <section className={styles.lpAuthSection} id="get-started">
-        <div className={styles.lpAuthWrap}>
-          <div className={styles.lpAuthLeft}>
-            <div className={styles.lpChip}>Join 2,400+ freelancers</div>
-            <h2 className={styles.lpAuthH2}>Start managing your finances smarter today</h2>
-            <ul className={styles.lpAuthPerks}>
-              {['14-day free trial — no credit card needed', 'Full access to all 12 modules during trial', 'HMRC MTD compliant on day one', 'Set up in under 5 minutes'].map((p) => (
-                <li key={p}><CheckCircle2 size={16} color="#0d9488" /> {p}</li>
-              ))}
-            </ul>
-            <a
-              href="#email-input"
-              className={styles.lpCtaGoldLg}
-              style={{ marginTop: '0.5rem' }}
-              onClick={() => { setIsRegistering(true); clearFeedback(); }}
-            >
-              Start Free Trial — No Credit Card <ArrowRight size={18} />
-            </a>
-          </div>
-          <div className={styles.lpAuthCard}>
-            <main className={styles.main}>
-              <h1 className={styles.title}>SelfMonitor</h1>
-              <p className={styles.description}>Sign up or log in to continue</p>
-              <div className={styles.formContainer}>
-                {totpRequired ? (
-                  <form onSubmit={handleTotpSubmit}>
-                    <div className={styles.totpSection}>
-                      <p>Enter your 6-digit code from authenticator app</p>
-                    </div>
-                    <input
-                      id="totp-input"
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      maxLength={6}
-                      placeholder="000000"
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      className={`${styles.input} ${styles.totpInput}`}
-                      aria-label="Two-factor authentication code"
-                      autoFocus
-                    />
-                    <div className={styles.buttonGroup}>
-                      <button type="button" onClick={handleBackToLogin} className={styles.button}
-                        style={{ background: 'transparent', border: '1px solid var(--lp-border)', color: 'var(--lp-text-muted)' }}>
-                        Back
-                      </button>
-                      <button type="submit" className={styles.button} disabled={totpCode.length !== 6 || loading} aria-label="Verify TOTP code">
-                        {loading ? 'Verifying...' : 'Verify'}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <form>
-                    <label htmlFor="email-input">Email</label>
-                    <input id="email-input" type="email" placeholder="Email" value={email}
-                      onChange={(e) => setEmail(e.target.value)} className={styles.input} aria-label="Email address" />
-                    <label htmlFor="password-input">Password</label>
-                    <div className={styles.passwordWrapper}>
-                      <input id="password-input" type={showPassword ? 'text' : 'password'} placeholder="Password"
-                        value={password} onChange={(e) => setPassword(e.target.value)}
-                        className={styles.input} aria-label="Password" style={{ paddingRight: '3rem' }} />
-                      <button type="button" className={styles.passwordToggle}
-                        onClick={() => setShowPassword(!showPassword)}
-                        aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                        {showPassword ? '🙈' : '👁️'}
-                      </button>
-                    </div>
-                    {isRegistering && password.length > 0 && (
-                      <>
-                        <div className={strengthClass} style={{ height: 4, borderRadius: 2, marginTop: '0.5rem', transition: 'all 0.3s' }} />
-                        <div className={styles.strengthLabel} style={{ color: strength === 'strong' ? '#14b8a6' : strength === 'medium' ? '#d97706' : '#ef4444' }}>
-                          {strengthLabel}
-                        </div>
-                        <ul className={styles.requirements}>
-                          <li className={passwordChecks.length ? styles.requirementMet : styles.requirementUnmet}>{passwordChecks.length ? '✓' : '✗'} At least 8 characters</li>
-                          <li className={passwordChecks.uppercase ? styles.requirementMet : styles.requirementUnmet}>{passwordChecks.uppercase ? '✓' : '✗'} Uppercase letter</li>
-                          <li className={passwordChecks.lowercase ? styles.requirementMet : styles.requirementUnmet}>{passwordChecks.lowercase ? '✓' : '✗'} Lowercase letter</li>
-                          <li className={passwordChecks.digit ? styles.requirementMet : styles.requirementUnmet}>{passwordChecks.digit ? '✓' : '✗'} Number</li>
-                          <li className={passwordChecks.special ? styles.requirementMet : styles.requirementUnmet}>{passwordChecks.special ? '✓' : '✗'} Special character</li>
-                        </ul>
-                      </>
-                    )}
-                    <div className={styles.buttonGroup}>
-                      <button type="button" className={styles.button} disabled={loading}
-                        aria-label="Register a new account"
-                        style={isRegistering ? {} : { background: 'transparent', border: '1px solid var(--lp-border)', color: 'var(--lp-text-muted)' }}
-                        onClick={(e) => { if (!isRegistering) { setIsRegistering(true); clearFeedback(); } else { handleRegister(e); } }}>
-                        {loading && isRegistering ? 'Registering...' : 'Register'}
-                      </button>
-                      <button type="button" className={styles.button} disabled={loading}
-                        aria-label="Log in to your account"
-                        style={!isRegistering ? {} : { background: 'transparent', border: '1px solid var(--lp-border)', color: 'var(--lp-text-muted)' }}
-                        onClick={(e) => { if (isRegistering) { setIsRegistering(false); clearFeedback(); } else { handleLogin(e); } }}>
-                        {loading && !isRegistering ? 'Logging in...' : 'Log In'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-              {message && <p className={styles.message} role="alert">{message}</p>}
-              {error   && <p className={styles.error}   role="alert">{error}</p>}
-            </main>
-          </div>
+      {/* ═══ GET STARTED / CTA ═══ */}
+      <section className={styles.lpAuthSection} id="get-started" style={{ textAlign: 'center' }}>
+        <div className={styles.lpChip} style={{ margin: '0 auto 1rem' }}>Join 2,400+ freelancers</div>
+        <h2 className={styles.lpAuthH2} style={{ textAlign: 'center' }}>Start managing your finances smarter today</h2>
+        <ul className={styles.lpAuthPerks} style={{ display: 'inline-flex', flexDirection: 'column', textAlign: 'left', margin: '1.5rem auto' }}>
+          {['14-day free trial — no credit card needed', 'Full access to all 12 modules during trial', 'HMRC MTD compliant on day one', 'Phone + Authenticator 2FA protection', 'Set up in under 5 minutes'].map((p) => (
+            <li key={p}><CheckCircle2 size={16} color="#0d9488" /> {p}</li>
+          ))}
+        </ul>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+          <a href="/register" className={styles.lpCtaGoldLg}>
+            Start Free Trial — No Credit Card <ArrowRight size={18} />
+          </a>
+          <a href="/login" style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.9rem 1.75rem', borderRadius: 12, fontSize: '1rem', fontWeight: 600,
+            border: '1px solid rgba(255,255,255,0.15)', color: 'var(--lp-text-muted)',
+            background: 'transparent', textDecoration: 'none', transition: 'border-color 0.2s',
+          }}>
+            Already have an account? Log in
+          </a>
         </div>
+        <p style={{ marginTop: '1rem', fontSize: '0.8rem', color: '#475569' }}>
+          🔒 Secured with SMS phone verification + Google Authenticator 2FA
+        </p>
       </section>
 
       {/* ═══ FOOTER ═══ */}
