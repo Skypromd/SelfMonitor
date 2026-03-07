@@ -108,9 +108,10 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   const handleLoginSuccess = (newToken: string) => {
     sessionStorage.setItem('authToken', newToken);
     setToken(newToken);
-    setUser(decodeUserFromToken(newToken));
+    const decoded = decodeUserFromToken(newToken);
+    setUser(decoded);
     fetchUserInfo(newToken);
-    router.push('/dashboard');
+    router.push(decoded.is_admin ? '/admin' : '/dashboard');
   };
 
   const handleLogout = () => {
