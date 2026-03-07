@@ -1002,6 +1002,8 @@ services:
   billing-service:
     build: ./services/billing-service
     container_name: billing-service
+    depends_on:
+      - auth-service
     environment:
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
@@ -1010,6 +1012,7 @@ services:
       STRIPE_PRICE_PRO: "${STRIPE_PRICE_PRO:-}"
       STRIPE_PRICE_BUSINESS: "${STRIPE_PRICE_BUSINESS:-}"
       FRONTEND_URL: "${FRONTEND_URL:-http://localhost:3000}"
+      AUTH_SERVICE_URL: "http://auth-service:80"
     ports:
       - "8024:80"
     networks:

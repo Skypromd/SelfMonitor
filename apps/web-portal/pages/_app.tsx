@@ -117,6 +117,12 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     router.push('/');
   };
 
+  // ── Hard guard: /admin is only accessible to is_admin users ─────────────────
+  if (router.pathname === '/admin' && token && !user.is_admin) {
+    router.replace('/dashboard');
+    return null;
+  }
+
   if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel') {
     return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }

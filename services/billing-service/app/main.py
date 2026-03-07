@@ -11,6 +11,7 @@ import sqlite3
 import time
 from typing import Optional
 
+import httpx
 import stripe
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +24,7 @@ logger = logging.getLogger(__name__)
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:80")
 DEV_MODE = not bool(STRIPE_SECRET_KEY)
 
 if not DEV_MODE:
@@ -327,6 +329,92 @@ def get_subscription(email: str) -> SubscriptionInfo:
         status=row["status"],
         current_period_end=row["current_period_end"],
     )
+
+
+# ── Admin endpoints ────────────────────────────────────────────────────────────
+async def _verify_admin(request: Request) -> bool:
+    """Verifies that the Bearer token belongs to an is_admin user via auth-service."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False
+    token = auth_header[7:]
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            resp = await client.get(
+                f"{AUTH_SERVICE_URL}/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if resp.status_code == 200:
+            return bool(resp.json().get("is_admin", False))
+    except Exception:
+        pass
+    return False
+
+
+@app.get("/admin/stats")
+async def admin_stats(request: Request) -> dict:
+    """
+    Returns aggregate billing/subscription statistics for the admin panel.
+    Requires Bearer token of an is_admin user (verified via auth-service).
+    """
+    if not await _verify_admin(request):
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT plan, status, COUNT(*) as cnt FROM subscriptions GROUP BY plan, status"
+        ).fetchall()
+        total_row = conn.execute("SELECT COUNT(*) as cnt FROM subscriptions").fetchone()
+        recent = conn.execute(
+            "SELECT email, plan, status, created_at, stripe_subscription_id FROM subscriptions ORDER BY created_at DESC LIMIT 20"
+        ).fetchall()
+
+    # Aggregate by plan
+    plan_map: dict[str, dict] = {}
+    for r in rows:
+        plan = r["plan"] or "free"
+        status = r["status"] or "inactive"
+        if plan not in plan_map:
+            plan_map[plan] = {"plan": plan, "count": 0, "active": 0, "trialing": 0, "inactive": 0}
+        plan_map[plan]["count"] += r["cnt"]
+        if status in plan_map[plan]:
+            plan_map[plan][status] += r["cnt"]
+
+    # Compute MRR
+    plan_prices = {p: PLANS[p]["amount"] / 100 for p in PLANS}
+    for plan_data in plan_map.values():
+        price = plan_prices.get(plan_data["plan"], 0)
+        # Count active + trialing as paying
+        paying = plan_data["active"] + plan_data["trialing"]
+        plan_data["mrr"] = round(price * paying, 2)
+
+    by_plan = sorted(plan_map.values(), key=lambda x: x["mrr"], reverse=True)
+    total_mrr = round(sum(p["mrr"] for p in by_plan), 2)
+    total_subscribers = sum(p["count"] for p in by_plan)
+    total_active = sum(p["active"] for p in by_plan)
+    total_trialing = sum(p["trialing"] for p in by_plan)
+
+    recent_list = [
+        {
+            "email": row["email"],
+            "plan": row["plan"],
+            "status": row["status"],
+            "created_at": row["created_at"],
+            "has_stripe": bool(row["stripe_subscription_id"]),
+        }
+        for row in recent
+    ]
+
+    return {
+        "by_plan": by_plan,
+        "total_mrr": total_mrr,
+        "total_arr": round(total_mrr * 12, 2),
+        "total_subscribers": total_subscribers,
+        "total_active": total_active,
+        "total_trialing": total_trialing,
+        "total_in_db": total_row["cnt"] if total_row else 0,
+        "recent_subscriptions": recent_list,
+    }
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

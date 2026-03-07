@@ -4,10 +4,33 @@ import styles from '../styles/Home.module.css';
 
 const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || 'http://localhost:8016';
+const BILLING_SERVICE_URL = process.env.NEXT_PUBLIC_BILLING_SERVICE_URL || 'http://localhost:8024';
 const TOAST_DURATION_MS = 4200;
+
+type AdminUser = { email: string; is_admin: boolean };
+
+type BillingPlanStat = {
+  plan: string;
+  count: number;
+  mrr: number;
+  active: number;
+  trialing: number;
+  inactive: number;
+};
+
+type BillingAdminStats = {
+  by_plan: BillingPlanStat[];
+  total_mrr: number;
+  total_arr: number;
+  total_subscribers: number;
+  total_active: number;
+  total_trialing: number;
+  recent_subscriptions: { email: string; plan: string; status: string; created_at: number; has_stripe: boolean }[];
+};
 
 type AdminPageProps = {
   token: string;
+  user?: AdminUser;
 };
 
 type PeriodPreset = 'custom' | '7d' | '30d' | 'qtd';
@@ -171,7 +194,21 @@ const AI_AGENT_PERMISSIONS = [
   { id: 'deploy_changes',    label: 'Deploy frontend/backend updates',   available: false, defaultOn: false },
 ];
 
-export default function AdminPage({ token }: AdminPageProps) {
+export default function AdminPage({ token, user }: AdminPageProps) {
+  // ── Double-check: server guard is in _app.tsx, but defensive check here too ──
+  if (user && user.is_admin === false) {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', minHeight: '60vh', gap: '1rem', color: '#94a3b8',
+      }}>
+        <div style={{ fontSize: '3rem' }}>🔒</div>
+        <h1 style={{ color: '#f87171', fontSize: '1.5rem' }}>Access Denied</h1>
+        <p>Admin privileges required to view this page.</p>
+      </div>
+    );
+  }
+
   const [emailToDeactivate, setEmailToDeactivate] = useState('');
   const [leadId, setLeadId] = useState('');
   const [leadStatus, setLeadStatus] = useState<LeadLifecycleStatus>('qualified');
@@ -211,6 +248,8 @@ export default function AdminPage({ token }: AdminPageProps) {
     Object.fromEntries(AI_AGENT_PERMISSIONS.map((p) => [p.id, p.defaultOn])),
   );
   const [serviceStatuses, setServiceStatuses] = useState<Record<string, 'checking' | 'online' | 'offline'>>({});
+  const [billingAdminStats, setBillingAdminStats] = useState<BillingAdminStats | null>(null);
+  const [isBillingStatsLoading, setIsBillingStatsLoading] = useState(false);
   const { t } = useTranslation();
 
   const pushToast = (kind: ToastKind, message: string) => {
@@ -220,6 +259,25 @@ export default function AdminPage({ token }: AdminPageProps) {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, TOAST_DURATION_MS);
   };
+
+  // ── Fetch real billing/subscription stats ────────────────────────────────────
+  useEffect(() => {
+    if (!token) return;
+    const loadBillingStats = async () => {
+      setIsBillingStatsLoading(true);
+      try {
+        const res = await fetch(`${BILLING_SERVICE_URL}/admin/stats`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) setBillingAdminStats(await res.json());
+      } catch {
+        // non-fatal — falls back to mock data
+      } finally {
+        setIsBillingStatsLoading(false);
+      }
+    };
+    void loadBillingStats();
+  }, [token]);
 
   const dismissToast = (id: string) => {
     setToasts((current) => current.filter((item) => item.id !== id));
@@ -899,77 +957,155 @@ export default function AdminPage({ token }: AdminPageProps) {
       {/* ══════════════════════════════════════════════════════════════════
           SUBSCRIPTIONS TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'subscriptions' && (
-        <>
-          {/* Plan KPI cards */}
-          <div className={styles.kpiGrid}>
-            {MOCK_PLAN_STATS.map((p) => (
-              <div key={p.plan} className={styles.kpiCard} style={{ borderLeft: `3px solid ${p.color}` }}>
-                <p className={styles.kpiLabel}>{p.plan} Plan</p>
-                <p className={styles.kpiValue} style={{ color: p.color }}>{p.count} users</p>
-                <p className={styles.kpiSub}>£{p.mrr.toLocaleString()} / mo · £{p.price}/user</p>
-              </div>
-            ))}
-            <div className={styles.kpiCard}>
-              <p className={styles.kpiLabel}>Total MRR</p>
-              <p className={styles.kpiValue}>£{TOTAL_MRR.toLocaleString()}</p>
-              <p className={styles.kpiSub}>All plans combined</p>
-            </div>
-            <div className={styles.kpiCard}>
-              <p className={styles.kpiLabel}>Total ARR</p>
-              <p className={styles.kpiValue}>£{(TOTAL_MRR * 12).toLocaleString()}</p>
-              <p className={styles.kpiSub}>Annualised</p>
-            </div>
-          </div>
+      {activeTab === 'subscriptions' && (() => {
+        // Use real data from billing-service if available, else fall back to mock
+        const planColors: Record<string, string> = {
+          starter: '#14b8a6', growth: '#6366f1', pro: '#f59e0b', business: '#ec4899', free: '#64748b',
+        };
+        const planPrices: Record<string, number> = {
+          free: 0, starter: 9, growth: 12, pro: 15, business: 25,
+        };
+        const activePlans = billingAdminStats?.by_plan ?? MOCK_PLAN_STATS.map(p => ({
+          plan: p.plan.toLowerCase(), count: p.count, mrr: p.mrr,
+          active: p.count, trialing: 0, inactive: 0,
+        }));
+        const liveTotal_MRR = billingAdminStats?.total_mrr ?? TOTAL_MRR;
+        const liveTotal_ARR = billingAdminStats?.total_arr ?? TOTAL_MRR * 12;
+        const liveTotalSubscribers = billingAdminStats?.total_subscribers ?? TOTAL_PAYING;
+        const liveActive = billingAdminStats?.total_active ?? TOTAL_PAYING;
+        const liveTrialing = billingAdminStats?.total_trialing ?? 0;
+        const isLive = billingAdminStats !== null;
+        const recentSubs = billingAdminStats?.recent_subscriptions ?? [];
 
-          {/* Plan breakdown table */}
-          <div className={styles.subContainer}>
-            <div className={styles.sectionHeader}>
-              <h2 className={styles.sectionTitle}>Plan Breakdown</h2>
-              <p className={styles.sectionSubtitle}>Revenue contribution per subscription tier.</p>
+        return (
+          <>
+            {/* Live data badge */}
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.3rem 0.75rem', borderRadius: 20,
+              background: isLive ? 'rgba(52,211,153,0.1)' : 'rgba(251,191,36,0.1)',
+              border: `1px solid ${isLive ? 'rgba(52,211,153,0.3)' : 'rgba(251,191,36,0.3)'}`,
+              color: isLive ? '#34d399' : '#fbbf24',
+              fontSize: '0.75rem', marginBottom: '1.25rem',
+            }}>
+              {isBillingStatsLoading ? '⏳ Loading live data…'
+                : isLive ? '🟢 Live data — Stripe billing-service'
+                : '🟡 Mock data — billing-service unavailable'}
             </div>
-            <div className={styles.tableResponsive}>
-              <table className={styles.table}>
-                <thead>
-                  <tr>
-                    <th>Plan</th>
-                    <th>Price/mo</th>
-                    <th>Subscribers</th>
-                    <th>MRR (£)</th>
-                    <th>ARR (£)</th>
-                    <th>% of MRR</th>
-                    <th>Revenue Bar</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {MOCK_PLAN_STATS.map((p) => (
-                    <tr key={p.plan}>
-                      <td><span className={styles.planBadge} style={{ background: p.color + '22', color: p.color }}>{p.plan}</span></td>
-                      <td>£{p.price}</td>
-                      <td>{p.count}</td>
-                      <td className={styles.positive}>£{p.mrr.toLocaleString()}</td>
-                      <td className={styles.positive}>£{(p.mrr * 12).toLocaleString()}</td>
-                      <td>{((p.mrr / TOTAL_MRR) * 100).toFixed(1)}%</td>
-                      <td style={{ minWidth: 120 }}>
-                        <div className={styles.barTrack}>
-                          <span className={styles.barFill} style={{ width: `${(p.mrr / TOTAL_MRR) * 100}%`, background: p.color }} />
-                        </div>
-                      </td>
+
+            {/* Plan KPI cards */}
+            <div className={styles.kpiGrid}>
+              {activePlans.map((p) => {
+                const color = planColors[p.plan.toLowerCase()] ?? '#94a3b8';
+                const price = planPrices[p.plan.toLowerCase()] ?? 0;
+                return (
+                  <div key={p.plan} className={styles.kpiCard} style={{ borderLeft: `3px solid ${color}` }}>
+                    <p className={styles.kpiLabel}>{p.plan.charAt(0).toUpperCase() + p.plan.slice(1)} Plan</p>
+                    <p className={styles.kpiValue} style={{ color }}>{p.count} users</p>
+                    <p className={styles.kpiSub}>
+                      £{p.mrr.toLocaleString()} / mo
+                      {isLive && ` · ${p.active} active, ${p.trialing} trial`}
+                      {!isLive && ` · £${price}/user`}
+                    </p>
+                  </div>
+                );
+              })}
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Total MRR</p>
+                <p className={styles.kpiValue}>£{liveTotal_MRR.toLocaleString()}</p>
+                <p className={styles.kpiSub}>{isLive ? `${liveActive} active · ${liveTrialing} trialing` : 'All plans combined'}</p>
+              </div>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Total ARR</p>
+                <p className={styles.kpiValue}>£{Math.round(liveTotal_ARR).toLocaleString()}</p>
+                <p className={styles.kpiSub}>{liveTotalSubscribers} total subscribers</p>
+              </div>
+            </div>
+
+            {/* Plan breakdown table */}
+            <div className={styles.subContainer}>
+              <div className={styles.sectionHeader}>
+                <h2 className={styles.sectionTitle}>Plan Breakdown</h2>
+                <p className={styles.sectionSubtitle}>Revenue contribution per subscription tier.</p>
+              </div>
+              <div className={styles.tableResponsive}>
+                <table className={styles.table}>
+                  <thead>
+                    <tr>
+                      <th>Plan</th>
+                      <th>Price/mo</th>
+                      <th>Subscribers</th>
+                      {isLive && <th>Active</th>}
+                      {isLive && <th>Trialing</th>}
+                      <th>MRR (£)</th>
+                      <th>ARR (£)</th>
+                      <th>% of MRR</th>
+                      <th>Revenue Bar</th>
                     </tr>
-                  ))}
-                  <tr style={{ fontWeight: 700, borderTop: '1px solid rgba(148,163,184,0.2)' }}>
-                    <td>TOTAL</td>
-                    <td>—</td>
-                    <td>{TOTAL_PAYING}</td>
-                    <td className={styles.positive}>£{TOTAL_MRR.toLocaleString()}</td>
-                    <td className={styles.positive}>£{(TOTAL_MRR * 12).toLocaleString()}</td>
-                    <td>100%</td>
-                    <td />
-                  </tr>
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {activePlans.map((p) => {
+                      const color = planColors[p.plan.toLowerCase()] ?? '#94a3b8';
+                      const price = planPrices[p.plan.toLowerCase()] ?? 0;
+                      const pct = liveTotal_MRR > 0 ? ((p.mrr / liveTotal_MRR) * 100).toFixed(1) : '0.0';
+                      return (
+                        <tr key={p.plan}>
+                          <td><span className={styles.planBadge} style={{ background: color + '22', color }}>{p.plan.charAt(0).toUpperCase() + p.plan.slice(1)}</span></td>
+                          <td>£{price}</td>
+                          <td>{p.count}</td>
+                          {isLive && <td><span style={{ color: '#34d399' }}>{p.active}</span></td>}
+                          {isLive && <td><span style={{ color: '#fbbf24' }}>{p.trialing}</span></td>}
+                          <td className={styles.positive}>£{p.mrr.toLocaleString()}</td>
+                          <td className={styles.positive}>£{Math.round(p.mrr * 12).toLocaleString()}</td>
+                          <td>{pct}%</td>
+                          <td style={{ minWidth: 120 }}>
+                            <div className={styles.barTrack}>
+                              <span className={styles.barFill} style={{ width: `${Number(pct)}%`, background: color }} />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{ fontWeight: 700, borderTop: '1px solid rgba(148,163,184,0.2)' }}>
+                      <td>TOTAL</td><td>—</td><td>{liveTotalSubscribers}</td>
+                      {isLive && <td><span style={{ color: '#34d399' }}>{liveActive}</span></td>}
+                      {isLive && <td><span style={{ color: '#fbbf24' }}>{liveTrialing}</span></td>}
+                      <td className={styles.positive}>£{liveTotal_MRR.toLocaleString()}</td>
+                      <td className={styles.positive}>£{Math.round(liveTotal_ARR).toLocaleString()}</td>
+                      <td>100%</td><td />
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+
+            {/* Recent subscriptions (live only) */}
+            {isLive && recentSubs.length > 0 && (
+              <div className={styles.subContainer}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>Recent Subscriptions</h2>
+                  <p className={styles.sectionSubtitle}>Latest 20 sign-ups from Stripe.</p>
+                </div>
+                <div className={styles.tableResponsive}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr><th>Email</th><th>Plan</th><th>Status</th><th>Stripe</th><th>Date</th></tr>
+                    </thead>
+                    <tbody>
+                      {recentSubs.map((s, i) => (
+                        <tr key={i}>
+                          <td>{s.email}</td>
+                          <td><span className={styles.planBadge} style={{ background: (planColors[s.plan] ?? '#64748b') + '22', color: planColors[s.plan] ?? '#64748b' }}>{s.plan}</span></td>
+                          <td><span style={{ color: s.status === 'active' ? '#34d399' : s.status === 'trialing' ? '#fbbf24' : '#94a3b8' }}>{s.status}</span></td>
+                          <td>{s.has_stripe ? '✓' : '—'}</td>
+                          <td style={{ color: '#64748b', fontSize: '0.8rem' }}>{new Date(s.created_at * 1000).toLocaleDateString('en-GB')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
           {/* Upgrade funnel */}
           <div className={styles.subContainer}>
@@ -1017,7 +1153,8 @@ export default function AdminPage({ token }: AdminPageProps) {
             </div>
           </div>
         </>
-      )}
+        );
+      })()}
 
       {/* ══════════════════════════════════════════════════════════════════
           USERS TAB
