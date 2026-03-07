@@ -390,8 +390,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
               onClick={() => setLangOpen(o => !o)}
               aria-label="Switch language"
             >
-              <Globe2 size={14} />
-              <span>{LOCALE_FLAGS[activeLocale || 'en-GB'] || '🌐'}</span>
+              <span style={{ fontSize: '1.1rem' }}>{LOCALE_FLAGS[activeLocale || 'en-GB'] || '🌐'}</span>
               <span style={{ fontSize: '0.75rem' }}>{(activeLocale || 'en-GB').split('-')[0].toUpperCase()}</span>
               <span style={{ fontSize: '0.65rem', opacity: 0.6 }}>▼</span>
             </button>
