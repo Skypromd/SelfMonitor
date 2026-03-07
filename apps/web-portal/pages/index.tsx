@@ -33,6 +33,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
+import { useRouter } from 'next/router';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
@@ -110,6 +111,7 @@ const PRICING = [
       'HMRC tax calendar & deadlines',
       'Mobile app (iOS & Android)',
       '⛳ Secure cloud backup (2 GB)',
+      '🗄️ Secure report storage — up to 6 years',
       'Email support',
     ],
     cta: 'Start Free Trial',
@@ -127,6 +129,7 @@ const PRICING = [
       'Tax calculator & liability estimates',
       'Multi-currency (8+ currencies)',
       '⛳ Secure cloud backup (5 GB)',
+      '🗄️ Secure report storage — up to 6 years',
       'Priority email support',
     ],
     cta: 'Start Free Trial',
@@ -144,6 +147,7 @@ const PRICING = [
       'Smart document search',
       'Business Intelligence dashboard',
       '⛳ Secure cloud backup (15 GB)',
+      '🗄️ Secure report storage — up to 6 years',
       'Phone & priority support',
     ],
     cta: 'Start Pro Trial',
@@ -161,6 +165,7 @@ const PRICING = [
       'Partner Marketplace access',
       'Referral Programme',
       '⛳ Secure cloud backup (25 GB)',
+      '🗄️ Secure report storage — up to 6 years',
       'API access & white-label reports',
       'Dedicated account manager',
     ],
@@ -229,6 +234,10 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
   const [totpCode, setTotpCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const router = useRouter();
+  const { locales, locale: activeLocale } = router;
+  const LOCALE_FLAGS: Record<string, string> = { 'en-GB': '🇬🇧', 'pl-PL': '🇵🇱', 'ro-RO': '🇷🇴', 'uk-UA': '🇺🇦', 'ru-RU': '🇷🇺', 'es-ES': '🇪🇸', 'it-IT': '🇮🇹', 'pt-PT': '🇵🇹', 'tr-TR': '🇹🇷', 'bn-BD': '🇧🇩' };
 
   const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
   const strength = useMemo(() => getStrength(passwordChecks), [passwordChecks]);
@@ -375,6 +384,33 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
             <a href="#why" className={styles.lpNavLink}>Why Us</a>
             <a href="#pricing" className={styles.lpNavLink}>Pricing</a>
           </nav>
+          <div className={styles.lpNavLangSwitcher}>
+            <button
+              className={styles.lpNavLangBtn}
+              onClick={() => setLangOpen(o => !o)}
+              aria-label="Switch language"
+            >
+              <Globe2 size={14} />
+              <span>{LOCALE_FLAGS[activeLocale || 'en-GB'] || '🌐'}</span>
+              <span style={{ fontSize: '0.75rem' }}>{(activeLocale || 'en-GB').split('-')[0].toUpperCase()}</span>
+              <span style={{ fontSize: '0.65rem', opacity: 0.6 }}>▼</span>
+            </button>
+            {langOpen && (
+              <div className={styles.lpNavLangDropdown}>
+                {(locales || ['en-GB', 'pl-PL', 'ro-RO', 'uk-UA', 'ru-RU', 'es-ES', 'it-IT', 'pt-PT', 'tr-TR', 'bn-BD']).map(loc => (
+                  <button
+                    key={loc}
+                    className={styles.lpNavLangOption}
+                    style={{ color: loc === activeLocale ? 'var(--lp-accent-teal)' : 'var(--lp-text)', background: loc === activeLocale ? 'rgba(13,148,136,0.12)' : 'transparent' }}
+                    onClick={() => { router.push(router.pathname, router.asPath, { locale: loc }); if (typeof window !== 'undefined') localStorage.setItem('preferredLocale', loc); setLangOpen(false); }}
+                  >
+                    <span style={{ fontSize: '1.1rem' }}>{LOCALE_FLAGS[loc] || '🌐'}</span>
+                    <span>{loc.split('-')[0].toUpperCase()}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <a href="#get-started" className={styles.lpNavCta}>Get Started <ArrowRight size={14} /></a>
           <button
             className={styles.lpNavHamburger}
@@ -616,6 +652,41 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         </div>
       </section>
 
+      {/* ═══ AI ENGINE ═══ */}
+      <section className={styles.lpSection} id="ai-engine" style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.06) 0%, rgba(13,148,136,0.06) 100%)' }}>
+        <div className={styles.lpSectionHeader}>
+          <div className={styles.lpChip}><Bot size={13} /> Powered by GPT-4o</div>
+          <h2 className={styles.lpSectionH2}>The AI brain behind SelfMonitor</h2>
+          <p className={styles.lpSectionSub}>Not just automation — a financial co-pilot that understands UK tax law, speaks 10 languages, and learns your business patterns.</p>
+        </div>
+        <div className={styles.aiEngineGrid}>
+          <motion.div className={styles.aiEngineCard} {...fadeUp}>
+            <div className={styles.aiEngineIcon} style={{ background: 'rgba(2,132,199,0.12)', border: '1px solid rgba(2,132,199,0.3)' }}>
+              <Bot size={28} color="#0284c7" />
+            </div>
+            <h3 className={styles.aiEngineTitle}>GPT-4o Core Model</h3>
+            <p className={styles.aiEngineDesc}>Your AI assistant runs on OpenAI&apos;s GPT-4o — the same model used by Fortune 500 finance teams. Ask about allowable expenses, NI thresholds, VAT rules or HMRC deadlines in plain English.</p>
+            <div className={styles.aiEngineBadge}>128k context window</div>
+          </motion.div>
+          <motion.div className={styles.aiEngineCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.15 }}>
+            <div className={styles.aiEngineIcon} style={{ background: 'rgba(13,148,136,0.12)', border: '1px solid rgba(13,148,136,0.3)' }}>
+              <Globe2 size={28} color="#0d9488" />
+            </div>
+            <h3 className={styles.aiEngineTitle}>10 Languages, One App</h3>
+            <p className={styles.aiEngineDesc}>Switch the entire interface and AI responses between English, Polish, Romanian, Ukrainian, Russian, Spanish, Italian, Portuguese, Turkish and Bengali — instantly, no reload.</p>
+            <div className={styles.aiEngineLangs}>🇬🇧 🇵🇱 🇷🇴 🇺🇦 🇷🇺 🇪🇸 🇮🇹 🇵🇹 🇹🇷 🇧🇩</div>
+          </motion.div>
+          <motion.div className={styles.aiEngineCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.3 }}>
+            <div className={styles.aiEngineIcon} style={{ background: 'rgba(124,58,237,0.12)', border: '1px solid rgba(124,58,237,0.3)' }}>
+              <TrendingUp size={28} color="#7c3aed" />
+            </div>
+            <h3 className={styles.aiEngineTitle}>Learns Your Business</h3>
+            <p className={styles.aiEngineDesc}>ML models auto-categorise transactions with 94% accuracy from day one. After 30 days it knows your patterns — flagging anomalies, predicting cash dips and recommending tax deductions.</p>
+            <div className={styles.aiEngineBadge} style={{ background: 'rgba(124,58,237,0.15)', color: '#a78bfa', borderColor: 'rgba(124,58,237,0.3)' }}>94% accuracy</div>
+          </motion.div>
+        </div>
+      </section>
+
       {/* ═══ WHY SELFMONITOR ═══ */}
       <section className={styles.lpSection} id="why" style={{ background: 'var(--lp-bg-elevated)' }}>
         <div className={styles.lpSectionHeader}>
@@ -728,7 +799,7 @@ export default function HomePage({ onLoginSuccess }: IndexPageProps) {
         <div className={styles.lpSectionHeader}>
           <div className={styles.lpChip}>Simple Pricing</div>
           <h2 className={styles.lpSectionH2}>Choose the plan that works for you</h2>
-          <p className={styles.lpSectionSub}>All plans include a 14-day free trial, mobile app access and HMRC compliance. No credit card required to start.</p>
+          <p className={styles.lpSectionSub}>All plans include a 14-day free trial, mobile app access, HMRC compliance and <strong>secure 6-year report storage</strong> — the full retention period required by HMRC. No credit card required to start.</p>
         </div>
         <div className={styles.lpPricingGrid}>
           {PRICING.map((plan) => (
