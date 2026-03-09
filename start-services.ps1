@@ -14,7 +14,7 @@ $commonEnv = @{
 
 Write-Host "Stopping existing services..." -ForegroundColor Yellow
 Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-Where-Object { $_.LocalPort -in 3000, 3001, 8001, 8005, 8006, 8009, 8010, 8012 } |
+Where-Object { $_.LocalPort -in 3000, 3001, 8001, 8005, 8006, 8009, 8010, 8012, 8015 } |
 ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
 Stop-Process -Name node -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
@@ -24,8 +24,9 @@ Write-Host "All stopped." -ForegroundColor Gray
 $env1 = $commonEnv.Clone()
 $env1["AUTH_DB_PATH"] = "$ROOT\services\auth-service\auth.db"
 $env1["AUTH_BOOTSTRAP_ADMIN"] = "true"
-$env1["AUTH_ADMIN_EMAIL"] = "admin@selfmonitor.app"
-$env1["AUTH_ADMIN_PASSWORD"] = "ChangeMe123!"
+$env1["AUTH_ADMIN_EMAIL"] = "skypromd@gmail.com"
+$env1["AUTH_ADMIN_PASSWORD"] = "VeryStrongPassword123!"
+$env1["AUTH_REQUIRE_ADMIN_2FA"] = "false"
 $p1 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8001" `
   -WorkingDirectory "$ROOT\services\auth-service" -PassThru -NoNewWindow `
   -RedirectStandardOutput "$ROOT\logs\auth_out.txt" -RedirectStandardError "$ROOT\logs\auth_err.txt" `
@@ -74,7 +75,17 @@ $p6 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0
   -Environment $env6
 Write-Host "documents-service  :8006  PID=$($p6.Id)" -ForegroundColor Cyan
 
-# --- web-portal :3000 ---
+# --- banking-connector :8015 ---
+$envBanking = $commonEnv.Clone()
+$envBanking["VAULT_ADDR"]        = "http://localhost:8200"
+$envBanking["VAULT_TOKEN"]       = "dev-root-token"
+$envBanking["CELERY_BROKER_URL"] = "memory://"
+$envBanking["PYTHONUTF8"]        = "1"
+$pBanking = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8015" `
+  -WorkingDirectory "$ROOT\services\banking-connector" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\banking_out.txt" -RedirectStandardError "$ROOT\logs\banking_err.txt" `
+  -Environment $envBanking
+Write-Host "banking-connector  :8015  PID=$($pBanking.Id)" -ForegroundColor Cyan
 $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
 if ($nodeExe) {
   Remove-Item "$ROOT\apps\web-portal\.next\dev\lock" -Force -ErrorAction SilentlyContinue
@@ -133,7 +144,8 @@ $checks = @(
   @{name = "documents :8006"; url = "http://localhost:8006/health" },
   @{name = "analytics :8009"; url = "http://localhost:8009/health" },
   @{name = "advice    :8010"; url = "http://localhost:8010/health" },
-  @{name = "localize  :8012"; url = "http://localhost:8012/docs" }
+  @{name = "localize  :8012"; url = "http://localhost:8012/docs" },
+  @{name = "banking   :8015"; url = "http://localhost:8015/health" }
 )
 Write-Host ""
 Write-Host "Health check:" -ForegroundColor Yellow
@@ -153,4 +165,4 @@ foreach ($c in $checks) {
 }
 Write-Host ""
 Write-Host "Logs are in: $ROOT\logs\" -ForegroundColor Gray
-Write-Host "Portal: http://localhost:$portalPort  |  Login: admin@selfmonitor.app / ChangeMe123!" -ForegroundColor White
+Write-Host "Portal: http://localhost:$portalPort  |  Login: skypromd@gmail.com / VeryStrongPassword123!" -ForegroundColor White
