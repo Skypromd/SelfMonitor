@@ -1,4 +1,5 @@
 import { motion, useInView } from 'framer-motion';
+import { Crown, Flame, Rocket, TrendingUp } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
 import Link from 'next/link';
@@ -584,40 +585,55 @@ export default function LandingPage() {
           <div className={styles.container}>
             <motion.div {...fadeUp}>
               <h2 className={styles.sectionHeading}>Simple Pricing. No Surprises.</h2>
-              <p className={styles.sectionSub}>Start free. Upgrade when you&rsquo;re ready.</p>
+              <p className={styles.sectionSub}>14-day free trial on every plan. No credit card required.</p>
             </motion.div>
 
             <motion.div className={styles.pricingGrid} {...staggerContainer}>
-              {/* Free */}
-              <motion.div className={styles.pricingCard} {...staggerItem}>
-                <p className={styles.pricingName}>Free</p>
-                <p className={styles.pricingPrice}>£0<span>/mo</span></p>
-                <ul className={styles.pricingFeatures}>
-                  <li>1 bank connection</li>
-                  <li>200 transactions/month</li>
-                  <li>Basic tax calculator</li>
-                  <li>Email support</li>
-                </ul>
-                <Link href="/" className={styles.btnSecondary}>Get Started</Link>
-              </motion.div>
 
               {/* Starter */}
               <motion.div className={styles.pricingCard} {...staggerItem}>
+                <div className={styles.pricingIconWrap} style={{ color: 'var(--lp-accent-teal)' }}>
+                  <Flame size={28} strokeWidth={2} />
+                </div>
+                <p className={styles.pricingTrial}>14-day free trial</p>
                 <p className={styles.pricingName}>Starter</p>
                 <p className={styles.pricingPrice}>£9<span>/mo</span></p>
                 <ul className={styles.pricingFeatures}>
-                  <li>3 bank connections</li>
-                  <li>1,000 transactions/month</li>
+                  <li>1 bank connection</li>
+                  <li>500 transactions/month</li>
                   <li>AI categorization</li>
                   <li>Receipt OCR</li>
-                  <li>Cash flow forecasting</li>
+                  <li>Email support</li>
                 </ul>
-                <Link href="/" className={styles.btnPrimary}>Start Free Trial</Link>
+                <Link href="/register?plan=starter" className={styles.btnPrimary}>Start Free Trial</Link>
+              </motion.div>
+
+              {/* Growth */}
+              <motion.div className={styles.pricingCard} {...staggerItem}>
+                <div className={styles.pricingIconWrap} style={{ color: '#8b5cf6' }}>
+                  <TrendingUp size={28} strokeWidth={2} />
+                </div>
+                <p className={styles.pricingTrial}>14-day free trial</p>
+                <p className={styles.pricingName}>Growth</p>
+                <p className={styles.pricingPrice}>£12<span>/mo</span></p>
+                <ul className={styles.pricingFeatures}>
+                  <li>2 bank connections</li>
+                  <li>2,000 transactions/month</li>
+                  <li>Cash flow forecasting</li>
+                  <li>Tax calculator</li>
+                  <li>Invoice generator</li>
+                  <li>Priority support</li>
+                </ul>
+                <Link href="/register?plan=growth" className={styles.btnPrimary}>Start Free Trial</Link>
               </motion.div>
 
               {/* Pro — POPULAR */}
               <motion.div className={`${styles.pricingCard} ${styles.pricingPopular}`} {...staggerItem}>
                 <span className={styles.popularBadge}>Most Popular</span>
+                <div className={styles.pricingIconWrap} style={{ color: 'var(--lp-accent-teal)' }}>
+                  <Rocket size={28} strokeWidth={2} />
+                </div>
+                <p className={styles.pricingTrial}>14-day free trial</p>
                 <p className={styles.pricingName}>Pro</p>
                 <p className={styles.pricingPrice}>£15<span>/mo</span></p>
                 <ul className={styles.pricingFeatures}>
@@ -626,25 +642,32 @@ export default function LandingPage() {
                   <li>HMRC auto-submission</li>
                   <li>Smart document search</li>
                   <li>Mortgage readiness reports</li>
-                  <li>Advanced analytics</li>
+                  <li>Advanced analytics &amp; AI</li>
                   <li>API access</li>
                 </ul>
-                <Link href="/" className={styles.btnPrimaryLg}>Start Free Trial</Link>
+                <Link href="/register?plan=pro" className={styles.btnPrimary}>Start Free Trial</Link>
               </motion.div>
 
               {/* Business */}
               <motion.div className={styles.pricingCard} {...staggerItem}>
+                <div className={styles.pricingIconWrap} style={{ color: '#d97706' }}>
+                  <Crown size={28} strokeWidth={2} />
+                </div>
+                <p className={styles.pricingTrial}>14-day free trial</p>
                 <p className={styles.pricingName}>Business</p>
                 <p className={styles.pricingPrice}>£25<span>/mo</span></p>
                 <ul className={styles.pricingFeatures}>
                   <li>Everything in Pro</li>
-                  <li>5 team members</li>
+                  <li>Up to 5 bank connections</li>
+                  <li>10 team members</li>
                   <li>Custom expense policies</li>
                   <li>White-label reports</li>
                   <li>Dedicated success manager</li>
+                  <li>SLA guarantee</li>
                 </ul>
-                <Link href="/" className={styles.btnGold}>Contact Sales</Link>
+                <Link href="/register?plan=business" className={styles.btnPrimary}>Start Free Trial</Link>
               </motion.div>
+
             </motion.div>
           </div>
         </section>

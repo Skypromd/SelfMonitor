@@ -382,6 +382,18 @@
   margin-top: auto;
 }
 
+.pricingIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1rem;
+}
+
 .pricingCard:hover {
   border-color: rgba(13, 148, 136, 0.4);
   box-shadow: 0 8px 32px rgba(13, 148, 136, 0.12);
