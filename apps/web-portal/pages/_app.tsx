@@ -100,7 +100,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
       setToken(storedToken);
       setUser(decodeUserFromToken(storedToken));
       fetchUserInfo(storedToken);
-    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register' && router.pathname !== '/login' && router.pathname !== '/welcome' && router.pathname !== '/checkout-success' && router.pathname !== '/checkout-cancel') {
+    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register' && router.pathname !== '/login' && router.pathname !== '/welcome' && router.pathname !== '/checkout-success' && router.pathname !== '/checkout-cancel' && router.pathname !== '/forgot-password' && router.pathname !== '/reset-password') {
       router.replace('/');
     }
   }, [router.pathname, router]);
@@ -140,7 +140,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     } catch { /* ignore */ }
   }
 
-  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel') {
+  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel' || router.pathname === '/forgot-password' || router.pathname === '/reset-password') {
     return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }
 
