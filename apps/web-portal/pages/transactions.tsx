@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const BANKING_SERVICE_URL = process.env.NEXT_PUBLIC_BANKING_SERVICE_URL || 'http://localhost:8015';
 const CATEGORIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_CATEGORIZATION_SERVICE_URL || 'http://localhost:8020';
 
 type Transaction = {
@@ -60,7 +61,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
     setError('');
     setIsConnecting(true);
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/banking/connections/initiate`, {
+      const response = await fetch(`${BANKING_SERVICE_URL}/connections/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ provider_id: 'mock_bank', redirect_uri: 'http://localhost:3000' })
@@ -79,7 +80,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
     setError('');
     setIsGranting(true);
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/banking/connections/callback?code=fake_auth_code`, {
+      const response = await fetch(`${BANKING_SERVICE_URL}/connections/callback?code=fake_auth_code`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Failed to complete connection');

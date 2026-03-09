@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 import sys
 import uuid
@@ -9,18 +10,32 @@ import hvac
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, HttpUrl
 
-from .celery_app import import_transactions_task
+# --- Config ---
+VAULT_ADDR = os.getenv("VAULT_ADDR", "http://localhost:8200")
+VAULT_TOKEN = os.getenv("VAULT_TOKEN", "dev-root-token")
+
+# Try to import Celery task — gracefully degrade if broker unavailable
+try:
+    from .celery_app import import_transactions_task
+    _celery_available = True
+except Exception:
+    import_transactions_task = None  # type: ignore[assignment]
+    _celery_available = False
 
 logger = logging.getLogger(__name__)
 
-vault_client = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
+vault_available = False
+vault_client = None
 try:
-    if vault_client.is_authenticated():
+    _vc = hvac.Client(url=VAULT_ADDR, token=VAULT_TOKEN)
+    if _vc.is_authenticated():
+        vault_client = _vc
+        vault_available = True
         print("Successfully authenticated with Vault.")
     else:
-        print("Error: Could not authenticate with Vault.")
+        print("Warning: Could not authenticate with Vault.")
 except Exception as exc:
-    print(f"Warning: Vault authentication check failed during startup: {exc}")
+    print(f"Warning: Vault unavailable - tokens will not be persisted: {exc}")
 
 
 def save_tokens_to_vault(connection_id: str, access_token: str, refresh_token: str):
@@ -122,20 +137,22 @@ async def handle_provider_callback(
         Transaction(provider_transaction_id="provider-txn-2", date=datetime.date.today() - datetime.timedelta(days=1), description="Amazon", amount=-12.99, currency="GBP"),
     ]
 
-    # Dispatch the task to the Celery queue.
-    # We convert Pydantic models to dicts as Celery works best with simple data types.
-    task = import_transactions_task.delay(
-        str(connection_id),
-        user_id,
-        bearer_token,
-        [t.model_dump() for t in mock_transactions],
-    )
+    # Dispatch to Celery if available, otherwise skip (dev mode)
+    task_id = "dev-no-celery"
+    if _celery_available and import_transactions_task is not None:
+        task = import_transactions_task.delay(
+            str(connection_id),
+            user_id,
+            bearer_token,
+            [t.model_dump() for t in mock_transactions],
+        )
+        task_id = task.id
 
     return CallbackResponse(
         connection_id=connection_id,
         status="processing",
         message="Connection established. Transaction import has been dispatched to a background worker.",
-        task_id=task.id
+        task_id=task_id
     )
 
 @app.get("/accounts/{account_id}/transactions", response_model=List[Transaction], deprecated=True)
