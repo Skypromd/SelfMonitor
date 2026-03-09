@@ -1,9 +1,12 @@
 # isort: skip_file
 import datetime
+import email.mime.multipart
+import email.mime.text
 import io
 import logging
 import os
 import re
+import smtplib
 import sqlite3
 import threading
 import time
@@ -38,6 +41,14 @@ AUTH_ADMIN_EMAIL = os.getenv("AUTH_ADMIN_EMAIL", "admin@example.com")
 AUTH_ADMIN_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin_password")
 AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "true"
 REQUIRE_ADMIN_2FA = os.getenv("AUTH_REQUIRE_ADMIN_2FA", "true").lower() == "true"
+
+# --- SMTP / Email ---
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
+APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
 
 app = FastAPI(
     title="Auth Service",
@@ -503,12 +514,73 @@ RESET_TOKEN_EXPIRE_MINUTES = 60
 DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"
 
 
+def _smtp_configured() -> bool:
+    return bool(SMTP_HOST and SMTP_USER and SMTP_PASSWORD)
+
+
+def send_reset_email(to_email: str, token: str) -> None:
+    """Send a password-reset email via SMTP (STARTTLS).  Raises on failure."""
+    reset_url = f"{APP_BASE_URL}/reset-password?token={token}"
+
+    msg = email.mime.multipart.MIMEMultipart("alternative")
+    msg["Subject"] = "Reset your SelfMonitor password"
+    msg["From"] = f"SelfMonitor <{SMTP_FROM}>"
+    msg["To"] = to_email
+
+    text_body = (
+        f"Hello,\n\n"
+        f"We received a request to reset the password for your SelfMonitor account.\n\n"
+        f"Click the link below (valid for {RESET_TOKEN_EXPIRE_MINUTES} minutes):\n"
+        f"{reset_url}\n\n"
+        f"If you did not request this, just ignore this email — your password will not change.\n\n"
+        f"— The SelfMonitor team"
+    )
+    html_body = f"""\
+<!DOCTYPE html>
+<html>
+<body style="font-family:sans-serif;background:#0f172a;color:#e2e8f0;padding:2rem">
+  <div style="max-width:480px;margin:0 auto;background:#1e293b;border-radius:16px;padding:2rem">
+    <div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1.5rem">
+      <span style="display:inline-block;width:36px;height:36px;border-radius:10px;
+                   background:linear-gradient(135deg,#0d9488,#0284c7);
+                   text-align:center;line-height:36px;font-weight:800;color:#fff">SM</span>
+      <span style="font-weight:700;font-size:1.1rem">SelfMonitor</span>
+    </div>
+    <h2 style="margin:0 0 0.75rem">Reset your password</h2>
+    <p style="color:#94a3b8;margin-bottom:1.5rem">
+      We received a request to reset the password for your account.<br>
+      This link is valid for <strong style="color:#e2e8f0">{RESET_TOKEN_EXPIRE_MINUTES} minutes</strong>.
+    </p>
+    <a href="{reset_url}"
+       style="display:inline-block;padding:0.8rem 1.6rem;
+              background:linear-gradient(135deg,#0d9488,#0284c7);
+              color:#fff;font-weight:700;text-decoration:none;
+              border-radius:10px;font-size:1rem">
+      Reset Password →
+    </a>
+    <p style="color:#475569;font-size:0.8rem;margin-top:1.5rem">
+      If you didn't request this, you can safely ignore this email.
+    </p>
+  </div>
+</body>
+</html>
+"""
+    msg.attach(email.mime.text.MIMEText(text_body, "plain"))
+    msg.attach(email.mime.text.MIMEText(html_body, "html"))
+
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.login(SMTP_USER, SMTP_PASSWORD)
+        smtp.sendmail(SMTP_FROM or SMTP_USER, to_email, msg.as_string())
+
+
 @app.post("/password-reset/request")
 async def request_password_reset(body: PasswordResetRequest):
     """
     Generates a password-reset token for the given email address.
-    In production this would send an email; in dev mode the token is returned
-    directly in the response so the developer / user can test the flow.
+    If SMTP is configured, sends a real email. Otherwise (DEV_MODE) the token is
+    returned directly in the response.
     """
     user_email = str(body.email)
     # Always return 200 to avoid email enumeration
@@ -541,12 +613,28 @@ async def request_password_reset(body: PasswordResetRequest):
 
     logger.info("Password reset token generated for %s", user_email)
 
-    if DEV_MODE:
-        response["dev_token"] = token
-        response["dev_note"] = (
-            "[DEV] In production this token would be emailed. "
-            "Use it at /reset-password?token=" + token
-        )
+    # --- Try to send real email ---
+    if _smtp_configured():
+        try:
+            send_reset_email(user_email, token)
+            logger.info("Password reset email sent to %s", user_email)
+            response["email_sent"] = True
+        except Exception as exc:
+            logger.error("Failed to send reset email to %s: %s", user_email, exc)
+            # Fall back to dev token so the user isn't stuck
+            response["dev_token"] = token
+            response["dev_note"] = (
+                "[SMTP ERROR] Could not send email. "
+                "Use this token at /reset-password?token=" + token
+            )
+    else:
+        # No SMTP configured — show token on screen (dev/local mode)
+        if DEV_MODE:
+            response["dev_token"] = token
+            response["dev_note"] = (
+                "[DEV] SMTP not configured. "
+                "Use it at /reset-password?token=" + token
+            )
 
     return response
 

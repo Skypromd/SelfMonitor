@@ -14,6 +14,7 @@ export default function ForgotPasswordPage() {
   const [error, setError] = useState('');
   const [devToken, setDevToken] = useState('');
   const [devNote, setDevNote] = useState('');
+  const [emailSent, setEmailSent] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -28,6 +29,9 @@ export default function ForgotPasswordPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Request failed');
+      if (data.email_sent) {
+        setEmailSent(true);
+      }
       if (data.dev_token) {
         setDevToken(data.dev_token as string);
         setDevNote(data.dev_note as string);
@@ -118,22 +122,33 @@ export default function ForgotPasswordPage() {
               </div>
 
               <h1 className={styles.title} style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>
-                Check your inbox
+                {emailSent ? 'Check your inbox' : 'Reset link ready'}
               </h1>
               <p className={styles.description} style={{ marginBottom: '1.5rem' }}>
-                If <strong style={{ color: '#e2e8f0' }}>{email}</strong> is registered, a password reset
-                link has been sent. It expires in 60 minutes.
+                {emailSent ? (
+                  <>
+                    We sent a password reset link to{' '}
+                    <strong style={{ color: '#e2e8f0' }}>{email}</strong>.
+                    Check your inbox (and spam folder). The link expires in 60 minutes.
+                  </>
+                ) : (
+                  <>
+                    If <strong style={{ color: '#e2e8f0' }}>{email}</strong> is registered,
+                    use the link below to reset your password.
+                  </>
+                )}
               </p>
 
-              {/* DEV mode: show token on-screen */}
+              {/* DEV / SMTP-error mode: show token on-screen */}
               {devToken && (
                 <div style={{
                   padding: '1rem', borderRadius: 12, marginBottom: '1.25rem',
-                  background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.3)',
-                  fontSize: '0.8rem', color: '#fbbf24', wordBreak: 'break-all',
+                  background: emailSent ? 'rgba(239,68,68,0.08)' : 'rgba(234,179,8,0.08)',
+                  border: `1px solid ${emailSent ? 'rgba(239,68,68,0.3)' : 'rgba(234,179,8,0.3)'}`,
+                  fontSize: '0.8rem', color: emailSent ? '#f87171' : '#fbbf24', wordBreak: 'break-all',
                 }}>
                   <p style={{ fontWeight: 700, marginBottom: '0.4rem' }}>
-                    🛠 DEV MODE — no email sent
+                    {emailSent ? '⚠️ SMTP ERROR — using fallback link' : '🛠 DEV MODE — SMTP not configured'}
                   </p>
                   <p style={{ marginBottom: '0.6rem', opacity: 0.85 }}>{devNote}</p>
                   <Link

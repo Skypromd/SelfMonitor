@@ -28,6 +28,13 @@ $env1["AUTH_ADMIN_EMAIL"] = "skypromd@gmail.com"
 $env1["AUTH_ADMIN_PASSWORD"] = "VeryStrongPassword123!"
 $env1["AUTH_REQUIRE_ADMIN_2FA"] = "false"
 $env1["DEV_MODE"] = "true"
+$env1["APP_BASE_URL"] = if ($env:APP_BASE_URL) { $env:APP_BASE_URL } else { "http://localhost:3000" }
+# SMTP — uncomment and fill in to enable real email sending
+# $env1["SMTP_HOST"] = "smtp.gmail.com"
+# $env1["SMTP_PORT"] = "587"
+# $env1["SMTP_USER"] = "your@gmail.com"
+# $env1["SMTP_PASSWORD"] = "your_app_password"
+# $env1["SMTP_FROM"] = "SelfMonitor <your@gmail.com>"
 $p1 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8001" `
   -WorkingDirectory "$ROOT\services\auth-service" -PassThru -NoNewWindow `
   -RedirectStandardOutput "$ROOT\logs\auth_out.txt" -RedirectStandardError "$ROOT\logs\auth_err.txt" `
