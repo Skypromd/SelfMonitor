@@ -19,7 +19,7 @@ import bStyles from '../styles/Billing.module.css';
 import styles from '../styles/Home.module.css';
 
 const BILLING_URL =
-  process.env.NEXT_PUBLIC_BILLING_SERVICE_URL || 'http://localhost:8016';
+  process.env.NEXT_PUBLIC_BILLING_SERVICE_URL || '/api/billing';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Overview {

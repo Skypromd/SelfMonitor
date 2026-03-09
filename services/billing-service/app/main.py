@@ -6,7 +6,6 @@ automatic invoice dispatch (SMTP), payment tracking, and revenue analytics.
 Dev mode: if STRIPE_SECRET_KEY is not set, returns a mock checkout URL pointing
 directly to the registration page (no actual payment is taken).
 """
-from collections import defaultdict
 import datetime
 import email.mime.multipart
 import email.mime.text
@@ -16,16 +15,19 @@ import os
 import smtplib
 import sqlite3
 import time
-from typing import Any, Dict, List, Optional
 import uuid
+from collections import defaultdict
+from typing import Any, Dict, List, Optional
 
-from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore[import-untyped]
+import httpx
+import stripe
+from apscheduler.schedulers.background import (
+    BackgroundScheduler,  # type: ignore[import-untyped]
+)
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-import httpx
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
-import stripe
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +73,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:8000", "*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -403,6 +405,12 @@ class InvoicePatch(BaseModel):
 # ══════════════════════════════════════════════════════════════════════════════
 # ── Core endpoints ─────────────────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    from fastapi.responses import Response
+    return Response(content=b"", media_type="image/x-icon")
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "dev_mode": DEV_MODE}

@@ -29,7 +29,7 @@ ROUTES = {
     "/api/advice/": "http://localhost:8010",
     "/api/localization/": "http://localhost:8012",
     "/api/support/": "http://localhost:8020",
-    "/api/partners/": "http://localhost:8016",
+    "/api/billing/": "http://localhost:8016",
     "/api/transactions/": "http://localhost:8003",
     "/api/tax/": "http://localhost:8007",
     "/api/qna/": "http://localhost:8011",
