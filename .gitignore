@@ -152,3 +152,5 @@ logs/
 *_stdout.txt
 pylint_output.txt
 
+# Local secrets — NEVER commit
+.secrets.ps1

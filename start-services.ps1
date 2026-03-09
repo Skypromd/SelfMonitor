@@ -4,8 +4,18 @@
 $ROOT = "B:\SelfMonitor\SelfMonitor"
 $VENV = "$ROOT\.venv\Scripts\uvicorn.exe"
 
+# --- Load secrets from .secrets.ps1 (gitignored) ---
+$SECRETS_FILE = "$ROOT\.secrets.ps1"
+if (-not (Test-Path $SECRETS_FILE)) {
+    Write-Host "ERROR: $SECRETS_FILE not found!" -ForegroundColor Red
+    Write-Host "Copy .secrets.example.ps1 to .secrets.ps1 and fill in your credentials." -ForegroundColor Yellow
+    exit 1
+}
+$SECRET = @{}
+. $SECRETS_FILE
+
 $commonEnv = @{
-  AUTH_SECRET_KEY = "dev-local-secret-key-123"
+  AUTH_SECRET_KEY = $SECRET["AUTH_SECRET_KEY"]
   PYTHONPATH      = $ROOT
   TEMP            = $env:TEMP
   TMP             = $env:TMP
@@ -25,16 +35,15 @@ $env1 = $commonEnv.Clone()
 $env1["AUTH_DB_PATH"] = "$ROOT\services\auth-service\auth.db"
 $env1["AUTH_BOOTSTRAP_ADMIN"] = "true"
 $env1["AUTH_ADMIN_EMAIL"] = "skypromd@gmail.com"
-$env1["AUTH_ADMIN_PASSWORD"] = "VeryStrongPassword123!"
+$env1["AUTH_ADMIN_PASSWORD"] = $SECRET["AUTH_ADMIN_PASSWORD"]
 $env1["AUTH_REQUIRE_ADMIN_2FA"] = "false"
-$env1["DEV_MODE"] = "true"
+$env1["DEV_MODE"] = "false"
 $env1["APP_BASE_URL"] = if ($env:APP_BASE_URL) { $env:APP_BASE_URL } else { "http://localhost:3000" }
-# SMTP — uncomment and fill in to enable real email sending
-# $env1["SMTP_HOST"] = "smtp.gmail.com"
-# $env1["SMTP_PORT"] = "587"
-# $env1["SMTP_USER"] = "your@gmail.com"
-# $env1["SMTP_PASSWORD"] = "your_app_password"
-# $env1["SMTP_FROM"] = "SelfMonitor <your@gmail.com>"
+$env1["SMTP_HOST"] = $SECRET["SMTP_HOST"]
+$env1["SMTP_PORT"] = $SECRET["SMTP_PORT"]
+$env1["SMTP_USER"] = $SECRET["SMTP_USER"]
+$env1["SMTP_PASSWORD"] = $SECRET["SMTP_PASSWORD"]
+$env1["SMTP_FROM"] = $SECRET["SMTP_FROM"]
 $p1 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8001" `
   -WorkingDirectory "$ROOT\services\auth-service" -PassThru -NoNewWindow `
   -RedirectStandardOutput "$ROOT\logs\auth_out.txt" -RedirectStandardError "$ROOT\logs\auth_err.txt" `
