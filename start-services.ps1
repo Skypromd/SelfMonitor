@@ -1,15 +1,16 @@
 # SelfMonitor - Start all services
 # Usage: powershell -ExecutionPolicy Bypass -File start-services.ps1
 
+$ErrorActionPreference = "SilentlyContinue"
 $ROOT = "B:\SelfMonitor\SelfMonitor"
 $VENV = "$ROOT\.venv\Scripts\uvicorn.exe"
 
 # --- Load secrets from .secrets.ps1 (gitignored) ---
 $SECRETS_FILE = "$ROOT\.secrets.ps1"
 if (-not (Test-Path $SECRETS_FILE)) {
-    Write-Host "ERROR: $SECRETS_FILE not found!" -ForegroundColor Red
-    Write-Host "Copy .secrets.example.ps1 to .secrets.ps1 and fill in your credentials." -ForegroundColor Yellow
-    exit 1
+  Write-Host "ERROR: $SECRETS_FILE not found!" -ForegroundColor Red
+  Write-Host "Copy .secrets.example.ps1 to .secrets.ps1 and fill in your credentials." -ForegroundColor Yellow
+  exit 1
 }
 $SECRET = @{}
 . $SECRETS_FILE
@@ -23,10 +24,16 @@ $commonEnv = @{
 }
 
 Write-Host "Stopping existing services..." -ForegroundColor Yellow
-Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
-Where-Object { $_.LocalPort -in 3000, 3001, 8001, 8005, 8006, 8009, 8010, 8012, 8015 } |
-ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
-Stop-Process -Name node -Force -ErrorAction SilentlyContinue
+# Kill uvicorn launchers AND their entire Python worker child trees
+& cmd.exe /c "taskkill /f /t /im uvicorn.exe >nul 2>&1"
+& cmd.exe /c "taskkill /f /t /im node.exe >nul 2>&1"
+# Kill residual port-holding processes by scanning each service port
+foreach ($p in @(8001, 8005, 8006, 8009, 8010, 8012, 8015, 8016, 8000, 3000, 3001, 3002)) {
+  $raw = (& cmd.exe /c "netstat -ano 2>nul | findstr :$p | findstr LISTENING")
+  if ($raw -match '\s(\d+)\s*$') {
+    & cmd.exe /c "taskkill /f /pid $($Matches[1]) /t >nul 2>&1"
+  }
+}
 Start-Sleep -Seconds 2
 Write-Host "All stopped." -ForegroundColor Gray
 
@@ -103,6 +110,23 @@ $pBanking = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host"
   -RedirectStandardOutput "$ROOT\logs\banking_out.txt" -RedirectStandardError "$ROOT\logs\banking_err.txt" `
   -Environment $envBanking
 Write-Host "banking-connector  :8015  PID=$($pBanking.Id)" -ForegroundColor Cyan
+
+# --- billing-service :8016 ---
+$envBilling = $commonEnv.Clone()
+$envBilling["BILLING_DB_PATH"] = "$ROOT\services\billing-service\billing.db"
+$envBilling["FRONTEND_URL"] = "http://localhost:3000"
+$envBilling["AUTH_SERVICE_URL"] = "http://localhost:8001"
+$envBilling["SMTP_HOST"] = $SECRET["SMTP_HOST"]
+$envBilling["SMTP_PORT"] = $SECRET["SMTP_PORT"]
+$envBilling["SMTP_USER"] = $SECRET["SMTP_USER"]
+$envBilling["SMTP_PASSWORD"] = $SECRET["SMTP_PASSWORD"]
+$envBilling["SMTP_FROM"] = $SECRET["SMTP_FROM"]
+$pBilling = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8016" `
+  -WorkingDirectory "$ROOT\services\billing-service" -PassThru -NoNewWindow `
+  -RedirectStandardOutput "$ROOT\logs\billing_out.txt" -RedirectStandardError "$ROOT\logs\billing_err.txt" `
+  -Environment $envBilling
+Write-Host "billing-service    :8016  PID=$($pBilling.Id)" -ForegroundColor Cyan
+
 $nodeExe = (Get-Command node -ErrorAction SilentlyContinue).Source
 if ($nodeExe) {
   Remove-Item "$ROOT\apps\web-portal\.next\dev\lock" -Force -ErrorAction SilentlyContinue
@@ -120,9 +144,8 @@ else {
 # --- proxy-gateway :8000 ---
 $gatewayPy = "$ROOT\proxy_gateway.py"
 if (Test-Path $gatewayPy) {
-  # Kill any existing process on port 8000
-  Get-NetTCPConnection -State Listen -LocalPort 8080 -ErrorAction SilentlyContinue |
-  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }
+  # Kill any existing process on port 8080
+  & cmd.exe /c "for /f `"tokens=5`" %a in ('netstat -ano ^| findstr :8080 ^| findstr LISTENING') do taskkill /f /pid %a >nul 2>&1"
   Start-Sleep -Milliseconds 500
   $pGW = Start-Process -FilePath "$ROOT\.venv\Scripts\python.exe" -ArgumentList $gatewayPy `
     -WorkingDirectory $ROOT -PassThru -NoNewWindow `
@@ -162,7 +185,8 @@ $checks = @(
   @{name = "analytics :8009"; url = "http://localhost:8009/health" },
   @{name = "advice    :8010"; url = "http://localhost:8010/health" },
   @{name = "localize  :8012"; url = "http://localhost:8012/docs" },
-  @{name = "banking   :8015"; url = "http://localhost:8015/health" }
+  @{name = "banking   :8015"; url = "http://localhost:8015/health" },
+  @{name = "billing   :8016"; url = "http://localhost:8016/health" }
 )
 Write-Host ""
 Write-Host "Health check:" -ForegroundColor Yellow
