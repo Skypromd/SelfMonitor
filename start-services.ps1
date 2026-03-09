@@ -27,6 +27,7 @@ $env1["AUTH_BOOTSTRAP_ADMIN"] = "true"
 $env1["AUTH_ADMIN_EMAIL"] = "skypromd@gmail.com"
 $env1["AUTH_ADMIN_PASSWORD"] = "VeryStrongPassword123!"
 $env1["AUTH_REQUIRE_ADMIN_2FA"] = "false"
+$env1["DEV_MODE"] = "true"
 $p1 = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8001" `
   -WorkingDirectory "$ROOT\services\auth-service" -PassThru -NoNewWindow `
   -RedirectStandardOutput "$ROOT\logs\auth_out.txt" -RedirectStandardError "$ROOT\logs\auth_err.txt" `
@@ -77,10 +78,10 @@ Write-Host "documents-service  :8006  PID=$($p6.Id)" -ForegroundColor Cyan
 
 # --- banking-connector :8015 ---
 $envBanking = $commonEnv.Clone()
-$envBanking["VAULT_ADDR"]        = "http://localhost:8200"
-$envBanking["VAULT_TOKEN"]       = "dev-root-token"
+$envBanking["VAULT_ADDR"] = "http://localhost:8200"
+$envBanking["VAULT_TOKEN"] = "dev-root-token"
 $envBanking["CELERY_BROKER_URL"] = "memory://"
-$envBanking["PYTHONUTF8"]        = "1"
+$envBanking["PYTHONUTF8"] = "1"
 $pBanking = Start-Process -FilePath $VENV -ArgumentList "app.main:app", "--host", "0.0.0.0", "--port", "8015" `
   -WorkingDirectory "$ROOT\services\banking-connector" -PassThru -NoNewWindow `
   -RedirectStandardOutput "$ROOT\logs\banking_out.txt" -RedirectStandardError "$ROOT\logs\banking_err.txt" `

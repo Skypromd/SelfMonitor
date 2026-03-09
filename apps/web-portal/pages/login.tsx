@@ -108,6 +108,12 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                   </button>
                 </div>
 
+                <div style={{ textAlign: 'right', marginTop: '0.4rem' }}>
+                  <Link href="/forgot-password" style={{ fontSize: '0.8rem', color: '#14b8a6' }}>
+                    Forgot password?
+                  </Link>
+                </div>
+
                 {error && <p className={styles.error} role="alert" style={{ marginTop: '0.5rem' }}>{error}</p>}
 
                 <button type="submit" className={styles.button}

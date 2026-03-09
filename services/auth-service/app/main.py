@@ -187,6 +187,15 @@ class PasswordChange(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 # --- Database ---
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(AUTH_DB_PATH, check_same_thread=False)
@@ -242,6 +251,14 @@ def init_auth_db() -> None:
                 trial_end TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                token TEXT PRIMARY KEY,
+                user_email TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                used INTEGER NOT NULL DEFAULT 0
             )
         """)
         conn.commit()
@@ -478,6 +495,113 @@ async def register(user_in: UserCreate):
     return User(
         email=user_email, is_active=True, is_admin=False, is_two_factor_enabled=False
     )
+
+
+# --- Password Reset ---
+
+RESET_TOKEN_EXPIRE_MINUTES = 60
+DEV_MODE = os.getenv("DEV_MODE", "true").lower() == "true"
+
+
+@app.post("/password-reset/request")
+async def request_password_reset(body: PasswordResetRequest):
+    """
+    Generates a password-reset token for the given email address.
+    In production this would send an email; in dev mode the token is returned
+    directly in the response so the developer / user can test the flow.
+    """
+    user_email = str(body.email)
+    # Always return 200 to avoid email enumeration
+    user = get_user_record(user_email)
+    response: dict[str, object] = {
+        "message": "If that email is registered you will receive a reset link shortly."
+    }
+    if not user:
+        return response
+
+    token = str(uuid.uuid4())
+    expires_at = (
+        datetime.datetime.now(datetime.UTC)
+        + datetime.timedelta(minutes=RESET_TOKEN_EXPIRE_MINUTES)
+    ).isoformat()
+
+    with db_lock:
+        conn = _connect()
+        # Invalidate previous unused tokens for this email
+        conn.execute(
+            "UPDATE password_reset_tokens SET used = 1 WHERE user_email = ? AND used = 0",
+            (user_email,),
+        )
+        conn.execute(
+            "INSERT INTO password_reset_tokens (token, user_email, expires_at, used) VALUES (?, ?, ?, 0)",
+            (token, user_email, expires_at),
+        )
+        conn.commit()
+        conn.close()
+
+    logger.info("Password reset token generated for %s", user_email)
+
+    if DEV_MODE:
+        response["dev_token"] = token
+        response["dev_note"] = (
+            "[DEV] In production this token would be emailed. "
+            "Use it at /reset-password?token=" + token
+        )
+
+    return response
+
+
+@app.post("/password-reset/confirm")
+async def confirm_password_reset(body: PasswordResetConfirm):
+    """
+    Validates the reset token and sets the new password.
+    """
+    validate_password_strength(body.new_password)
+
+    now = datetime.datetime.now(datetime.UTC)
+
+    with db_lock:
+        conn = _connect()
+        row = conn.execute(
+            "SELECT * FROM password_reset_tokens WHERE token = ?",
+            (body.token,),
+        ).fetchone()
+
+        if not row:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
+
+        row_dict = dict(row)
+        if row_dict["used"]:
+            conn.close()
+            raise HTTPException(status_code=400, detail="This reset link has already been used.")
+
+        expires_at = datetime.datetime.fromisoformat(str(row_dict["expires_at"]))
+        # Make both timezone-aware for comparison
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+        if now > expires_at:
+            conn.close()
+            raise HTTPException(status_code=400, detail="Reset link has expired. Please request a new one.")
+
+        user_email = str(row_dict["user_email"])
+        new_hash = get_password_hash(body.new_password)
+
+        conn.execute(
+            "UPDATE users SET hashed_password = ? WHERE email = ?",
+            (new_hash, user_email),
+        )
+        conn.execute(
+            "UPDATE password_reset_tokens SET used = 1 WHERE token = ?",
+            (body.token,),
+        )
+        conn.commit()
+        conn.close()
+
+    # Clear any login lockout so the user can sign in immediately
+    clear_failed_attempts(user_email)
+    logger.info("Password reset completed for %s", user_email)
+    return {"message": "Password updated successfully. You can now log in with your new password."}
 
 
 @app.post("/token", response_model=Token)
