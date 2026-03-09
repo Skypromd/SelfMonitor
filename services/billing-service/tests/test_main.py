@@ -7,6 +7,9 @@ import pytest
 from app.main import _upsert_subscription, app, init_db
 from fastapi.testclient import TestClient
 
+# Ensure DB tables exist before any test runs
+init_db()
+
 client = TestClient(app)
 
 
