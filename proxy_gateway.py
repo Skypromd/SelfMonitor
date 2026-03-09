@@ -23,11 +23,13 @@ app.add_middleware(
 ROUTES = {
     "/api/auth/": "http://localhost:8001",
     "/api/token": "http://localhost:8001",
+    "/api/me": "http://localhost:8001",
     "/api/profile/": "http://localhost:8005",
     "/api/documents/": "http://localhost:8006",
     "/api/analytics/": "http://localhost:8009",
     "/api/advice/": "http://localhost:8010",
     "/api/localization/": "http://localhost:8012",
+    "/api/banking/": "http://localhost:8015",
     "/api/support/": "http://localhost:8020",
     "/api/billing/": "http://localhost:8016",
     "/api/transactions/": "http://localhost:8003",
