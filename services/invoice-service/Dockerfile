@@ -28,7 +28,7 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock ./
 
 # Install dependencies
-RUN poetry install --no-dev && rm -rf $POETRY_CACHE_DIR
+RUN poetry install --without dev --no-root && rm -rf $POETRY_CACHE_DIR
 
 # Copy application
 COPY . .

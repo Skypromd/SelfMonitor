@@ -371,7 +371,7 @@ services:
       - postgres-master
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${USER_PROFILE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_user_profile}"
+      DATABASE_URL: "${USER_PROFILE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_user_profile}"
     # Run migrations before starting the app server
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -387,7 +387,7 @@ services:
       - categorization-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_transactions}"
+      DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_transactions}"
       CATEGORIZATION_SERVICE_URL: "${CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -399,7 +399,8 @@ services:
     depends_on:
       - postgres-master
     environment:
-      DATABASE_URL: "${COMPLIANCE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_compliance}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      DATABASE_URL: "${COMPLIANCE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_compliance}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
@@ -414,7 +415,7 @@ services:
       - postgres-master
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${CONSENT_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_consent}"
+      DATABASE_URL: "${CONSENT_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_consent}"
       COMPLIANCE_SERVICE_URL: "${CONSENT_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
     networks:
       - default_network
@@ -472,7 +473,7 @@ services:
       - localstack
       - qna-service
     environment:
-      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_documents}"
+      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_documents}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
       CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
@@ -500,6 +501,7 @@ services:
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
+      LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT: "1"
     networks:
       - default_network
 
@@ -531,7 +533,7 @@ services:
       - localstack
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_documents}"
+      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_documents}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://localstack:4566}" # Point to LocalStack
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
@@ -594,7 +596,7 @@ services:
       - postgres-master
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_partner}"
+      DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_partner}"
       COMPLIANCE_SERVICE_URL: "${PARTNER_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
       AUTO_CREATE_SCHEMA: "${PARTNER_AUTO_CREATE_SCHEMA:-true}"
       BILLING_REPORT_ALLOWED_SCOPES: "${PARTNER_BILLING_REPORT_ALLOWED_SCOPES:-billing:read}"
