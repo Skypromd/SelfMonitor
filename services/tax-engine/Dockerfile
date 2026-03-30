@@ -2,11 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /code
 
-COPY ./requirements.txt /code/requirements.txt
+COPY ./services/tax-engine/requirements.txt /code/requirements.txt
 
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-COPY ./app /code/app
+COPY ./libs /code/libs
+COPY ./services/tax-engine/app /code/app
 
 RUN adduser --disabled-password --gecos '' appuser
 USER appuser
