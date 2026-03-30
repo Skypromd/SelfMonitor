@@ -1,6 +1,6 @@
 import datetime
 import uuid
-from typing import Literal
+from typing import Dict, Literal
 
 import httpx
 from pydantic import BaseModel, Field
@@ -214,6 +214,7 @@ async def _post_hmrc_quarterly_update(
     report_payload: HMRCMTDQuarterlyReport,
     correlation_id: str | None,
     timeout_seconds: float,
+    fraud_headers: Dict[str, str] | None = None,
 ) -> httpx.Response:
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -221,6 +222,8 @@ async def _post_hmrc_quarterly_update(
         "Content-Type": "application/json",
         "Gov-Client-Connection-Method": "DESKTOP_APP_DIRECT",
     }
+    if fraud_headers:
+        headers.update(fraud_headers)
     if correlation_id:
         headers["CorrelationId"] = correlation_id
     async with httpx.AsyncClient() as client:
@@ -246,6 +249,7 @@ async def submit_quarterly_update_to_hmrc(
     hmrc_oauth_scope: str,
     hmrc_quarterly_endpoint_path: str,
     request_timeout_seconds: float = 20.0,
+    fraud_headers: Dict[str, str] | None = None,
 ) -> HMRCMTDQuarterlySubmissionStatus:
     validation_errors = validate_quarterly_report(request.report)
     if validation_errors:
@@ -295,6 +299,7 @@ async def submit_quarterly_update_to_hmrc(
         report_payload=request.report,
         correlation_id=request.correlation_id,
         timeout_seconds=request_timeout_seconds,
+        fraud_headers=fraud_headers,
     )
     hmrc_response_json: dict[str, object] = {}
     if response.content:
