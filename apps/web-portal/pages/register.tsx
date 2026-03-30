@@ -340,7 +340,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
             <>
               <h1 className={styles.title} style={{ fontSize: '1.6rem' }}>Verify your phone</h1>
               <p className={styles.description} style={{ marginBottom: '1.5rem' }}>
-                We'll send a 6-digit code to your mobile number to confirm your identity.
+                We&apos;ll send a 6-digit code to your mobile number to confirm your identity.
               </p>
 
               {!phoneCodeSent ? (
