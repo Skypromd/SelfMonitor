@@ -9,8 +9,8 @@
 | **Банков UK** | 150+ | 200+ | 100+ | 80+ | 50+ |
 | **Банков глобально** | 1,586 (73 страны) | 2,000+ (19 стран EU) | 12 стран EU+UK | 12,000+ (US/EU/UK) | UK only |
 | **Free tier** | 100 connections / 90 дней | Бесплатный sandbox | 500 connections бесплатно | 100 connections бесплатно | Бесплатный trial |
-| **Старт продакшн** | ~$500/мес минимум | Usage-based, нет минимума | Enterprise-oriented | Pay-as-you-go | Стартап-дисконт |
-| **~Цена за connection** | ~€0.10-0.15 (оценка) | ~£0.10-0.15 (enterprise) | ~£0.20-0.30 | ~$0.25-0.30 | Не раскрыта |
+| **Старт продакшн** | Usage-based (нет фикс. минимума) | Usage-based, нет минимума | Enterprise-oriented | Pay-as-you-go | Стартап-дисконт |
+| **Модель оплаты** | За connection + refresh + PIS | За connection + refresh | За connection + payment | За connection | Не раскрыта |
 | **AIS (данные счёта)** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **PIS (платежи)** | ✅ | ✅ | ✅ (лучший UX) | ❌ | ✅ |
 | **VRP (recurring)** | ✅ | ✅ (beta) | ✅ | ❌ | ❌ |
@@ -18,7 +18,7 @@
 | **PSD2 compliant** | ✅ ISO 27001 | ✅ | ✅ | ✅ | ✅ |
 | **Scraping (не-OB банки)** | ✅ Spectre (доп. покрытие) | ❌ | ❌ | ✅ | ❌ |
 | **SDK/Docs качество** | Хорошее, REST v5/v6 | Хорошее | Отличное | Отличное | Среднее |
-| **На 100K юзеров/мес** | ~£10-15K | ~£10-15K | ~£20-30K | ~£25-30K | Неизвестно |
+| **На 100K юзеров/мес** | ~£12-20K (volume discount) | ~£10-15K | ~£20-30K | ~£25-30K | Неизвестно |
 
 ### SaltEdge подробнее
 
@@ -29,12 +29,28 @@
 - Data enrichment из коробки — автокатегоризация транзакций (наша categorization-service может использовать)
 - Partner Program — для стартапов без PSD2 лицензии, Salt Edge выступает как AISP
 
+**Ценообразование SaltEdge (usage-based):**
+
+Цена зависит от количества обращений, не фиксированная. Три компонента:
+- **Connection** — разовая плата за привязку банковского счёта
+- **Refresh** — плата за каждое обновление данных (sync транзакций)
+- **Payment Initiation (PIS)** — плата за каждый инициированный платёж
+
+Чем больше объём — тем ниже цена за единицу (volume discounts):
+
+| Юзеров | Connections/мес | Refreshes/мес (4×/день) | Примерная стоимость |
+|---|---|---|---|
+| 500 | 500 | 60K | ~£200-500 |
+| 5K | 5K | 600K | ~£1-3K |
+| 50K | 50K | 6M | ~£8-15K |
+| 100K | 100K | 12M | ~£12-20K |
+
 **Минусы:**
-- Минимум ~$500/мес на продакшне — дороже Yapily для старта
-- Free tier ограничен 90 днями и 100 connections — мало для тестирования
+- Free tier ограничен 90 днями и 100 connections — мало для длительного тестирования
 - Spectre (scraping) ≠ Open Banking — HMRC может не принять scraping как "digital records"
 - API чуть старше по дизайну чем Yapily/TrueLayer
 - UI consent screen менее кастомизируемый
+- Точная цена только через sales — нет публичного прайса
 
 **Когда SaltEdge лучший выбор:**
 - Юзеры с банками НЕ в UK (Польша, Румыния — наша целевая аудитория мигрантов!)
@@ -45,9 +61,9 @@
 
 | Фаза | Юзеры | Провайдер | Стоимость/мес | Почему |
 |---|---|---|---|---|
-| **Старт** | 0-1K | **SaltEdge** sandbox + Partner | £0 → ~£500 | Покрывает UK + EU банки мигрантов. 90 дней бесплатно хватит на MVP тест |
+| **Старт** | 0-1K | **SaltEdge** sandbox + Partner | £0 → ~£200-500 | Покрывает UK + EU банки мигрантов. Usage-based = платишь только за реальных юзеров |
 | **Рост** | 1K-10K | **SaltEdge** production | ~£1-3K | Один провайдер для UK + Польша + Румыния. Data enrichment экономит dev время |
-| **Масштаб** | 10K-50K | **SaltEdge + Yapily** | ~£5-10K | SaltEdge для EU банков, Yapily для UK (дешевле на объёме) |
+| **Масштаб** | 10K-50K | **SaltEdge + Yapily** | ~£5-12K | SaltEdge для EU банков, Yapily для UK (дешевле refreshes на объёме) |
 | **Enterprise** | 50K-100K | **Yapily (UK)** + **SaltEdge (EU)** + **TrueLayer (payments)** | ~£15-25K | Оптимальная комбинация: цена + покрытие + instant payments |
 | **100K+** | Прямая интеграция OBIE | ~£5-10K | Убрать посредника для топ-5 UK банков (Barclays, HSBC, Lloyds, NatWest, Santander) |
 
@@ -123,7 +139,7 @@ TOTAL REVENUE                                  £916K/мес  (£11M/год)
 COSTS
 ───────────────────────────────────────
 Infrastructure (AWS/DO)                         £20K/мес
-Open Banking (SaltEdge + Yapily)                £15K/мес
+  Open Banking (SaltEdge + Yapily, usage-based)    £15K/мес
 Payments (GoCardless + Stripe)                  £10K/мес
 OpenAI API (AI advisor + voice)                  £8K/мес
 AWS Textract (OCR)                               £3K/мес
