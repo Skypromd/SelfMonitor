@@ -18,9 +18,9 @@ depends_on = None
 
 def upgrade() -> None:
     # Create enum types
-    op.execute("CREATE TYPE invoice_status AS ENUM ('draft', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled')")
-    op.execute("CREATE TYPE payment_method AS ENUM ('bank_transfer', 'card', 'cash', 'paypal', 'stripe', 'other')")
-    op.execute("CREATE TYPE frequency_type AS ENUM ('weekly', 'monthly', 'quarterly', 'yearly')")
+    op.execute("DO $$ BEGIN CREATE TYPE invoice_status AS ENUM ('draft', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled'); EXCEPTION WHEN duplicate_object THEN null; END $$")
+    op.execute("DO $$ BEGIN CREATE TYPE payment_method AS ENUM ('bank_transfer', 'card', 'cash', 'paypal', 'stripe', 'other'); EXCEPTION WHEN duplicate_object THEN null; END $$")
+    op.execute("DO $$ BEGIN CREATE TYPE frequency_type AS ENUM ('weekly', 'monthly', 'quarterly', 'yearly'); EXCEPTION WHEN duplicate_object THEN null; END $$")
     
     # Create invoices table
     op.create_table('invoices',
@@ -44,7 +44,7 @@ def upgrade() -> None:
         sa.Column('currency', sa.String(3), nullable=False, default='GBP'),
         sa.Column('notes', sa.Text(), nullable=True),
         sa.Column('pdf_file_path', sa.String(500), nullable=True),
-        sa.Column('status', postgresql.ENUM('draft', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled', name='invoice_status'), nullable=False, default='draft'),  # type: ignore
+        sa.Column('status', postgresql.ENUM('draft', 'sent', 'paid', 'partially_paid', 'overdue', 'cancelled', name='invoice_status', create_type=False), nullable=False, default='draft'),  # type: ignore
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
         sa.PrimaryKeyConstraint('id')
@@ -79,7 +79,7 @@ def upgrade() -> None:
         sa.Column('invoice_id', sa.String(36), nullable=False),
         sa.Column('amount', sa.Numeric(precision=12, scale=2), nullable=False),
         sa.Column('payment_date', sa.Date(), nullable=False),
-        sa.Column('payment_method', postgresql.ENUM('bank_transfer', 'card', 'cash', 'paypal', 'stripe', 'other', name='payment_method'), nullable=False),  # type: ignore
+        sa.Column('payment_method', postgresql.ENUM('bank_transfer', 'card', 'cash', 'paypal', 'stripe', 'other', name='payment_method', create_type=False), nullable=False),  # type: ignore
         sa.Column('reference_number', sa.String(100), nullable=True),
         sa.Column('notes', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
@@ -116,7 +116,7 @@ def upgrade() -> None:
         sa.Column('template_id', sa.String(36), nullable=False),
         sa.Column('user_id', sa.String(36), nullable=False),
         sa.Column('name', sa.String(200), nullable=False),
-        sa.Column('frequency', postgresql.ENUM('weekly', 'monthly', 'quarterly', 'yearly', name='frequency_type'), nullable=False),  # type: ignore
+        sa.Column('frequency', postgresql.ENUM('weekly', 'monthly', 'quarterly', 'yearly', name='frequency_type', create_type=False), nullable=False),  # type: ignore
         sa.Column('start_date', sa.Date(), nullable=False),
         sa.Column('end_date', sa.Date(), nullable=True),
         sa.Column('next_invoice_date', sa.Date(), nullable=False),

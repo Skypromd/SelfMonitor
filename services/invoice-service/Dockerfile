@@ -16,6 +16,12 @@ RUN apt-get update && apt-get install -y \
     libjpeg-dev \
     libpng-dev \
     libffi-dev \
+    libglib2.0-0 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libgdk-pixbuf-2.0-0 \
+    libcairo2 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
@@ -28,7 +34,7 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock ./
 
 # Install dependencies
-RUN poetry install --without dev --no-root && rm -rf $POETRY_CACHE_DIR
+RUN poetry install --without dev --no-root
 
 # Copy application
 COPY . .

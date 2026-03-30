@@ -337,7 +337,7 @@ services:
     build: ./services/invoice-service
     container_name: invoice-service
     environment:
-      - DATABASE_URL=postgresql+asyncpg://user:password@postgres-master:5432/db_invoices
+      - DATABASE_URL=postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_invoices
       - AUTH_SECRET_KEY=a_secure_random_string_for_jwt_signing_!@#$%^
       - PDF_OUTPUT_DIR=/app/pdfs
       - REDIS_URL=redis://redis-master:6379
@@ -352,7 +352,7 @@ services:
       - postgres-master
       - redis-master
       - auth-service
-    command: sh -c "python -m app.init_templates && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    command: sh -c "poetry run alembic upgrade head && poetry run uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
     healthcheck:
@@ -1056,6 +1056,39 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    restart: unless-stopped
+
+  referral-service:
+    build: ./services/referral-service
+    container_name: referral-service
+    depends_on:
+      - postgres-master
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      DATABASE_URL: "postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_referral"
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  cost-optimization:
+    build: ./services/cost-optimization
+    container_name: cost-optimization
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
 volumes:
