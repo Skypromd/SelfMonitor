@@ -94,6 +94,71 @@
 
 ---
 
+## Фаза 1.5: Mortgage Advisor — killer-фича (параллельно с Фазой 1)
+
+Ни один конкурент (FreeAgent, QuickBooks, Xero) не помогает с ипотекой.
+Для self-employed получить ипотеку в UK — главная боль (отказ в 3 раза чаще чем employed).
+У нас уже есть: 9 endpoints, 1675 строк, 14 типов ипотеки, readiness assessment, PDF pack.
+
+### 1.5.1 AI Mortgage Advisor (мультиязычный)
+- [ ] Промпт для ai-agent-service: "mortgage advisor" режим с контекстом юзера
+- [ ] AI видит: доход, расходы, tax returns, инвойсы, deposit — даёт персонализированный ответ
+- [ ] Примеры вопросов: "Can I get a mortgage?", "Czy mogę dostać kredyt hipoteczny?", "Чи можу я отримати іпотеку?"
+- [ ] AI знает UK mortgage rules: income multiples, self-employed requirements, deposit minimums
+- [ ] Fallback: если AI не уверен → "Рекомендуем поговорить с broker-ом" + ссылка на marketplace
+
+### 1.5.2 Affordability Calculator
+- [ ] Max mortgage по формулам: employed 4.5x, self-employed 3-4x (average 2-3 years)
+- [ ] Расчёт по разным кредиторам: Barclays (1 год), HSBC (2 года), Halifax (retained profit)
+- [ ] Monthly payment calculator: variable vs fixed, разные сроки (25/30/35 лет)
+- [ ] Stress test: "Если ставка вырастет на 3%, ваш платёж будет £X" (HMRC требование)
+- [ ] Stamp Duty calculator: first-time buyer relief, standard rates, surcharges
+- [ ] Input: доход автоматически из данных SelfMonitor (не вбивать руками)
+
+### 1.5.3 Lender Comparison (реальные банки)
+- [ ] База кредиторов с условиями для self-employed:
+  - [ ] Barclays: 1 год accounts, 4.49x income, min 10% deposit
+  - [ ] HSBC: 2 года accounts, 4x income, min 10% deposit
+  - [ ] Halifax: 2 года, принимает retained profit для Ltd directors
+  - [ ] Nationwide: 2 года SA302, 4.5x для strong applications
+  - [ ] NatWest: 2 года, 4x, flex underwriting для contractors
+  - [ ] Specialist: Kensington, Pepper Money, Together (adverse credit)
+- [ ] Автоматический matching: профиль юзера → подходящие банки с % вероятности одобрения
+- [ ] Фильтры: deposit %, income type, credit history, property type
+- [ ] Обновление данных кредиторов каждый квартал
+
+### 1.5.4 Document Auto-fill
+- [ ] SA302 — уже генерируем через HMRC integration → автоприложить к mortgage pack
+- [ ] Tax Year Overview — автозапрос через HMRC API
+- [ ] Income & Expenditure form — автозаполнение из transactions-service
+- [ ] Bank statements — экспорт из banking-connector за последние 6 месяцев
+- [ ] Business accounts summary — из analytics-service (P&L за 2-3 года)
+- [ ] Один клик → готовый пакет документов для broker-а
+
+### 1.5.5 Broker Marketplace
+- [ ] Партнёрство с 10-20 mortgage brokers специализирующихся на self-employed
+- [ ] Broker получает: готовый mortgage pack + readiness score + income verification
+- [ ] Юзер выбирает broker-а → бронирует консультацию (бесплатно для юзера)
+- [ ] Revenue: £200-500 за квалифицированный лид (стандарт индустрии)
+- [ ] Отзывы и рейтинги broker-ов от юзеров
+- [ ] Фильтр: языки broker-а (EN, PL, RO, UA — для нашей аудитории мигрантов)
+
+### 1.5.6 Mortgage Progress Tracker ("Дорога к ипотеке")
+- [ ] Timeline с шагами от текущего состояния до подачи заявки:
+  - Step 1: Build credit score (if needed)
+  - Step 2: Save deposit (progress bar: £X of £Y saved)
+  - Step 3: Complete 1-2 years self-employed accounts
+  - Step 4: File tax return (SA302)
+  - Step 5: Reduce outstanding debts
+  - Step 6: Prepare mortgage pack
+  - Step 7: Apply
+- [ ] Автоматическое определение текущего шага из данных юзера
+- [ ] Push-уведомления при достижении milestone: "🎉 Your deposit reached 10%!"
+- [ ] Estimated timeline: "At your current savings rate, you'll be ready in 8 months"
+- [ ] Monthly progress email: "Your mortgage readiness score improved from 62 to 71"
+
+---
+
 ## Фаза 2: "Делает то, чего другие не умеют" (6-10 недель)
 
 ### 2.1 AI Tax Advisor на родном языке

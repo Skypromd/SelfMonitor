@@ -115,11 +115,28 @@
 | # | Поток | Модель | Revenue на 100K юзеров/мес |
 |---|---|---|---|
 | 1 | **Invoice instant payments** | 1% от суммы оплаченных инвойсов через Payment Links | £50-100K |
-| 2 | **Marketplace commissions** | £5-50 за лид (страховка, пенсия, кредит) | £30-80K |
-| 3 | **Accountant seats** | £3/мес за каждого клиента бухгалтера | £15-30K |
-| 4 | **Premium AI add-on** | £3/мес (unlimited голосовые запросы, tax optimization) | £20-40K |
-| 5 | **Banking referral** | £5-15 за открытие счёта через Tide/Starling | £10-20K |
-| 6 | **Data insights (B2B)** | Анонимизированные тренды для banks/insurance (GDPR compliant) | £5-15K |
+| 2 | **Mortgage broker leads** | £200-500 за квалифицированный лид (готовый pack + score) | £60-150K |
+| 3 | **Marketplace commissions** | £5-50 за лид (страховка, пенсия, кредит) | £30-80K |
+| 4 | **Accountant seats** | £3/мес за каждого клиента бухгалтера | £15-30K |
+| 5 | **Premium AI add-on** | £3/мес (AI mortgage advisor + tax advisor + voice) | £20-40K |
+| 6 | **Banking referral** | £5-15 за открытие счёта через Tide/Starling | £10-20K |
+| 7 | **Data insights (B2B)** | Анонимизированные тренды для banks/insurance (GDPR compliant) | £5-15K |
+
+#### Mortgage broker leads — подробный расчёт
+
+```
+100K юзеров
+  → 30% self-employed с целью купить жильё в ближайшие 2 года = 30K
+  → 10% из них используют mortgage advisor в месяц = 3K
+  → 40% получают readiness score "ready" или "almost ready" = 1,200
+  → 25% нажимают "Connect with broker" = 300 лидов/мес
+  → £200-500 за лид (стандарт mortgage industry)
+  = £60-150K/мес дополнительного revenue
+
+Для сравнения: средний mortgage в UK = £290K.
+Broker получает 0.3-0.5% = £870-1,450 комиссии.
+£200-500 за лид — справедливая цена для broker-а.
+```
 
 ### 3.3 Unit Economics на 100K юзеров
 
@@ -127,13 +144,14 @@
 REVENUE
 ───────────────────────────────────────
 Subscriptions (60K платящих × £12.08 ARPU)    £725K/мес
+Mortgage broker leads (300 × £350 avg)        £105K/мес
 Invoice payments (1% от £5-10M инвойсов)       £75K/мес
 Marketplace commissions                         £50K/мес
+Premium AI + mortgage advisor (12K × £3)        £36K/мес
 Accountant seats (5K × £3)                      £15K/мес
-Premium AI (12K × £3)                           £36K/мес
 Banking referrals                               £15K/мес
 ───────────────────────────────────────
-TOTAL REVENUE                                  £916K/мес  (£11M/год)
+TOTAL REVENUE                                £1,021K/мес  (£12.3M/год)
 
 
 COSTS
@@ -159,8 +177,8 @@ TOTAL COSTS                                    £242K/мес
 
 PROFIT
 ═══════════════════════════════════════
-Net Profit                                     £674K/мес  (£8.1M/год)
-Margin                                         73.6%
+Net Profit                                     £779K/мес  (£9.3M/год)
+Margin                                         76.3%
 ```
 
 ### 3.4 Путь к 100K юзеров
