@@ -75,7 +75,12 @@ The repo uses [cspell](https://cspell.org/) configured in `cspell.json`.
 
 - `qna-service` returns 503 because it uses a deprecated Weaviate Python client (v3 API) that is incompatible with newer `weaviate-client` packages. This is non-blocking for other services.
 - Localization keys show as raw keys (e.g. `nav.dashboard`) in the UI because the localization service returns translation keys rather than translated strings. This is cosmetic.
-- Docker must be started manually in Cloud Agent VMs: `sudo dockerd &>/tmp/dockerd.log &` (systemd is not available).
+- Docker must be started manually in Cloud Agent VMs: `sudo dockerd &>/tmp/dockerd.log &` (systemd is not available). After starting, run `sudo chmod 666 /var/run/docker.sock` so the non-root user can use Docker.
+- **`.env` DATABASE_URLs**: After `cp .env.example .env`, the DATABASE_URL values use `@postgres/` but the compose service name is `postgres-master`. Run `sed -i 's|@postgres/|@postgres-master/|g' .env` and also fix the password to match `POSTGRES_PASSWORD` in `.env`.
+- **LocalStack**: Requires `LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT=1` env var (already set in compose). Without it, LocalStack exits immediately.
+- **graphql-gateway**: Has pre-existing TypeScript compilation errors preventing Docker build. Start nginx-gateway with `--no-deps` to skip it.
+- **Web portal build**: Pre-existing ESLint errors (`rules-of-hooks` in `admin.tsx`, `no-html-link-for-pages` in `index.tsx`) and TypeScript errors (`billing.tsx`) block `next build`. The `next.config.js` has `eslint.ignoreDuringBuilds` and `typescript.ignoreBuildErrors` set to `true` to work around this.
+- Several services not in `docker-compose.yml` (fraud-detection, recommendation-engine, business-intelligence, customer-success, pricing-engine, etc.) are referenced in nginx upstreams. Their upstream blocks have been removed from `nginx.conf` to allow nginx to start.
 - `business-intelligence` service has `Optional[BackgroundTasks]` in `generate_business_insights` which is incompatible with FastAPI 0.133+. Tests work around this by monkey-patching `fastapi.routing.APIRoute.__init__` before importing the app.
 - Python service tests require `AUTH_SECRET_KEY` env var set **before** importing `app.main` (all services read it at module level via `os.environ["AUTH_SECRET_KEY"]`). Each test file sets it at the top.
 - `ai-agent-service` uses `langchain` as an optional dependency — all imports are wrapped in `try/except ImportError`. If langchain is not installed the agent falls back to direct OpenAI calls.

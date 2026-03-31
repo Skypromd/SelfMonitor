@@ -1,6 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  eslint: {
+    ignoreDuringBuilds: false,
+  },
 
   i18n: {
     // These are all the locales you want to support in

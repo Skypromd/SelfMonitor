@@ -244,7 +244,7 @@ export default function BillingPage({ token }: BillingPageProps) {
                   <Tooltip
                     contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 13 }}
                     labelStyle={{ color: '#e2e8f0' }}
-                    formatter={(v: number) => [`£${v.toFixed(2)}`, '']}
+                    formatter={(v: any) => [`£${Number(v).toFixed(2)}`, '']}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line type="monotone" dataKey="collected"   stroke="#10b981" strokeWidth={2.5} dot={false} name="Collected" />
@@ -312,7 +312,7 @@ export default function BillingPage({ token }: BillingPageProps) {
                     </Pie>
                     <Tooltip
                       contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, fontSize: 13 }}
-                      formatter={(v: number) => [`£${v.toFixed(2)}`, 'MRR']}
+                      formatter={(v: any) => [`£${Number(v).toFixed(2)}`, 'MRR']}
                     />
                   </PieChart>
                 </ResponsiveContainer>

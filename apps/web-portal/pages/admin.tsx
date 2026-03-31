@@ -195,20 +195,6 @@ const AI_AGENT_PERMISSIONS = [
 ];
 
 export default function AdminPage({ token, user }: AdminPageProps) {
-  // ── Double-check: server guard is in _app.tsx, but defensive check here too ──
-  if (user && user.is_admin === false) {
-    return (
-      <div style={{
-        display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center', minHeight: '60vh', gap: '1rem', color: '#94a3b8',
-      }}>
-        <div style={{ fontSize: '3rem' }}>🔒</div>
-        <h1 style={{ color: '#f87171', fontSize: '1.5rem' }}>Access Denied</h1>
-        <p>Admin privileges required to view this page.</p>
-      </div>
-    );
-  }
-
   const [emailToDeactivate, setEmailToDeactivate] = useState('');
   const [leadId, setLeadId] = useState('');
   const [leadStatus, setLeadStatus] = useState<LeadLifecycleStatus>('qualified');
@@ -788,6 +774,20 @@ export default function AdminPage({ token, user }: AdminPageProps) {
     void refreshInvoiceList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // ── Guard: admin-only access ──
+  if (user && user.is_admin === false) {
+    return (
+      <div style={{
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', minHeight: '60vh', gap: '1rem', color: '#94a3b8',
+      }}>
+        <div style={{ fontSize: '3rem' }}>🔒</div>
+        <h1 style={{ color: '#f87171', fontSize: '1.5rem' }}>Access Denied</h1>
+        <p>Admin privileges required to view this page.</p>
+      </div>
+    );
+  }
 
   // ── Computed values ──────────────────────────────────────────────────────────
   const TOTAL_MRR = MOCK_PLAN_STATS.reduce((sum, p) => sum + p.mrr, 0);

@@ -13,9 +13,23 @@ import {
   Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { useAuth } from '../context/AuthContext';
+
+function getPasswordStrength(pw: string): { label: string; color: string; ratio: number } {
+  if (pw.length === 0) return { label: '', color: colors.bgCard, ratio: 0 };
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (/[A-Z]/.test(pw)) score++;
+  if (/[0-9]/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  if (score <= 1) return { label: 'Weak', color: colors.expense, ratio: 0.25 };
+  if (score === 2) return { label: 'Fair', color: colors.warning, ratio: 0.5 };
+  if (score === 3) return { label: 'Good', color: colors.accentTeal, ratio: 0.75 };
+  return { label: 'Strong', color: colors.income, ratio: 1 };
+}
 
 function AnimatedPressable({
   onPress,
@@ -49,43 +63,34 @@ function AnimatedPressable({
   );
 }
 
-export default function LoginScreen() {
-  const { login, register } = useAuth();
+export default function RegisterScreen() {
+  const navigation = useNavigation<any>();
+  const { register, login } = useAuth();
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [message, setMessage] = useState<{ text: string; type: 'error' | 'success' } | null>(null);
 
-  async function handleLogin() {
-    if (!email || !password) {
-      setMessage({ text: 'Please enter email and password', type: 'error' });
-      return;
-    }
-    setLoading(true);
-    setMessage(null);
-    try {
-      await login(email, password);
-    } catch (err: any) {
-      setMessage({ text: err.message || 'Login failed', type: 'error' });
-      Alert.alert('Login Error', err.message || 'Login failed');
-    } finally {
-      setLoading(false);
-    }
-  }
+  const strength = getPasswordStrength(password);
 
   async function handleRegister() {
     if (!email || !password) {
-      setMessage({ text: 'Please enter email and password', type: 'error' });
+      setMessage({ text: 'Email and password are required', type: 'error' });
+      return;
+    }
+    if (password.length < 6) {
+      setMessage({ text: 'Password must be at least 6 characters', type: 'error' });
       return;
     }
     setLoading(true);
     setMessage(null);
     try {
-      const registeredEmail = await register(email, password);
-      setMessage({ text: `Registered ${registeredEmail}. You can now log in.`, type: 'success' });
+      await register(email, password);
+      await login(email, password);
     } catch (err: any) {
       setMessage({ text: err.message || 'Registration failed', type: 'error' });
-      Alert.alert('Registration Error', err.message || 'Registration failed');
+      Alert.alert('Error', err.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
@@ -108,8 +113,9 @@ export default function LoginScreen() {
               <Text style={styles.logoEmoji}>💎</Text>
             </View>
             <Text style={styles.brandName}>SelfMonitor</Text>
+            <Text style={styles.headline}>Start your free trial</Text>
             <Text style={styles.tagline}>
-              Financial Dashboard for the Self-Employed
+              Financial tools built for the self-employed
             </Text>
           </View>
 
@@ -133,6 +139,17 @@ export default function LoginScreen() {
 
           {/* Form Card */}
           <View style={styles.card}>
+            <Text style={styles.label}>Full Name (optional)</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Jane Doe"
+              placeholderTextColor={colors.textMuted}
+              value={fullName}
+              onChangeText={setFullName}
+              autoCapitalize="words"
+              autoComplete="name"
+            />
+
             <Text style={styles.label}>Email</Text>
             <TextInput
               style={styles.input}
@@ -148,13 +165,32 @@ export default function LoginScreen() {
             <Text style={styles.label}>Password</Text>
             <TextInput
               style={styles.input}
-              placeholder="Enter your password"
+              placeholder="Create a password"
               placeholderTextColor={colors.textMuted}
               value={password}
               onChangeText={setPassword}
               secureTextEntry
-              autoComplete="password"
+              autoComplete="password-new"
             />
+
+            {password.length > 0 && (
+              <View style={styles.strengthContainer}>
+                <View style={styles.strengthTrack}>
+                  <Animated.View
+                    style={[
+                      styles.strengthFill,
+                      {
+                        backgroundColor: strength.color,
+                        width: `${strength.ratio * 100}%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.strengthLabel, { color: strength.color }]}>
+                  {strength.label}
+                </Text>
+              </View>
+            )}
 
             {loading ? (
               <ActivityIndicator
@@ -163,31 +199,36 @@ export default function LoginScreen() {
                 style={styles.loader}
               />
             ) : (
-              <View style={styles.buttonRow}>
-                <AnimatedPressable onPress={handleLogin} style={styles.buttonFlex}>
-                  <LinearGradient
-                    colors={[colors.gradientStart, colors.gradientEnd]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.buttonPrimary}
-                  >
-                    <Text style={styles.buttonText}>Login</Text>
-                  </LinearGradient>
-                </AnimatedPressable>
-                <AnimatedPressable onPress={handleRegister} style={styles.buttonFlex}>
-                  <View style={styles.buttonSecondary}>
-                    <Text style={styles.buttonSecondaryText}>Register</Text>
-                  </View>
-                </AnimatedPressable>
-              </View>
+              <AnimatedPressable onPress={handleRegister}>
+                <LinearGradient
+                  colors={[colors.gradientStart, colors.gradientEnd]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.buttonPrimary}
+                >
+                  <Text style={styles.buttonText}>Start Free Trial</Text>
+                </LinearGradient>
+              </AnimatedPressable>
             )}
           </View>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Secure login powered by SelfMonitor
+          <View style={styles.terms}>
+            <Text style={styles.termsText}>
+              By signing up you agree to our{' '}
+              <Text style={styles.linkText}>Terms</Text> and{' '}
+              <Text style={styles.linkText}>Privacy Policy</Text>
             </Text>
           </View>
+
+          <TouchableOpacity
+            style={styles.loginLink}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Text style={styles.loginLinkText}>
+              Already have an account?{' '}
+              <Text style={styles.loginLinkBold}>Log In</Text>
+            </Text>
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -229,11 +270,17 @@ const styles = StyleSheet.create({
     color: colors.accentTeal,
     letterSpacing: -0.5,
   },
+  headline: {
+    fontSize: fontSize.lg,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: spacing.sm,
+  },
   tagline: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
+    marginTop: spacing.xs,
     textAlign: 'center',
-    marginTop: spacing.sm,
   },
   card: {
     backgroundColor: colors.bgCard,
@@ -259,47 +306,67 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  buttonRow: {
+  strengthContainer: {
     flexDirection: 'row',
-    gap: spacing.md,
-    marginTop: spacing.lg,
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.sm,
   },
-  buttonFlex: {
+  strengthTrack: {
     flex: 1,
+    height: 4,
+    backgroundColor: colors.bgElevated,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  strengthFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  strengthLabel: {
+    fontSize: fontSize.xs,
+    fontWeight: '700',
+    width: 50,
   },
   buttonPrimary: {
     borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
-  },
-  buttonSecondary: {
-    backgroundColor: 'transparent',
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.accentTeal,
+    marginTop: spacing.lg,
   },
   buttonText: {
     color: colors.text,
     fontSize: fontSize.md,
     fontWeight: '700',
   },
-  buttonSecondaryText: {
-    color: colors.accentTeal,
-    fontSize: fontSize.md,
-    fontWeight: '700',
-  },
   loader: {
     marginTop: spacing.lg,
   },
-  footer: {
-    marginTop: spacing.xl,
+  terms: {
+    marginTop: spacing.lg,
     alignItems: 'center',
   },
-  footerText: {
+  termsText: {
     fontSize: fontSize.xs,
     color: colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  linkText: {
+    color: colors.accentTeal,
+    textDecorationLine: 'underline',
+  },
+  loginLink: {
+    marginTop: spacing.lg,
+    alignItems: 'center',
+  },
+  loginLinkText: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+  },
+  loginLinkBold: {
+    color: colors.accentTeal,
+    fontWeight: '700',
   },
   messageBox: {
     borderRadius: borderRadius.md,

@@ -1,7 +1,7 @@
 """add receipt reconcile metadata columns
 
 Revision ID: c4b1f728a9d1
-Revises: 08855e9668d2
+Revises: 9e1a0c7d7f44
 Create Date: 2026-02-13 15:40:00.000000
 
 """
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "c4b1f728a9d1"
-down_revision: Union[str, None] = "08855e9668d2"
+down_revision: Union[str, None] = "9e1a0c7d7f44"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

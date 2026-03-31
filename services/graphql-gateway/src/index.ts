@@ -34,6 +34,7 @@ interface AuthContext {
     tenantId?: string;
   };
   isAuthenticated: boolean;
+  authToken?: string;
 }
 
 // Custom data source with auth headers
@@ -218,24 +219,24 @@ const startServer = async () => {
           authToken: token,
         };
       } catch (error) {
-        logger.warn('Invalid JWT token', { error: error.message });
+        logger.warn('Invalid JWT token', { error: (error as Error).message });
         return { isAuthenticated: false };
       }
     },
     introspection: process.env.NODE_ENV !== 'production',
     plugins: [
       {
-        requestDidStart() {
+        async requestDidStart() {
           return {
-            didResolveOperation({ request, operationName }) {
+            async didResolveOperation({ request, operationName }: any) {
               logger.info('GraphQL Operation', {
                 operationName,
                 query: request.query?.substring(0, 200) + '...',
               });
             },
-            didEncounterErrors({ errors }) {
+            async didEncounterErrors({ errors }: any) {
               logger.error('GraphQL Errors', { 
-                errors: errors.map(err => ({
+                errors: errors.map((err: any) => ({
                   message: err.message,
                   path: err.path,
                   locations: err.locations,
@@ -249,7 +250,7 @@ const startServer = async () => {
   });
 
   await server.start();
-  server.applyMiddleware({ app, path: '/graphql' });
+  server.applyMiddleware({ app: app as any, path: '/graphql' });
 
   const PORT = process.env.PORT || 4000;
   

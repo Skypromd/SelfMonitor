@@ -13,7 +13,7 @@ from .database import get_db
 from .pdf_generator import PDFGenerator
 from .invoice_calculator import InvoiceCalculator
 from .reporting_service import InvoiceReportingService
-from .sync_service import sync_invoice_to_transactions
+from .sync_service import InvoiceTransactionSync
 
 app = FastAPI(
     title="SelfMonitor Invoice Service",
@@ -79,8 +79,9 @@ async def create_invoice(
         invoice = await crud.create_invoice(db, user_id=user_id, invoice_data=calculated_invoice)
 
         # Sync to transactions service in background
+        sync = InvoiceTransactionSync()
         background_tasks.add_task(
-            sync_invoice_to_transactions,
+            sync.sync_invoice_to_transactions,
             invoice.id,
             token
         )

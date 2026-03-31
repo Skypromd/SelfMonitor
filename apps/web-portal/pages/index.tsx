@@ -179,11 +179,11 @@ const TESTIMONIALS = [
   },
 ];
 
-const fadeUp = {
+const fadeUp: any = {
   initial: { opacity: 0, y: 40 },
-  whileInView: { opacity: 1, y: 0 } as object,
+  whileInView: { opacity: 1, y: 0 },
   transition: { duration: 0.7 },
-  viewport: { once: true, margin: '-50px' as string },
+  viewport: { once: true, margin: '-50px' },
 };
 
 function AnimatedCounter({ target, prefix = '', suffix = '' }: { target: number; prefix?: string; suffix?: string }) {

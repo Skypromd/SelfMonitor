@@ -96,8 +96,6 @@ services:
       POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
     ports:
       - "5432:5432"
-    command: >
-      postgres -c config_file=/etc/postgresql/postgresql.conf
     networks:
       - default_network
     healthcheck:
@@ -297,7 +295,7 @@ services:
       AB_TESTING_ENABLED: "true"
     ports:
       - "5000:5000" # MLflow UI
-      - "8000:8000" # Metrics endpoint
+      - "8100:8000" # Metrics endpoint (remapped to avoid conflict with nginx-gateway)
     volumes:
       - mlflow_artifacts:/app/artifacts
     healthcheck:
@@ -329,6 +327,7 @@ services:
       AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS: "${AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS:-30}"
       AUTH_RUNTIME_CLEANUP_ENABLED: "${AUTH_RUNTIME_CLEANUP_ENABLED:-true}"
       AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS: "${AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS:-300}"
+      AUTH_DB_PATH: "/tmp/auth.db"
     # ports are no longer exposed directly
     networks:
       - default_network
@@ -338,7 +337,7 @@ services:
     build: ./services/invoice-service
     container_name: invoice-service
     environment:
-      - DATABASE_URL=postgresql+asyncpg://user:password@postgres-master:5432/db_invoices
+      - DATABASE_URL=postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_invoices
       - AUTH_SECRET_KEY=a_secure_random_string_for_jwt_signing_!@#$%^
       - PDF_OUTPUT_DIR=/app/pdfs
       - REDIS_URL=redis://redis-master:6379
@@ -353,7 +352,7 @@ services:
       - postgres-master
       - redis-master
       - auth-service
-    command: sh -c "python -m app.init_templates && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
+    command: sh -c "poetry run alembic upgrade head && poetry run uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
     healthcheck:
@@ -364,27 +363,31 @@ services:
       start_period: 40s
 
   user-profile-service:
-    build: ./services/user-profile-service
+    build:
+      context: .
+      dockerfile: services/user-profile-service/Dockerfile
     container_name: user-profile-service
     depends_on:
       - postgres-master
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${USER_PROFILE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_user_profile}"
+      DATABASE_URL: "${USER_PROFILE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_user_profile}"
     # Run migrations before starting the app server
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
 
   transactions-service:
-    build: ./services/transactions-service
+    build:
+      context: .
+      dockerfile: services/transactions-service/Dockerfile
     container_name: transactions-service
     depends_on:
       - postgres-master
       - categorization-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_transactions}"
+      DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_transactions}"
       CATEGORIZATION_SERVICE_URL: "${CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -396,26 +399,31 @@ services:
     depends_on:
       - postgres-master
     environment:
-      DATABASE_URL: "${COMPLIANCE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_compliance}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      DATABASE_URL: "${COMPLIANCE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_compliance}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
 
   consent-service:
-    build: ./services/consent-service
+    build:
+      context: .
+      dockerfile: services/consent-service/Dockerfile
     container_name: consent-service
     depends_on:
       - compliance-service
-      - postgres
+      - postgres-master
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${CONSENT_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_consent}"
+      DATABASE_URL: "${CONSENT_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_consent}"
       COMPLIANCE_SERVICE_URL: "${CONSENT_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
     networks:
       - default_network
 
   banking-connector:
-    build: ./services/banking-connector
+    build:
+      context: .
+      dockerfile: services/banking-connector/Dockerfile
     container_name: banking-connector
     depends_on:
       - transactions-service
@@ -432,12 +440,14 @@ services:
     image: redis:7-alpine
     container_name: redis
     ports:
-      - "6379:6379"
+      - "6389:6379"
     networks:
       - default_network
 
   celery-worker:
-    build: ./services/banking-connector # Use the same image as the web server
+    build:
+      context: .
+      dockerfile: services/banking-connector/Dockerfile
     container_name: celery-worker
     command: celery -A app.celery_app.celery worker --loglevel=info
     depends_on:
@@ -452,7 +462,9 @@ services:
       - default_network
 
   celery-worker-docs:
-    build: ./services/documents-service
+    build:
+      context: .
+      dockerfile: services/documents-service/Dockerfile
     container_name: celery-worker-docs
     command: celery -A app.celery_app.celery worker --loglevel=info
     depends_on:
@@ -461,7 +473,7 @@ services:
       - localstack
       - qna-service
     environment:
-      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_documents}"
+      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_documents}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
       CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
@@ -489,6 +501,7 @@ services:
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
+      LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT: "1"
     networks:
       - default_network
 
@@ -511,14 +524,16 @@ services:
       - default_network
 
   documents-service:
-    build: ./services/documents-service
+    build:
+      context: .
+      dockerfile: services/documents-service/Dockerfile
     container_name: documents-service
     depends_on:
       - postgres-master
       - localstack
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_documents}"
+      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_documents}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://localstack:4566}" # Point to LocalStack
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
@@ -537,7 +552,9 @@ services:
       - default_network
 
   tax-engine:
-    build: ./services/tax-engine
+    build:
+      context: .
+      dockerfile: services/tax-engine/Dockerfile
     container_name: tax-engine
     depends_on:
       - transactions-service
@@ -557,7 +574,9 @@ services:
       - default_network
 
   advice-service:
-    build: ./services/advice-service
+    build:
+      context: .
+      dockerfile: services/advice-service/Dockerfile
     container_name: advice-service
     depends_on:
       - transactions-service
@@ -568,14 +587,16 @@ services:
       - default_network
 
   partner-registry:
-    build: ./services/partner-registry
+    build:
+      context: .
+      dockerfile: services/partner-registry/Dockerfile
     container_name: partner-registry
     depends_on:
       - compliance-service
-      - postgres
+      - postgres-master
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:password@postgres/db_partner}"
+      DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_partner}"
       COMPLIANCE_SERVICE_URL: "${PARTNER_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
       AUTO_CREATE_SCHEMA: "${PARTNER_AUTO_CREATE_SCHEMA:-true}"
       BILLING_REPORT_ALLOWED_SCOPES: "${PARTNER_BILLING_REPORT_ALLOWED_SCOPES:-billing:read}"
@@ -614,7 +635,9 @@ services:
       - default_network
 
   integrations-service:
-    build: ./services/integrations-service
+    build:
+      context: .
+      dockerfile: services/integrations-service/Dockerfile
     container_name: integrations-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
@@ -636,7 +659,9 @@ services:
       - default_network
 
   analytics-service:
-    build: ./services/analytics-service
+    build:
+      context: .
+      dockerfile: services/analytics-service/Dockerfile
     container_name: analytics-service
     depends_on:
       - transactions-service
@@ -651,7 +676,9 @@ services:
       - default_network
 
   agent-service:
-    build: ./services/agent-service
+    build:
+      context: .
+      dockerfile: services/agent-service/Dockerfile
     container_name: agent-service
     depends_on:
       - documents-service
@@ -690,6 +717,8 @@ services:
   categorization-service:
     build: ./services/categorization-service
     container_name: categorization-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
     networks:
       - default_network
 
@@ -731,7 +760,9 @@ services:
       retries: 3
 
   qna-service:
-    build: ./services/qna-service
+    build:
+      context: .
+      dockerfile: services/qna-service/Dockerfile
     container_name: qna-service
     depends_on:
       - weaviate
@@ -802,6 +833,8 @@ services:
   calendar-service:
     build: ./services/calendar-service
     container_name: calendar-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
     networks:
       - default_network
 
@@ -839,7 +872,7 @@ services:
       PROMETHEUS_ENABLED: "true"
     depends_on:
       - postgres-master
-      - redis-cache
+      - redis
     networks:
       - default_network
     restart: unless-stopped
@@ -1023,6 +1056,39 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    restart: unless-stopped
+
+  referral-service:
+    build: ./services/referral-service
+    container_name: referral-service
+    depends_on:
+      - postgres-master
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      DATABASE_URL: "postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_referral"
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  cost-optimization:
+    build: ./services/cost-optimization
+    container_name: cost-optimization
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
 volumes:
