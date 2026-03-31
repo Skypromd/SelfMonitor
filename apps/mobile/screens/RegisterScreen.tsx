@@ -114,7 +114,7 @@ export default function RegisterScreen() {
             </View>
             <Text style={styles.brandName}>SelfMonitor</Text>
             <Text style={styles.headline}>Start your free trial</Text>
-            <Text style={styles.subheadline}>
+            <Text style={styles.tagline}>
               Financial tools built for the self-employed
             </Text>
           </View>
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginTop: spacing.sm,
   },
-  subheadline: {
+  tagline: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
     marginTop: spacing.xs,
