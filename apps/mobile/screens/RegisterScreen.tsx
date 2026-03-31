@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { colors, spacing, fontSize } from '../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { useAuth } from '../context/AuthContext';
 
 function getPasswordStrength(pw: string): { label: string; color: string; ratio: number } {
@@ -23,10 +25,42 @@ function getPasswordStrength(pw: string): { label: string; color: string; ratio:
   if (/[A-Z]/.test(pw)) score++;
   if (/[0-9]/.test(pw)) score++;
   if (/[^A-Za-z0-9]/.test(pw)) score++;
-  if (score <= 1) return { label: 'Weak', color: colors.error, ratio: 0.25 };
-  if (score === 2) return { label: 'Fair', color: colors.accentGold, ratio: 0.5 };
-  if (score === 3) return { label: 'Good', color: colors.accentTealLight, ratio: 0.75 };
-  return { label: 'Strong', color: colors.success, ratio: 1 };
+  if (score <= 1) return { label: 'Weak', color: colors.expense, ratio: 0.25 };
+  if (score === 2) return { label: 'Fair', color: colors.warning, ratio: 0.5 };
+  if (score === 3) return { label: 'Good', color: colors.accentTeal, ratio: 0.75 };
+  return { label: 'Strong', color: colors.income, ratio: 1 };
+}
+
+function AnimatedPressable({
+  onPress,
+  style,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={() =>
+          Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scale, { toValue: 1, friction: 3, useNativeDriver: true }).start()
+        }
+        activeOpacity={0.9}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
 }
 
 export default function RegisterScreen() {
@@ -71,9 +105,19 @@ export default function RegisterScreen() {
         <ScrollView
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>SelfMonitor</Text>
-          <Text style={styles.subtitle}>Start your free trial today</Text>
+          {/* Brand */}
+          <View style={styles.brandSection}>
+            <View style={styles.logoCircle}>
+              <Text style={styles.logoEmoji}>💎</Text>
+            </View>
+            <Text style={styles.brandName}>SelfMonitor</Text>
+            <Text style={styles.headline}>Start your free trial</Text>
+            <Text style={styles.subheadline}>
+              Financial tools built for the self-employed
+            </Text>
+          </View>
 
           {message && (
             <View
@@ -93,6 +137,7 @@ export default function RegisterScreen() {
             </View>
           )}
 
+          {/* Form Card */}
           <View style={styles.card}>
             <Text style={styles.label}>Full Name (optional)</Text>
             <TextInput
@@ -131,7 +176,7 @@ export default function RegisterScreen() {
             {password.length > 0 && (
               <View style={styles.strengthContainer}>
                 <View style={styles.strengthTrack}>
-                  <View
+                  <Animated.View
                     style={[
                       styles.strengthFill,
                       {
@@ -154,13 +199,20 @@ export default function RegisterScreen() {
                 style={styles.loader}
               />
             ) : (
-              <TouchableOpacity style={styles.buttonPrimary} onPress={handleRegister}>
-                <Text style={styles.buttonText}>Start Free Trial</Text>
-              </TouchableOpacity>
+              <AnimatedPressable onPress={handleRegister}>
+                <LinearGradient
+                  colors={[colors.gradientStart, colors.gradientEnd]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.buttonPrimary}
+                >
+                  <Text style={styles.buttonText}>Start Free Trial</Text>
+                </LinearGradient>
+              </AnimatedPressable>
             )}
           </View>
 
-          <View style={styles.links}>
+          <View style={styles.terms}>
             <Text style={styles.termsText}>
               By signing up you agree to our{' '}
               <Text style={styles.linkText}>Terms</Text> and{' '}
@@ -196,35 +248,58 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.lg,
   },
-  title: {
-    fontSize: fontSize.xxl,
-    fontWeight: '700',
-    color: colors.accentTealLight,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  subtitle: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    textAlign: 'center',
+  brandSection: {
+    alignItems: 'center',
     marginBottom: spacing.xl,
   },
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accentTealBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  logoEmoji: {
+    fontSize: 32,
+  },
+  brandName: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.accentTeal,
+    letterSpacing: -0.5,
+  },
+  headline: {
+    fontSize: fontSize.lg,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: spacing.sm,
+  },
+  subheadline: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
   card: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
   },
   label: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     color: colors.textMuted,
     marginBottom: spacing.xs,
     marginTop: spacing.md,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: colors.bgCard,
-    borderRadius: 8,
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.sm,
     padding: spacing.md,
     color: colors.text,
     fontSize: fontSize.md,
@@ -239,23 +314,22 @@ const styles = StyleSheet.create({
   },
   strengthTrack: {
     flex: 1,
-    height: 6,
-    backgroundColor: colors.bgCard,
-    borderRadius: 3,
+    height: 4,
+    backgroundColor: colors.bgElevated,
+    borderRadius: 2,
     overflow: 'hidden',
   },
   strengthFill: {
     height: '100%',
-    borderRadius: 3,
+    borderRadius: 2,
   },
   strengthLabel: {
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '700',
     width: 50,
   },
   buttonPrimary: {
-    backgroundColor: colors.accentTeal,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     marginTop: spacing.lg,
@@ -263,12 +337,12 @@ const styles = StyleSheet.create({
   buttonText: {
     color: colors.text,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   loader: {
     marginTop: spacing.lg,
   },
-  links: {
+  terms: {
     marginTop: spacing.lg,
     alignItems: 'center',
   },
@@ -276,9 +350,10 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xs,
     color: colors.textMuted,
     textAlign: 'center',
+    lineHeight: 18,
   },
   linkText: {
-    color: colors.accentTealLight,
+    color: colors.accentTeal,
     textDecorationLine: 'underline',
   },
   loginLink: {
@@ -290,27 +365,27 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   loginLinkBold: {
-    color: colors.accentTealLight,
-    fontWeight: '600',
+    color: colors.accentTeal,
+    fontWeight: '700',
   },
   messageBox: {
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
   },
   errorBox: {
-    backgroundColor: colors.errorBg,
+    backgroundColor: colors.expenseBg,
   },
   successBox: {
-    backgroundColor: colors.successBg,
+    backgroundColor: colors.incomeBg,
   },
   messageText: {
     fontSize: fontSize.sm,
   },
   errorText: {
-    color: colors.error,
+    color: colors.expense,
   },
   successText: {
-    color: colors.success,
+    color: colors.income,
   },
 });

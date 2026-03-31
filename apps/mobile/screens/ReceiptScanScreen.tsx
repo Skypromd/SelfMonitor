@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,10 +8,11 @@ import {
   Alert,
   Image,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { colors, spacing, fontSize } from '../theme';
+import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
 
 type ReceiptResult = {
@@ -20,11 +21,67 @@ type ReceiptResult = {
   date: string;
 };
 
+function AnimatedPressable({
+  onPress,
+  style,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={() =>
+          Animated.spring(scale, { toValue: 0.94, useNativeDriver: true }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scale, { toValue: 1, friction: 3, useNativeDriver: true }).start()
+        }
+        activeOpacity={0.9}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
 export default function ReceiptScanScreen() {
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<ReceiptResult | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const successScale = useRef(new Animated.Value(0)).current;
+  const successOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (result) {
+      Animated.parallel([
+        Animated.spring(successScale, {
+          toValue: 1,
+          tension: 50,
+          friction: 5,
+          useNativeDriver: true,
+        }),
+        Animated.timing(successOpacity, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      successScale.setValue(0);
+      successOpacity.setValue(0);
+    }
+  }, [result, successScale, successOpacity]);
 
   const pickFromCamera = useCallback(async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -124,68 +181,137 @@ export default function ReceiptScanScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
         <Text style={styles.title}>Scan Receipt</Text>
         <Text style={styles.subtitle}>
-          Take a photo or pick from gallery to extract receipt data
+          Capture or upload a receipt to auto-extract data
         </Text>
 
         {!imageUri && !processing && (
           <View style={styles.cameraArea}>
-            <TouchableOpacity style={styles.cameraButton} onPress={pickFromCamera}>
-              <Text style={styles.cameraIcon}>📸</Text>
-              <Text style={styles.cameraLabel}>Take Photo</Text>
-            </TouchableOpacity>
+            <View style={styles.cameraRing}>
+              <AnimatedPressable onPress={pickFromCamera}>
+                <View style={styles.cameraButton}>
+                  <Text style={styles.cameraIcon}>📸</Text>
+                </View>
+              </AnimatedPressable>
+            </View>
+            <Text style={styles.cameraHint}>Tap to take photo</Text>
+
+            <AnimatedPressable onPress={pickFromGallery} style={styles.galleryLink}>
+              <View style={styles.galleryButton}>
+                <Text style={styles.galleryEmoji}>🖼️</Text>
+                <Text style={styles.galleryButtonText}>Pick from Gallery</Text>
+              </View>
+            </AnimatedPressable>
           </View>
         )}
 
         {imageUri && (
           <View style={styles.previewCard}>
             <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="cover" />
+            <View style={styles.previewOverlay}>
+              <Text style={styles.previewLabel}>Receipt Preview</Text>
+            </View>
           </View>
         )}
 
         {processing && (
           <View style={styles.processingCard}>
-            <ActivityIndicator size="large" color={colors.accentTeal} />
-            <Text style={styles.processingText}>Processing receipt...</Text>
+            <View style={styles.processingDots}>
+              <PulsingDot delay={0} />
+              <PulsingDot delay={200} />
+              <PulsingDot delay={400} />
+            </View>
+            <Text style={styles.processingText}>Analyzing receipt...</Text>
           </View>
         )}
 
         {result && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultTitle}>Extracted Data</Text>
-            <View style={styles.resultRow}>
-              <Text style={styles.resultLabel}>Merchant</Text>
-              <Text style={styles.resultValue}>{result.merchant}</Text>
+          <Animated.View
+            style={[
+              styles.resultCard,
+              {
+                opacity: successOpacity,
+                transform: [{ scale: successScale }],
+              },
+            ]}
+          >
+            <View style={styles.resultHeader}>
+              <Text style={styles.resultCheck}>✓</Text>
+              <Text style={styles.resultTitle}>Extracted Data</Text>
             </View>
-            <View style={styles.resultRow}>
-              <Text style={styles.resultLabel}>Amount</Text>
-              <Text style={styles.resultValue}>£{result.amount.toFixed(2)}</Text>
-            </View>
-            <View style={styles.resultRow}>
-              <Text style={styles.resultLabel}>Date</Text>
-              <Text style={styles.resultValue}>{result.date}</Text>
-            </View>
-            <TouchableOpacity
-              style={styles.saveButton}
-              onPress={saveAsTransaction}
-              disabled={saving}
-            >
-              {saving ? (
-                <ActivityIndicator color={colors.text} />
-              ) : (
-                <Text style={styles.saveButtonText}>Save as Transaction</Text>
-              )}
-            </TouchableOpacity>
-          </View>
-        )}
 
-        <TouchableOpacity style={styles.galleryButton} onPress={pickFromGallery}>
-          <Text style={styles.galleryButtonText}>Pick from Gallery</Text>
-        </TouchableOpacity>
+            <View style={styles.resultAmount}>
+              <Text style={styles.resultAmountValue}>£{result.amount.toFixed(2)}</Text>
+            </View>
+
+            <View style={styles.resultDetails}>
+              <View style={styles.resultRow}>
+                <Text style={styles.resultLabel}>Merchant</Text>
+                <Text style={styles.resultValue}>{result.merchant}</Text>
+              </View>
+              <View style={[styles.resultRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.resultLabel}>Date</Text>
+                <Text style={styles.resultValue}>{result.date}</Text>
+              </View>
+            </View>
+
+            <AnimatedPressable onPress={saveAsTransaction} disabled={saving}>
+              <View style={styles.saveButton}>
+                {saving ? (
+                  <ActivityIndicator color={colors.textInverse} />
+                ) : (
+                  <Text style={styles.saveButtonText}>Save as Transaction</Text>
+                )}
+              </View>
+            </AnimatedPressable>
+
+            <AnimatedPressable
+              onPress={() => {
+                setImageUri(null);
+                setResult(null);
+              }}
+            >
+              <View style={styles.retakeButton}>
+                <Text style={styles.retakeButtonText}>Scan Another</Text>
+              </View>
+            </AnimatedPressable>
+          </Animated.View>
+        )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function PulsingDot({ delay }: { delay: number }) {
+  const opacity = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const anim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 500,
+          delay,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacity, {
+          toValue: 0.3,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [opacity, delay]);
+
+  return (
+    <Animated.View style={[styles.dot, { opacity }]} />
   );
 }
 
@@ -195,12 +321,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   scroll: {
-    padding: spacing.md,
-    paddingBottom: spacing.xl,
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
   title: {
     fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.text,
   },
   subtitle: {
@@ -212,30 +338,59 @@ const styles = StyleSheet.create({
   cameraArea: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.xl * 2,
+    paddingVertical: spacing.xxl,
   },
-  cameraButton: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 60,
-    width: 120,
-    height: 120,
+  cameraRing: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    borderWidth: 3,
+    borderColor: colors.accentTeal,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.accentTeal,
+    padding: 6,
+  },
+  cameraButton: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: colors.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cameraIcon: {
-    fontSize: 36,
+    fontSize: 40,
   },
-  cameraLabel: {
-    fontSize: fontSize.xs,
-    color: colors.text,
-    marginTop: spacing.xs,
+  cameraHint: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    marginTop: spacing.md,
+  },
+  galleryLink: {
+    marginTop: spacing.xl,
+  },
+  galleryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  galleryEmoji: {
+    fontSize: 18,
+  },
+  galleryButtonText: {
+    color: colors.textSecondary,
+    fontSize: fontSize.sm,
     fontWeight: '600',
   },
   previewCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
     overflow: 'hidden',
     marginBottom: spacing.md,
     borderWidth: 1,
@@ -243,35 +398,84 @@ const styles = StyleSheet.create({
   },
   preview: {
     width: '100%',
-    height: 200,
+    height: 220,
+  },
+  previewOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.overlay,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  previewLabel: {
+    color: colors.text,
+    fontSize: fontSize.sm,
+    fontWeight: '600',
   },
   processingCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
-    padding: spacing.xl,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xxl,
     alignItems: 'center',
     marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
+  processingDots: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.accentTeal,
+  },
   processingText: {
     fontSize: fontSize.md,
-    color: colors.textMuted,
-    marginTop: spacing.md,
+    color: colors.textSecondary,
   },
   resultCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    marginBottom: spacing.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.accentTeal,
+  },
+  resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  resultCheck: {
+    fontSize: fontSize.lg,
+    color: colors.income,
+    fontWeight: '700',
   },
   resultTitle: {
     fontSize: fontSize.lg,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: spacing.md,
+  },
+  resultAmount: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+  },
+  resultAmountValue: {
+    fontSize: fontSize.hero,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -1,
+  },
+  resultDetails: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
   },
   resultRow: {
     flexDirection: 'row',
@@ -287,30 +491,30 @@ const styles = StyleSheet.create({
   resultValue: {
     fontSize: fontSize.sm,
     color: colors.text,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   saveButton: {
     backgroundColor: colors.accentTeal,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
-    marginTop: spacing.lg,
+    marginBottom: spacing.sm,
   },
   saveButtonText: {
-    color: colors.text,
+    color: colors.textInverse,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  galleryButton: {
+  retakeButton: {
     backgroundColor: 'transparent',
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.accentTeal,
+    borderColor: colors.borderLight,
   },
-  galleryButtonText: {
-    color: colors.accentTealLight,
+  retakeButtonText: {
+    color: colors.textSecondary,
     fontSize: fontSize.md,
     fontWeight: '600',
   },

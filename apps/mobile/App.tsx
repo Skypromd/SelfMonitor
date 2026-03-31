@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -7,7 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { colors } from './theme';
+import { colors, fontSize } from './theme';
 
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
@@ -36,9 +36,26 @@ const DarkTheme = {
     card: colors.bgElevated,
     text: colors.text,
     border: colors.border,
-    notification: colors.accentGold,
+    notification: colors.warning,
   },
 };
+
+const TAB_ICONS: Record<string, { active: string; inactive: string }> = {
+  Dashboard: { active: '🏠', inactive: '🏠' },
+  ReceiptScan: { active: '📸', inactive: '📸' },
+  BankSync: { active: '🔄', inactive: '🔄' },
+  AIAssistant: { active: '🤖', inactive: '🤖' },
+  More: { active: '⋯', inactive: '⋯' },
+};
+
+function TabIcon({ name, focused }: { name: string; focused: boolean }) {
+  const icons = TAB_ICONS[name] || { active: '•', inactive: '•' };
+  return (
+    <Text style={{ fontSize: focused ? 22 : 20, opacity: focused ? 1 : 0.5 }}>
+      {focused ? icons.active : icons.inactive}
+    </Text>
+  );
+}
 
 function MoreNavigator() {
   return (
@@ -70,25 +87,36 @@ function AuthNavigator() {
 function MainTabs() {
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerStyle: { backgroundColor: colors.bgElevated },
         headerTintColor: colors.text,
-        headerTitleStyle: { fontWeight: '600' },
+        headerTitleStyle: { fontWeight: '700', fontSize: fontSize.lg },
         tabBarStyle: {
           backgroundColor: colors.bgElevated,
           borderTopColor: colors.border,
           borderTopWidth: 1,
+          paddingTop: 4,
+          height: 60,
         },
         tabBarActiveTintColor: colors.accentTeal,
         tabBarInactiveTintColor: colors.textMuted,
-        tabBarLabelStyle: { fontSize: 12, fontWeight: '500' },
-      }}
+        tabBarLabelStyle: {
+          fontSize: fontSize.xs,
+          fontWeight: '600',
+          marginTop: -2,
+        },
+        tabBarIcon: ({ focused }) => (
+          <TabIcon name={route.name} focused={focused} />
+        ),
+        tabBarShowLabel: true,
+      })}
     >
       <Tab.Screen
         name="Dashboard"
         component={DashboardScreen}
         options={{
           tabBarLabel: 'Home',
+          headerShown: false,
         }}
       />
       <Tab.Screen
@@ -96,6 +124,7 @@ function MainTabs() {
         component={ReceiptScanScreen}
         options={{
           tabBarLabel: 'Scan',
+          headerShown: false,
         }}
       />
       <Tab.Screen
@@ -103,6 +132,7 @@ function MainTabs() {
         component={BankSyncScreen}
         options={{
           tabBarLabel: 'Sync',
+          headerShown: false,
         }}
       />
       <Tab.Screen
@@ -110,6 +140,7 @@ function MainTabs() {
         component={AIAssistantScreen}
         options={{
           tabBarLabel: 'AI',
+          headerShown: false,
         }}
       />
       <Tab.Screen

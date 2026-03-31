@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,9 +12,11 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, fontSize } from '../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue';
@@ -34,6 +36,7 @@ const FILTERS: Array<{ label: string; value: InvoiceStatus | 'all' }> = [
   { label: 'Draft', value: 'draft' },
   { label: 'Sent', value: 'sent' },
   { label: 'Paid', value: 'paid' },
+  { label: 'Overdue', value: 'overdue' },
 ];
 
 const MOCK_INVOICES: Invoice[] = [
@@ -43,12 +46,44 @@ const MOCK_INVOICES: Invoice[] = [
   { id: '4', client_name: 'BigCorp', client_email: 'ap@bigcorp.com', amount: 5000, due_date: '2026-03-01', description: 'Monthly retainer', status: 'paid' },
 ];
 
-const STATUS_STYLES: Record<InvoiceStatus, { bg: string; text: string }> = {
-  draft: { bg: colors.bgCard, text: colors.textMuted },
-  sent: { bg: 'rgba(13,148,136,0.15)', text: colors.accentTealLight },
-  paid: { bg: colors.successBg, text: colors.success },
-  overdue: { bg: colors.errorBg, text: colors.error },
+const STATUS_CONFIG: Record<InvoiceStatus, { bg: string; text: string; dot: string }> = {
+  draft: { bg: colors.bgElevated, text: colors.textMuted, dot: colors.textMuted },
+  sent: { bg: colors.infoBg, text: colors.info, dot: colors.info },
+  paid: { bg: colors.incomeBg, text: colors.income, dot: colors.income },
+  overdue: { bg: colors.expenseBg, text: colors.expense, dot: colors.expense },
 };
+
+function AnimatedPressable({
+  onPress,
+  style,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={() =>
+          Animated.spring(scale, { toValue: 0.96, useNativeDriver: true }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scale, { toValue: 1, friction: 3, useNativeDriver: true }).start()
+        }
+        activeOpacity={0.9}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 export default function InvoicesScreen() {
   const [invoices, setInvoices] = useState<Invoice[]>(MOCK_INVOICES);
@@ -67,6 +102,10 @@ export default function InvoicesScreen() {
     filter === 'all'
       ? invoices
       : invoices.filter((inv) => inv.status === filter);
+
+  const totalOutstanding = invoices
+    .filter((inv) => inv.status === 'sent' || inv.status === 'overdue')
+    .reduce((sum, inv) => sum + inv.amount, 0);
 
   const fetchInvoices = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -135,23 +174,26 @@ export default function InvoicesScreen() {
   };
 
   const renderInvoice = ({ item }: { item: Invoice }) => {
-    const statusStyle = STATUS_STYLES[item.status];
+    const cfg = STATUS_CONFIG[item.status];
     return (
       <View style={styles.invoiceCard}>
         <View style={styles.invoiceHeader}>
-          <Text style={styles.clientName}>{item.client_name}</Text>
-          <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-            <Text style={[styles.statusText, { color: statusStyle.text }]}>
+          <View style={styles.invoiceHeaderLeft}>
+            <Text style={styles.clientName}>{item.client_name}</Text>
+            <Text style={styles.invoiceDescription} numberOfLines={1}>
+              {item.description}
+            </Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: cfg.bg }]}>
+            <View style={[styles.statusDot, { backgroundColor: cfg.dot }]} />
+            <Text style={[styles.statusText, { color: cfg.text }]}>
               {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
             </Text>
           </View>
         </View>
-        <Text style={styles.invoiceDescription} numberOfLines={1}>
-          {item.description}
-        </Text>
         <View style={styles.invoiceFooter}>
-          <Text style={styles.invoiceAmount}>£{item.amount.toFixed(2)}</Text>
-          <Text style={styles.invoiceDate}>Due: {item.due_date}</Text>
+          <Text style={styles.invoiceAmount}>£{item.amount.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</Text>
+          <Text style={styles.invoiceDate}>Due {item.due_date}</Text>
         </View>
       </View>
     );
@@ -161,26 +203,33 @@ export default function InvoicesScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <Text style={styles.title}>Invoices</Text>
+        <Text style={styles.outstandingText}>
+          £{totalOutstanding.toLocaleString('en-GB', { minimumFractionDigits: 2 })} outstanding
+        </Text>
       </View>
 
-      <View style={styles.filterRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+      >
         {FILTERS.map((f) => (
           <TouchableOpacity
             key={f.value}
-            style={[styles.filterTab, filter === f.value && styles.filterTabActive]}
+            style={[styles.filterChip, filter === f.value && styles.filterChipActive]}
             onPress={() => setFilter(f.value)}
           >
             <Text
               style={[
-                styles.filterTabText,
-                filter === f.value && styles.filterTabTextActive,
+                styles.filterChipText,
+                filter === f.value && styles.filterChipTextActive,
               ]}
             >
               {f.label}
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       {loading ? (
         <ActivityIndicator size="large" color={colors.accentTeal} style={styles.loader} />
@@ -190,18 +239,27 @@ export default function InvoicesScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderInvoice}
           contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <Text style={styles.emptyText}>No invoices found.</Text>
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyEmoji}>📄</Text>
+              <Text style={styles.emptyText}>No invoices found</Text>
+            </View>
           }
         />
       )}
 
-      <TouchableOpacity
-        style={styles.fab}
+      <AnimatedPressable
         onPress={() => setShowCreate(true)}
+        style={styles.fabWrapper}
       >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
+        <LinearGradient
+          colors={[colors.gradientStart, colors.gradientEnd]}
+          style={styles.fab}
+        >
+          <Text style={styles.fabText}>+</Text>
+        </LinearGradient>
+      </AnimatedPressable>
 
       <Modal visible={showCreate} animationType="slide" transparent>
         <KeyboardAvoidingView
@@ -209,7 +267,8 @@ export default function InvoicesScreen() {
           style={styles.modalOverlay}
         >
           <View style={styles.modalContent}>
-            <ScrollView>
+            <View style={styles.modalHandle} />
+            <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalTitle}>New Invoice</Text>
 
               <Text style={styles.label}>Client Name *</Text>
@@ -263,17 +322,20 @@ export default function InvoicesScreen() {
               />
 
               <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={styles.createButton}
-                  onPress={createInvoice}
-                  disabled={creating}
-                >
-                  {creating ? (
-                    <ActivityIndicator color={colors.text} />
-                  ) : (
-                    <Text style={styles.createButtonText}>Create Invoice</Text>
-                  )}
-                </TouchableOpacity>
+                <AnimatedPressable onPress={createInvoice} disabled={creating}>
+                  <LinearGradient
+                    colors={[colors.gradientStart, colors.gradientEnd]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.createButton}
+                  >
+                    {creating ? (
+                      <ActivityIndicator color={colors.text} />
+                    ) : (
+                      <Text style={styles.createButtonText}>Create Invoice</Text>
+                    )}
+                  </LinearGradient>
+                </AnimatedPressable>
                 <TouchableOpacity
                   style={styles.cancelButton}
                   onPress={() => {
@@ -298,78 +360,94 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   header: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
   },
   title: {
     fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.text,
   },
+  outstandingText: {
+    fontSize: fontSize.sm,
+    color: colors.warning,
+    marginTop: spacing.xs,
+    fontWeight: '600',
+  },
   filterRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.md,
     gap: spacing.sm,
   },
-  filterTab: {
+  filterChip: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: 20,
-    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.bgCard,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  filterTabActive: {
+  filterChipActive: {
     backgroundColor: colors.accentTeal,
     borderColor: colors.accentTeal,
   },
-  filterTabText: {
+  filterChipText: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
     fontWeight: '600',
   },
-  filterTabTextActive: {
-    color: colors.text,
+  filterChipTextActive: {
+    color: colors.textInverse,
   },
   list: {
-    padding: spacing.md,
-    paddingTop: 0,
-    paddingBottom: 80,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: 100,
   },
   invoiceCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
   invoiceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
+    alignItems: 'flex-start',
+    marginBottom: spacing.md,
+  },
+  invoiceHeaderLeft: {
+    flex: 1,
+    marginRight: spacing.sm,
   },
   clientName: {
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.text,
-    flex: 1,
   },
   statusBadge: {
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: borderRadius.full,
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
+    gap: spacing.xs,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusText: {
     fontSize: fontSize.xs,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   invoiceDescription: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
-    marginBottom: spacing.sm,
+    marginTop: 2,
   },
   invoiceFooter: {
     flexDirection: 'row',
@@ -377,63 +455,74 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   invoiceAmount: {
-    fontSize: fontSize.lg,
-    fontWeight: '700',
+    fontSize: fontSize.xl,
+    fontWeight: '800',
     color: colors.text,
   },
   invoiceDate: {
     fontSize: fontSize.xs,
     color: colors.textMuted,
   },
-  fab: {
+  fabWrapper: {
     position: 'absolute',
     right: spacing.lg,
     bottom: spacing.lg,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.accentTeal,
+  },
+  fab: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
+    elevation: 8,
+    shadowColor: colors.accentTeal,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   fabText: {
     fontSize: 28,
-    color: colors.text,
+    color: colors.textInverse,
     fontWeight: '600',
     lineHeight: 30,
   },
   modalOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: colors.overlay,
   },
   modalContent: {
     backgroundColor: colors.bg,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: borderRadius.xl,
+    borderTopRightRadius: borderRadius.xl,
     padding: spacing.lg,
     maxHeight: '85%',
   },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: colors.borderLight,
+    alignSelf: 'center',
+    marginBottom: spacing.md,
+  },
   modalTitle: {
     fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.text,
     marginBottom: spacing.lg,
   },
   label: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     color: colors.textMuted,
     marginBottom: spacing.xs,
     marginTop: spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
     backgroundColor: colors.bgCard,
-    borderRadius: 8,
+    borderRadius: borderRadius.sm,
     padding: spacing.md,
     color: colors.text,
     fontSize: fontSize.md,
@@ -447,25 +536,25 @@ const styles = StyleSheet.create({
   modalButtons: {
     marginTop: spacing.lg,
     gap: spacing.sm,
+    paddingBottom: spacing.xl,
   },
   createButton: {
-    backgroundColor: colors.accentTeal,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
   },
   createButtonText: {
-    color: colors.text,
+    color: colors.textInverse,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   cancelButton: {
     backgroundColor: 'transparent',
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderLight,
   },
   cancelButtonText: {
     color: colors.textMuted,
@@ -475,10 +564,16 @@ const styles = StyleSheet.create({
   loader: {
     marginTop: spacing.xl,
   },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+  },
+  emptyEmoji: {
+    fontSize: 40,
+    marginBottom: spacing.md,
+  },
   emptyText: {
     color: colors.textMuted,
-    fontSize: fontSize.sm,
-    textAlign: 'center',
-    marginTop: spacing.xl,
+    fontSize: fontSize.md,
   },
 });

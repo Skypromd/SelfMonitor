@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,9 +8,11 @@ import {
   Alert,
   TextInput,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, fontSize } from '../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
 
 type LenderMatch = {
@@ -32,6 +34,46 @@ const INITIAL_CHECKLIST: ChecklistItem[] = [
   { label: 'Business accounts (2 years)', done: true },
   { label: 'Credit report review', done: false },
 ];
+
+const MOCK_LENDERS: LenderMatch[] = [
+  { name: 'Halifax', rate: '4.29%', max_ltv: '90%' },
+  { name: 'Nationwide', rate: '4.49%', max_ltv: '85%' },
+  { name: 'Barclays', rate: '4.59%', max_ltv: '90%' },
+];
+
+const MEDAL = ['🏆', '🥈', '🥉'];
+
+function AnimatedPressable({
+  onPress,
+  style,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={() =>
+          Animated.spring(scale, { toValue: 0.96, useNativeDriver: true }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scale, { toValue: 1, friction: 3, useNativeDriver: true }).start()
+        }
+        activeOpacity={0.9}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 export default function MortgageScreen() {
   const [readinessScore, setReadinessScore] = useState(62);
@@ -163,34 +205,63 @@ export default function MortgageScreen() {
   };
 
   const scoreColor =
-    readinessScore >= 80 ? colors.success : readinessScore >= 50 ? colors.accentGold : colors.error;
+    readinessScore >= 80 ? colors.income : readinessScore >= 50 ? colors.warning : colors.expense;
+  const completedChecklist = checklist.filter((c) => c.done).length;
+
+  const maxBorrow = income ? parseFloat(income) * 4.5 : null;
+  const monthlyPayment = maxBorrow ? Math.round((maxBorrow * 0.058) / 12) : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Text style={styles.title}>Mortgage Readiness</Text>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.title}>🏠 Mortgage Readiness</Text>
 
+        {/* Score Circle */}
         <View style={styles.scoreCard}>
-          <View style={[styles.scoreCircle, { borderColor: scoreColor }]}>
-            {readinessLoading ? (
-              <ActivityIndicator size="large" color={scoreColor} />
-            ) : (
-              <Text style={[styles.scoreText, { color: scoreColor }]}>
-                {readinessScore}%
-              </Text>
-            )}
+          <View style={[styles.scoreCircleOuter, { borderColor: scoreColor }]}>
+            <View style={styles.scoreCircleInner}>
+              {readinessLoading ? (
+                <ActivityIndicator size="large" color={scoreColor} />
+              ) : (
+                <>
+                  <Text style={[styles.scoreValue, { color: scoreColor }]}>
+                    {readinessScore}%
+                  </Text>
+                  <Text style={styles.scoreWord}>Score</Text>
+                </>
+              )}
+            </View>
           </View>
-          <Text style={styles.scoreLabel}>
-            Your mortgage readiness: {readinessScore}% — {readinessLabel}
-          </Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={fetchReadiness}>
-            <Text style={styles.refreshButtonText}>Refresh Score</Text>
-          </TouchableOpacity>
+          <Text style={styles.scoreLabel}>{readinessLabel}</Text>
+          <AnimatedPressable onPress={fetchReadiness}>
+            <View style={styles.refreshPill}>
+              <Text style={styles.refreshPillText}>↻ Refresh</Text>
+            </View>
+          </AnimatedPressable>
         </View>
 
+        {/* Affordability */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Affordability</Text>
+        </View>
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Affordability Calculator</Text>
-          <Text style={styles.label}>Annual Income (£)</Text>
+          {maxBorrow && (
+            <View style={styles.affordHero}>
+              <Text style={styles.affordLabel}>You could borrow up to</Text>
+              <Text style={styles.affordAmount}>
+                £{maxBorrow.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+              </Text>
+              {monthlyPayment && (
+                <Text style={styles.affordMonthly}>
+                  Monthly: ~£{monthlyPayment.toLocaleString('en-GB')}
+                </Text>
+              )}
+            </View>
+          )}
+          <Text style={styles.inputLabel}>Annual Income (£)</Text>
           <TextInput
             style={styles.input}
             value={income}
@@ -211,22 +282,70 @@ export default function MortgageScreen() {
               ))}
             </View>
           )}
-          <TouchableOpacity
-            style={styles.button}
-            onPress={calculateAffordability}
-            disabled={affordLoading}
-          >
-            {affordLoading ? (
-              <ActivityIndicator color={colors.text} />
-            ) : (
-              <Text style={styles.buttonText}>Calculate</Text>
-            )}
-          </TouchableOpacity>
+          <AnimatedPressable onPress={calculateAffordability} disabled={affordLoading}>
+            <LinearGradient
+              colors={[colors.gradientStart, colors.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              {affordLoading ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={styles.gradientButtonText}>Calculate →</Text>
+              )}
+            </LinearGradient>
+          </AnimatedPressable>
         </View>
 
+        {/* Best Lenders */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Best Lenders for You</Text>
+        </View>
+        {lenders.length > 0 ? (
+          <View style={styles.card}>
+            {lenders.map((l, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.lenderRow,
+                  i === lenders.length - 1 && { borderBottomWidth: 0 },
+                ]}
+              >
+                <View style={styles.lenderLeft}>
+                  <Text style={styles.lenderMedal}>{MEDAL[i] || '🏅'}</Text>
+                  <Text style={styles.lenderName}>{l.name}</Text>
+                </View>
+                <View style={styles.lenderRight}>
+                  <Text style={styles.lenderRate}>{l.rate}</Text>
+                  <Text style={styles.lenderLtv}>LTV {l.max_ltv}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <AnimatedPressable onPress={matchLenders} disabled={lenderLoading}>
+            <LinearGradient
+              colors={[colors.gradientStart, colors.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={[styles.gradientButton, { marginHorizontal: spacing.lg }]}
+            >
+              {lenderLoading ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={styles.gradientButtonText}>Match Me With Lenders</Text>
+              )}
+            </LinearGradient>
+          </AnimatedPressable>
+        )}
+
+        {/* Stamp Duty */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Stamp Duty</Text>
+        </View>
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Stamp Duty Calculator</Text>
-          <Text style={styles.label}>Property Value (£)</Text>
+          <Text style={styles.inputLabel}>Property Value (£)</Text>
           <TextInput
             style={styles.input}
             value={propertyValue}
@@ -236,34 +355,62 @@ export default function MortgageScreen() {
             keyboardType="numeric"
           />
           {stampDuty != null && (
-            <View style={styles.resultBox}>
-              <Text style={styles.resultText}>
-                Stamp Duty: £{stampDuty.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
+            <View style={styles.stampResult}>
+              <Text style={styles.stampLabel}>Stamp Duty</Text>
+              <Text style={styles.stampValue}>
+                £{stampDuty.toLocaleString('en-GB', { maximumFractionDigits: 0 })}
               </Text>
+              {stampDuty === 0 && (
+                <Text style={styles.stampNote}>First-time buyer relief may apply</Text>
+              )}
             </View>
           )}
-          <TouchableOpacity
-            style={styles.button}
-            onPress={calculateStampDuty}
-            disabled={stampLoading}
-          >
-            {stampLoading ? (
-              <ActivityIndicator color={colors.text} />
-            ) : (
-              <Text style={styles.buttonText}>Calculate</Text>
-            )}
-          </TouchableOpacity>
+          <AnimatedPressable onPress={calculateStampDuty} disabled={stampLoading}>
+            <LinearGradient
+              colors={[colors.gradientStart, colors.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.gradientButton}
+            >
+              {stampLoading ? (
+                <ActivityIndicator color={colors.text} />
+              ) : (
+                <Text style={styles.gradientButtonText}>Calculate</Text>
+              )}
+            </LinearGradient>
+          </AnimatedPressable>
         </View>
 
+        {/* Document Checklist */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>
+            Document Checklist ({completedChecklist}/{checklist.length})
+          </Text>
+        </View>
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Document Checklist</Text>
+          <View style={styles.checklistProgress}>
+            <View
+              style={[
+                styles.checklistProgressFill,
+                { width: `${(completedChecklist / checklist.length) * 100}%` },
+              ]}
+            />
+          </View>
           {checklist.map((item, i) => (
             <TouchableOpacity
               key={i}
               style={styles.checklistRow}
               onPress={() => toggleChecklist(i)}
+              activeOpacity={0.7}
             >
-              <Text style={styles.checkIcon}>{item.done ? '✅' : '⬜'}</Text>
+              <View
+                style={[
+                  styles.checkBox,
+                  item.done && styles.checkBoxDone,
+                ]}
+              >
+                {item.done && <Text style={styles.checkMark}>✓</Text>}
+              </View>
               <Text style={[styles.checkLabel, item.done && styles.checkLabelDone]}>
                 {item.label}
               </Text>
@@ -271,42 +418,17 @@ export default function MortgageScreen() {
           ))}
         </View>
 
-        <TouchableOpacity
-          style={styles.matchButton}
-          onPress={matchLenders}
-          disabled={lenderLoading}
-        >
-          {lenderLoading ? (
-            <ActivityIndicator color={colors.text} />
-          ) : (
-            <Text style={styles.matchButtonText}>Match Me With Lenders</Text>
-          )}
-        </TouchableOpacity>
-
-        {lenders.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Matched Lenders</Text>
-            {lenders.map((l, i) => (
-              <View key={i} style={styles.lenderRow}>
-                <Text style={styles.lenderName}>{l.name}</Text>
-                <View style={styles.lenderDetails}>
-                  <Text style={styles.lenderRate}>{l.rate}</Text>
-                  <Text style={styles.lenderLtv}>LTV: {l.max_ltv}</Text>
-                </View>
-              </View>
-            ))}
+        {/* Mortgage Pack CTA */}
+        <AnimatedPressable onPress={() => Alert.alert('Coming Soon', 'Mortgage pack PDF generation is coming soon')}>
+          <View style={styles.packButton}>
+            <Text style={styles.packButtonEmoji}>📋</Text>
+            <Text style={styles.packButtonText}>Get Mortgage Pack PDF</Text>
           </View>
-        )}
+        </AnimatedPressable>
       </ScrollView>
     </SafeAreaView>
   );
 }
-
-const MOCK_LENDERS: LenderMatch[] = [
-  { name: 'Halifax', rate: '4.29%', max_ltv: '90%' },
-  { name: 'Nationwide', rate: '4.49%', max_ltv: '85%' },
-  { name: 'Barclays', rate: '4.59%', max_ltv: '90%' },
-];
 
 function computeStampDuty(value: number): number {
   if (value <= 250_000) return 0;
@@ -323,76 +445,119 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   scroll: {
-    padding: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxl,
   },
   title: {
     fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.text,
-    marginBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    marginBottom: spacing.md,
   },
   scoreCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
-    padding: spacing.lg,
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
     alignItems: 'center',
-    marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    marginBottom: spacing.sm,
   },
-  scoreCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  scoreCircleOuter: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
     borderWidth: 6,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: spacing.md,
   },
-  scoreText: {
-    fontSize: fontSize.xxl,
-    fontWeight: '700',
+  scoreCircleInner: {
+    alignItems: 'center',
+  },
+  scoreValue: {
+    fontSize: fontSize.hero,
+    fontWeight: '800',
+  },
+  scoreWord: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   scoreLabel: {
-    fontSize: fontSize.sm,
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-  },
-  refreshButton: {
-    backgroundColor: colors.bgCard,
-    borderRadius: 8,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-  },
-  refreshButtonText: {
-    fontSize: fontSize.sm,
-    color: colors.accentTealLight,
-    fontWeight: '600',
-  },
-  card: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  cardTitle: {
     fontSize: fontSize.lg,
     fontWeight: '600',
     color: colors.text,
     marginBottom: spacing.md,
   },
-  label: {
+  refreshPill: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  refreshPillText: {
+    fontSize: fontSize.sm,
+    color: colors.accentTeal,
+    fontWeight: '600',
+  },
+  sectionHeader: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  sectionTitle: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  card: {
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  affordHero: {
+    alignItems: 'center',
+    paddingBottom: spacing.md,
+    marginBottom: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  affordLabel: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
+  },
+  affordAmount: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.text,
+    marginTop: spacing.xs,
+  },
+  affordMonthly: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+  },
+  inputLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
     marginBottom: spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: colors.bgCard,
-    borderRadius: 8,
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.sm,
     padding: spacing.md,
     color: colors.text,
     fontSize: fontSize.md,
@@ -401,11 +566,14 @@ const styles = StyleSheet.create({
   },
   scenarioList: {
     marginTop: spacing.md,
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.md,
+    overflow: 'hidden',
   },
   scenarioRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
+    padding: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -416,39 +584,111 @@ const styles = StyleSheet.create({
   scenarioAmount: {
     fontSize: fontSize.sm,
     color: colors.text,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  resultBox: {
-    backgroundColor: colors.successBg,
-    borderRadius: 8,
-    padding: spacing.md,
-    marginTop: spacing.md,
-  },
-  resultText: {
-    fontSize: fontSize.md,
-    color: colors.success,
-    fontWeight: '600',
-  },
-  button: {
-    backgroundColor: colors.accentTeal,
-    borderRadius: 8,
+  gradientButton: {
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     marginTop: spacing.md,
   },
-  buttonText: {
+  gradientButtonText: {
     color: colors.text,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  lenderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  lenderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  lenderMedal: {
+    fontSize: 20,
+  },
+  lenderName: {
+    fontSize: fontSize.md,
+    color: colors.text,
+    fontWeight: '700',
+  },
+  lenderRight: {
+    alignItems: 'flex-end',
+  },
+  lenderRate: {
+    fontSize: fontSize.md,
+    color: colors.accentTeal,
+    fontWeight: '700',
+  },
+  lenderLtv: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  stampResult: {
+    backgroundColor: colors.incomeBg,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+    alignItems: 'center',
+  },
+  stampLabel: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  stampValue: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.income,
+    marginTop: spacing.xs,
+  },
+  stampNote: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: spacing.xs,
+  },
+  checklistProgress: {
+    height: 4,
+    backgroundColor: colors.bgElevated,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: spacing.md,
+  },
+  checklistProgressFill: {
+    height: '100%',
+    backgroundColor: colors.accentTeal,
+    borderRadius: 2,
   },
   checklistRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: spacing.sm,
+    gap: spacing.sm,
   },
-  checkIcon: {
-    fontSize: 18,
-    marginRight: spacing.sm,
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkBoxDone: {
+    backgroundColor: colors.accentTeal,
+    borderColor: colors.accentTeal,
+  },
+  checkMark: {
+    color: colors.textInverse,
+    fontSize: 12,
+    fontWeight: '700',
   },
   checkLabel: {
     fontSize: fontSize.sm,
@@ -457,42 +697,27 @@ const styles = StyleSheet.create({
   },
   checkLabelDone: {
     color: colors.textMuted,
+    textDecorationLine: 'line-through',
   },
-  matchButton: {
-    backgroundColor: colors.accentGold,
-    borderRadius: 8,
-    padding: spacing.md,
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  matchButtonText: {
-    color: colors.text,
-    fontSize: fontSize.md,
-    fontWeight: '600',
-  },
-  lenderRow: {
+  packButton: {
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.lg,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    justifyContent: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.accentTeal,
   },
-  lenderName: {
+  packButtonEmoji: {
+    fontSize: 20,
+  },
+  packButtonText: {
     fontSize: fontSize.md,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  lenderDetails: {
-    alignItems: 'flex-end',
-  },
-  lenderRate: {
-    fontSize: fontSize.sm,
-    color: colors.accentTealLight,
-    fontWeight: '600',
-  },
-  lenderLtv: {
-    fontSize: fontSize.xs,
-    color: colors.textMuted,
+    color: colors.accentTeal,
+    fontWeight: '700',
   },
 });

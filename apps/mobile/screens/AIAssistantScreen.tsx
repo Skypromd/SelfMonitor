@@ -1,17 +1,17 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   TextInput,
   FlatList,
   KeyboardAvoidingView,
   Platform,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, fontSize } from '../theme';
+import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
 
 type Message = {
@@ -24,7 +24,41 @@ const QUICK_ACTIONS = [
   { label: '💰 Tax estimate', prompt: 'Give me a quick tax estimate for this year' },
   { label: '🏠 Mortgage advice', prompt: 'What should I know about getting a mortgage as self-employed?' },
   { label: '📊 Expense help', prompt: 'Help me categorise my recent expenses' },
+  { label: '📈 Cash flow', prompt: 'Analyse my cash flow for this quarter' },
 ];
+
+function TypingDots() {
+  const dot1 = useRef(new Animated.Value(0.3)).current;
+  const dot2 = useRef(new Animated.Value(0.3)).current;
+  const dot3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    const animate = (dot: Animated.Value, delay: number) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(dot, { toValue: 1, duration: 400, delay, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0.3, duration: 400, useNativeDriver: true }),
+        ])
+      );
+    const a1 = animate(dot1, 0);
+    const a2 = animate(dot2, 150);
+    const a3 = animate(dot3, 300);
+    a1.start();
+    a2.start();
+    a3.start();
+    return () => { a1.stop(); a2.stop(); a3.stop(); };
+  }, [dot1, dot2, dot3]);
+
+  return (
+    <View style={styles.typingContainer}>
+      <View style={styles.typingBubble}>
+        <Animated.View style={[styles.typingDot, { opacity: dot1 }]} />
+        <Animated.View style={[styles.typingDot, { opacity: dot2 }]} />
+        <Animated.View style={[styles.typingDot, { opacity: dot3 }]} />
+      </View>
+    </View>
+  );
+}
 
 export default function AIAssistantScreen() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -81,24 +115,36 @@ export default function AIAssistantScreen() {
   const renderMessage = ({ item }: { item: Message }) => {
     const isUser = item.role === 'user';
     return (
-      <View
-        style={[
-          styles.bubble,
-          isUser ? styles.userBubble : styles.aiBubble,
-        ]}
-      >
-        <Text style={[styles.bubbleText, isUser ? styles.userText : styles.aiText]}>
-          {item.content}
-        </Text>
+      <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
+        {!isUser && (
+          <View style={styles.avatarCircle}>
+            <Text style={styles.avatarText}>🤖</Text>
+          </View>
+        )}
+        <View
+          style={[
+            styles.bubble,
+            isUser ? styles.userBubble : styles.aiBubble,
+          ]}
+        >
+          <Text style={[styles.bubbleText, isUser ? styles.userText : styles.aiText]}>
+            {item.content}
+          </Text>
+        </View>
       </View>
     );
   };
 
+  const sendButtonScale = useRef(new Animated.Value(1)).current;
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>AI Assistant</Text>
-        <Text style={styles.subtitle}>Your personal finance advisor</Text>
+        <Text style={styles.headerEmoji}>🤖</Text>
+        <View>
+          <Text style={styles.title}>AI Assistant</Text>
+          <Text style={styles.subtitle}>Your personal finance advisor</Text>
+        </View>
       </View>
 
       <FlatList
@@ -107,12 +153,14 @@ export default function AIAssistantScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
         contentContainerStyle={styles.messageList}
+        showsVerticalScrollIndicator={false}
         onContentSizeChange={() =>
           flatListRef.current?.scrollToEnd({ animated: true })
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyTitle}>👋 How can I help?</Text>
+            <Text style={styles.emptyEmoji}>👋</Text>
+            <Text style={styles.emptyTitle}>How can I help?</Text>
             <Text style={styles.emptyText}>
               Ask me anything about your finances, tax, or business.
             </Text>
@@ -120,12 +168,7 @@ export default function AIAssistantScreen() {
         }
       />
 
-      {loading && (
-        <View style={styles.typingRow}>
-          <ActivityIndicator size="small" color={colors.accentTeal} />
-          <Text style={styles.typingText}>AI is typing...</Text>
-        </View>
-      )}
+      {loading && <TypingDots />}
 
       {messages.length === 0 && !loading && (
         <View style={styles.quickActions}>
@@ -134,6 +177,7 @@ export default function AIAssistantScreen() {
               key={i}
               style={styles.quickAction}
               onPress={() => sendMessage(action.prompt)}
+              activeOpacity={0.7}
             >
               <Text style={styles.quickActionText}>{action.label}</Text>
             </TouchableOpacity>
@@ -155,13 +199,24 @@ export default function AIAssistantScreen() {
             multiline
             maxLength={2000}
           />
-          <TouchableOpacity
-            style={[styles.sendButton, (!input.trim() || loading) && styles.sendButtonDisabled]}
-            onPress={() => sendMessage(input)}
-            disabled={!input.trim() || loading}
-          >
-            <Text style={styles.sendButtonText}>➤</Text>
-          </TouchableOpacity>
+          <Animated.View style={{ transform: [{ scale: sendButtonScale }] }}>
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (!input.trim() || loading) && styles.sendButtonDisabled,
+              ]}
+              onPress={() => sendMessage(input)}
+              onPressIn={() =>
+                Animated.spring(sendButtonScale, { toValue: 0.9, useNativeDriver: true }).start()
+              }
+              onPressOut={() =>
+                Animated.spring(sendButtonScale, { toValue: 1, friction: 3, useNativeDriver: true }).start()
+              }
+              disabled={!input.trim() || loading}
+            >
+              <Text style={styles.sendButtonText}>➤</Text>
+            </TouchableOpacity>
+          </Animated.View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -176,6 +231,8 @@ function getMockReply(prompt: string): string {
     return "As a self-employed individual, lenders typically want 2-3 years of accounts. Your SA302 forms are key. I'd recommend keeping your credit score above 700 and having at least a 10% deposit saved.";
   if (lower.includes('expense'))
     return "I can help categorise your expenses! Common deductible categories for self-employed include: office costs, travel, clothing (uniforms), staff costs, and professional fees. Would you like me to review your recent transactions?";
+  if (lower.includes('cash flow'))
+    return "Your Q1 cash flow looks healthy. Income: £24,300, Expenses: £8,900, Net: +£15,400. I'd recommend maintaining a 3-month expense buffer of at least £26,700.";
   return "I'm here to help with your financial questions. You can ask me about tax estimates, mortgage readiness, expense tracking, or general business finance advice.";
 }
 
@@ -185,63 +242,96 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   header: {
-    padding: spacing.md,
-    paddingBottom: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    backgroundColor: colors.bgElevated,
+  },
+  headerEmoji: {
+    fontSize: 28,
   },
   title: {
-    fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontSize: fontSize.lg,
+    fontWeight: '800',
     color: colors.text,
   },
   subtitle: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     color: colors.textMuted,
-    marginTop: spacing.xs,
   },
   messageList: {
     padding: spacing.md,
     flexGrow: 1,
   },
-  bubble: {
-    maxWidth: '80%',
-    borderRadius: 16,
-    padding: spacing.md,
+  bubbleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
     marginBottom: spacing.sm,
+    gap: spacing.sm,
+  },
+  bubbleRowUser: {
+    justifyContent: 'flex-end',
+  },
+  avatarCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.bgCard,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    fontSize: 16,
+  },
+  bubble: {
+    maxWidth: '78%',
+    borderRadius: borderRadius.xl,
+    padding: spacing.md,
   },
   userBubble: {
     backgroundColor: colors.accentTeal,
-    alignSelf: 'flex-end',
-    borderBottomRightRadius: 4,
+    borderBottomRightRadius: spacing.xs,
   },
   aiBubble: {
-    backgroundColor: colors.bgElevated,
-    alignSelf: 'flex-start',
-    borderBottomLeftRadius: 4,
+    backgroundColor: colors.bgCard,
+    borderBottomLeftRadius: spacing.xs,
     borderWidth: 1,
     borderColor: colors.border,
   },
   bubbleText: {
-    fontSize: fontSize.sm,
-    lineHeight: 20,
+    fontSize: fontSize.md,
+    lineHeight: 22,
   },
   userText: {
-    color: colors.text,
+    color: colors.textInverse,
   },
   aiText: {
     color: colors.text,
   },
-  typingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
+  typingContainer: {
+    paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,
   },
-  typingText: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    marginLeft: spacing.sm,
+  typingBubble: {
+    flexDirection: 'row',
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    alignSelf: 'flex-start',
+    gap: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  typingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.accentTeal,
   },
   quickActions: {
     flexDirection: 'row',
@@ -251,31 +341,33 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.md,
   },
   quickAction: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 20,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.full,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderLight,
   },
   quickActionText: {
     fontSize: fontSize.sm,
     color: colors.text,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: spacing.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.bgElevated,
+    gap: spacing.sm,
   },
   input: {
     flex: 1,
     backgroundColor: colors.bgCard,
-    borderRadius: 20,
-    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     color: colors.text,
     fontSize: fontSize.md,
@@ -285,30 +377,33 @@ const styles = StyleSheet.create({
   },
   sendButton: {
     backgroundColor: colors.accentTeal,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: spacing.sm,
   },
   sendButtonDisabled: {
     backgroundColor: colors.bgCard,
   },
   sendButtonText: {
-    color: colors.text,
+    color: colors.textInverse,
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: spacing.xl * 2,
+    paddingVertical: spacing.xxl * 2,
+  },
+  emptyEmoji: {
+    fontSize: 48,
+    marginBottom: spacing.md,
   },
   emptyTitle: {
-    fontSize: fontSize.lg,
-    fontWeight: '600',
+    fontSize: fontSize.xl,
+    fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.sm,
   },
@@ -316,6 +411,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textMuted,
     textAlign: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
   },
 });

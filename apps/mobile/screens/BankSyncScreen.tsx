@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,21 +7,25 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, fontSize } from '../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
 
 type BankConnection = {
   id: string;
   bank_name: string;
   last_synced: string | null;
+  account_type?: string;
+  last_four?: string;
 };
 
 const MOCK_BANKS: BankConnection[] = [
-  { id: '1', bank_name: 'Barclays Business', last_synced: '2026-03-31T09:15:00Z' },
-  { id: '2', bank_name: 'Starling Bank', last_synced: '2026-03-30T14:22:00Z' },
-  { id: '3', bank_name: 'Monzo Business', last_synced: null },
+  { id: '1', bank_name: 'Barclays Business', last_synced: '2026-03-31T09:15:00Z', account_type: 'Current Account', last_four: '4532' },
+  { id: '2', bank_name: 'Starling Bank', last_synced: '2026-03-30T14:22:00Z', account_type: 'Business Account', last_four: '7891' },
+  { id: '3', bank_name: 'Monzo Business', last_synced: null, account_type: 'Current Account', last_four: '2045' },
 ];
 
 function formatLastSynced(iso: string | null): string {
@@ -34,6 +38,39 @@ function formatLastSynced(iso: string | null): string {
   if (diffH < 24) return `Synced ${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
   return `Synced ${diffD}d ago`;
+}
+
+function AnimatedPressable({
+  onPress,
+  style,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={() =>
+          Animated.spring(scale, { toValue: 0.96, useNativeDriver: true }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scale, { toValue: 1, friction: 3, useNativeDriver: true }).start()
+        }
+        activeOpacity={0.9}
+        disabled={disabled}
+        style={style}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
 }
 
 export default function BankSyncScreen() {
@@ -105,48 +142,83 @@ export default function BankSyncScreen() {
 
   const renderBank = ({ item }: { item: BankConnection }) => (
     <View style={styles.bankCard}>
-      <View style={styles.bankInfo}>
-        <Text style={styles.bankName}>{item.bank_name}</Text>
-        <Text style={styles.lastSynced}>{formatLastSynced(item.last_synced)}</Text>
+      <View style={styles.bankHeader}>
+        <Text style={styles.bankEmoji}>🏦</Text>
+        <View style={styles.bankInfo}>
+          <Text style={styles.bankName}>{item.bank_name}</Text>
+          <Text style={styles.accountType}>{item.account_type || 'Account'}</Text>
+          {item.last_four && (
+            <Text style={styles.lastFour}>••••{item.last_four}</Text>
+          )}
+        </View>
       </View>
-      <TouchableOpacity
-        style={[styles.syncButton, limitReached && styles.syncButtonDisabled]}
-        onPress={() => syncBank(item.id)}
-        disabled={limitReached || syncingId === item.id}
-      >
-        {syncingId === item.id ? (
-          <ActivityIndicator color={colors.text} size="small" />
-        ) : (
-          <Text style={styles.syncButtonText}>🔄 Sync</Text>
-        )}
-      </TouchableOpacity>
+
+      <View style={styles.bankFooter}>
+        <Text style={styles.lastSynced}>{formatLastSynced(item.last_synced)}</Text>
+        <AnimatedPressable
+          onPress={() => syncBank(item.id)}
+          disabled={limitReached || syncingId === item.id}
+        >
+          <LinearGradient
+            colors={
+              limitReached
+                ? [colors.bgCard, colors.bgCard]
+                : [colors.gradientStart, colors.gradientEnd]
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.syncButton}
+          >
+            {syncingId === item.id ? (
+              <ActivityIndicator color={colors.text} size="small" />
+            ) : (
+              <Text
+                style={[
+                  styles.syncButtonText,
+                  limitReached && { color: colors.textMuted },
+                ]}
+              >
+                🔄 Sync Now
+              </Text>
+            )}
+          </LinearGradient>
+        </AnimatedPressable>
+      </View>
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Bank Sync</Text>
-        <Text style={styles.subtitle}>Manage your connected bank accounts</Text>
+        <Text style={styles.title}>Bank Accounts</Text>
+        <Text style={styles.subtitle}>
+          {formatLastSynced(banks.find((b) => b.last_synced)?.last_synced ?? null)}
+        </Text>
       </View>
 
       <View style={styles.syncCounter}>
-        <Text style={styles.syncCounterText}>
-          {syncsUsed} of {syncLimit} sync{syncLimit !== 1 ? 's' : ''} used today
-        </Text>
-        {limitReached && (
-          <Text style={styles.nextSyncText}>Next sync: tomorrow</Text>
-        )}
-      </View>
-
-      {limitReached && (
-        <TouchableOpacity style={styles.upgradeCard}>
-          <Text style={styles.upgradeTitle}>Need more syncs?</Text>
-          <Text style={styles.upgradeText}>
-            Upgrade to Pro for unlimited daily syncs
+        <View style={styles.syncCounterInner}>
+          <Text style={styles.syncCounterText}>
+            {syncsUsed} of {syncLimit} sync{syncLimit !== 1 ? 's' : ''} used today
           </Text>
-        </TouchableOpacity>
-      )}
+          {limitReached && (
+            <Text style={styles.nextSyncText}>Resets tomorrow</Text>
+          )}
+        </View>
+        <View style={styles.syncDots}>
+          {Array.from({ length: syncLimit }).map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.syncDot,
+                i < syncsUsed
+                  ? { backgroundColor: colors.accentTeal }
+                  : { backgroundColor: colors.bgCard },
+              ]}
+            />
+          ))}
+        </View>
+      </View>
 
       {loading ? (
         <ActivityIndicator size="large" color={colors.accentTeal} style={styles.loader} />
@@ -156,25 +228,43 @@ export default function BankSyncScreen() {
           keyExtractor={(item) => item.id}
           renderItem={renderBank}
           contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          ListFooterComponent={
+            <>
+              <AnimatedPressable onPress={connectNewBank} disabled={connectLoading}>
+                <View style={styles.connectCard}>
+                  {connectLoading ? (
+                    <ActivityIndicator color={colors.accentTeal} />
+                  ) : (
+                    <>
+                      <Text style={styles.connectIcon}>+</Text>
+                      <Text style={styles.connectText}>Connect New Bank</Text>
+                    </>
+                  )}
+                </View>
+              </AnimatedPressable>
+
+              {limitReached && (
+                <View style={styles.upgradeCard}>
+                  <Text style={styles.upgradeEmoji}>💡</Text>
+                  <Text style={styles.upgradeTitle}>Need more syncs?</Text>
+                  <Text style={styles.upgradeText}>
+                    Upgrade to Growth (£12/mo) for 2 syncs per day
+                  </Text>
+                  <AnimatedPressable onPress={() => {}}>
+                    <View style={styles.upgradeButton}>
+                      <Text style={styles.upgradeButtonText}>Upgrade →</Text>
+                    </View>
+                  </AnimatedPressable>
+                </View>
+              )}
+            </>
+          }
           ListEmptyComponent={
             <Text style={styles.emptyText}>No banks connected yet.</Text>
           }
         />
       )}
-
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.connectButton}
-          onPress={connectNewBank}
-          disabled={connectLoading}
-        >
-          {connectLoading ? (
-            <ActivityIndicator color={colors.text} />
-          ) : (
-            <Text style={styles.connectButtonText}>Connect New Bank</Text>
-          )}
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 }
@@ -185,12 +275,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   header: {
-    padding: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
   },
   title: {
     fontSize: fontSize.xl,
-    fontWeight: '700',
+    fontWeight: '800',
     color: colors.text,
   },
   subtitle: {
@@ -199,13 +290,19 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   syncCounter: {
-    marginHorizontal: spacing.md,
-    backgroundColor: colors.bgElevated,
-    borderRadius: 10,
+    marginHorizontal: spacing.lg,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.lg,
     padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
     marginBottom: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  syncCounterInner: {
+    flex: 1,
   },
   syncCounterText: {
     fontSize: fontSize.sm,
@@ -214,84 +311,131 @@ const styles = StyleSheet.create({
   },
   nextSyncText: {
     fontSize: fontSize.xs,
-    color: colors.accentGold,
-    marginTop: spacing.xs,
+    color: colors.warning,
+    marginTop: 2,
   },
-  upgradeCard: {
-    marginHorizontal: spacing.md,
-    backgroundColor: 'rgba(217,119,6,0.1)',
-    borderRadius: 10,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.accentGold,
-    marginBottom: spacing.md,
+  syncDots: {
+    flexDirection: 'row',
+    gap: spacing.xs,
   },
-  upgradeTitle: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.accentGoldLight,
-  },
-  upgradeText: {
-    fontSize: fontSize.sm,
-    color: colors.textMuted,
-    marginTop: spacing.xs,
+  syncDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   list: {
-    padding: spacing.md,
-    paddingTop: 0,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xxl,
   },
   bankCard: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  bankHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.md,
+  },
+  bankEmoji: {
+    fontSize: 28,
+  },
+  bankInfo: {
+    flex: 1,
+  },
+  bankName: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  accountType: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  lastFour: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  bankFooter: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  bankInfo: {
-    flex: 1,
-    marginRight: spacing.md,
-  },
-  bankName: {
-    fontSize: fontSize.md,
-    fontWeight: '600',
-    color: colors.text,
-  },
   lastSynced: {
     fontSize: fontSize.xs,
     color: colors.textMuted,
-    marginTop: spacing.xs,
   },
   syncButton: {
-    backgroundColor: colors.accentTeal,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-  },
-  syncButtonDisabled: {
-    backgroundColor: colors.bgCard,
   },
   syncButtonText: {
     color: colors.text,
     fontSize: fontSize.sm,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  footer: {
-    padding: spacing.md,
-  },
-  connectButton: {
-    backgroundColor: colors.accentTeal,
-    borderRadius: 8,
-    padding: spacing.md,
+  connectCard: {
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    borderWidth: 2,
+    borderColor: colors.borderLight,
+    borderStyle: 'dashed',
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  connectButtonText: {
-    color: colors.text,
+  connectIcon: {
+    fontSize: fontSize.xl,
+    color: colors.accentTeal,
+    fontWeight: '300',
+  },
+  connectText: {
     fontSize: fontSize.md,
+    color: colors.accentTeal,
     fontWeight: '600',
+  },
+  upgradeCard: {
+    backgroundColor: colors.warningBg,
+    borderRadius: borderRadius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  upgradeEmoji: {
+    fontSize: 24,
+    marginBottom: spacing.sm,
+  },
+  upgradeTitle: {
+    fontSize: fontSize.lg,
+    fontWeight: '700',
+    color: colors.warning,
+    marginBottom: spacing.xs,
+  },
+  upgradeText: {
+    fontSize: fontSize.sm,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  upgradeButton: {
+    backgroundColor: colors.warning,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    alignSelf: 'flex-start',
+  },
+  upgradeButtonText: {
+    color: colors.textInverse,
+    fontSize: fontSize.sm,
+    fontWeight: '700',
   },
   loader: {
     marginTop: spacing.xl,
