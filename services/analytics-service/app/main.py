@@ -1796,7 +1796,7 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 8, "Readiness summary", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     pdf.set_font("Helvetica", "", 11)
-    pdf.multi_cell(0, 7, str(pack_index.get("readiness_summary", "")))
+    pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 7, str(pack_index.get("readiness_summary", "")))
     pdf.cell(
         0, 7,
         f"Required completion: {pack_index.get('required_completion_percent', 0)}%",
@@ -1841,7 +1841,7 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
                 severity = str(issue.get("severity", "info")).upper()
                 filename = str(issue.get("document_filename", ""))
                 message = str(issue.get("message", ""))
-                pdf.multi_cell(0, 6, f"[{severity}] {filename}: {message}")
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 6, f"[{severity}] {filename}: {message}")
             pdf.ln(2)
 
     submission_gate = pack_index.get("submission_gate", {})
@@ -1852,7 +1852,7 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
             new_x=XPos.LMARGIN, new_y=YPos.NEXT,
         )
         pdf.set_font("Helvetica", "", 11)
-        pdf.multi_cell(0, 7, str(submission_gate.get("compliance_disclaimer", "")))
+        pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 7, str(submission_gate.get("compliance_disclaimer", "")))
         pdf.cell(
             0, 7,
             f"Advisor review confirmed: {'yes' if submission_gate.get('advisor_review_confirmed') else 'no'}",
@@ -1903,8 +1903,8 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
                 r_due = str(reminder.get("due_date", ""))
                 r_status = str(reminder.get("status", "upcoming"))
                 r_msg = str(reminder.get("message", ""))
-                pdf.multi_cell(0, 6, f"[{r_status}] {r_title} (due: {r_due})")
-                pdf.multi_cell(0, 6, r_msg)
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 6, f"[{r_status}] {r_title} (due: {r_due})")
+                pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 6, r_msg)
         pdf.ln(2)
 
     pdf.set_font("Helvetica", "B", 12)
@@ -1929,8 +1929,8 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
             )
             if not matched_files_text:
                 matched_files_text = "not detected"
-            pdf.multi_cell(0, 6, f"[{ev_status}] {ev_title} ({code})")
-            pdf.multi_cell(0, 6, f"Evidence: {matched_files_text}")
+            pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 6, f"[{ev_status}] {ev_title} ({code})")
+            pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 6, f"Evidence: {matched_files_text}")
             pdf.ln(1)
 
     pdf.set_font("Helvetica", "B", 12)
@@ -1939,9 +1939,9 @@ def _build_mortgage_pack_index_pdf_bytes(pack_index: dict[str, object]) -> bytes
     next_actions_pdf = pack_index.get("next_actions", [])
     if isinstance(next_actions_pdf, list) and next_actions_pdf:
         for action in next_actions_pdf:
-            pdf.multi_cell(0, 6, f"- {action}")
+            pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 6, f"- {action}")
     else:
-        pdf.multi_cell(0, 6, "- No immediate actions")
+        pdf.set_x(pdf.l_margin); pdf.multi_cell(pdf.epw, 6, "- No immediate actions")
 
     return bytes(pdf.output() or b"")
 
