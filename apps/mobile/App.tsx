@@ -10,15 +10,19 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { colors } from './theme';
 
 import LoginScreen from './screens/LoginScreen';
+import RegisterScreen from './screens/RegisterScreen';
 import DashboardScreen from './screens/DashboardScreen';
-import TransactionsScreen from './screens/TransactionsScreen';
-import DocumentsScreen from './screens/DocumentsScreen';
-import MarketplaceScreen from './screens/MarketplaceScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ActivityScreen from './screens/ActivityScreen';
 import ReportsScreen from './screens/ReportsScreen';
+import BankSyncScreen from './screens/BankSyncScreen';
+import ReceiptScanScreen from './screens/ReceiptScanScreen';
+import InvoicesScreen from './screens/InvoicesScreen';
+import MortgageScreen from './screens/MortgageScreen';
+import AIAssistantScreen from './screens/AIAssistantScreen';
 
 const Stack = createNativeStackNavigator();
+const AuthStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 const MoreStack = createNativeStackNavigator();
 
@@ -48,7 +52,18 @@ function MoreNavigator() {
       <MoreStack.Screen name="Profile" component={ProfileScreen} />
       <MoreStack.Screen name="Activity" component={ActivityScreen} />
       <MoreStack.Screen name="Reports" component={ReportsScreen} />
+      <MoreStack.Screen name="Invoices" component={InvoicesScreen} />
+      <MoreStack.Screen name="Mortgage" component={MortgageScreen} />
     </MoreStack.Navigator>
+  );
+}
+
+function AuthNavigator() {
+  return (
+    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+      <AuthStack.Screen name="Register" component={RegisterScreen} />
+      <AuthStack.Screen name="Login" component={LoginScreen} />
+    </AuthStack.Navigator>
   );
 }
 
@@ -77,24 +92,24 @@ function MainTabs() {
         }}
       />
       <Tab.Screen
-        name="Transactions"
-        component={TransactionsScreen}
+        name="ReceiptScan"
+        component={ReceiptScanScreen}
         options={{
-          tabBarLabel: 'Transactions',
+          tabBarLabel: 'Scan',
         }}
       />
       <Tab.Screen
-        name="Documents"
-        component={DocumentsScreen}
+        name="BankSync"
+        component={BankSyncScreen}
         options={{
-          tabBarLabel: 'Documents',
+          tabBarLabel: 'Sync',
         }}
       />
       <Tab.Screen
-        name="Marketplace"
-        component={MarketplaceScreen}
+        name="AIAssistant"
+        component={AIAssistantScreen}
         options={{
-          tabBarLabel: 'Market',
+          tabBarLabel: 'AI',
         }}
       />
       <Tab.Screen
@@ -125,7 +140,7 @@ function RootNavigator() {
       {token ? (
         <Stack.Screen name="Main" component={MainTabs} />
       ) : (
-        <Stack.Screen name="Login" component={LoginScreen} />
+        <Stack.Screen name="Auth" component={AuthNavigator} />
       )}
     </Stack.Navigator>
   );
