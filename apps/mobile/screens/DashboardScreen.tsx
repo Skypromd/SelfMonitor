@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
 import { useAuth } from '../context/AuthContext';
@@ -99,6 +100,7 @@ function AnimatedPressable({
 
 export default function DashboardScreen() {
   const { user } = useAuth();
+  const navigation = useNavigation<any>();
   const [advice, setAdvice] = useState<string | null>(null);
   const [adviceLoading, setAdviceLoading] = useState(false);
 
@@ -252,6 +254,35 @@ export default function DashboardScreen() {
             </AnimatedPressable>
           ))}
         </ScrollView>
+
+        {/* Next Deadline Card */}
+        <AnimatedPressable onPress={() => navigation.navigate('Tax')} style={styles.deadlineCardWrapper}>
+          <View style={styles.deadlineCard}>
+            <View style={styles.deadlineRow}>
+              <Text style={styles.deadlineIcon}>⏰</Text>
+              <View style={styles.deadlineInfo}>
+                <Text style={styles.deadlineTitle}>MTD Q2 due in 23 days</Text>
+                <Text style={styles.deadlineAction}>Prepare Report →</Text>
+              </View>
+            </View>
+          </View>
+        </AnimatedPressable>
+
+        {/* Mortgage Readiness Card */}
+        <AnimatedPressable onPress={() => navigation.navigate('Me', { screen: 'Mortgage' })} style={styles.deadlineCardWrapper}>
+          <View style={styles.mortgageCard}>
+            <View style={styles.deadlineRow}>
+              <Text style={styles.deadlineIcon}>🏠</Text>
+              <View style={styles.deadlineInfo}>
+                <Text style={styles.deadlineTitle}>Mortgage: 72% ready</Text>
+                <Text style={styles.deadlineAction}>Check Details →</Text>
+              </View>
+            </View>
+            <View style={styles.mortgageProgress}>
+              <View style={[styles.mortgageProgressFill, { width: '72%' }]} />
+            </View>
+          </View>
+        </AnimatedPressable>
 
         {/* Tax Status Card */}
         <View style={styles.sectionHeader}>
@@ -727,5 +758,57 @@ const styles = StyleSheet.create({
   txAmount: {
     fontSize: fontSize.md,
     fontWeight: '700',
+  },
+  deadlineCardWrapper: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+  },
+  deadlineCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.warning,
+  },
+  mortgageCard: {
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.accentTeal,
+  },
+  deadlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  deadlineIcon: {
+    fontSize: 24,
+  },
+  deadlineInfo: {
+    flex: 1,
+  },
+  deadlineTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  deadlineAction: {
+    fontSize: fontSize.sm,
+    color: colors.accentTeal,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  mortgageProgress: {
+    height: 4,
+    backgroundColor: colors.bgElevated,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginTop: spacing.md,
+  },
+  mortgageProgressFill: {
+    height: '100%',
+    backgroundColor: colors.accentTeal,
+    borderRadius: 2,
   },
 });
