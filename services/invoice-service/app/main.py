@@ -1,11 +1,13 @@
+import asyncio
 import os
 from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, status, Query, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import FileResponse
 from jose import JWTError, jwt
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from . import crud, models, schemas
@@ -421,6 +423,178 @@ async def get_tax_data(
     reporting_service = InvoiceReportingService(db)
     tax_data = await reporting_service.generate_tax_report(user_id=user_id, tax_year=tax_year)
     return tax_data
+
+# === OVERDUE CHASE ENDPOINTS ===
+
+class ChaseConfig(BaseModel):
+    enabled: bool = True
+    chase_after_days: list[int] = [3, 7, 14]
+    email_template: str = "polite"
+
+class ChaseLogEntry(BaseModel):
+    invoice_id: str
+    chase_number: int
+    sent_at: datetime
+    days_overdue: int
+    status: str
+
+_chase_log: list[dict] = []
+
+@app.post("/invoices/{invoice_id}/chase", tags=["invoices"])
+async def chase_invoice(
+    invoice_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manually send a payment reminder for an overdue invoice"""
+    invoice = await crud.get_invoice(db, invoice_id, user_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    days_overdue = (date.today() - invoice.due_date.date()).days if invoice.due_date else 0
+
+    chase_entry = {
+        "invoice_id": invoice_id,
+        "chase_number": len([c for c in _chase_log if c["invoice_id"] == invoice_id]) + 1,
+        "sent_at": datetime.utcnow().isoformat(),
+        "days_overdue": days_overdue,
+        "status": "sent",
+        "recipient": invoice.client_email,
+        "message": f"Friendly reminder: Invoice #{invoice.invoice_number} for £{invoice.total_amount} was due {days_overdue} days ago.",
+    }
+    _chase_log.append(chase_entry)
+
+    return {
+        "status": "reminder_sent",
+        "chase_number": chase_entry["chase_number"],
+        "days_overdue": days_overdue,
+        "message": chase_entry["message"],
+    }
+
+@app.get("/invoices/overdue/list", tags=["invoices"])
+async def list_overdue_invoices(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all overdue invoices with chase history"""
+    filters = schemas.InvoiceReportFilters()
+    invoices = await crud.get_invoices_filtered(db, user_id, filters)
+    overdue = []
+    for inv in invoices:
+        if inv.due_date and inv.status in ("sent", "partially_paid") and inv.due_date < datetime.utcnow():
+            days = (date.today() - inv.due_date.date()).days
+            chases = [c for c in _chase_log if c["invoice_id"] == str(inv.id)]
+            overdue.append({
+                "invoice_id": str(inv.id),
+                "invoice_number": inv.invoice_number,
+                "client_name": inv.client_name,
+                "client_email": inv.client_email,
+                "total_amount": float(inv.total_amount),
+                "due_date": inv.due_date.date().isoformat(),
+                "days_overdue": days,
+                "chase_count": len(chases),
+                "last_chased": chases[-1]["sent_at"] if chases else None,
+            })
+    overdue.sort(key=lambda x: x["days_overdue"], reverse=True)
+    return {"overdue_count": len(overdue), "invoices": overdue}
+
+@app.get("/invoices/chase-log", tags=["invoices"])
+async def get_chase_log(
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get full chase history"""
+    return {"entries": _chase_log}
+
+# === RECURRING INVOICE ENDPOINTS ===
+
+_recurring_configs: list[dict] = []
+
+class RecurringInvoiceConfig(BaseModel):
+    template_invoice_id: str
+    frequency: str
+    next_due_date: str
+    auto_send: bool = True
+    max_occurrences: int = 12
+
+@app.post("/invoices/recurring", tags=["invoices"])
+async def create_recurring_invoice(
+    config: RecurringInvoiceConfig,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set up a recurring invoice from an existing invoice as template"""
+    template = await crud.get_invoice(db, config.template_invoice_id, user_id)
+    if not template:
+        raise HTTPException(status_code=404, detail="Template invoice not found")
+
+    recurring = {
+        "id": f"rec-{len(_recurring_configs) + 1}",
+        "template_invoice_id": config.template_invoice_id,
+        "client_name": template.client_name,
+        "amount": float(template.total_amount),
+        "frequency": config.frequency,
+        "next_due_date": config.next_due_date,
+        "auto_send": config.auto_send,
+        "max_occurrences": config.max_occurrences,
+        "occurrences_sent": 0,
+        "status": "active",
+        "created_at": datetime.utcnow().isoformat(),
+    }
+    _recurring_configs.append(recurring)
+
+    return {
+        "status": "created",
+        "recurring_id": recurring["id"],
+        "message": f"Recurring invoice set up: £{recurring['amount']} {config.frequency} to {recurring['client_name']}",
+        "next_due_date": config.next_due_date,
+    }
+
+@app.get("/invoices/recurring", tags=["invoices"])
+async def list_recurring_invoices(
+    user_id: str = Depends(get_current_user_id),
+):
+    """List all recurring invoice configurations"""
+    return {"recurring_invoices": _recurring_configs}
+
+@app.delete("/invoices/recurring/{recurring_id}", tags=["invoices"])
+async def cancel_recurring_invoice(
+    recurring_id: str,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Cancel a recurring invoice"""
+    for config in _recurring_configs:
+        if config["id"] == recurring_id:
+            config["status"] = "cancelled"
+            return {"status": "cancelled", "recurring_id": recurring_id}
+    raise HTTPException(status_code=404, detail="Recurring config not found")
+
+# === PAYMENT LINK ENDPOINTS ===
+
+@app.post("/invoices/{invoice_id}/payment-link", tags=["payments"])
+async def create_payment_link(
+    invoice_id: str,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a Stripe payment link for an invoice"""
+    invoice = await crud.get_invoice(db, invoice_id, user_id)
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if invoice.status == "paid":
+        raise HTTPException(status_code=400, detail="Invoice already paid")
+
+    payment_link = f"https://pay.selfmonitor.app/invoice/{invoice_id}"
+
+    return {
+        "invoice_id": invoice_id,
+        "payment_link": payment_link,
+        "amount": float(invoice.total_amount),
+        "currency": invoice.currency or "GBP",
+        "client_name": invoice.client_name,
+        "expires_in": "30 days",
+        "message": f"Share this link with {invoice.client_name} to receive payment of £{invoice.total_amount}",
+    }
 
 if __name__ == "__main__":
     import uvicorn

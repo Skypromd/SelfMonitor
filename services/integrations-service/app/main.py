@@ -14,6 +14,7 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
+from .companies_house import search_companies, get_company_profile, CompanySearchResult, CompanyProfile
 from .hmrc_mtd import (
     HMRCMTDQuarterlyReportSpec,
     HMRCMTDQuarterlySubmissionRequest,
@@ -747,3 +748,26 @@ async def get_bsas_summary(
         adjustments=[],
         status="valid",
     )
+
+
+# --- Companies House Endpoints ---
+
+@app.get("/integrations/companies-house/search", response_model=list[CompanySearchResult])
+async def search_companies_endpoint(
+    q: str,
+    limit: int = 10,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Search Companies House for a company by name or number"""
+    return await search_companies(q, items_per_page=limit)
+
+@app.get("/integrations/companies-house/company/{company_number}", response_model=CompanyProfile)
+async def get_company_profile_endpoint(
+    company_number: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Get detailed company profile from Companies House"""
+    profile = await get_company_profile(company_number)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Company not found")
+    return profile
