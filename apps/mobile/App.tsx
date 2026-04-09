@@ -1,30 +1,32 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { colors, fontSize } from './theme';
 
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
+import OnboardingScreen from './screens/OnboardingScreen';
 import DashboardScreen from './screens/DashboardScreen';
-import ProfileScreen from './screens/ProfileScreen';
-import ActivityScreen from './screens/ActivityScreen';
-import ReportsScreen from './screens/ReportsScreen';
-import BankSyncScreen from './screens/BankSyncScreen';
+import MoneyScreen from './screens/MoneyScreen';
 import ReceiptScanScreen from './screens/ReceiptScanScreen';
-import InvoicesScreen from './screens/InvoicesScreen';
+import TaxScreen from './screens/TaxScreen';
+import ProfileScreen from './screens/ProfileScreen';
 import MortgageScreen from './screens/MortgageScreen';
 import AIAssistantScreen from './screens/AIAssistantScreen';
+import ReferralsScreen from './screens/ReferralsScreen';
+import ActivityScreen from './screens/ActivityScreen';
 
 const Stack = createNativeStackNavigator();
 const AuthStack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-const MoreStack = createNativeStackNavigator();
+const MeStack = createNativeStackNavigator();
 
 const DarkTheme = {
   ...DefaultTheme,
@@ -41,11 +43,11 @@ const DarkTheme = {
 };
 
 const TAB_ICONS: Record<string, { active: string; inactive: string }> = {
-  Dashboard: { active: '🏠', inactive: '🏠' },
-  ReceiptScan: { active: '📸', inactive: '📸' },
-  BankSync: { active: '🔄', inactive: '🔄' },
-  AIAssistant: { active: '🤖', inactive: '🤖' },
-  More: { active: '⋯', inactive: '⋯' },
+  Home: { active: '🏠', inactive: '🏠' },
+  Money: { active: '💰', inactive: '💰' },
+  Scan: { active: '📸', inactive: '📸' },
+  Tax: { active: '🇬🇧', inactive: '🇬🇧' },
+  Me: { active: '👤', inactive: '👤' },
 };
 
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
@@ -57,21 +59,21 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   );
 }
 
-function MoreNavigator() {
+function MeNavigator() {
   return (
-    <MoreStack.Navigator
+    <MeStack.Navigator
       screenOptions={{
         headerStyle: { backgroundColor: colors.bgElevated },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: '600' },
       }}
     >
-      <MoreStack.Screen name="Profile" component={ProfileScreen} />
-      <MoreStack.Screen name="Activity" component={ActivityScreen} />
-      <MoreStack.Screen name="Reports" component={ReportsScreen} />
-      <MoreStack.Screen name="Invoices" component={InvoicesScreen} />
-      <MoreStack.Screen name="Mortgage" component={MortgageScreen} />
-    </MoreStack.Navigator>
+      <MeStack.Screen name="Profile" component={ProfileScreen} />
+      <MeStack.Screen name="Mortgage" component={MortgageScreen} options={{ title: 'Mortgage' }} />
+      <MeStack.Screen name="AIAssistant" component={AIAssistantScreen} options={{ title: 'AI Assistant' }} />
+      <MeStack.Screen name="Referrals" component={ReferralsScreen} />
+      <MeStack.Screen name="Activity" component={ActivityScreen} />
+    </MeStack.Navigator>
   );
 }
 
@@ -112,44 +114,29 @@ function MainTabs() {
       })}
     >
       <Tab.Screen
-        name="Dashboard"
+        name="Home"
         component={DashboardScreen}
-        options={{
-          tabBarLabel: 'Home',
-          headerShown: false,
-        }}
+        options={{ tabBarLabel: 'Home', headerShown: false }}
       />
       <Tab.Screen
-        name="ReceiptScan"
+        name="Money"
+        component={MoneyScreen}
+        options={{ tabBarLabel: 'Money', headerShown: false }}
+      />
+      <Tab.Screen
+        name="Scan"
         component={ReceiptScanScreen}
-        options={{
-          tabBarLabel: 'Scan',
-          headerShown: false,
-        }}
+        options={{ tabBarLabel: 'Scan', headerShown: false }}
       />
       <Tab.Screen
-        name="BankSync"
-        component={BankSyncScreen}
-        options={{
-          tabBarLabel: 'Sync',
-          headerShown: false,
-        }}
+        name="Tax"
+        component={TaxScreen}
+        options={{ tabBarLabel: 'Tax', headerShown: false }}
       />
       <Tab.Screen
-        name="AIAssistant"
-        component={AIAssistantScreen}
-        options={{
-          tabBarLabel: 'AI',
-          headerShown: false,
-        }}
-      />
-      <Tab.Screen
-        name="More"
-        component={MoreNavigator}
-        options={{
-          headerShown: false,
-          tabBarLabel: 'More',
-        }}
+        name="Me"
+        component={MeNavigator}
+        options={{ headerShown: false, tabBarLabel: 'Me' }}
       />
     </Tab.Navigator>
   );
@@ -157,8 +144,23 @@ function MainTabs() {
 
 function RootNavigator() {
   const { token, loading } = useAuth();
+  const [isFirstLaunch, setIsFirstLaunch] = useState<boolean | null>(null);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
 
-  if (loading) {
+  useEffect(() => {
+    (async () => {
+      try {
+        const completed = await AsyncStorage.getItem('onboarding_complete');
+        setIsFirstLaunch(completed !== 'true');
+      } catch {
+        setIsFirstLaunch(false);
+      } finally {
+        setCheckingOnboarding(false);
+      }
+    })();
+  }, []);
+
+  if (loading || checkingOnboarding) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.accentTeal} />
@@ -166,13 +168,25 @@ function RootNavigator() {
     );
   }
 
+  if (!token) {
+    return (
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Auth" component={AuthNavigator} />
+      </Stack.Navigator>
+    );
+  }
+
+  if (isFirstLaunch) {
+    return (
+      <OnboardingScreen
+        onComplete={() => setIsFirstLaunch(false)}
+      />
+    );
+  }
+
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {token ? (
-        <Stack.Screen name="Main" component={MainTabs} />
-      ) : (
-        <Stack.Screen name="Auth" component={AuthNavigator} />
-      )}
+      <Stack.Screen name="Main" component={MainTabs} />
     </Stack.Navigator>
   );
 }
