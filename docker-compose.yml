@@ -94,8 +94,6 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-user}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-password}"
       POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
-    ports:
-      - "5432:5432"
     networks:
       - default_network
     healthcheck:
@@ -161,8 +159,6 @@ services:
   redis-master:
     image: redis:7-alpine
     container_name: redis_master
-    ports:
-      - "6379:6379"
     volumes:
       - redis_master_data:/data
       - ./infra/redis/redis-master.conf:/usr/local/etc/redis/redis.conf
@@ -432,15 +428,13 @@ services:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
       TRANSACTIONS_SERVICE_URL: "${BANKING_TRANSACTIONS_SERVICE_URL:-http://transactions-service/import}"
       VAULT_ADDR: "${BANKING_VAULT_ADDR:-http://vault:8200}"
-      VAULT_TOKEN: "${BANKING_VAULT_TOKEN:-dev-root-token}" # This is the default root token for Vault's dev mode
+      VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-dev-root-token}"
     networks:
       - default_network
 
   redis:
     image: redis:7-alpine
     container_name: redis
-    ports:
-      - "6389:6379"
     networks:
       - default_network
 
@@ -494,8 +488,6 @@ services:
   localstack:
     image: localstack/localstack:latest
     container_name: localstack
-    ports:
-      - "4566:4566" # Default LocalStack edge port
     environment:
       SERVICES: "${LOCALSTACK_SERVICES:-s3}"
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
@@ -775,8 +767,6 @@ services:
   vault:
     image: hashicorp/vault:1.15
     container_name: vault
-    ports:
-      - "8200:8200"
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: "${VAULT_DEV_ROOT_TOKEN_ID:-dev-root-token}"
       VAULT_DEV_LISTEN_ADDRESS: "${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:8200}"
@@ -821,10 +811,6 @@ services:
   jaeger:
     image: jaegertracing/all-in-one:1.53
     container_name: jaeger
-    ports:
-      - "6831:6831/udp" # Agent
-      - "16686:16686" # UI
-      - "4317:4317" # OTLP gRPC
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     networks:
@@ -841,8 +827,6 @@ services:
   weaviate:
     image: cr.weaviate.io/semitechnologies/weaviate:1.23.7
     container_name: weaviate
-    ports:
-      - "8080:8080"
     restart: on-failure:0
     environment:
       QUERY_DEFAULTS_LIMIT: 25

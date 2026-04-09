@@ -51,9 +51,13 @@ Base.metadata.create_all(bind=engine)
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="SelfMonitor Support AI Service", version="1.0.0")
 
+import os
+
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # tighten in production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
