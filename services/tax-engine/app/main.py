@@ -615,3 +615,40 @@ async def calculate_and_submit_tax(
         "submission_mode": submission_mode,
         "mtd_obligation": calculation_result.mtd_obligation,
     }
+
+
+from .calculators import (
+    PAYETaxResult, calculate_paye,
+    RentalTaxResult, calculate_rental_tax,
+    CISTaxResult, calculate_cis,
+    DividendTaxResult, calculate_dividend_tax,
+    CryptoTaxResult, calculate_crypto_tax,
+)
+
+@app.post("/calculators/paye", response_model=PAYETaxResult)
+async def paye_calculator(gross_salary: float, tax_code: str = "1257L"):
+    return calculate_paye(gross_salary, tax_code)
+
+@app.post("/calculators/rental", response_model=RentalTaxResult)
+async def rental_tax_calculator(
+    rental_income: float,
+    mortgage_interest: float = 0,
+    repairs: float = 0,
+    insurance: float = 0,
+    letting_agent_fees: float = 0,
+    other_expenses: float = 0,
+    other_income: float = 0,
+):
+    return calculate_rental_tax(rental_income, mortgage_interest, repairs, insurance, letting_agent_fees, other_expenses, other_income)
+
+@app.post("/calculators/cis", response_model=CISTaxResult)
+async def cis_calculator(gross_payment: float, materials: float = 0, cis_rate: float = 20, other_expenses: float = 0):
+    return calculate_cis(gross_payment, materials, cis_rate, other_expenses)
+
+@app.post("/calculators/dividend", response_model=DividendTaxResult)
+async def dividend_calculator(dividend_income: float, other_income: float = 0):
+    return calculate_dividend_tax(dividend_income, other_income)
+
+@app.post("/calculators/crypto", response_model=CryptoTaxResult)
+async def crypto_tax_calculator(total_gains: float, total_losses: float = 0, other_income: float = 0):
+    return calculate_crypto_tax(total_gains, total_losses, other_income)

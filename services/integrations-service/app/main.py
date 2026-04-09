@@ -15,6 +15,15 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
 from .companies_house import search_companies, get_company_profile, CompanySearchResult, CompanyProfile
+from .hmrc_apis import (
+    BusinessDetail, get_business_details_simulated,
+    Obligation, get_obligations_simulated,
+    PeriodicUpdate, PeriodicUpdateResponse, submit_periodic_update_simulated,
+    TaxCalculation, calculate_tax_simulated,
+    LossRecord, record_loss_simulated, get_losses_simulated,
+    VATReturn, VATReturnResponse, submit_vat_return_simulated,
+    VATObligation, get_vat_obligations_simulated,
+)
 from .hmrc_mtd import (
     HMRCMTDQuarterlyReportSpec,
     HMRCMTDQuarterlySubmissionRequest,
@@ -771,3 +780,76 @@ async def get_company_profile_endpoint(
     if not profile:
         raise HTTPException(status_code=404, detail="Company not found")
     return profile
+
+
+# === HMRC MTD Minimum Functionality Endpoints ===
+
+@app.get("/integrations/hmrc/mtd/business-details", response_model=list[BusinessDetail])
+async def get_business_details(
+    nino: str = "AB123456C",
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Get business details for MTD (minimum functionality requirement)"""
+    return get_business_details_simulated(nino)
+
+@app.get("/integrations/hmrc/mtd/obligations", response_model=list[Obligation])
+async def get_obligations(
+    tax_year: str = "2025",
+    nino: str = "AB123456C",
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Get quarterly obligation deadlines (minimum functionality requirement)"""
+    return get_obligations_simulated(nino, tax_year)
+
+@app.post("/integrations/hmrc/mtd/periodic-update", response_model=PeriodicUpdateResponse, status_code=202)
+async def submit_periodic_update(
+    update: PeriodicUpdate,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Submit quarterly periodic update for self-employment income (minimum functionality requirement)"""
+    return submit_periodic_update_simulated(update)
+
+@app.post("/integrations/hmrc/mtd/tax-calculation", response_model=TaxCalculation)
+async def trigger_tax_calculation(
+    total_income: float,
+    total_deductions: float = 0,
+    tax_year: str = "2025/2026",
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Trigger in-year tax calculation estimate (minimum functionality requirement)"""
+    return calculate_tax_simulated(total_income, total_deductions, tax_year)
+
+@app.post("/integrations/hmrc/mtd/losses", response_model=LossRecord, status_code=201)
+async def record_loss(
+    tax_year: str,
+    loss_type: str = "self-employment",
+    amount: float = 0,
+    relief: str = "carry-forward",
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Record business loss for carry-forward/sideways (minimum functionality requirement)"""
+    return record_loss_simulated(tax_year, loss_type, amount, relief)
+
+@app.get("/integrations/hmrc/mtd/losses/{tax_year}", response_model=list[LossRecord])
+async def get_losses(
+    tax_year: str,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """View recorded losses for a tax year"""
+    return get_losses_simulated(tax_year)
+
+@app.post("/integrations/hmrc/vat/return", response_model=VATReturnResponse, status_code=202)
+async def submit_vat_return(
+    vat_return: VATReturn,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Submit VAT return to HMRC"""
+    return submit_vat_return_simulated(vat_return)
+
+@app.get("/integrations/hmrc/vat/obligations", response_model=list[VATObligation])
+async def get_vat_obligations(
+    vrn: str = "123456789",
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Get VAT obligations/deadlines"""
+    return get_vat_obligations_simulated(vrn)
