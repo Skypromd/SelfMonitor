@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 import sys
 import json
@@ -21,6 +22,7 @@ MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL = os.getenv(
     "http://localhost:8010/integrations/hmrc/mtd/quarterly-update",
 )
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
+INVOICE_SERVICE_URL = os.getenv("INVOICE_SERVICE_URL", "http://invoice-service:80")
 DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"}
 UK_PERSONAL_ALLOWANCE = 12570.0
 UK_BASIC_TAX_RATE = 0.20
@@ -614,3 +616,354 @@ async def calculate_and_submit_tax(
         "submission_mode": submission_mode,
         "mtd_obligation": calculation_result.mtd_obligation,
     }
+
+
+from .calculators import (
+    PAYETaxResult, calculate_paye,
+    RentalTaxResult, calculate_rental_tax,
+    CISTaxResult, calculate_cis,
+    DividendTaxResult, calculate_dividend_tax,
+    CryptoTaxResult, calculate_crypto_tax,
+)
+
+@app.post("/calculators/paye", response_model=PAYETaxResult)
+async def paye_calculator(gross_salary: float, tax_code: str = "1257L"):
+    return calculate_paye(gross_salary, tax_code)
+
+@app.post("/calculators/rental", response_model=RentalTaxResult)
+async def rental_tax_calculator(
+    rental_income: float,
+    mortgage_interest: float = 0,
+    repairs: float = 0,
+    insurance: float = 0,
+    letting_agent_fees: float = 0,
+    other_expenses: float = 0,
+    other_income: float = 0,
+):
+    return calculate_rental_tax(rental_income, mortgage_interest, repairs, insurance, letting_agent_fees, other_expenses, other_income)
+
+@app.post("/calculators/cis", response_model=CISTaxResult)
+async def cis_calculator(gross_payment: float, materials: float = 0, cis_rate: float = 20, other_expenses: float = 0):
+    return calculate_cis(gross_payment, materials, cis_rate, other_expenses)
+
+@app.post("/calculators/dividend", response_model=DividendTaxResult)
+async def dividend_calculator(dividend_income: float, other_income: float = 0):
+    return calculate_dividend_tax(dividend_income, other_income)
+
+@app.post("/calculators/crypto", response_model=CryptoTaxResult)
+async def crypto_tax_calculator(total_gains: float, total_losses: float = 0, other_income: float = 0):
+    return calculate_crypto_tax(total_gains, total_losses, other_income)
+
+
+# === Auto-collect and prepare HMRC reports ===
+
+
+class QuarterDates(BaseModel):
+    quarter: str
+    tax_year_start: str
+    period_start: str
+    period_end: str
+    due_date: str
+
+
+class AutoCollectedData(BaseModel):
+    period_start: str
+    period_end: str
+    total_income: float
+    income_breakdown: list[dict]
+    total_expenses: float
+    expense_breakdown: list[dict]
+    invoice_income: float
+    invoice_count: int
+    transaction_count: int
+    net_profit: float
+
+
+class PreparedQuarterlyReport(BaseModel):
+    status: str
+    quarter: str
+    tax_year: str
+    collected_data: AutoCollectedData
+    hmrc_periodic_update: dict
+    estimated_tax: float
+    message: str
+
+
+class PreparedAnnualReport(BaseModel):
+    status: str
+    tax_year: str
+    quarters: list[dict]
+    total_income: float
+    total_expenses: float
+    total_allowances: float
+    losses_brought_forward: float
+    taxable_income: float
+    income_tax: float
+    ni_class2: float
+    ni_class4: float
+    total_tax_due: float
+    hmrc_final_declaration: dict
+    message: str
+
+
+def _quarter_dates(tax_year_start_year: int) -> list[QuarterDates]:
+    """Generate UK tax year quarter dates."""
+    y = tax_year_start_year
+    return [
+        QuarterDates(quarter="Q1", tax_year_start=f"{y}-04-06", period_start=f"{y}-04-06", period_end=f"{y}-07-05", due_date=f"{y}-08-05"),
+        QuarterDates(quarter="Q2", tax_year_start=f"{y}-04-06", period_start=f"{y}-07-06", period_end=f"{y}-10-05", due_date=f"{y}-11-05"),
+        QuarterDates(quarter="Q3", tax_year_start=f"{y}-04-06", period_start=f"{y}-10-06", period_end=f"{y+1}-01-05", due_date=f"{y+1}-02-05"),
+        QuarterDates(quarter="Q4", tax_year_start=f"{y}-04-06", period_start=f"{y+1}-01-06", period_end=f"{y+1}-04-05", due_date=f"{y+1}-05-05"),
+    ]
+
+
+async def _fetch_transactions(bearer_token: str, from_date: str, to_date: str) -> list[dict]:
+    """Fetch user transactions for a date range."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                TRANSACTIONS_SERVICE_URL,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                params={"from_date": from_date, "to_date": to_date},
+                timeout=15.0,
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data if isinstance(data, list) else []
+    except Exception:
+        pass
+    return []
+
+
+async def _fetch_invoice_income(bearer_token: str, from_date: str, to_date: str) -> dict:
+    """Fetch invoice income summary for a date range."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{INVOICE_SERVICE_URL}/reports/summary",
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                params={"start_date": from_date, "end_date": to_date},
+                timeout=15.0,
+            )
+            if response.status_code == 200:
+                return response.json()
+    except Exception:
+        pass
+    return {"total_billed": 0, "total_collected": 0, "invoice_count": 0}
+
+
+def _categorize_transactions(transactions: list[dict]) -> AutoCollectedData:
+    """Categorize transactions into income and expenses with breakdowns."""
+    income_by_category: dict[str, float] = {}
+    expense_by_category: dict[str, float] = {}
+    total_income = 0.0
+    total_expenses = 0.0
+
+    for t in transactions:
+        amount = float(t.get("amount", 0))
+        category = t.get("category", "uncategorized") or "uncategorized"
+
+        if amount > 0:
+            total_income += amount
+            income_by_category[category] = income_by_category.get(category, 0) + amount
+        elif amount < 0:
+            abs_amount = abs(amount)
+            total_expenses += abs_amount
+            expense_by_category[category] = expense_by_category.get(category, 0) + abs_amount
+
+    income_breakdown = [{"category": k, "amount": round(v, 2)} for k, v in sorted(income_by_category.items(), key=lambda x: -x[1])]
+    expense_breakdown = [{"category": k, "amount": round(v, 2)} for k, v in sorted(expense_by_category.items(), key=lambda x: -x[1])]
+
+    return AutoCollectedData(
+        period_start="",
+        period_end="",
+        total_income=round(total_income, 2),
+        income_breakdown=income_breakdown,
+        total_expenses=round(total_expenses, 2),
+        expense_breakdown=expense_breakdown,
+        invoice_income=0,
+        invoice_count=0,
+        transaction_count=len(transactions),
+        net_profit=round(total_income - total_expenses, 2),
+    )
+
+
+_HMRC_EXPENSE_MAP = {
+    "fuel": "travelCosts",
+    "transport": "travelCosts",
+    "travel": "travelCosts",
+    "rent": "premisesRunningCosts",
+    "utilities": "premisesRunningCosts",
+    "office_supplies": "adminCosts",
+    "home_office": "premisesRunningCosts",
+    "advertising": "advertisingCosts",
+    "professional_services": "professionalFees",
+    "insurance": "other",
+    "subscriptions": "adminCosts",
+    "food_and_drink": "other",
+    "groceries": "other",
+    "health": "other",
+    "tax": "other",
+}
+
+
+@app.post("/prepare/quarterly", response_model=PreparedQuarterlyReport)
+async def prepare_quarterly_report(
+    tax_year: int = 2025,
+    quarter: str = "Q1",
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """
+    Auto-collect data from transactions + invoices and prepare a quarterly HMRC report.
+    Returns ready-to-review report. User must confirm before submission.
+    """
+    quarters = _quarter_dates(tax_year)
+    q = next((q for q in quarters if q.quarter == quarter), None)
+    if not q:
+        raise HTTPException(status_code=400, detail=f"Invalid quarter: {quarter}. Use Q1, Q2, Q3, or Q4")
+
+    transactions = await _fetch_transactions(bearer_token, q.period_start, q.period_end)
+    collected = _categorize_transactions(transactions)
+    collected.period_start = q.period_start
+    collected.period_end = q.period_end
+
+    invoice_data = await _fetch_invoice_income(bearer_token, q.period_start, q.period_end)
+    collected.invoice_income = float(invoice_data.get("total_collected", 0))
+    collected.invoice_count = int(invoice_data.get("invoice_count", 0))
+
+    turnover = collected.total_income if collected.total_income > 0 else collected.invoice_income
+
+    hmrc_expenses: dict[str, float] = {
+        "costOfGoods": 0, "staffCosts": 0, "travelCosts": 0,
+        "premisesRunningCosts": 0, "adminCosts": 0, "advertisingCosts": 0,
+        "professionalFees": 0, "other": 0,
+    }
+    for item in collected.expense_breakdown:
+        hmrc_field = _HMRC_EXPENSE_MAP.get(item["category"], "other")
+        hmrc_expenses[hmrc_field] += item["amount"]
+
+    hmrc_expenses = {k: round(v, 2) for k, v in hmrc_expenses.items()}
+
+    hmrc_payload = {
+        "periodDates": {
+            "periodStartDate": q.period_start,
+            "periodEndDate": q.period_end,
+        },
+        "periodIncome": {
+            "turnover": round(turnover, 2),
+            "other": 0,
+        },
+        "periodExpenses": hmrc_expenses,
+    }
+
+    annual_profit = max((turnover - collected.total_expenses) * 4, 0)
+    estimated_tax = 0.0
+    taxable = max(annual_profit - 12570, 0)
+    estimated_tax += min(taxable, 37700) * 0.20
+    if taxable > 37700:
+        estimated_tax += min(taxable - 37700, 87440) * 0.40
+    estimated_tax = round(estimated_tax / 4, 2)
+
+    return PreparedQuarterlyReport(
+        status="ready_for_review",
+        quarter=quarter,
+        tax_year=f"{tax_year}/{tax_year + 1}",
+        collected_data=collected,
+        hmrc_periodic_update=hmrc_payload,
+        estimated_tax=estimated_tax,
+        message=f"Quarterly report for {quarter} ({q.period_start} to {q.period_end}) prepared. "
+                f"Income: \u00a3{turnover:.2f}, Expenses: \u00a3{collected.total_expenses:.2f}, "
+                f"Estimated quarterly tax: \u00a3{estimated_tax:.2f}. "
+                f"Review and confirm to submit to HMRC.",
+    )
+
+
+@app.post("/prepare/annual", response_model=PreparedAnnualReport)
+async def prepare_annual_report(
+    tax_year: int = 2025,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """
+    Auto-collect full year data and prepare final declaration for HMRC.
+    Returns ready-to-review report. User must confirm before submission.
+    """
+    start = f"{tax_year}-04-06"
+    end = f"{tax_year + 1}-04-05"
+
+    transactions = await _fetch_transactions(bearer_token, start, end)
+    collected = _categorize_transactions(transactions)
+
+    invoice_data = await _fetch_invoice_income(bearer_token, start, end)
+    invoice_income = float(invoice_data.get("total_collected", 0))
+
+    total_income = max(collected.total_income, invoice_income)
+    total_expenses = collected.total_expenses
+
+    personal_allowance = 12570.0
+    taxable = max(total_income - total_expenses - personal_allowance, 0)
+
+    income_tax = 0.0
+    remaining = taxable
+    basic = min(remaining, 37700)
+    income_tax += basic * 0.20
+    remaining -= basic
+    higher = min(remaining, 87440) if remaining > 0 else 0
+    income_tax += higher * 0.40
+    remaining -= higher
+    if remaining > 0:
+        income_tax += remaining * 0.45
+
+    profit = max(total_income - total_expenses, 0)
+    ni4 = 0.0
+    if profit > 12570:
+        ni4 += min(profit - 12570, 50270 - 12570) * 0.06
+        if profit > 50270:
+            ni4 += (profit - 50270) * 0.02
+    ni2 = 179.40 if profit > 12570 else 0
+
+    total_tax = round(income_tax + ni4 + ni2, 2)
+
+    hmrc_payload = {
+        "tax_year_start": start,
+        "tax_year_end": end,
+        "total_income": round(total_income, 2),
+        "total_expenses": round(total_expenses, 2),
+        "total_allowances": personal_allowance,
+        "loss_brought_forward": 0,
+        "declaration": "true_and_complete",
+    }
+
+    quarter_summaries = []
+    for q in _quarter_dates(tax_year):
+        q_transactions = [t for t in transactions if q.period_start <= t.get("date", "") <= q.period_end]
+        q_income = sum(float(t.get("amount", 0)) for t in q_transactions if float(t.get("amount", 0)) > 0)
+        q_expenses = sum(abs(float(t.get("amount", 0))) for t in q_transactions if float(t.get("amount", 0)) < 0)
+        quarter_summaries.append({
+            "quarter": q.quarter,
+            "period": f"{q.period_start} to {q.period_end}",
+            "income": round(q_income, 2),
+            "expenses": round(q_expenses, 2),
+            "profit": round(q_income - q_expenses, 2),
+        })
+
+    return PreparedAnnualReport(
+        status="ready_for_review",
+        tax_year=f"{tax_year}/{tax_year + 1}",
+        quarters=quarter_summaries,
+        total_income=round(total_income, 2),
+        total_expenses=round(total_expenses, 2),
+        total_allowances=personal_allowance,
+        losses_brought_forward=0,
+        taxable_income=round(taxable, 2),
+        income_tax=round(income_tax, 2),
+        ni_class2=ni2,
+        ni_class4=round(ni4, 2),
+        total_tax_due=total_tax,
+        hmrc_final_declaration=hmrc_payload,
+        message=f"Annual report for {tax_year}/{tax_year + 1} prepared. "
+                f"Total income: \u00a3{total_income:.2f}, Expenses: \u00a3{total_expenses:.2f}, "
+                f"Tax due: \u00a3{total_tax:.2f} (Income Tax: \u00a3{income_tax:.2f} + NI: \u00a3{ni4 + ni2:.2f}). "
+                f"Review and confirm to submit to HMRC as Final Declaration.",
+    )

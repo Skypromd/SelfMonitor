@@ -9,7 +9,7 @@ from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import crud, models, schemas
-from .database import get_db
+from .database import engine, get_db
 
 app = FastAPI(
     title="Referral Service",
@@ -40,6 +40,11 @@ def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
     if not user_id:
         raise credentials_exception
     return user_id
+
+@app.on_event("startup")
+async def on_startup():
+    async with engine.begin() as conn:
+        await conn.run_sync(models.Base.metadata.create_all)
 
 @app.get("/health")
 async def health_check():

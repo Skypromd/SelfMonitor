@@ -13,9 +13,7 @@ const sdk = new NodeSDK({
       enabled: false,
     },
   })],
-  serviceName: 'graphql-gateway',
-  serviceVersion: '1.0.0',
-});
+} as any);
 
 sdk.start();
 

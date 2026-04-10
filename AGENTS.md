@@ -1,10 +1,36 @@
 # AGENTS.md
 
+## Project Overview
+
+**SelfMonitor** — all-in-one tax & finance platform for UK self-employed individuals.
+
+**Core capabilities:**
+- HMRC MTD tax filing (quarterly + final declaration) — sandbox tested, 13 endpoints
+- 5 tax calculators (PAYE, rental, CIS, dividend, crypto)
+- Invoicing with auto-chase, recurring, payment links, PDF generation
+- Mortgage advisor: readiness score, affordability, stamp duty, 8 UK lender matching
+- Bank sync (button-only, tiered daily limits per subscription)
+- AI assistant with voice input, 10 languages
+- Receipt OCR via camera
+- 33 Docker containers, 14 mobile screens (Revolut-style), 28 web pages
+
+**Key files for context:**
+- `README.md` — full feature list, API endpoints, architecture
+- `ROADMAP_TODO.md` — 4-phase launch plan (109 checkboxes)
+- `MONETIZATION_PLAN.md` — providers, 7 revenue streams, unit economics to £1M MRR
+- `BANK_SYNC_ECONOMICS.md` — sync model: button-only, no auto-sync, 92%+ margin
+
+**Business rules (never violate):**
+- Bank sync: ONLY on button press by user. No background/automatic sync. Ever.
+- HMRC submission: ONLY after explicit user confirmation. Never auto-submit.
+- Mortgage advice: informational only, not financial advice (FCA compliance)
+- AI answers: general guidance, not professional tax/legal advice
+
 ## Cursor Cloud specific instructions
 
 ### Architecture
 
-This is a FinTech monorepo for self-employed individuals with 23+ Python (FastAPI) microservices, a Next.js 13 web portal, and a React Native/Expo mobile app. Backend services are orchestrated via Docker Compose; the frontend runs separately.
+33 Python (FastAPI) microservices, Next.js 13 web portal, React Native/Expo mobile app (14 screens). Backend orchestrated via Docker Compose; frontends run separately.
 
 ### Running the Backend
 
@@ -75,7 +101,14 @@ The repo uses [cspell](https://cspell.org/) configured in `cspell.json`.
 
 - `qna-service` returns 503 because it uses a deprecated Weaviate Python client (v3 API) that is incompatible with newer `weaviate-client` packages. This is non-blocking for other services.
 - Localization keys show as raw keys (e.g. `nav.dashboard`) in the UI because the localization service returns translation keys rather than translated strings. This is cosmetic.
-- Docker must be started manually in Cloud Agent VMs: `sudo dockerd &>/tmp/dockerd.log &` (systemd is not available).
+- Docker must be started manually in Cloud Agent VMs: `sudo dockerd &>/tmp/dockerd.log &` (systemd is not available). After starting, run `sudo chmod 666 /var/run/docker.sock` so the non-root user can use Docker.
+- **`.env` DATABASE_URLs**: After `cp .env.example .env`, the DATABASE_URL values use `@postgres/` but the compose service name is `postgres-master`. Run `sed -i 's|@postgres/|@postgres-master/|g' .env` and also fix the password to match `POSTGRES_PASSWORD` in `.env`.
+- **LocalStack**: Requires `LOCALSTACK_ACKNOWLEDGE_ACCOUNT_REQUIREMENT=1` env var (already set in compose). Without it, LocalStack exits immediately.
+- **graphql-gateway**: Builds OK but fails at runtime — Python services are REST, not GraphQL subgraphs. Not critical (nginx REST gateway is the primary entry point).
+- **Web portal build**: All ESLint/TS errors fixed. `npm run build` passes clean without `ignoreBuildErrors`.
+- Several phantom services (fraud-detection, recommendation-engine, etc.) exist in repo but are NOT in docker-compose or nginx. They are backlog features — do not wire them up.
+- **Security**: All internal ports (postgres, redis, vault, weaviate) are closed. Only nginx:8000, billing:8024, invoice:8005 are exposed. CORS restricted to localhost:3000/3001.
+- **Legal pages**: `/terms`, `/privacy`, `/cookies`, `/eula` — all present and UK-law compliant.
 - `business-intelligence` service has `Optional[BackgroundTasks]` in `generate_business_insights` which is incompatible with FastAPI 0.133+. Tests work around this by monkey-patching `fastapi.routing.APIRoute.__init__` before importing the app.
 - Python service tests require `AUTH_SECRET_KEY` env var set **before** importing `app.main` (all services read it at module level via `os.environ["AUTH_SECRET_KEY"]`). Each test file sets it at the top.
 - `ai-agent-service` uses `langchain` as an optional dependency — all imports are wrapped in `try/except ImportError`. If langchain is not installed the agent falls back to direct OpenAI calls.

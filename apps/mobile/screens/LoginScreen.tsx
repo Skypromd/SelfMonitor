@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,10 +10,44 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, spacing, fontSize } from '../theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { useAuth } from '../context/AuthContext';
+
+function AnimatedPressable({
+  onPress,
+  style,
+  children,
+  disabled,
+}: {
+  onPress: () => void;
+  style?: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  return (
+    <Animated.View style={[{ transform: [{ scale }] }, style]}>
+      <TouchableOpacity
+        onPress={onPress}
+        onPressIn={() =>
+          Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start()
+        }
+        onPressOut={() =>
+          Animated.spring(scale, { toValue: 1, friction: 3, useNativeDriver: true }).start()
+        }
+        activeOpacity={0.9}
+        disabled={disabled}
+      >
+        {children}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
 
 export default function LoginScreen() {
   const { login, register } = useAuth();
@@ -63,18 +97,41 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.flex}
       >
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <Text style={styles.title}>SelfMonitor</Text>
-          <Text style={styles.subtitle}>Financial Dashboard for the Self-Employed</Text>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Brand */}
+          <View style={styles.brandSection}>
+            <View style={styles.logoCircle}>
+              <Text style={styles.logoEmoji}>💎</Text>
+            </View>
+            <Text style={styles.brandName}>SelfMonitor</Text>
+            <Text style={styles.tagline}>
+              Financial Dashboard for the Self-Employed
+            </Text>
+          </View>
 
           {message && (
-            <View style={[styles.messageBox, message.type === 'error' ? styles.errorBox : styles.successBox]}>
-              <Text style={[styles.messageText, message.type === 'error' ? styles.errorText : styles.successText]}>
+            <View
+              style={[
+                styles.messageBox,
+                message.type === 'error' ? styles.errorBox : styles.successBox,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.messageText,
+                  message.type === 'error' ? styles.errorText : styles.successText,
+                ]}
+              >
                 {message.text}
               </Text>
             </View>
           )}
 
+          {/* Form Card */}
           <View style={styles.card}>
             <Text style={styles.label}>Email</Text>
             <TextInput
@@ -100,17 +157,36 @@ export default function LoginScreen() {
             />
 
             {loading ? (
-              <ActivityIndicator size="large" color={colors.accentTeal} style={styles.loader} />
+              <ActivityIndicator
+                size="large"
+                color={colors.accentTeal}
+                style={styles.loader}
+              />
             ) : (
               <View style={styles.buttonRow}>
-                <TouchableOpacity style={styles.buttonPrimary} onPress={handleLogin}>
-                  <Text style={styles.buttonText}>Login</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.buttonSecondary} onPress={handleRegister}>
-                  <Text style={styles.buttonSecondaryText}>Register</Text>
-                </TouchableOpacity>
+                <AnimatedPressable onPress={handleLogin} style={styles.buttonFlex}>
+                  <LinearGradient
+                    colors={[colors.gradientStart, colors.gradientEnd]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={styles.buttonPrimary}
+                  >
+                    <Text style={styles.buttonText}>Login</Text>
+                  </LinearGradient>
+                </AnimatedPressable>
+                <AnimatedPressable onPress={handleRegister} style={styles.buttonFlex}>
+                  <View style={styles.buttonSecondary}>
+                    <Text style={styles.buttonSecondaryText}>Register</Text>
+                  </View>
+                </AnimatedPressable>
               </View>
             )}
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Secure login powered by SelfMonitor
+            </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -131,35 +207,52 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.lg,
   },
-  title: {
-    fontSize: fontSize.xxl,
-    fontWeight: '700',
-    color: colors.accentTealLight,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
+  brandSection: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
   },
-  subtitle: {
+  logoCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.accentTealBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  logoEmoji: {
+    fontSize: 32,
+  },
+  brandName: {
+    fontSize: fontSize.xxl,
+    fontWeight: '800',
+    color: colors.accentTeal,
+    letterSpacing: -0.5,
+  },
+  tagline: {
     fontSize: fontSize.sm,
     color: colors.textMuted,
     textAlign: 'center',
-    marginBottom: spacing.xl,
+    marginTop: spacing.sm,
   },
   card: {
-    backgroundColor: colors.bgElevated,
-    borderRadius: 12,
+    backgroundColor: colors.bgCard,
+    borderRadius: borderRadius.xl,
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
   },
   label: {
-    fontSize: fontSize.sm,
+    fontSize: fontSize.xs,
     color: colors.textMuted,
     marginBottom: spacing.xs,
     marginTop: spacing.md,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   input: {
-    backgroundColor: colors.bgCard,
-    borderRadius: 8,
+    backgroundColor: colors.bgElevated,
+    borderRadius: borderRadius.sm,
     padding: spacing.md,
     color: colors.text,
     fontSize: fontSize.md,
@@ -171,17 +264,17 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginTop: spacing.lg,
   },
-  buttonPrimary: {
+  buttonFlex: {
     flex: 1,
-    backgroundColor: colors.accentTeal,
-    borderRadius: 8,
+  },
+  buttonPrimary: {
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
   },
   buttonSecondary: {
-    flex: 1,
     backgroundColor: 'transparent',
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     alignItems: 'center',
     borderWidth: 1,
@@ -190,34 +283,42 @@ const styles = StyleSheet.create({
   buttonText: {
     color: colors.text,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   buttonSecondaryText: {
-    color: colors.accentTealLight,
+    color: colors.accentTeal,
     fontSize: fontSize.md,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   loader: {
     marginTop: spacing.lg,
   },
+  footer: {
+    marginTop: spacing.xl,
+    alignItems: 'center',
+  },
+  footerText: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+  },
   messageBox: {
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
   },
   errorBox: {
-    backgroundColor: colors.errorBg,
+    backgroundColor: colors.expenseBg,
   },
   successBox: {
-    backgroundColor: colors.successBg,
+    backgroundColor: colors.incomeBg,
   },
   messageText: {
     fontSize: fontSize.sm,
   },
   errorText: {
-    color: colors.error,
+    color: colors.expense,
   },
   successText: {
-    color: colors.success,
+    color: colors.income,
   },
 });

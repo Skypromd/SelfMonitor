@@ -2,13 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /code
 
-COPY ./requirements.txt /code/requirements.txt
+COPY ./services/documents-service/requirements.txt /code/requirements.txt
 
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-COPY ./app /code/app
-COPY ./alembic.ini /code/alembic.ini
-COPY ./alembic /code/alembic
+COPY ./libs /code/libs
+COPY ./services/documents-service/app /code/app
+COPY ./services/documents-service/alembic.ini /code/alembic.ini
+COPY ./services/documents-service/alembic /code/alembic
 
 RUN adduser --disabled-password --gecos '' appuser
 USER appuser

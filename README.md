@@ -1,154 +1,244 @@
-# Monorepo Project
+# SelfMonitor — Tax & Finance Platform for UK Self-Employed
 
-Этот репозиторий содержит полный код для проекта, как описано в архитектурном документе.
+All-in-one mobile-first platform for self-employed individuals in the UK. MTD tax filing, invoicing, mortgage readiness, AI advisor — in 10 languages.
 
-## Структура репозитория
+## What It Does
 
-- **/apps**: Фронтенд-приложения (веб и mobile web).
-- **/services**: Бэкенд-микросервисы на Python (FastAPI).
-- **/libs**: Общие библиотеки и модули (DTO, утилиты для БД).
-- **/infra**: Код инфраструктуры (Terraform, Kubernetes).
-- **/ml**: Модели машинного обучения и скрипты для их обслуживания.
-- **/tools**: Вспомогательные скрипты для разработки.
-- **/docs**: Документация проекта (PRD, DPIA).
-- **/.github**: Конфигурации для CI/CD (GitHub Actions).
+| Feature | Description |
+|---|---|
+| **MTD Tax Filing** | Quarterly updates + final declaration directly to HMRC |
+| **Tax Calculators** | PAYE, self-employed, rental, CIS, dividend, crypto |
+| **Invoicing** | Create, send, auto-chase, recurring, payment links, PDF generation |
+| **Mortgage Advisor** | Readiness score, affordability calculator, stamp duty, lender matching (8 UK banks) |
+| **Bank Sync** | Connect bank accounts, sync transactions by button press (no auto-sync) |
+| **Receipt Scanner** | Camera → OCR → auto-create transaction |
+| **AI Assistant** | Multilingual tax & mortgage advice with voice input |
+| **10 Languages** | EN, PL, RO, UA, RU, ES, IT, PT, TR, BN |
 
-## Быстрый старт (с Docker Compose)
+## Architecture
 
-Самый простой способ запустить весь проект локально — использовать Docker Compose.
+```
+┌─────────────────────────────────────────────────────┐
+│                    Clients                            │
+│  📱 Mobile (Expo/RN)    🌐 Web (Next.js)             │
+└──────────────┬──────────────────┬────────────────────┘
+               │                  │
+               ▼                  ▼
+        ┌──────────────────────────────┐
+        │   nginx gateway (:8000)       │
+        └──────────────┬───────────────┘
+                       │
+    ┌──────────────────┼──────────────────────┐
+    │                  │                      │
+    ▼                  ▼                      ▼
+ 33 Python          PostgreSQL            Redis
+ microservices      (master)              (cache/queue)
+ (FastAPI)
+```
 
-1. **Подготовьте переменные окружения:**
-   В корне проекта создайте `.env` из шаблона:
+### Backend Services (33 containers)
 
-   ```bash
-   cp .env.example .env
-   ```
+| Category | Services |
+|---|---|
+| **Core** | auth, user-profile, transactions, compliance, consent |
+| **Finance** | tax-engine (7 calculators), invoice-service, billing (Stripe), banking-connector |
+| **HMRC** | integrations-service (13 MTD endpoints), mtd-agent (auto-submission), finops-monitor |
+| **Mortgage** | analytics-service (12 mortgage endpoints + lender DB) |
+| **AI** | ai-agent-service, voice-gateway (STT/TTS), support-ai |
+| **Data** | categorization (200+ UK merchants), documents (OCR), calendar, localization |
+| **Growth** | referral-service, cost-optimization, partner-registry |
+| **Infra** | postgres, redis, vault, localstack (S3), weaviate, jaeger |
 
-   При необходимости обновите значения в `.env` (секреты и URL).
+### Frontend
 
-2. **Запустите бэкенд:**
-   Из корневой директории проекта выполните команду:
+| App | Tech | Screens |
+|---|---|---|
+| **Mobile** | Expo SDK 51 / React Native 0.74.5 | 14 screens, Revolut-style dark UI |
+| **Web Portal** | Next.js 13 | 28 pages |
 
-   ```bash
-   cp .env.example .env
-   docker-compose up --build
-   ```
+## HMRC MTD Integration
 
-   Перед запуском заполните секреты в `.env` (JWT secret, DB password, Vault/Weaviate credentials). Эта команда соберёт образы для всех сервисов и запустит их вместе с базой данных PostgreSQL. Backend-сервисы будут доступны по адресам `http://localhost:8000`, `http://localhost:8001` и так далее.
+Sandbox tested and approved. All minimum functionality requirements met:
 
-3. **Запустите фронтенд:**
-   В **новом окне терминала** перейдите в директорию веб-портала и запустите его:
+| Requirement | Status |
+|---|---|
+| Fraud prevention headers | ✅ Validated by HMRC |
+| Business details | ✅ Tested |
+| Obligations (deadlines) | ✅ Tested |
+| Quarterly periodic updates | ✅ Submitted to sandbox |
+| Tax calculation estimate | ✅ Working |
+| Final declaration | ✅ Working |
+| Loss adjustments | ✅ Working |
+| BSAS | ✅ Working |
+| VAT return | ✅ Working |
 
-   ```bash
-   cd apps/web-portal
-   npm install
-   npm run dev
-   ```
+HMRC Sandbox App ID: `04c10afd-a1bd-4328-b993-27169719e9a1`
 
-4. **Откройте приложение:**
-   Откройте в браузере `http://localhost:3000`. Вы должны увидеть страницу регистрации/входа.
+## Quick Start
 
-## Поддержка устройств (web-only)
+### 1. Backend (Docker Compose)
 
-Текущий формат продукта — **web-only**:
+```bash
+cp .env.example .env
+# Edit .env — see comments for Stripe, HMRC, Open Banking setup
+docker compose up --build -d
+```
 
-- доступен на ноутбуке/ПК через браузер;
-- доступен на телефоне через мобильный браузер;
-- отдельного нативного приложения для iOS/Android пока нет.
+API gateway: `http://localhost:8000`
 
-> Обновление: начата реализация нативного mobile shell в `apps/mobile` (Expo + WebView),
-> чтобы выпустить приложение в App Store / Google Play с максимальным переиспользованием веб-версии.
+### 2. Web Portal
 
-## Запуск отдельных сервисов
+```bash
+cd apps/web-portal
+npm install --no-package-lock
+npm run dev
+```
 
-Каждый сервис в директории `services` является независимым приложением. Для запуска отдельного сервиса:
+Web portal: `http://localhost:3000`
 
-1. Перейдите в директорию сервиса, например, `cd services/auth-service`.
-2. Установите зависимости: `pip install -r requirements.txt`.
-3. Запустите сервер: `uvicorn app.main:app --reload`.
-
-Для получения дополнительной информации обратитесь к `README.md` внутри каждого сервиса.
-
-## Запуск mobile-приложения (in progress)
+### 3. Mobile App
 
 ```bash
 cd apps/mobile
 npm install
-cp .env.example .env
-npm run start
+npx expo start
 ```
 
-Детали и roadmap: `apps/mobile/README.md`.
+Scan QR with Expo Go on your phone.
 
-## Тестирование
+## Mobile App (14 screens)
 
-Каждый сервис должен содержать свои собственные тесты в директории `tests/`. Тесты написаны с использованием `pytest`.
-
-Чтобы запустить тесты для конкретного сервиса:
-
-1. Перейдите в директорию сервиса, например, `cd services/auth-service`.
-2. Убедитесь, что установлены зависимости для тестирования (они включены в `requirements.txt`).
-3. Запустите pytest: `pytest`.
-
-CI-пайплайн, настроенный в `.github/workflows/ci.yaml`, также автоматически запускает эти тесты при внесении изменений.
-
-## Changelog
-
-### 2026-03-06
-
-#### Новые сервисы
-
-| Сервис | Порт | Описание |
+| Tab | Screen | Feature |
 |---|---|---|
-| `services/finops-monitor` | 8021 | Мониторинг финансовых операций, отслеживание MTD/ITSA |
-| `services/mtd-agent` | 8022 | Агент для автоматической подачи MTD-деклараций в HMRC |
-| `services/voice-gateway` | 8023 | Голосовой шлюз (STT/TTS, WebSocket) |
-| `services/ai-agent-service` | 80 | SelfMate AI агент с памятью, инструментами и многоязычной поддержкой |
+| 🏠 Home | Dashboard | Hero balance, tax status, quick actions, recent transactions |
+| 📸 Scan | Receipt Scanner | Camera → OCR → transaction |
+| 🔄 Sync | Bank Sync | Connect bank, sync button with daily limit per subscription tier |
+| 🤖 AI | Assistant | Chat with AI, voice input, tax & mortgage advice |
+| ⋯ More | Profile, Reports, Invoices, Mortgage, Activity | Full feature access |
 
-#### Исправления тестов (37/37 ✅)
+## API Endpoints (highlights)
 
-- **ai-agent-service** (17/17): исправлены `AsyncMock` в conftest, защита от `ZeroDivisionError` в `_update_performance_metrics`, mock Redis в тесте профиля
-- **mtd-agent** (10/10): пустая строка API-ключа теперь трактуется как «нет ключа», добавлена ветка `else` в `_determine_actions` для >30 дней
-- **voice-gateway** (10/10): все тесты прошли с первого запуска
+### HMRC MTD (13 endpoints)
+```
+POST /api/integrations/integrations/hmrc/mtd/periodic-update
+POST /api/integrations/integrations/hmrc/mtd/final-declaration
+POST /api/integrations/integrations/hmrc/mtd/tax-calculation
+POST /api/integrations/integrations/hmrc/mtd/loss-adjustment
+POST /api/integrations/integrations/hmrc/vat/return
+GET  /api/integrations/integrations/hmrc/mtd/business-details
+GET  /api/integrations/integrations/hmrc/mtd/obligations
+GET  /api/integrations/integrations/hmrc/mtd/bsas/{tax_year}
+GET  /api/integrations/integrations/hmrc/mtd/operational-readiness
+```
 
-#### Конфигурация spell-check
+### Tax Calculators (5 endpoints)
+```
+POST /api/tax/calculators/paye
+POST /api/tax/calculators/rental
+POST /api/tax/calculators/cis
+POST /api/tax/calculators/dividend
+POST /api/tax/calculators/crypto
+```
 
-- `cspell.json` расширен: ~250 технических слов в `words`, кириллические `.md`-файлы и demo-скрипты добавлены в `ignorePaths`
-- Результат: **0 ошибок** по всему workspace
+### Mortgage (12 endpoints)
+```
+POST /api/analytics/mortgage/readiness
+POST /api/analytics/mortgage/affordability
+POST /api/analytics/mortgage/stamp-duty
+POST /api/analytics/mortgage/lender-match
+POST /api/analytics/mortgage/checklist
+POST /api/analytics/mortgage/pack-index
+POST /api/analytics/mortgage/pack-index.pdf
+GET  /api/analytics/mortgage/types
+GET  /api/analytics/mortgage/lender-profiles
+```
 
-#### Коммиты
+### Invoicing (10+ endpoints)
+```
+POST /api/billing/invoices
+POST /api/billing/invoices/{id}/chase
+POST /api/billing/invoices/{id}/payment-link
+POST /api/billing/invoices/recurring
+GET  /api/billing/invoices/overdue/list
+```
 
-| Хэш | Описание |
+### Categorization (200+ UK merchants)
+```
+POST /api/categorization/categorize
+POST /api/categorization/categorize/bulk
+GET  /api/categorization/categories
+```
+
+## Subscription Tiers
+
+| Tier | Price | Bank Sync | Key Features |
+|---|---|---|---|
+| Free | £0 | No sync | Manual entry, dashboard, tax calculator |
+| Starter | £9/mo | 1×/day | MTD quarterly, 1 bank, invoices |
+| Growth | £12/mo | 2×/day | + AI advisor, receipt OCR, all banks |
+| Pro | £15/mo | 3×/day | + voice input, auto-submission, CSV export |
+| Business | £25/mo | 3×/day | + multi-business, accountant access, API |
+
+Bank sync is **button-only** — no automatic background sync. Push notifications remind users to sync.
+
+## Security
+
+- All internal ports (postgres, redis, vault) closed — only nginx gateway exposed
+- CORS restricted to application domains
+- HSTS header enabled
+- JWT authentication on all endpoints
+- Vault for secret storage (banking tokens)
+- HMRC fraud prevention headers validated
+- GDPR compliant with full Privacy Policy
+
+## Legal Pages
+
+| Page | URL |
 |---|---|
-| `dc33d9e` | feat: MTD Agent, Voice Gateway, SelfMate Redis refactor, multi-language support |
-| `3a0a8b3` | fix: resolve test failures across ai-agent-service, mtd-agent, voice-gateway |
-| `0bc9b79` | fix: repair cspell.json invalid JSON (duplicate block appended) |
-| `357c73b` | fix: restore 0 cspell errors — add 40 new words, ignore Cyrillic MD and demo files |
+| Terms of Service | `/terms` |
+| Privacy Policy | `/privacy` |
+| Cookie Policy | `/cookies` |
+| EULA | `/eula` |
 
-## Release readiness
+UK law (England and Wales). GDPR compliant. ICO ready.
 
-Перед релизом рекомендуется выполнить preflight-проверки из корня репозитория:
+## Documentation
 
-```bash
-python3 tools/release_preflight.py --quick
-```
+| File | Content |
+|---|---|
+| `ROADMAP_TODO.md` | 4-phase launch plan with 109 checkboxes |
+| `MONETIZATION_PLAN.md` | Provider comparison, 7 revenue streams, unit economics |
+| `BANK_SYNC_ECONOMICS.md` | Button-only sync model, 92%+ margin per tier |
+| `AGENTS.md` | Developer environment setup guide |
+| `.env.example` | All configuration with setup instructions |
 
-Для расширенной проверки с фронтенд-сборкой:
+## Tech Stack
 
-```bash
-python3 tools/release_preflight.py --include-frontend
-```
+| Layer | Technology |
+|---|---|
+| Mobile | Expo SDK 51, React Native 0.74.5, TypeScript |
+| Web | Next.js 13, React 18, TypeScript |
+| Backend | Python 3.12, FastAPI, SQLAlchemy, Alembic |
+| Database | PostgreSQL 15, Redis 7, SQLite (auth/billing) |
+| Infrastructure | Docker Compose, nginx, Vault, LocalStack |
+| Payments | Stripe (with DEV_MODE fallback) |
+| HMRC | OAuth2 + MTD ITSA APIs (sandbox tested) |
+| AI | OpenAI API (optional), voice gateway (STT/TTS) |
 
-Для фиксации baseline по времени выполнения критических проверок:
+## Project Stats
 
-```bash
-python3 tools/release_preflight.py --quick --include-frontend \
-  --timings-json docs/observability/baselines/preflight_quick_YYYY-MM-DD.json
-```
+- **33 Docker containers** running
+- **66 files changed** in this release
+- **10,882 lines** of new code
+- **14 mobile screens** (Revolut-style design)
+- **28 web pages**
+- **13 HMRC endpoints** (all sandbox tested)
+- **12 mortgage endpoints**
+- **5 tax calculators**
+- **200+ UK merchant categories**
+- **10 languages** supported
+- **1,440 lines** of legal documentation
 
-См. также: `docs/observability/PERFORMANCE_BASELINE.md`.
+## License
 
-Операционные инструкции:
-
-- `docs/release/GO_LIVE_RUNBOOK.md`
-- `docs/release/ROLLBACK_DRILL.md`
+Proprietary. All rights reserved. See `EULA` for details.

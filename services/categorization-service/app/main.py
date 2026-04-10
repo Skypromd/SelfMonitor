@@ -46,23 +46,92 @@ class CategorizationRequest(BaseModel):
 class CategorizationResponse(BaseModel):
     category: Optional[str]
 
-# Deterministic ruleset used as the baseline categorization model.
+_CATEGORY_RULES: dict[str, list[str]] = {
+    "groceries": [
+        "tesco", "sainsbury", "sainsburys", "lidl", "aldi", "asda", "morrisons",
+        "waitrose", "co-op", "coop", "iceland", "ocado", "marks spencer food",
+        "m&s food", "farmfoods",
+    ],
+    "transport": [
+        "tfl", "trainline", "uber", "bolt", "gett", "lyft", "addison lee",
+        "national rail", "scotrail", "great western", "avanti", "lner",
+        "megabus", "national express", "flixbus",
+    ],
+    "fuel": [
+        "shell", "bp", "esso", "texaco", "total", "jet", "murco",
+        "sainsburys fuel", "tesco fuel", "asda fuel", "morrisons fuel",
+    ],
+    "food_and_drink": [
+        "pret", "costa", "starbucks", "greggs", "mcdonalds", "burger king",
+        "kfc", "nandos", "pizza hut", "dominos", "subway", "leon",
+        "wasabi", "itsu", "eat", "caffe nero", "joe the juice",
+    ],
+    "subscriptions": [
+        "netflix", "spotify", "amazon prime", "disney plus", "apple",
+        "youtube premium", "adobe", "microsoft 365", "google one",
+        "dropbox", "notion", "slack", "zoom", "canva",
+    ],
+    "utilities": [
+        "british gas", "edf", "eon", "octopus energy", "bulb", "ovo",
+        "thames water", "united utilities", "bt broadband", "virgin media",
+        "sky", "talktalk", "plusnet", "ee", "three", "vodafone", "o2",
+    ],
+    "insurance": [
+        "aviva", "direct line", "admiral", "axa", "zurich", "legal general",
+        "simply business", "hiscox", "rias", "churchill", "more than",
+    ],
+    "office_supplies": [
+        "staples", "viking", "ryman", "office depot", "amazon business",
+        "currys business", "dell", "apple store",
+    ],
+    "professional_services": [
+        "accountant", "solicitor", "lawyer", "legal", "consulting",
+        "fiverr", "upwork", "peopleperhour",
+    ],
+    "advertising": [
+        "google ads", "facebook ads", "meta ads", "instagram", "linkedin",
+        "twitter ads", "tiktok ads", "mailchimp", "hubspot",
+    ],
+    "rent": [
+        "rent", "lease", "landlord", "letting agent", "openrent",
+    ],
+    "travel": [
+        "booking.com", "airbnb", "hotels.com", "expedia", "skyscanner",
+        "easyjet", "ryanair", "british airways", "jet2", "wizz air",
+        "tui", "premier inn", "travelodge",
+    ],
+    "income": [
+        "salary", "wages", "payment received", "bank transfer in",
+        "client payment", "invoice payment", "freelance",
+    ],
+    "tax": [
+        "hmrc", "self assessment", "vat payment", "national insurance",
+        "corporation tax", "paye",
+    ],
+    "health": [
+        "pharmacy", "boots", "superdrug", "dentist", "optician",
+        "specsavers", "bupa", "vitality",
+    ],
+    "home_office": [
+        "ikea", "argos furniture", "john lewis", "desk", "chair",
+        "monitor", "keyboard", "webcam", "headset",
+    ],
+}
+
 def suggest_category_from_rules(description: str) -> Optional[str]:
-    """A simple rule-based model to categorize a transaction."""
-    desc_lower = description.lower()
+    """Categorize transaction by matching merchant name against UK rules database."""
+    desc_lower = description.lower().strip()
 
-    if "tesco" in desc_lower or "sainsbury" in desc_lower or "lidl" in desc_lower or "asda" in desc_lower:
-        return "groceries"
-    if "tfl" in desc_lower or "trainline" in desc_lower or "uber" in desc_lower:
-        return "transport"
-    if "pret" in desc_lower or "costa" in desc_lower or "starbucks" in desc_lower:
-        return "food_and_drink"
-    if "amazon prime" in desc_lower or "netflix" in desc_lower or "spotify" in desc_lower:
-        return "subscriptions"
-    if "salary" in desc_lower or "payment" in desc_lower:
-        return "income"
+    best_match: Optional[str] = None
+    best_match_len = 0
 
-    return None # If no rule matches
+    for category, merchants in _CATEGORY_RULES.items():
+        for merchant in merchants:
+            if merchant in desc_lower and len(merchant) > best_match_len:
+                best_match = category
+                best_match_len = len(merchant)
+
+    return best_match
 
 @app.post("/categorize", response_model=CategorizationResponse)
 async def categorize_transaction(
@@ -74,3 +143,31 @@ async def categorize_transaction(
     """
     category = suggest_category_from_rules(request.description)
     return CategorizationResponse(category=category)
+
+
+class BulkCategorizationRequest(BaseModel):
+    descriptions: list[str]
+
+class BulkCategorizationResponse(BaseModel):
+    results: list[dict]
+
+@app.post("/categorize/bulk", response_model=BulkCategorizationResponse)
+async def categorize_bulk(
+    request: BulkCategorizationRequest,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Categorize multiple transactions at once"""
+    results = []
+    for desc in request.descriptions:
+        category = suggest_category_from_rules(desc)
+        results.append({"description": desc, "category": category})
+    return BulkCategorizationResponse(results=results)
+
+
+@app.get("/categories")
+async def list_categories():
+    """List all available categories with merchant examples"""
+    return {
+        category: {"merchant_count": len(merchants), "examples": merchants[:5]}
+        for category, merchants in _CATEGORY_RULES.items()
+    }
