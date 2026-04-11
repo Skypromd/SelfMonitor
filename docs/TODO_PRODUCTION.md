@@ -7,7 +7,7 @@
 
 Единый чеклист до продакшена. После крупных изменений обновляйте `docs/architecture/SERVICES_MATRIX.md`.
 
-**Сводка:** `docs/LAUNCH_READINESS.md` · **E2E программа:** `docs/E2E_PRODUCTION_PROGRAM.md` · **Политика:** `docs/POLICY_SPEC.md`
+**Сводка:** `docs/LAUNCH_READINESS.md` · **E2E программа:** `docs/E2E_PRODUCTION_PROGRAM.md` · **Политика:** `docs/POLICY_SPEC.md` · **Scope v1:** `docs/production-scope.md` · **Non-goals:** `docs/non-goals.md` · **Стандарт сервиса:** `docs/service-standard.md` · **Go-live:** `docs/GO_LIVE_CHECKLIST.md` · **DR:** `docs/disaster-recovery.md` · **Runbooks:** `docs/runbooks/` (restore-db, rollback, incident-triage, stripe-webhook-failures и др.)
 
 **Принятые решения:**
 
@@ -27,6 +27,7 @@
 ## 1. Gateway и единая точка входа (`:8000`)
 
 - [x] **nginx** invoice upstream и location (как ранее).
+- [x] **Correlation id:** `map` по `X-Request-Id` / `$request_id` и прокидывание `X-Request-Id` во все `proxy_pass` (`nginx/nginx.conf`); см. `docs/service-standard.md`.
 - [x] Фронт invoices через gateway (как ранее).
 - [x] Мобильные клиенты: комментарии к `EXPO_PUBLIC_API_GATEWAY_URL` в `apps/mobile/src/services/api.ts` и `I18nContext.tsx` — прод только через публичный gateway.
 - [x] Проверка smoke: **`scripts/smoke_gateway_health.sh`** / **`.ps1`** после `docker compose up`.
@@ -35,6 +36,7 @@
 
 ## 2. Здоровье сервисов и CI
 
+- [x] **gitleaks** в **`.github/workflows/ci.yaml`** (скан секретов в истории коммитов).
 - [x] Контракт **`/health`** и исключения: **`docs/HEALTH_ENDPOINTS.md`**.
 - [x] Пример job smoke через gateway: **`docs/runbooks/GATEWAY_SMOKE_CI.md`** (включите в workflow при готовности compose на раннере).
 - [x] **graphql-gateway** задокументирован (`docs/architecture/GRAPHQL_GATEWAY.md`).
@@ -138,6 +140,7 @@
 ## 15. Безопасность и операции
 
 - [x] **`docs/THREAT_MODEL.md`**, **`docs/SECURITY_CHECKLIST.md`**, **`docs/OPERATIONS_BACKUP_AND_MONITORING.md`** (шаблоны и чеклисты).
+- [x] Продуктовый контур v1 и границы: **`docs/production-scope.md`**, **`docs/non-goals.md`**; операционные шаблоны: **`docs/GO_LIVE_CHECKLIST.md`**, **`docs/disaster-recovery.md`**, **`docs/runbooks/restore-db.md`**, **`docs/runbooks/rollback.md`**, **`docs/runbooks/incident-triage.md`**, **`docs/runbooks/stripe-webhook-failures.md`**.
 - [ ] Фактическое включение CORS/rate-limit/бэкапов на прод-инфраструктуре — ops.
 
 ---

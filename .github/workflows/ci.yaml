@@ -9,9 +9,24 @@ on:
       - "apps/web-portal/**"
       - "apps/mobile/**"
       - "tests/**"
+      - "nginx/**"
       - ".github/workflows/ci.yaml"
 
 jobs:
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   python-services:
     name: Python checks (${{ matrix.service }})
     runs-on: ubuntu-latest
