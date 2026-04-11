@@ -5,7 +5,7 @@
 | Файл | Назначение |
 |------|------------|
 | `docker-compose.yml` | Общая схема сервисов (dev-friendly порты). |
-| `docker-compose.prod.yml` | Prod: тома Postgres/billing, restart, backup profile. |
+| `docker-compose.prod.yml` | Prod: billing том, restart, backup profile (**том Postgres уже в базовом** `docker-compose.yml`). |
 | `docker-compose.staging.yml` | Staging: отдельное `name:` → изолированные volumes. |
 | `nginx/nginx.conf` + `nginx/snippets/` | Gateway; общие proxy-заголовки в `proxy_common.conf`. |
 | `.env.prod.example` / `.env.staging.example` | Шаблоны секретов (**не** коммитить `.env.prod` / `.env.staging`). |
@@ -29,17 +29,33 @@ docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod
 
 ## 2. Инфраструктура в Compose (обязательный минимум)
 
-- PostgreSQL (в проде предпочтительно managed; в `docker-compose.prod.yml` включён том данных мастера).
-- Redis, объектное хранилище (MinIO/S3).
+- **PostgreSQL:** `postgres-master` монтирует **`postgres_master_data`** (данные не теряются при пересоздании контейнера без удаления volume).
+- Redis (пароль опционально: `REDIS_PASSWORD`; без него мастер без ACL-пароля — только для доверенной dev-сети), MinIO/S3.
 - **nginx-gateway** — единая точка API для клиентов.
+
+### 2.1 Профили (не поднимать «зоопарк» по умолчанию)
+
+| Профиль | Сервисы |
+|---------|---------|
+| *(без профиля)* | Основной стек; **не** стартуют: graphql-gateway, postgres-replica, redis replicas/sentinels, localstack, aws-cli-setup, mlflow, elasticsearch/kibana. |
+| `graphql` | `graphql-gateway` |
+| `ha-postgres` | `postgres-replica` (эксперимент HA; для prod на Compose лучше один мастер + бэкапы). |
+| `redis-ha` | `redis-replica-*`, `redis-sentinel-*` — пароль мастера должен совпадать с `masterauth` / Sentinel в `infra/redis/*.conf` или задайте `REDIS_PASSWORD` и синхронизируйте конфиги. |
+| `dev-localstack` | LocalStack + `aws-cli-setup` (S3/Textract для dev OCR). Без профиля документы ходят в **MinIO**; Textract по умолчанию всё ещё указывает на localstack — для OCR включите профиль или смените endpoint. |
+| `mlops` | `mlflow-server` |
+| `siem` | `elasticsearch`, `kibana` |
+| `backup` | `postgres-backup` (в `docker-compose.prod.yml` / staging). |
+
+**nginx-gateway** `depends_on` сокращён до **контура v1** (`docs/production-scope.md`); остальные upstream поднимаются транзитивно или позже — при обращении к ним nginx резолвит имя.
 
 ## 3. Блокеры v1 (порядок)
 
 ### A. Секреты и конфиги
 
-- Использовать `.env.prod` (не в git) + шаблон `.env.prod.example`.
-- Для чувствительных значений на хосте: файлы с правами root-only (например `/etc/selfmonitor/secrets/...`) или менеджер секретов; проброс в контейнеры через `env_file` / secrets driver.
-- **DoD:** gitleaks зелёный; без обязательных секретов сервисы не должны молча работать как «прод» (fail-fast по мере внедрения в сервисах).
+- Использовать `.env` / `.env.prod` (не в git) + **`.env.example`** в репозитории.
+- В `docker-compose.yml` убраны захардкоженные JWT/сессии для **invoice-service**, **security-service**, **graphql-gateway** (через `AUTH_SECRET_KEY` / `GRAPHQL_JWT_SECRET`), **Vault token** без дефолта в YAML — задайте `VAULT_DEV_ROOT_TOKEN_ID` в `.env` для dev.
+- **backup-service:** убран **`docker.sock`**; шифрование и S3 только если заданы `BACKUP_ENCRYPTION_KEY` / ключи S3.
+- **DoD:** gitleaks зелёный; прод-значения только на сервере / в секрет-хранилище.
 
 ### B. Бэкапы и restore drill
 

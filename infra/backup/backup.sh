@@ -37,7 +37,11 @@ fi
 
 # Redis Backup
 log "Creating Redis backup..."
-if redis-cli -h redis-master -p 6379 -a redis_secure_password_2026 --rdb $REDIS_BACKUP; then
+REDIS_CLI=(redis-cli -h redis-master -p 6379)
+if [ -n "${REDIS_PASSWORD:-}" ]; then
+  REDIS_CLI+=(-a "$REDIS_PASSWORD")
+fi
+if "${REDIS_CLI[@]}" --rdb "$REDIS_BACKUP"; then
     log "Redis backup completed successfully: $REDIS_BACKUP"
 else
     log "ERROR: Redis backup failed"

@@ -7,8 +7,6 @@ name: selfmonitor-staging
 
 services:
   postgres-master:
-    volumes:
-      - postgres_master_data:/var/lib/postgresql/data
     restart: unless-stopped
 
   nginx-gateway:
@@ -44,6 +42,5 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_master_data:
   postgres_backups:
   billing_sqlite_data:

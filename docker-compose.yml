@@ -11,7 +11,7 @@ services:
     environment:
       NODE_ENV: development
       PORT: 4000
-      JWT_SECRET: "a_secure_random_string_for_jwt_signing_!@#$%^"
+      JWT_SECRET: "${GRAPHQL_JWT_SECRET:-${AUTH_SECRET_KEY}}"
       ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001"
       # Service URLs for federation
       AUTH_SERVICE_URL: "http://auth-service:80/graphql"
@@ -67,32 +67,21 @@ services:
     container_name: nginx-gateway
     ports:
       - "8000:80" # The single entry point for our backend
+    # Только контур v1 (см. docs/production-scope.md). Остальные сервисы поднимаются своими зависимостями;
+    # nginx резолвит upstream при запросе (без жёсткой блокировки старта на «весь зоопарк»).
     depends_on:
       - auth-service
       - user-profile-service
       - transactions-service
-      - compliance-service
-      - consent-service
       - banking-connector
       - documents-service
       - tax-engine
-      - advice-service
-      - partner-registry
       - integrations-service
-      - analytics-service
-      - localization-service
-      - categorization-service
-      - qna-service
-      - calendar-service
-      - agent-service
-      - support-ai-service
+      - mtd-agent
       - invoice-service
       - billing-service
-      - referral-service
-      - cost-optimization
-      - finops-monitor
-      - mtd-agent
-      - voice-gateway
+      - localization-service
+      - qna-service
     networks:
       - default_network
 
@@ -104,16 +93,20 @@ services:
       POSTGRES_USER: "${POSTGRES_USER:-user}"
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-password}"
       POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
     networks:
       - default_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d db_user_profile"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 60s
 
   postgres-replica:
+    profiles:
+      - ha-postgres
     image: postgres:15-alpine
     container_name: postgres_replica
     environment:
@@ -150,8 +143,9 @@ services:
     container_name: minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      # Для prod задайте в .env / секретах; локальный дефолт только для удобства dev.
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-minioadmin}"
     ports:
       - "9000:9000" # MinIO API
       - "9001:9001" # MinIO Console
@@ -172,18 +166,36 @@ services:
     volumes:
       - redis_master_data:/data
       - ./infra/redis/redis-master.conf:/usr/local/etc/redis/redis.conf
-    command: redis-server /usr/local/etc/redis/redis.conf
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+    command:
+      - /bin/sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$$REDIS_PASSWORD"
+        else
+          exec redis-server /usr/local/etc/redis/redis.conf
+        fi
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis_secure_password_2026", "ping"]
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi',
+        ]
       interval: 10s
       timeout: 3s
       retries: 3
 
   redis-replica-1:
+    profiles:
+      - redis-ha
     image: redis:7-alpine
     container_name: redis_replica_1
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     ports:
       - "6380:6379"
     volumes:
@@ -195,14 +207,22 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis_secure_password_2026", "ping"]
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi',
+        ]
       interval: 10s
       timeout: 3s
       retries: 3
 
   redis-replica-2:
+    profiles:
+      - redis-ha
     image: redis:7-alpine
     container_name: redis_replica_2
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     ports:
       - "6381:6379"
     volumes:
@@ -214,13 +234,19 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "redis_secure_password_2026", "ping"]
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping; else redis-cli ping; fi',
+        ]
       interval: 10s
       timeout: 3s
       retries: 3
 
   # Redis Sentinels for automatic failover
   redis-sentinel-1:
+    profiles:
+      - redis-ha
     image: redis:7-alpine
     container_name: redis_sentinel_1
     ports:
@@ -234,6 +260,8 @@ services:
       - default_network
 
   redis-sentinel-2:
+    profiles:
+      - redis-ha
     image: redis:7-alpine
     container_name: redis_sentinel_2
     ports:
@@ -247,6 +275,8 @@ services:
       - default_network
 
   redis-sentinel-3:
+    profiles:
+      - redis-ha
     image: redis:7-alpine
     container_name: redis_sentinel_3
     ports:
@@ -260,6 +290,8 @@ services:
       - default_network
 
   mlflow-server:
+    profiles:
+      - mlops
     build: ./ml/mlops-platform
     container_name: mlflow-server
     depends_on:
@@ -268,18 +300,18 @@ services:
       - redis-master
     environment:
       # MLflow Configuration
-      MLFLOW_TRACKING_URI: "postgresql://user:password@postgres-master:5432/mlflow"
+      MLFLOW_TRACKING_URI: "postgresql://user:${POSTGRES_PASSWORD}@postgres-master:5432/mlflow"
       ARTIFACT_STORE: "minio"
       MINIO_ENDPOINT: "minio:9000"
-      MINIO_ACCESS_KEY: "minioadmin"
-      MINIO_SECRET_KEY: "minioadmin"
+      MINIO_ACCESS_KEY: "${MINIO_ROOT_USER}"
+      MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
       S3_BUCKET_NAME: "selfmonitor-ml-artifacts"
 
       # Database Configuration
       DB_HOST: "postgres-master"
       DB_NAME: "mlflow"
       DB_USER: "user"
-      DB_PASSWORD: "password"
+      DB_PASSWORD: "${POSTGRES_PASSWORD}"
 
       # Redis Configuration
       REDIS_HOST: "redis"
@@ -320,7 +352,7 @@ services:
     environment:
       # This is how we pass secrets to our services in a production-like environment.
       # In a real cloud deployment, this would come from a secret manager (like AWS Secrets Manager or HashiCorp Vault).
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       AUTH_RUNTIME_STATE_BACKEND: "${AUTH_RUNTIME_STATE_BACKEND:-redis}"
       AUTH_RUNTIME_STATE_REDIS_URL: "${AUTH_RUNTIME_STATE_REDIS_URL:-redis://redis:6379/1}"
       AUTH_RUNTIME_STATE_REDIS_KEY: "${AUTH_RUNTIME_STATE_REDIS_KEY:-selfmonitor:auth:runtime_state}"
@@ -343,12 +375,12 @@ services:
     build: ./services/invoice-service
     container_name: invoice-service
     environment:
-      - DATABASE_URL=postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_invoices
-      - AUTH_SECRET_KEY=a_secure_random_string_for_jwt_signing_!@#$%^
-      - PDF_OUTPUT_DIR=/app/pdfs
-      - REDIS_URL=redis://redis-master:6379
-      - TRANSACTIONS_SERVICE_URL=http://transactions-service:80
-      - ANALYTICS_SERVICE_URL=http://analytics-service:80
+      DATABASE_URL: "postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_invoices"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      PDF_OUTPUT_DIR: /app/pdfs
+      REDIS_URL: "${INVOICE_REDIS_URL:-redis://redis-master:6379/0}"
+      TRANSACTIONS_SERVICE_URL: http://transactions-service:80
+      ANALYTICS_SERVICE_URL: http://analytics-service:80
     volumes:
       - invoice_pdfs:/app/pdfs
       - ./services/invoice-service/templates:/app/templates
@@ -376,8 +408,8 @@ services:
     depends_on:
       - postgres-master
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${USER_PROFILE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_user_profile}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      DATABASE_URL: "${USER_PROFILE_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_user_profile}"
     # Run migrations before starting the app server
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -392,8 +424,8 @@ services:
       - postgres-master
       - categorization-service
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_transactions}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_transactions}"
       CATEGORIZATION_SERVICE_URL: "${CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
@@ -405,8 +437,8 @@ services:
     depends_on:
       - postgres-master
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${COMPLIANCE_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_compliance}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      DATABASE_URL: "${COMPLIANCE_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_compliance}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
@@ -420,8 +452,8 @@ services:
       - compliance-service
       - postgres-master
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${CONSENT_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_consent}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      DATABASE_URL: "${CONSENT_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_consent}"
       COMPLIANCE_SERVICE_URL: "${CONSENT_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
     networks:
       - default_network
@@ -435,10 +467,10 @@ services:
       - transactions-service
       - vault
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${BANKING_TRANSACTIONS_SERVICE_URL:-http://transactions-service/import}"
       VAULT_ADDR: "${BANKING_VAULT_ADDR:-http://vault:8200}"
-      VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-dev-root-token}"
+      VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID}"
       BANKING_CONNECTIONS_STORE_PATH: "${BANKING_CONNECTIONS_STORE_PATH:-/data/banking_user_connections.json}"
     volumes:
       - banking_connections_data:/data
@@ -477,16 +509,16 @@ services:
     depends_on:
       - redis-master
       - postgres-master
-      - localstack
+      - minio
       - qna-service
     environment:
-      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_documents}"
+      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_documents}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
       CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://localstack:4566}"
-      AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
-      AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://minio:9000}"
+      AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-minioadmin}"
+      AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-minioadmin}"
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
       AWS_TEXTRACT_ENDPOINT_URL: "${DOCUMENTS_AWS_TEXTRACT_ENDPOINT_URL:-http://localstack:4566}"
       S3_BUCKET_NAME: "${DOCUMENTS_S3_BUCKET_NAME:-documents-bucket}"
@@ -499,6 +531,8 @@ services:
       - default_network
 
   localstack:
+    profiles:
+      - dev-localstack
     image: localstack/localstack:latest
     container_name: localstack
     environment:
@@ -511,6 +545,8 @@ services:
       - default_network
 
   aws-cli-setup:
+    profiles:
+      - dev-localstack
     image: amazon/aws-cli:2.13.25
     container_name: aws-cli-setup
     depends_on:
@@ -535,13 +571,13 @@ services:
     container_name: documents-service
     depends_on:
       - postgres-master
-      - localstack
+      - minio
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_documents}"
-      AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://localstack:4566}" # Point to LocalStack
-      AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-test}"
-      AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-test}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_documents}"
+      AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://minio:9000}"
+      AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-minioadmin}"
+      AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-minioadmin}"
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
       AWS_TEXTRACT_ENDPOINT_URL: "${DOCUMENTS_AWS_TEXTRACT_ENDPOINT_URL:-http://localstack:4566}"
       S3_BUCKET_NAME: "${DOCUMENTS_S3_BUCKET_NAME:-documents-bucket}"
@@ -567,7 +603,7 @@ services:
       - calendar-service
       - jaeger
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${TAX_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       INTEGRATIONS_SERVICE_URL: "${TAX_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/submit-tax-return}"
       MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL: "${TAX_MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/mtd/quarterly-update}"
@@ -586,7 +622,7 @@ services:
     depends_on:
       - transactions-service
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${ADVICE_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
     networks:
       - default_network
@@ -600,8 +636,8 @@ services:
       - compliance-service
       - postgres-master
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:password@postgres-master/db_partner}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      DATABASE_URL: "${PARTNER_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_partner}"
       COMPLIANCE_SERVICE_URL: "${PARTNER_COMPLIANCE_SERVICE_URL:-http://compliance-service/audit-events}"
       AUTO_CREATE_SCHEMA: "${PARTNER_AUTO_CREATE_SCHEMA:-true}"
       BILLING_REPORT_ALLOWED_SCOPES: "${PARTNER_BILLING_REPORT_ALLOWED_SCOPES:-billing:read}"
@@ -645,7 +681,7 @@ services:
       dockerfile: services/integrations-service/Dockerfile
     container_name: integrations-service
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       HMRC_DIRECT_API_BASE_URL: "${HMRC_DIRECT_API_BASE_URL:-https://api.service.hmrc.gov.uk}"
       HMRC_DIRECT_SUBMISSION_ENABLED: "${HMRC_DIRECT_SUBMISSION_ENABLED:-false}"
       HMRC_OAUTH_TOKEN_URL: "${HMRC_OAUTH_TOKEN_URL:-https://test-api.service.hmrc.gov.uk/oauth/token}"
@@ -677,7 +713,7 @@ services:
       - documents-service
       - user-profile-service
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${ANALYTICS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       DOCUMENTS_SERVICE_URL: "${ANALYTICS_DOCUMENTS_SERVICE_URL:-http://documents-service/documents}"
       USER_PROFILE_SERVICE_URL: "${ANALYTICS_USER_PROFILE_SERVICE_URL:-http://user-profile-service/profiles/me}"
@@ -695,7 +731,7 @@ services:
       - tax-engine
       - redis
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       DOCUMENTS_REVIEW_QUEUE_URL: "${AGENT_DOCUMENTS_REVIEW_QUEUE_URL:-http://documents-service/documents/review-queue}"
       DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE: "${AGENT_DOCUMENTS_REVIEW_UPDATE_URL_TEMPLATE:-http://documents-service/documents/{document_id}/review}"
       TRANSACTIONS_RECEIPT_DRAFTS_URL: "${AGENT_TRANSACTIONS_RECEIPT_DRAFTS_URL:-http://transactions-service/transactions/receipt-drafts/unmatched}"
@@ -727,7 +763,7 @@ services:
     build: ./services/categorization-service
     container_name: categorization-service
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
     networks:
       - default_network
 
@@ -749,7 +785,7 @@ services:
     ports:
       - "8020:8020"
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       AUTH_SERVICE_URL: "http://auth-service:80"
       SUPPORT_DB_PATH: "/data/support.db"
     volumes:
@@ -776,7 +812,7 @@ services:
     depends_on:
       - weaviate
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       WEAVIATE_URL: "${QNA_WEAVIATE_URL:-http://weaviate:8080}"
     networks:
       - default_network
@@ -785,7 +821,7 @@ services:
     image: hashicorp/vault:1.15
     container_name: vault
     environment:
-      VAULT_DEV_ROOT_TOKEN_ID: "${VAULT_DEV_ROOT_TOKEN_ID:-dev-root-token}"
+      VAULT_DEV_ROOT_TOKEN_ID: "${VAULT_DEV_ROOT_TOKEN_ID}"
       VAULT_DEV_LISTEN_ADDRESS: "${VAULT_DEV_LISTEN_ADDRESS:-0.0.0.0:8200}"
     cap_add:
       - IPC_LOCK
@@ -837,7 +873,7 @@ services:
     build: ./services/calendar-service
     container_name: calendar-service
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
     networks:
       - default_network
 
@@ -863,10 +899,10 @@ services:
     environment:
       NODE_ENV: "development"
       SECURITY_SERVICE_PORT: "8018"
-      SECURITY_DATABASE_URL: "postgresql://user:password@postgres-master:5432/db_user_profile"
+      SECURITY_DATABASE_URL: "postgresql://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_user_profile"
       SECURITY_REDIS_URL: "redis://redis:6379/3"
-      JWT_SECRET_KEY: "super-secret-jwt-key-change-in-production"
-      SESSION_SECRET: "session-secret-change-in-production"
+      JWT_SECRET_KEY: "${SECURITY_JWT_SECRET_KEY:-${AUTH_SECRET_KEY}}"
+      SESSION_SECRET: "${SECURITY_SESSION_SECRET:-${AUTH_SECRET_KEY}}"
       MFA_ISSUER: "SelfMonitor"
       ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001"
       JAEGER_ENDPOINT: "http://jaeger:14268/api/traces"
@@ -885,6 +921,8 @@ services:
 
   # SIEM and Log Management
   elasticsearch:
+    profiles:
+      - siem
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: elasticsearch
     environment:
@@ -900,6 +938,8 @@ services:
     restart: unless-stopped
 
   kibana:
+    profiles:
+      - siem
     image: docker.elastic.co/kibana/kibana:8.11.0
     container_name: kibana
     environment:
@@ -937,19 +977,19 @@ services:
     container_name: backup_service
     environment:
       POSTGRES_HOST: postgres-master
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: db_user_profile
+      POSTGRES_USER: "${POSTGRES_USER:-user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-password}"
+      POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       BACKUP_SCHEDULE: "0 2 * * *" # Daily at 2 AM
       BACKUP_RETENTION_DAYS: 30
-      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:-backup_key_2026}
-      S3_BUCKET: ${S3_BUCKET:-selfmonitor-backups}
-      S3_ACCESS_KEY: ${S3_ACCESS_KEY}
-      S3_SECRET_KEY: ${S3_SECRET_KEY}
-      BACKUP_WEBHOOK_URL: ${BACKUP_WEBHOOK_URL}
+      BACKUP_ENCRYPTION_KEY: "${BACKUP_ENCRYPTION_KEY}"
+      S3_BUCKET: "${S3_BUCKET:-selfmonitor-backups}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY}"
+      BACKUP_WEBHOOK_URL: "${BACKUP_WEBHOOK_URL}"
     volumes:
       - backup_data:/backups
-      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - postgres-master
       - redis-master
@@ -961,8 +1001,8 @@ services:
     build: ./services/finops-monitor
     container_name: finops-monitor
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      REDIS_URL: "redis://redis-master:6379/0"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      REDIS_URL: "${FINOPS_REDIS_URL:-redis://redis-master:6379/0}"
       FRAUD_SERVICE_URL: "http://fraud-detection:80"
       TRANSACTIONS_SERVICE_URL: "http://transactions-service:80"
       INVOICE_SERVICE_URL: "http://invoice-service:80"
@@ -986,8 +1026,8 @@ services:
     build: ./services/mtd-agent
     container_name: mtd-agent
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
-      REDIS_URL: "redis://redis-master:6379/0"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      REDIS_URL: "${MTD_REDIS_URL:-redis://redis-master:6379/0}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       HMRC_BASE_URL: "${HMRC_BASE_URL:-https://test-api.service.hmrc.gov.uk}"
       HMRC_CLIENT_ID: "${HMRC_CLIENT_ID:-}"
@@ -1011,7 +1051,7 @@ services:
     build: ./services/voice-gateway
     container_name: voice-gateway
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       AGENT_SERVICE_URL: "http://ai-agent-service:80"
       MTD_AGENT_URL: "http://mtd-agent:8022"
@@ -1065,7 +1105,7 @@ services:
     depends_on:
       - postgres-master
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       DATABASE_URL: "postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_referral"
     networks:
       - default_network
@@ -1081,7 +1121,7 @@ services:
     build: ./services/cost-optimization
     container_name: cost-optimization
     environment:
-      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY:-a_secure_random_string_for_jwt_signing_!@#$%^}"
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
     networks:
       - default_network
     healthcheck:
