@@ -15,6 +15,11 @@
 Не поднимать весь `docker-compose.yml` целиком: используйте скрипты **`scripts/compose_v1_up.sh`** или **`scripts/compose_v1_up.ps1`** — они запускают только сервисы из **`docs/production-scope.md`** (плюс их зависимости, без graphql/mlops/siem/localstack по умолчанию).
 
 - Prod-override: `USE_COMPOSE_PROD=1 ./scripts/compose_v1_up.sh` (подхватит `docker-compose.prod.yml` и `.env.prod`, если есть).
+- **QnA / Weaviate:** при **`USE_COMPOSE_PROD=1`** по умолчанию **`V1_INCLUDE_QNA_VECTOR=0`** (статический FAQ на фронте; вектор опционален). Включить вектор: `V1_INCLUDE_QNA_VECTOR=1`.
+- **TLS:** целевой вариант — **снаружи** стека (Cloudflare, LB, nginx на хосте). **`security-proxy`** в compose — опция для полностью dockerized стенда, не обязателен для описанного prod-пути.
+- **Vault (`server -dev`):** контейнер остаётся компромиссом для **banking-connector** в dev-like compose. Для реального prod планируйте **внешний** Vault / секреты и отказ от `-dev` в рантайме.
+- **Бэкап Postgres:** `infra/backup/postgres-backup.sh` — `pg_dumpall` → gzip, ротация по mtime, **`POSTGRES_PASSWORD` обязателен**, пароль в лог не выводится.
+- **Сверка «нет хардкода секретов» в YAML:** например `rg -n 'a_secure_|super-secret|redis_secure_password|minioadmin' docker-compose.yml` — ожидаемо остаются только **допустимые** вхождения (комментарии, переменные окружения с дефолтом `password` для локального Postgres, `:-minioadmin` для dev MinIO в отдельных ключах). Критичные JWT/Stripe/Vault-token в виде литералов в сервисах убраны ранее.
 
 Проверка слияния:
 

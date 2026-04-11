@@ -81,7 +81,6 @@ services:
       - invoice-service
       - billing-service
       - localization-service
-      - qna-service
     networks:
       - default_network
 
@@ -110,10 +109,10 @@ services:
     image: postgres:15-alpine
     container_name: postgres_replica
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: db_user_profile
-      PGUSER: user
+      POSTGRES_USER: "${POSTGRES_USER:-user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-password}"
+      POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
+      PGUSER: "${POSTGRES_USER:-user}"
     volumes:
       - postgres_replica_data:/var/lib/postgresql/data
     ports:
@@ -132,7 +131,7 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\""]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -510,7 +509,6 @@ services:
       - redis-master
       - postgres-master
       - minio
-      - qna-service
     environment:
       DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_documents}"
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"

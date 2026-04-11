@@ -1,5 +1,5 @@
 # Поднять только контур v1 MVP (см. docs/production-scope.md).
-# Требуется Docker Compose v2 и файл .env (скопируйте из .env.example).
+# QnA+Weaviate: при USE_COMPOSE_PROD=1 по умолчанию отключены (V1_INCLUDE_QNA_VECTOR=0); в dev — включены.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
@@ -10,9 +10,15 @@ if ($env:USE_COMPOSE_PROD -eq "1") {
   if (Test-Path ".env.prod") {
     $composeFiles += "--env-file", ".env.prod"
   }
+  if (-not $env:V1_INCLUDE_QNA_VECTOR) {
+    $env:V1_INCLUDE_QNA_VECTOR = "0"
+  }
+}
+elseif (-not $env:V1_INCLUDE_QNA_VECTOR) {
+  $env:V1_INCLUDE_QNA_VECTOR = "1"
 }
 
-$services = @(
+$services = [System.Collections.ArrayList]@(
   "postgres-master",
   "redis-master",
   "redis",
@@ -27,16 +33,20 @@ $services = @(
   "banking-connector",
   "documents-service",
   "celery-worker-docs",
-  "weaviate",
-  "qna-service",
   "integrations-service",
   "calendar-service",
   "tax-engine",
   "mtd-agent",
   "invoice-service",
   "billing-service",
-  "localization-service",
-  "nginx-gateway"
+  "localization-service"
 )
+
+if ($env:V1_INCLUDE_QNA_VECTOR -eq "1") {
+  [void]$services.Add("weaviate")
+  [void]$services.Add("qna-service")
+}
+
+[void]$services.Add("nginx-gateway")
 
 docker compose @composeFiles up -d @services

@@ -1,5 +1,6 @@
 #!/bin/sh
 # Daily (or INTERVAL) pg_dumpall → gzip; rotate by mtime. For Compose: profile "backup".
+# Безопасность: не логируем PGPASSWORD; ошибки pg_dump — только в stderr без повторной подстановки пароля.
 set -eu
 RETENTION="${BACKUP_RETENTION_DAYS:-14}"
 INTERVAL="${BACKUP_INTERVAL_SEC:-86400}"

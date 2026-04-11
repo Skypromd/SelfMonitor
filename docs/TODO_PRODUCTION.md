@@ -30,6 +30,7 @@
 - [x] **Correlation id:** `map` по `X-Request-Id` / `$request_id`, **`add_header X-Request-Id`** клиенту, **`request_id`** в JSON access log, общие заголовки в **`nginx/snippets/proxy_common.conf`** / **`proxy_ws.conf`**.
 - [x] **Compose:** `docker-compose.prod.yml`, `docker-compose.staging.yml`, шаблоны **`.env.prod.example`** / **`.env.staging.example`** — см. **`docs/COMPOSE_PRODUCTION.md`**.
 - [x] **Старт только v1:** **`scripts/compose_v1_up.sh`** / **`scripts/compose_v1_up.ps1`** (без полного стенда); **`mtd-agent`** не зависит от **finops-monitor**; **tax-engine** — без жёсткого **jaeger** в `depends_on`.
+- [x] **Lean prod:** при **`USE_COMPOSE_PROD=1`** по умолчанию **без Weaviate/QnA** (`V1_INCLUDE_QNA_VECTOR=0`); **nginx** и **celery-worker-docs** не требуют **qna-service** в `depends_on`; replica Postgres — пароль из env.
 - [x] Фронт invoices через gateway (как ранее).
 - [x] Мобильные клиенты: комментарии к `EXPO_PUBLIC_API_GATEWAY_URL` в `apps/mobile/src/services/api.ts` и `I18nContext.tsx` — прод только через публичный gateway.
 - [x] Проверка smoke: **`scripts/smoke_gateway_health.sh`** / **`.ps1`** после `docker compose up`.

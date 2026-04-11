@@ -19,7 +19,7 @@
 | Invoicing | **invoice-service** | |
 | Billing | **billing-service** | Stripe webhooks, идемпотентность |
 | i18n | **localization-service** | Критичные строки |
-| Support path (минимум) | **qna-service** или статичный FAQ | По продукту |
+| Support path (минимум) | **qna-service** + **Weaviate** *или* статичный FAQ на фронте | **Prod по умолчанию (скрипт v1 + `USE_COMPOSE_PROD`):** без вектора (`V1_INCLUDE_QNA_VECTOR=0`) — только FAQ/статика; `/api/qna` не поднимается. **Dev:** векторный QnA включён. |
 | Infra (минимум) | **PostgreSQL**, **Redis**, объектное хранилище | Как в compose; в проде — managed |
 
 Клиенты: **web-portal**, **mobile** — только через **публичный gateway** URL.
