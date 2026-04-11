@@ -1,0 +1,49 @@
+# Staging: same stack as prod, isolated project name (separate volumes on the same host).
+#   docker compose --env-file .env.staging -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+# Use smaller resources / fewer replicas on the host; domains and Stripe keys must differ from prod.
+
+name: selfmonitor-staging
+
+services:
+  postgres-master:
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  nginx-gateway:
+    restart: unless-stopped
+
+  billing-service:
+    environment:
+      BILLING_DB_PATH: /data/billing.db
+    volumes:
+      - billing_sqlite_data:/data
+    restart: unless-stopped
+
+  postgres-backup:
+    profiles:
+      - backup
+    image: postgres:15-alpine
+    container_name: postgres_backup_staging
+    environment:
+      POSTGRES_HOST: postgres-master
+      POSTGRES_USER: "${POSTGRES_USER:-user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in env}"
+      BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-7}"
+      BACKUP_INTERVAL_SEC: "${BACKUP_INTERVAL_SEC:-86400}"
+    volumes:
+      - postgres_backups:/backups
+      - ./infra/backup/postgres-backup.sh:/postgres-backup.sh:ro
+    entrypoint: ["/bin/sh", "/postgres-backup.sh"]
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    networks:
+      - default_network
+    restart: unless-stopped
+
+volumes:
+  postgres_master_data:
+  postgres_backups:
+  billing_sqlite_data:

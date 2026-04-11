@@ -7,7 +7,7 @@
 
 Единый чеклист до продакшена. После крупных изменений обновляйте `docs/architecture/SERVICES_MATRIX.md`.
 
-**Сводка:** `docs/LAUNCH_READINESS.md` · **E2E программа:** `docs/E2E_PRODUCTION_PROGRAM.md` · **Политика:** `docs/POLICY_SPEC.md` · **Scope v1:** `docs/production-scope.md` · **Non-goals:** `docs/non-goals.md` · **Стандарт сервиса:** `docs/service-standard.md` · **Go-live:** `docs/GO_LIVE_CHECKLIST.md` · **DR:** `docs/disaster-recovery.md` · **Runbooks:** `docs/runbooks/` (restore-db, rollback, incident-triage, stripe-webhook-failures и др.)
+**Сводка:** `docs/LAUNCH_READINESS.md` · **E2E программа:** `docs/E2E_PRODUCTION_PROGRAM.md` · **Политика:** `docs/POLICY_SPEC.md` · **Compose prod:** `docs/COMPOSE_PRODUCTION.md` · **Scope v1:** `docs/production-scope.md` · **Non-goals:** `docs/non-goals.md` · **Стандарт сервиса:** `docs/service-standard.md` · **Go-live:** `docs/GO_LIVE_CHECKLIST.md` · **DR:** `docs/disaster-recovery.md` · **Runbooks:** `docs/runbooks/` (restore-db, compose-postgres-backup, rollback, incident-triage, stripe-webhook-failures и др.)
 
 **Принятые решения:**
 
@@ -27,7 +27,8 @@
 ## 1. Gateway и единая точка входа (`:8000`)
 
 - [x] **nginx** invoice upstream и location (как ранее).
-- [x] **Correlation id:** `map` по `X-Request-Id` / `$request_id` и прокидывание `X-Request-Id` во все `proxy_pass` (`nginx/nginx.conf`); см. `docs/service-standard.md`.
+- [x] **Correlation id:** `map` по `X-Request-Id` / `$request_id`, **`add_header X-Request-Id`** клиенту, **`request_id`** в JSON access log, общие заголовки в **`nginx/snippets/proxy_common.conf`** / **`proxy_ws.conf`**.
+- [x] **Compose:** `docker-compose.prod.yml`, `docker-compose.staging.yml`, шаблоны **`.env.prod.example`** / **`.env.staging.example`** — см. **`docs/COMPOSE_PRODUCTION.md`**.
 - [x] Фронт invoices через gateway (как ранее).
 - [x] Мобильные клиенты: комментарии к `EXPO_PUBLIC_API_GATEWAY_URL` в `apps/mobile/src/services/api.ts` и `I18nContext.tsx` — прод только через публичный gateway.
 - [x] Проверка smoke: **`scripts/smoke_gateway_health.sh`** / **`.ps1`** после `docker compose up`.

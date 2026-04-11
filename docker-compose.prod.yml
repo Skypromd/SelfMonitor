@@ -1,0 +1,52 @@
+# Production-oriented overrides. Merge with base:
+#   docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml config
+#   docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml --profile backup up -d
+#
+# Copy .env.prod.example → .env.prod (never commit). Optional: Docker secrets / root-only files on host.
+# Compose merges lists (ports, depends_on) with the base file — internal service ports from base may still
+# be published; block them with firewall / security group or a trimmed compose for bare-metal prod.
+
+name: selfmonitor-prod
+
+services:
+  postgres-master:
+    volumes:
+      - postgres_master_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  nginx-gateway:
+    restart: unless-stopped
+
+  billing-service:
+    environment:
+      BILLING_DB_PATH: /data/billing.db
+    volumes:
+      - billing_sqlite_data:/data
+    restart: unless-stopped
+
+  postgres-backup:
+    profiles:
+      - backup
+    image: postgres:15-alpine
+    container_name: postgres_backup
+    environment:
+      POSTGRES_HOST: postgres-master
+      POSTGRES_USER: "${POSTGRES_USER:-user}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in env}"
+      BACKUP_RETENTION_DAYS: "${BACKUP_RETENTION_DAYS:-14}"
+      BACKUP_INTERVAL_SEC: "${BACKUP_INTERVAL_SEC:-86400}"
+    volumes:
+      - postgres_backups:/backups
+      - ./infra/backup/postgres-backup.sh:/postgres-backup.sh:ro
+    entrypoint: ["/bin/sh", "/postgres-backup.sh"]
+    depends_on:
+      postgres-master:
+        condition: service_healthy
+    networks:
+      - default_network
+    restart: unless-stopped
+
+volumes:
+  postgres_master_data:
+  postgres_backups:
+  billing_sqlite_data:

@@ -87,6 +87,12 @@ services:
       - agent-service
       - support-ai-service
       - invoice-service
+      - billing-service
+      - referral-service
+      - cost-optimization
+      - finops-monitor
+      - mtd-agent
+      - voice-gateway
     networks:
       - default_network
 

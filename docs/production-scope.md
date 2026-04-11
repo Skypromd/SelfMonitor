@@ -8,7 +8,7 @@
 
 | Слой | Компонент | Примечание |
 |------|-----------|------------|
-| Edge | **nginx-gateway** | `:8000`, TLS на edge (LB/Cloudflare) |
+| Edge | **nginx-gateway** | `:8000` в dev; TLS на edge (LB/Cloudflare). Compose merge: **`docker-compose.yml`** + **`docker-compose.prod.yml`** — см. **`docs/COMPOSE_PRODUCTION.md`**. |
 | Auth | **auth-service** | JWT, планы, API keys (Pro+), 2FA |
 | Profile | **user-profile-service** | |
 | Money movement | **transactions-service** | Импорт, лимиты по плану |

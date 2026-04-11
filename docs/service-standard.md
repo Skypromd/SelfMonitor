@@ -29,6 +29,7 @@
 
 - Принимать заголовок **`X-Request-Id`** от **nginx-gateway** (или генерировать в приложении, если вызов внутренний).
 - Логировать **`request_id`** в одном поле structured log.
+- Gateway: общие заголовки прокси — **`nginx/snippets/proxy_common.conf`** (WebSocket — **`proxy_ws.conf`**); клиенту возвращается **`X-Request-Id`**; в access log JSON есть поле **`request_id`**.
 
 ### Таймауты исходящих HTTP
 
