@@ -81,14 +81,17 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
           return;
         }
         const msg = error instanceof Error ? error.message : String(error);
-        const likelyOffline =
+        const statusMatch = msg.match(/Failed to fetch translations \((\d+)\)/);
+        const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+        const gatewayDown =
           (error instanceof TypeError && msg === 'Failed to fetch') ||
-          msg.includes('NetworkError');
-        if (likelyOffline) {
+          msg.includes('NetworkError') ||
+          (statusCode >= 500 && statusCode < 600);
+        if (gatewayDown) {
           if (!i18nOfflineNotified) {
             i18nOfflineNotified = true;
             console.info(
-              '[i18n] Gateway not running on localhost:8000 — translations skipped. UI still works. Start: docker compose up -d nginx-gateway',
+              '[i18n] API gateway недоступен (localhost:8000 или прокси Next вернул 5xx) — переводы пропущены. Запуск бэкенда: из корня репозитория `scripts/start_backend_v1.ps1` или `scripts/start_backend_v1.sh` (нужен Docker Desktop).',
             );
           }
           return;
