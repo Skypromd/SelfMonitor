@@ -601,7 +601,6 @@ services:
       - transactions-service
       - integrations-service
       - calendar-service
-      - jaeger
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${TAX_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
@@ -1036,7 +1035,6 @@ services:
       - "8022:8022"
     depends_on:
       - redis-master
-      - finops-monitor
     networks:
       - default_network
     healthcheck:

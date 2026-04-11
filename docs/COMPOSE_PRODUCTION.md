@@ -10,6 +10,12 @@
 | `nginx/nginx.conf` + `nginx/snippets/` | Gateway; общие proxy-заголовки в `proxy_common.conf`. |
 | `.env.prod.example` / `.env.staging.example` | Шаблоны секретов (**не** коммитить `.env.prod` / `.env.staging`). |
 
+### Рекомендуемое решение для v1 (MVP)
+
+Не поднимать весь `docker-compose.yml` целиком: используйте скрипты **`scripts/compose_v1_up.sh`** или **`scripts/compose_v1_up.ps1`** — они запускают только сервисы из **`docs/production-scope.md`** (плюс их зависимости, без graphql/mlops/siem/localstack по умолчанию).
+
+- Prod-override: `USE_COMPOSE_PROD=1 ./scripts/compose_v1_up.sh` (подхватит `docker-compose.prod.yml` и `.env.prod`, если есть).
+
 Проверка слияния:
 
 ```bash
