@@ -42,7 +42,7 @@ All-in-one mobile-first platform for self-employed individuals in the UK. MTD ta
 |---|---|
 | **Core** | auth, user-profile, transactions, compliance, consent |
 | **Finance** | tax-engine (7 calculators), invoice-service, billing (Stripe), banking-connector |
-| **HMRC** | integrations-service (13 MTD endpoints), mtd-agent (auto-submission), finops-monitor |
+| **HMRC** | integrations-service (13 MTD endpoints), mtd-agent (MTD workflow: **prepare → user confirms → submit** — never unattended submission), finops-monitor |
 | **Mortgage** | analytics-service (12 mortgage endpoints + lender DB) |
 | **AI** | ai-agent-service, voice-gateway (STT/TTS), support-ai |
 | **Data** | categorization (200+ UK merchants), documents (OCR), calendar, localization |
@@ -85,6 +85,14 @@ docker compose up --build -d
 ```
 
 API gateway: `http://localhost:8000`
+
+**Все сервисы из compose + GraphQL gateway** (включая профиль `graphql`):
+
+```bash
+docker compose --profile graphql up --build -d
+```
+
+Подробнее: `docs/runbooks/FULL_STACK_DOCKER.md` или `scripts/run_full_stack.ps1` (Windows).
 
 ### 2. Web Portal
 

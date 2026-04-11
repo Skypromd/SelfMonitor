@@ -1,7 +1,11 @@
 version: "3.8"
 
 services:
+  # Federation requires real GraphQL subgraphs; most REST services have no /graphql yet.
+  # Start with: docker compose --profile graphql up -d graphql-gateway
   graphql-gateway:
+    profiles:
+      - graphql
     build: ./services/graphql-gateway
     container_name: graphql-gateway
     environment:
@@ -64,7 +68,6 @@ services:
     ports:
       - "8000:80" # The single entry point for our backend
     depends_on:
-      - graphql-gateway
       - auth-service
       - user-profile-service
       - transactions-service
@@ -83,6 +86,7 @@ services:
       - calendar-service
       - agent-service
       - support-ai-service
+      - invoice-service
     networks:
       - default_network
 
@@ -266,7 +270,7 @@ services:
       S3_BUCKET_NAME: "selfmonitor-ml-artifacts"
 
       # Database Configuration
-      DB_HOST: "postgres"
+      DB_HOST: "postgres-master"
       DB_NAME: "mlflow"
       DB_USER: "user"
       DB_PASSWORD: "password"
@@ -429,6 +433,9 @@ services:
       TRANSACTIONS_SERVICE_URL: "${BANKING_TRANSACTIONS_SERVICE_URL:-http://transactions-service/import}"
       VAULT_ADDR: "${BANKING_VAULT_ADDR:-http://vault:8200}"
       VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID:-dev-root-token}"
+      BANKING_CONNECTIONS_STORE_PATH: "${BANKING_CONNECTIONS_STORE_PATH:-/data/banking_user_connections.json}"
+    volumes:
+      - banking_connections_data:/data
     networks:
       - default_network
 
@@ -642,6 +649,10 @@ services:
       HMRC_QUARTERLY_ENDPOINT_PATH: "${HMRC_QUARTERLY_ENDPOINT_PATH:-/itsa/quarterly-updates}"
       HMRC_REQUEST_TIMEOUT_SECONDS: "${HMRC_REQUEST_TIMEOUT_SECONDS:-20}"
       HMRC_DIRECT_FALLBACK_TO_SIMULATION: "${HMRC_DIRECT_FALLBACK_TO_SIMULATION:-false}"
+      HMRC_REQUIRE_EXPLICIT_CONFIRM: "${HMRC_REQUIRE_EXPLICIT_CONFIRM:-false}"
+      POLICY_SPEC_VERSION: "${POLICY_SPEC_VERSION:-1.0}"
+      HMRC_MTD_DRAFT_TTL_HOURS: "${HMRC_MTD_DRAFT_TTL_HOURS:-24}"
+      HMRC_MTD_CONFIRM_TTL_MINUTES: "${HMRC_MTD_CONFIRM_TTL_MINUTES:-15}"
       HMRC_OAUTH_CREDENTIALS_ROTATED_AT: "${HMRC_OAUTH_CREDENTIALS_ROTATED_AT:-}"
       HMRC_OAUTH_ROTATION_MAX_AGE_DAYS: "${HMRC_OAUTH_ROTATION_MAX_AGE_DAYS:-90}"
       HMRC_SLO_WINDOW_SIZE: "${HMRC_SLO_WINDOW_SIZE:-200}"
@@ -846,8 +857,8 @@ services:
     environment:
       NODE_ENV: "development"
       SECURITY_SERVICE_PORT: "8018"
-      SECURITY_DATABASE_URL: "postgresql://user:password@postgres:5432/db_user_profile"
-      SECURITY_REDIS_URL: "redis://redis-cache:6379/3"
+      SECURITY_DATABASE_URL: "postgresql://user:password@postgres-master:5432/db_user_profile"
+      SECURITY_REDIS_URL: "redis://redis:6379/3"
       JWT_SECRET_KEY: "super-secret-jwt-key-change-in-production"
       SESSION_SECRET: "session-secret-change-in-production"
       MFA_ISSUER: "SelfMonitor"
@@ -1085,6 +1096,7 @@ volumes:
   backup_data:
   # Invoice service volumes
   invoice_pdfs:
+  banking_connections_data:
   # Legacy and other volumes
   postgres_data:
   minio_data:

@@ -22,7 +22,7 @@
 
 **Business rules (never violate):**
 - Bank sync: ONLY on button press by user. No background/automatic sync. Ever.
-- HMRC submission: ONLY after explicit user confirmation. Never auto-submit.
+- HMRC submission: ONLY after explicit user confirmation. Never auto-submit. (Naming: do **not** describe `mtd-agent` as “auto-submission” in user-facing or marketing copy — use “guided MTD workflow” / “prepare then confirm”.)
 - Mortgage advice: informational only, not financial advice (FCA compliance)
 - AI answers: general guidance, not professional tax/legal advice
 
@@ -83,7 +83,7 @@ The app targets Expo SDK 51 / React Native 0.74.5. It connects to the backend at
 | Service | Port | Description |
 |---|---|---|
 | `services/finops-monitor` | 8021 | Financial ops monitor with MTD/ITSA compliance tracking |
-| `services/mtd-agent` | 8022 | HMRC MTD auto-submission agent |
+| `services/mtd-agent` | 8022 | HMRC MTD workflow agent (orchestrates prepare/submit; **submit only after explicit user confirmation** — same rule as `integrations-service`) |
 | `services/voice-gateway` | 8023 | Voice gateway (STT/TTS, WebSocket streaming) |
 | `services/ai-agent-service` | 80 | SelfMate AI agent — memory, tools, multi-language |
 

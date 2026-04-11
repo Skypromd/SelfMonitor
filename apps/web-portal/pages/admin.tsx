@@ -983,7 +983,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
           starter: '#14b8a6', growth: '#6366f1', pro: '#f59e0b', business: '#ec4899', free: '#64748b',
         };
         const planPrices: Record<string, number> = {
-          free: 0, starter: 9, growth: 12, pro: 15, business: 25,
+          free: 0, starter: 15, growth: 18, pro: 21, business: 30,
         };
         const activePlans = billingAdminStats?.by_plan ?? MOCK_PLAN_STATS.map(p => ({
           plan: p.plan.toLowerCase(), count: p.count, mrr: p.mrr,

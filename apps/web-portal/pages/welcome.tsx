@@ -21,13 +21,13 @@ export default function WelcomePage() {
   useEffect(() => {
     const saved = localStorage.getItem('preferredLocale');
     if (saved) {
-      router.replace('/landing', undefined, { locale: saved });
+      router.replace('/', undefined, { locale: saved });
     }
   }, [router]);
 
   const selectLanguage = (code: string) => {
     localStorage.setItem('preferredLocale', code);
-    router.push('/landing', undefined, { locale: code });
+    router.push('/', undefined, { locale: code });
   };
 
   return (

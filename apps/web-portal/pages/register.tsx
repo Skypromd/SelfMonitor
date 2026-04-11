@@ -10,7 +10,11 @@ const PLAN_NAMES: Record<string, string> = {
   free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'Pro', business: 'Business',
 };
 const PLAN_PRICES: Record<string, string> = {
-  free: '£0/mo', starter: '£9/mo', growth: '£12/mo', pro: '£15/mo', business: '£25/mo',
+  free: '£0/mo',
+  starter: '£15/mo ex VAT',
+  growth: '£18/mo ex VAT',
+  pro: '£21/mo ex VAT',
+  business: '£30/mo ex VAT',
 };
 
 type RegisterPageProps = { onLoginSuccess: (token: string) => void };
@@ -25,7 +29,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
   const router = useRouter();
   const plan = (router.query.plan as string) || 'starter';
   const planName = PLAN_NAMES[plan] || 'Starter';
-  const planPrice = PLAN_PRICES[plan] || '£9/mo';
+  const planPrice = PLAN_PRICES[plan] || '£15/mo ex VAT';
   const isTrial = plan !== 'free';
   const paymentConfirmed = router.query.payment === 'success';
 

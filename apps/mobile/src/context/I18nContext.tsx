@@ -68,6 +68,7 @@ const I18nContext = createContext<I18nContextValue>({
   setLocale: () => {},
 });
 
+/** @see EXPO_PUBLIC_API_GATEWAY_URL in `src/services/api.ts` — prod must use the public gateway. */
 const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8080/api';
 const LOCALIZATION_URL = process.env.EXPO_PUBLIC_LOCALIZATION_SERVICE_URL || `${API_GATEWAY_URL}/localization`;
 

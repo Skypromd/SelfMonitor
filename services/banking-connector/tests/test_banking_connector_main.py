@@ -6,8 +6,10 @@ from jose import jwt
 # Adjust path to import app and other modules
 import sys
 import os
+
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# conftest.py sets BANKING_CONNECTIONS_STORE_PATH before this import
 from app.main import app, import_transactions_task
 
 client = TestClient(app)
@@ -17,7 +19,17 @@ TEST_USER_ID = "test-user@example.com"
 
 
 def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
-    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "plan": "starter",
+            "bank_connections_limit": 10,
+            "transactions_per_month_limit": 500,
+            "storage_limit_gb": 2,
+        },
+        AUTH_SECRET_KEY,
+        algorithm=AUTH_ALGORITHM,
+    )
     return {"Authorization": f"Bearer {token}"}
 
 def test_initiate_connection_success():
@@ -73,5 +85,5 @@ async def test_callback_schedules_celery_task(mocker):
 
     assert isinstance(transactions_data, list)
     assert len(transactions_data) == 2
-    assert transactions_data[0]['description'] == "Tesco"
-    assert auth_token
+    assert transactions_data[0]["description"] == "Tesco"
+    assert isinstance(task_token, str) and len(task_token) > 0

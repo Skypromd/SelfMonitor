@@ -37,6 +37,7 @@ class Document(DocumentBase):
     id: uuid.UUID
     user_id: str
     uploaded_at: datetime.datetime
+    file_size_bytes: Optional[int] = None
     extracted_data: Optional[ExtractedData] = None
 
     model_config = ConfigDict(from_attributes=True)

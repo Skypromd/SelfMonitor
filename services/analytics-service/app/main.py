@@ -15,9 +15,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from jose import JWTError, jwt
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from starlette.responses import JSONResponse
 from fpdf import FPDF, XPos, YPos
 from pydantic import BaseModel, Field
 
@@ -29,6 +31,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_limits import plan_limits_from_payload
 from libs.shared_http.retry import get_json_with_retry
 
 from .mortgage_requirements import (
@@ -63,6 +66,87 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _path_needs_mortgage(path: str) -> bool:
+    return path.startswith("/mortgage/") or path.startswith("/reports/mortgage-readiness")
+
+
+def _path_needs_cash_flow(path: str) -> bool:
+    return path.rstrip("/") == "/forecast/cash-flow"
+
+
+def _path_needs_advanced(path: str) -> bool:
+    if path == "/jobs" or path.startswith("/jobs/"):
+        return True
+    for prefix in (
+        "/ml/",
+        "/pipelines",
+        "/dashboards",
+        "/metrics/business",
+        "/data-quality/",
+        "/features/extract",
+        "/api/v1/marketplace/",
+        "/analytics/segmentation",
+        "/analytics/cohort",
+        "/analytics/anomaly-detection",
+    ):
+        if path.startswith(prefix):
+            return True
+    if path.startswith("/reports") and not path.startswith("/reports/mortgage-readiness"):
+        return True
+    return False
+
+
+@app.middleware("http")
+async def enforce_plan_feature_paths(request: Request, call_next):
+    """Gate heavy analytics by JWT feature flags from auth-service (PLAN_FEATURES)."""
+    path = request.url.path
+    if (
+        path in {"/health", "/metrics"}
+        or path.startswith("/docs")
+        or path.startswith("/openapi.json")
+        or path.startswith("/mobile/")
+        or path.startswith("/redoc")
+    ):
+        return await call_next(request)
+    if not (
+        _path_needs_mortgage(path)
+        or _path_needs_cash_flow(path)
+        or _path_needs_advanced(path)
+    ):
+        return await call_next(request)
+    auth = request.headers.get("authorization")
+    if not auth or not auth.startswith("Bearer "):
+        return await call_next(request)
+    token = auth.split(" ", 1)[1]
+    secret_key = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+    try:
+        payload: dict[str, object] = jwt.decode(token, secret_key, algorithms=["HS256"])
+    except JWTError:
+        return await call_next(request)
+    # Tokens without `plan` are legacy/tests — do not gate (prod tokens from auth-service include `plan`).
+    if "plan" not in payload:
+        return await call_next(request)
+    limits = plan_limits_from_payload(payload)
+    if _path_needs_mortgage(path) and not limits.mortgage_reports:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Mortgage analytics requires Pro or Business plan."},
+        )
+    if _path_needs_cash_flow(path) and not limits.cash_flow_forecast:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": "Cash-flow forecast requires Starter, Growth, Pro, or Business plan."
+            },
+        )
+    if _path_needs_advanced(path) and not limits.advanced_analytics:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This analytics feature requires Pro or Business plan."},
+        )
+    return await call_next(request)
 
 
 def _parse_positive_int_env(name: str, default: int) -> int:

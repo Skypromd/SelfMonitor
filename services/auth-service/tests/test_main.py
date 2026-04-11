@@ -7,10 +7,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from app.main import (
     app, get_user_record, reset_auth_db_for_tests, set_user_admin_for_tests,
     _login_attempts, get_subscription, create_subscription, _expire_trial,
-    PLAN_FEATURES,
+    PLAN_FEATURES, SECRET_KEY, ALGORITHM,
 )
 import datetime
 import pyotp
+from jose import jwt as jose_jwt
 
 client = TestClient(app)
 
@@ -371,10 +372,10 @@ def test_get_subscription_plans():
     resp = client.get("/subscription/plans")
     assert resp.status_code == 200
     data = resp.json()
-    assert len(data["plans"]) == 4
+    assert len(data["plans"]) == 5
     assert data["trial_days"] == 14
     plan_ids = [p["id"] for p in data["plans"]]
-    assert plan_ids == ["free", "starter", "pro", "business"]
+    assert plan_ids == ["free", "starter", "growth", "pro", "business"]
 
 
 def test_trial_auto_expiry():
@@ -443,3 +444,49 @@ def test_me_includes_subscription_info():
     assert data["subscription_tier"] == "free"
     assert data["subscription_status"] == "active"
     assert data["trial_days_remaining"] is None
+
+
+def test_api_key_create_exchange_and_revoke():
+    email = "apikey-user@example.com"
+    client.post(
+        "/register",
+        json={"email": email, "password": STRONG_PASSWORD, "plan": "pro"},
+    )
+    login = client.post(
+        "/token", data={"username": email, "password": STRONG_PASSWORD}
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create = client.post("/api-keys", headers=headers, json={"label": "ci"})
+    assert create.status_code == 201
+    raw_key = create.json()["api_key"]
+    assert raw_key.startswith("smk_")
+
+    ex = client.post("/token/api-key", json={"api_key": raw_key})
+    assert ex.status_code == 200
+    access = ex.json()["access_token"]
+    payload = jose_jwt.decode(access, SECRET_KEY, algorithms=[ALGORITHM])
+    assert payload["sub"] == email
+    assert payload.get("plan") == "pro"
+
+    listed = client.get("/api-keys", headers=headers)
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+
+    kid = create.json()["key_id"]
+    rev = client.delete(f"/api-keys/{kid}", headers=headers)
+    assert rev.status_code == 204
+
+    ex2 = client.post("/token/api-key", json={"api_key": raw_key})
+    assert ex2.status_code == 401
+
+
+def test_api_key_forbidden_on_free_plan():
+    email = "apikey-free@example.com"
+    client.post("/register", json={"email": email, "password": STRONG_PASSWORD})
+    token = _register_and_login(email)
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = client.post("/api-keys", headers=headers, json={})
+    assert resp.status_code == 403

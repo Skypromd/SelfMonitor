@@ -6,6 +6,7 @@ import io
 import logging
 import os
 import re
+import secrets
 import smtplib
 import sqlite3
 import threading
@@ -17,7 +18,7 @@ from typing import Annotated, Any, Optional
 
 import pyotp  # type: ignore[import-untyped]
 import qrcode  # type: ignore[import-untyped]
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt  # type: ignore[import-untyped]
@@ -189,6 +190,29 @@ class Token(BaseModel):
     token_type: str
 
 
+class ApiKeyCreate(BaseModel):
+    label: str = Field(default="", max_length=128)
+
+
+class ApiKeyCreated(BaseModel):
+    key_id: str
+    label: str
+    api_key: str
+    created_at: int
+    message: str = "Store this key securely; it cannot be retrieved again."
+
+
+class ApiKeyListItem(BaseModel):
+    key_id: str
+    label: str
+    created_at: int
+    last_used_at: Optional[int] = None
+
+
+class ApiKeyExchangeRequest(BaseModel):
+    api_key: str = Field(min_length=20, max_length=500)
+
+
 class TokenData(BaseModel):
     email: Optional[str] = None
 
@@ -272,6 +296,22 @@ def init_auth_db() -> None:
                 used INTEGER NOT NULL DEFAULT 0
             )
         """)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS api_keys (
+                key_id TEXT PRIMARY KEY,
+                user_email TEXT NOT NULL,
+                secret_hash TEXT NOT NULL,
+                label TEXT NOT NULL DEFAULT '',
+                created_at INTEGER NOT NULL,
+                last_used_at INTEGER,
+                revoked_at INTEGER
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_email)"
+        )
         conn.commit()
         if AUTH_BOOTSTRAP_ADMIN:
             _seed_admin_user(conn)
@@ -281,6 +321,7 @@ def init_auth_db() -> None:
 def reset_auth_db_for_tests() -> None:
     with db_lock:
         conn = _connect()
+        conn.execute("DELETE FROM api_keys")
         conn.execute("DELETE FROM users")
         conn.execute("DELETE FROM subscriptions")
         conn.commit()
@@ -311,7 +352,7 @@ def set_user_admin_for_tests(email: str, is_admin: bool) -> None:
 
 
 # --- Subscription Logic ---
-PLAN_HIERARCHY = {"free": 0, "starter": 1, "pro": 2, "business": 3}
+PLAN_HIERARCHY = {"free": 0, "starter": 1, "growth": 2, "pro": 3, "business": 4}
 TRIAL_DAYS = 14
 
 
@@ -398,6 +439,31 @@ def update_subscription_plan(email: str, new_plan: str) -> dict[str, Any]:
 
 def has_plan_access(user_plan: str, required_plan: str) -> bool:
     return PLAN_HIERARCHY.get(user_plan, 0) >= PLAN_HIERARCHY.get(required_plan, 0)
+
+
+def user_may_use_api_keys(email: str) -> bool:
+    sub = get_subscription(email)
+    plan = str(sub.get("plan", "free"))
+    feats = PLAN_FEATURES.get(plan, PLAN_FEATURES["free"])
+    return bool(feats.get("api_access", False))
+
+
+def _parse_smk_api_key(raw: str) -> tuple[str, str] | None:
+    t = raw.strip()
+    if t.lower().startswith("bearer "):
+        t = t[7:].strip()
+    if not t.startswith("smk_"):
+        return None
+    rest = t[4:]
+    if "_" not in rest:
+        return None
+    key_id, secret = rest.split("_", 1)
+    key_id = key_id.lower()
+    if len(key_id) != 32 or not all(c in "0123456789abcdef" for c in key_id):
+        return None
+    if len(secret) < 32:
+        return None
+    return key_id, secret
 
 
 def get_user(email: str) -> Optional[User]:
@@ -500,7 +566,7 @@ async def register(user_in: UserCreate):
         )
         conn.commit()
         conn.close()
-    valid_plans = {"free", "starter", "pro", "business"}
+    valid_plans = {"free", "starter", "growth", "pro", "business"}
     plan = user_in.plan if user_in.plan in valid_plans else "free"
     create_subscription(user_email, plan)
     return User(
@@ -742,9 +808,181 @@ async def login_for_access_token(
 
     clear_failed_attempts(form_data.username)
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data: dict[str, object] = {
+        "sub": user.email,
+        "is_admin": user.is_admin,
+        **_jwt_subscription_claims(user.email),
+    }
     access_token = create_access_token(
-        data={"sub": user.email, "is_admin": user.is_admin},
+        data=token_data,
         expires_delta=access_token_expires,
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@app.post("/api-keys", response_model=ApiKeyCreated, status_code=status.HTTP_201_CREATED)
+async def create_user_api_key(
+    body: ApiKeyCreate,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    if not user_may_use_api_keys(current_user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API keys require Pro or Business plan (api_access).",
+        )
+    key_id = uuid.uuid4().hex
+    secret = secrets.token_hex(24)
+    full_key = f"smk_{key_id}_{secret}"
+    now = int(time.time())
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            """
+            INSERT INTO api_keys (key_id, user_email, secret_hash, label, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                key_id,
+                current_user.email,
+                get_password_hash(secret),
+                body.label.strip(),
+                now,
+            ),
+        )
+        conn.commit()
+        conn.close()
+    return ApiKeyCreated(
+        key_id=key_id, label=body.label.strip(), api_key=full_key, created_at=now
+    )
+
+
+@app.get("/api-keys", response_model=list[ApiKeyListItem])
+async def list_user_api_keys(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    if not user_may_use_api_keys(current_user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API keys require Pro or Business plan (api_access).",
+        )
+    with db_lock:
+        conn = _connect()
+        rows = conn.execute(
+            """
+            SELECT key_id, label, created_at, last_used_at FROM api_keys
+            WHERE user_email = ? AND revoked_at IS NULL ORDER BY created_at DESC
+            """,
+            (current_user.email,),
+        ).fetchall()
+        conn.close()
+    return [
+        ApiKeyListItem(
+            key_id=str(r["key_id"]),
+            label=str(r["label"] or ""),
+            created_at=int(r["created_at"]),
+            last_used_at=int(r["last_used_at"])
+            if r["last_used_at"] is not None
+            else None,
+        )
+        for r in rows
+    ]
+
+
+@app.delete("/api-keys/{key_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_user_api_key(
+    key_id: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    if not user_may_use_api_keys(current_user.email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="API keys require Pro or Business plan (api_access).",
+        )
+    kid = key_id.lower().strip()
+    if len(kid) != 32 or not all(c in "0123456789abcdef" for c in kid):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid key id"
+        )
+    now = int(time.time())
+    with db_lock:
+        conn = _connect()
+        exists = conn.execute(
+            """
+            SELECT 1 FROM api_keys WHERE key_id = ? AND user_email = ? AND revoked_at IS NULL
+            """,
+            (kid, current_user.email),
+        ).fetchone()
+        if not exists:
+            conn.close()
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="API key not found"
+            )
+        conn.execute(
+            "UPDATE api_keys SET revoked_at = ? WHERE key_id = ?",
+            (now, kid),
+        )
+        conn.commit()
+        conn.close()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@app.post("/token/api-key", response_model=Token)
+async def exchange_api_key_for_token(body: ApiKeyExchangeRequest, request: Request):
+    parsed = _parse_smk_api_key(body.api_key)
+    if not parsed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid API key format (expected smk_<id>_<secret>).",
+        )
+    key_id, secret = parsed
+    with db_lock:
+        conn = _connect()
+        row = conn.execute(
+            """
+            SELECT user_email, secret_hash FROM api_keys
+            WHERE key_id = ? AND revoked_at IS NULL
+            """,
+            (key_id,),
+        ).fetchone()
+        conn.close()
+    if row is None or not verify_password(secret, str(row["secret_hash"])):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_email = str(row["user_email"])
+    user = get_user(user_email)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User inactive or missing",
+        )
+    with db_lock:
+        conn = _connect()
+        conn.execute(
+            "UPDATE api_keys SET last_used_at = ? WHERE key_id = ?",
+            (int(time.time()), key_id),
+        )
+        conn.commit()
+        conn.close()
+    access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    token_data: dict[str, object] = {
+        "sub": user.email,
+        "is_admin": user.is_admin,
+        **_jwt_subscription_claims(user.email),
+    }
+    access_token = create_access_token(
+        data=token_data,
+        expires_delta=access_token_expires,
+    )
+    client_host = request.client.host if request.client else None
+    _log_security_event(
+        user_email,
+        "api_key_exchanged",
+        ip=client_host,
+        user_agent=request.headers.get("user-agent"),
+        details={"key_id": key_id},
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -1064,6 +1302,7 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     "free": {
         "bank_connections": 1,
         "transactions_per_month": 200,
+        "storage_limit_gb": 1,
         "ai_categorization": False,
         "receipt_ocr": False,
         "cash_flow_forecast": False,
@@ -1077,8 +1316,25 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
         "white_label": False,
     },
     "starter": {
-        "bank_connections": 3,
-        "transactions_per_month": 1000,
+        "bank_connections": 1,
+        "transactions_per_month": 500,
+        "storage_limit_gb": 2,
+        "ai_categorization": True,
+        "receipt_ocr": True,
+        "cash_flow_forecast": True,
+        "tax_calculator": "full",
+        "hmrc_submission": False,
+        "smart_search": False,
+        "mortgage_reports": False,
+        "advanced_analytics": False,
+        "api_access": False,
+        "team_members": 1,
+        "white_label": False,
+    },
+    "growth": {
+        "bank_connections": 2,
+        "transactions_per_month": 2000,
+        "storage_limit_gb": 6,
         "ai_categorization": True,
         "receipt_ocr": True,
         "cash_flow_forecast": True,
@@ -1094,6 +1350,7 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     "pro": {
         "bank_connections": 3,
         "transactions_per_month": 5000,
+        "storage_limit_gb": 10,
         "ai_categorization": True,
         "receipt_ocr": True,
         "cash_flow_forecast": True,
@@ -1107,8 +1364,9 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
         "white_label": False,
     },
     "business": {
-        "bank_connections": 3,
+        "bank_connections": 5,
         "transactions_per_month": 999999,
+        "storage_limit_gb": 25,
         "ai_categorization": True,
         "receipt_ocr": True,
         "cash_flow_forecast": True,
@@ -1118,10 +1376,26 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
         "mortgage_reports": True,
         "advanced_analytics": True,
         "api_access": True,
-        "team_members": 5,
+        "team_members": 1,
         "white_label": True,
     },
 }
+
+
+def _jwt_subscription_claims(email: str) -> dict[str, object]:
+    """Claims embedded in access tokens for downstream plan enforcement."""
+    sub = get_subscription(email)
+    plan = str(sub["plan"])
+    feats = PLAN_FEATURES.get(plan, PLAN_FEATURES["free"])
+    return {
+        "plan": plan,
+        "bank_connections_limit": feats["bank_connections"],
+        "transactions_per_month_limit": feats["transactions_per_month"],
+        "storage_limit_gb": int(feats.get("storage_limit_gb", 2)),
+        "mortgage_reports": bool(feats.get("mortgage_reports", False)),
+        "advanced_analytics": bool(feats.get("advanced_analytics", False)),
+        "cash_flow_forecast": bool(feats.get("cash_flow_forecast", False)),
+    }
 
 
 @app.get("/subscription/me", response_model=SubscriptionResponse)
@@ -1147,7 +1421,7 @@ async def get_my_subscription(
 
 @app.post("/subscription/upgrade")
 async def upgrade_subscription(
-    plan: str = Query(..., pattern="^(starter|pro|business)$"),
+    plan: str = Query(..., pattern="^(starter|growth|pro|business)$"),
     current_user: Annotated[User, Depends(get_current_active_user)] = None,  # type: ignore[assignment]
 ) -> dict[str, Any]:
     assert current_user is not None
@@ -1173,6 +1447,12 @@ async def list_plans() -> dict[str, Any]:
                 "name": "Starter",
                 "price_gbp": 9,
                 "features": PLAN_FEATURES["starter"],
+            },
+            {
+                "id": "growth",
+                "name": "Growth",
+                "price_gbp": 18,
+                "features": PLAN_FEATURES["growth"],
             },
             {
                 "id": "pro",
@@ -1213,7 +1493,7 @@ async def check_feature_access(
 
     if not allowed:
         min_plan = "starter"
-        for p in ["starter", "pro", "business"]:
+        for p in ["starter", "growth", "pro", "business"]:
             pf: dict[str, Any] = PLAN_FEATURES[p]
             val: Any = pf.get(feature, False)
             if val and val != "basic":
@@ -1685,8 +1965,10 @@ async def refresh_token(
 ):
     """Issue a new access token (refresh flow simplified — Bearer auth confirms identity)."""
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    refresh_claims = _jwt_subscription_claims(current_user.email)
     new_access = create_access_token(
-        data={"sub": current_user.email}, expires_delta=access_token_expires
+        data={"sub": current_user.email, **refresh_claims},
+        expires_delta=access_token_expires,
     )
     # Refresh token: long-lived JWT (7 days) — client should store and re-use
     refresh_expires = datetime.timedelta(days=7)

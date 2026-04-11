@@ -96,7 +96,7 @@ def suggest_expense_category(description: str) -> str | None:
                 if isinstance(category, str) and category.strip():
                     return category.strip()
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        print(f"Warning: categorization-service unavailable for receipt scan: {exc}")
+        logger.warning("categorization-service unavailable for receipt scan: %s", exc)
 
     return suggest_category_from_keywords(normalized_description)
 
@@ -137,9 +137,9 @@ def index_document_content(user_id: str, doc_id: str, filename: str, content: st
                 timeout=10.0,
             )
             response.raise_for_status()
-        print(f"Successfully indexed document {doc_id} in Q&A service.")
+        logger.info("indexed document %s in Q&A service", doc_id)
     except httpx.RequestError as exc:
-        print(f"Error indexing document {doc_id}: {exc}")
+        logger.warning("error indexing document %s: %s", doc_id, exc)
 
 
 def create_receipt_draft_transaction(
@@ -186,7 +186,9 @@ def create_receipt_draft_transaction(
             resolved_duplicate = bool(duplicated) if duplicated is not None else None
             return resolved_id, resolved_duplicate
     except (httpx.HTTPError, ValueError, TypeError) as exc:
-        print(f"Error creating receipt draft transaction for {document_id}: {exc}")
+        logger.warning(
+            "error creating receipt draft transaction for %s: %s", document_id, exc
+        )
         return None, None
 
 
@@ -341,7 +343,7 @@ def ocr_processing_task(
     """
     Processes uploaded document via real OCR provider and stores extracted fields.
     """
-    print(f"Starting OCR processing for document: {document_id}")
+    logger.info("starting OCR processing for document: %s", document_id)
     resolved_filepath = filepath or asyncio.run(
         _load_filepath_for_document(document_id)
     )
@@ -405,7 +407,7 @@ def ocr_processing_task(
         if indexed_text:
             index_document_content(user_id, document_id, filename, indexed_text)
 
-        print(f"Finished OCR processing for document: {document_id}")
+        logger.info("finished OCR processing for document: %s", document_id)
         return {
             "document_id": document_id,
             "status": "completed",
@@ -428,5 +430,5 @@ def ocr_processing_task(
                 document_id=document_id, status="failed", extracted_data=failed_data
             )
         )
-        print(f"OCR processing failed for {document_id}: {exc}")
+        logger.exception("OCR processing failed for %s", document_id)
         return {"document_id": document_id, "status": "failed", "reason": str(exc)}

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import math
 import os
 import sqlite3
@@ -8,13 +9,15 @@ import time
 import uuid
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, cast
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, status
 from pydantic import BaseModel, Field
 
 from .companies_house import search_companies, get_company_profile, CompanySearchResult, CompanyProfile
+from .fraud_prevention import FraudPreventionHeaders
 from .hmrc_apis import (
     BusinessDetail, get_business_details_simulated,
     Obligation, get_obligations_simulated,
@@ -25,11 +28,14 @@ from .hmrc_apis import (
     VATObligation, get_vat_obligations_simulated,
 )
 from .hmrc_mtd import (
+    HMRCMTDQuarterlyReport,
     HMRCMTDQuarterlyReportSpec,
     HMRCMTDQuarterlySubmissionRequest,
     HMRCMTDQuarterlySubmissionStatus,
     build_quarterly_report_spec,
+    compute_quarterly_report_fingerprint,
     submit_quarterly_update_to_hmrc,
+    validate_quarterly_report,
 )
 
 for parent in Path(__file__).resolve().parents:
@@ -43,22 +49,44 @@ from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
+logger = logging.getLogger(__name__)
+
+
+def resolve_hmrc_urls_from_env() -> tuple[str, str, str]:
+    """
+    Choose HMRC API base + OAuth token URL from HMRC_ENV (sandbox vs production).
+    Explicit HMRC_DIRECT_API_BASE_URL / HMRC_OAUTH_TOKEN_URL override env defaults.
+    Returns (api_base_url, oauth_token_url, label) where label is 'sandbox' | 'production'.
+    """
+    raw = (os.getenv("HMRC_ENV") or "sandbox").strip().lower()
+    if raw in ("production", "prod", "live"):
+        label = "production"
+        default_api = "https://api.service.hmrc.gov.uk"
+        default_token = "https://api.service.hmrc.gov.uk/oauth/token"
+    else:
+        label = "sandbox"
+        default_api = "https://test-api.service.hmrc.gov.uk"
+        default_token = "https://test-api.service.hmrc.gov.uk/oauth/token"
+    api = os.getenv("HMRC_DIRECT_API_BASE_URL", default_api).strip()
+    token = os.getenv("HMRC_OAUTH_TOKEN_URL", default_token).strip()
+    return api, token, label
+
+
+_HMRC_RESOLVED_API, _HMRC_RESOLVED_TOKEN, HMRC_ENV_LABEL = resolve_hmrc_urls_from_env()
+
 app = FastAPI(
     title="Integrations Service",
     description="Facades external API integrations.",
     version="1.0.0"
 )
-HMRC_DIRECT_API_BASE_URL = os.getenv("HMRC_DIRECT_API_BASE_URL", "https://api.service.hmrc.gov.uk")
+HMRC_DIRECT_API_BASE_URL = _HMRC_RESOLVED_API
 HMRC_DIRECT_SUBMISSION_ENABLED = os.getenv("HMRC_DIRECT_SUBMISSION_ENABLED", "false").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
-HMRC_OAUTH_TOKEN_URL = os.getenv(
-    "HMRC_OAUTH_TOKEN_URL",
-    "https://test-api.service.hmrc.gov.uk/oauth/token",
-)
+HMRC_OAUTH_TOKEN_URL = _HMRC_RESOLVED_TOKEN
 HMRC_OAUTH_CLIENT_ID = os.getenv("HMRC_OAUTH_CLIENT_ID", "")
 HMRC_OAUTH_CLIENT_SECRET = os.getenv("HMRC_OAUTH_CLIENT_SECRET", "")
 HMRC_OAUTH_SCOPE = os.getenv("HMRC_OAUTH_SCOPE", "write:self-assessment")
@@ -98,7 +126,14 @@ def _parse_non_negative_float_env(name: str, default: float) -> float:
     return parsed if parsed >= 0 else default
 
 
+HMRC_HTTP_MAX_RETRIES = _parse_positive_int_env("HMRC_HTTP_MAX_RETRIES", 3)
+HMRC_HTTP_RETRY_BACKOFF_SECONDS = _parse_non_negative_float_env("HMRC_HTTP_RETRY_BACKOFF_SECONDS", 0.5)
+
 HMRC_DIRECT_FALLBACK_TO_SIMULATION = _parse_bool_env("HMRC_DIRECT_FALLBACK_TO_SIMULATION", False)
+HMRC_REQUIRE_EXPLICIT_CONFIRM = _parse_bool_env("HMRC_REQUIRE_EXPLICIT_CONFIRM", False)
+POLICY_SPEC_VERSION = (os.getenv("POLICY_SPEC_VERSION", "1.0") or "1.0").strip()
+HMRC_MTD_DRAFT_TTL_HOURS = _parse_positive_int_env("HMRC_MTD_DRAFT_TTL_HOURS", 24)
+HMRC_MTD_CONFIRM_TTL_MINUTES = _parse_positive_int_env("HMRC_MTD_CONFIRM_TTL_MINUTES", 15)
 HMRC_OAUTH_CREDENTIALS_ROTATED_AT = os.getenv("HMRC_OAUTH_CREDENTIALS_ROTATED_AT", "").strip()
 HMRC_OAUTH_ROTATION_MAX_AGE_DAYS = _parse_positive_int_env("HMRC_OAUTH_ROTATION_MAX_AGE_DAYS", 90)
 HMRC_SLO_WINDOW_SIZE = _parse_positive_int_env("HMRC_SLO_WINDOW_SIZE", 200)
@@ -131,10 +166,94 @@ class SubmissionStatus(BaseModel):
     submitted_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
 
 
+class MTDQuarterlyDraftRequest(BaseModel):
+    report: HMRCMTDQuarterlyReport
+
+
+class MTDQuarterlyDraftResponse(BaseModel):
+    draft_id: uuid.UUID
+    report_hash: str
+    policy_version: str
+    expires_at: datetime.datetime
+
+
+class MTDQuarterlyConfirmRequest(BaseModel):
+    draft_id: uuid.UUID
+
+
+class MTDQuarterlyConfirmResponse(BaseModel):
+    confirmation_token: str
+    policy_version: str
+    expires_at: datetime.datetime
+
+
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(INTEGRATIONS_DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _utc_now() -> datetime.datetime:
+    return datetime.datetime.now(datetime.UTC)
+
+
+def _require_and_consume_mtd_confirmation(
+    request: HMRCMTDQuarterlySubmissionRequest,
+    user_id: str,
+) -> None:
+    token = (request.confirmation_token or "").strip()
+    if not token:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail=(
+                "HMRC submission requires explicit confirmation. "
+                "POST /integrations/hmrc/mtd/quarterly-update/draft, then .../confirm, "
+                "then submit with the same report and confirmation_token."
+            ),
+        )
+    report_hash = compute_quarterly_report_fingerprint(request.report)
+    now = _utc_now()
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT user_id, report_hash, expires_at, consumed_at
+                FROM mtd_quarterly_confirmation_tokens
+                WHERE token = ?
+                """,
+                (token,),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid confirmation token.")
+            if row["user_id"] != user_id:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail="Confirmation token does not match user.",
+                )
+            if row["consumed_at"]:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail="Confirmation token already used.",
+                )
+            exp = datetime.datetime.fromisoformat(row["expires_at"])
+            if exp < now:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail="Confirmation token expired.",
+                )
+            if row["report_hash"] != report_hash:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    detail="Report payload does not match confirmed draft (hash mismatch).",
+                )
+            conn.execute(
+                "UPDATE mtd_quarterly_confirmation_tokens SET consumed_at = ? WHERE token = ?",
+                (now.isoformat(), token),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def init_integrations_db() -> None:
@@ -155,6 +274,33 @@ def init_integrations_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mtd_quarterly_drafts (
+                draft_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                report_json TEXT NOT NULL,
+                report_hash TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mtd_quarterly_confirmation_tokens (
+                token TEXT PRIMARY KEY,
+                draft_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                report_hash TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                consumed_at TEXT
+            )
+            """
+        )
         conn.commit()
         conn.close()
 
@@ -162,6 +308,8 @@ def init_integrations_db() -> None:
 def reset_integrations_db_for_tests() -> None:
     with db_lock:
         conn = _connect()
+        conn.execute("DELETE FROM mtd_quarterly_confirmation_tokens")
+        conn.execute("DELETE FROM mtd_quarterly_drafts")
         conn.execute("DELETE FROM hmrc_submissions")
         conn.commit()
         conn.close()
@@ -301,6 +449,11 @@ class HMRCMTDSubmissionSLOSnapshot(BaseModel):
 
 class HMRCMTDOperationalReadiness(BaseModel):
     generated_at: datetime.datetime
+    hmrc_environment: Literal["sandbox", "production"]
+    hmrc_api_base_url: str
+    oauth_token_host: str
+    http_max_retries: int
+    http_retry_backoff_seconds: float
     direct_submission_enabled: bool
     fallback_to_simulation_enabled: bool
     oauth_credentials_configured: bool
@@ -417,8 +570,15 @@ def _build_operational_readiness_snapshot() -> HMRCMTDOperationalReadiness:
     else:
         readiness_band = "not_ready"
 
+    token_host = urlparse(HMRC_OAUTH_TOKEN_URL).netloc or HMRC_OAUTH_TOKEN_URL
+
     return HMRCMTDOperationalReadiness(
         generated_at=datetime.datetime.now(datetime.UTC),
+        hmrc_environment=cast(Literal["sandbox", "production"], HMRC_ENV_LABEL),
+        hmrc_api_base_url=HMRC_DIRECT_API_BASE_URL,
+        oauth_token_host=token_host,
+        http_max_retries=HMRC_HTTP_MAX_RETRIES,
+        http_retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
         direct_submission_enabled=HMRC_DIRECT_SUBMISSION_ENABLED,
         fallback_to_simulation_enabled=HMRC_DIRECT_FALLBACK_TO_SIMULATION,
         oauth_credentials_configured=oauth_credentials_configured,
@@ -466,6 +626,117 @@ async def get_hmrc_mtd_quarterly_report_spec(
 
 
 @app.post(
+    "/integrations/hmrc/mtd/quarterly-update/draft",
+    response_model=MTDQuarterlyDraftResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_hmrc_mtd_quarterly_draft(
+    body: MTDQuarterlyDraftRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    errors = validate_quarterly_report(body.report)
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid HMRC MTD quarterly report format: {'; '.join(errors)}",
+        )
+    report_hash = compute_quarterly_report_fingerprint(body.report)
+    report_json = body.report.model_dump_json()
+    now = _utc_now()
+    expires = now + datetime.timedelta(hours=HMRC_MTD_DRAFT_TTL_HOURS)
+    draft_id = uuid.uuid4()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO mtd_quarterly_drafts (
+                    draft_id, user_id, report_json, report_hash, policy_version, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(draft_id),
+                    user_id,
+                    report_json,
+                    report_hash,
+                    POLICY_SPEC_VERSION,
+                    now.isoformat(),
+                    expires.isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return MTDQuarterlyDraftResponse(
+        draft_id=draft_id,
+        report_hash=report_hash,
+        policy_version=POLICY_SPEC_VERSION,
+        expires_at=expires,
+    )
+
+
+@app.post(
+    "/integrations/hmrc/mtd/quarterly-update/confirm",
+    response_model=MTDQuarterlyConfirmResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def confirm_hmrc_mtd_quarterly_draft(
+    body: MTDQuarterlyConfirmRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    now = _utc_now()
+    policy_version = POLICY_SPEC_VERSION
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT user_id, report_hash, policy_version, expires_at
+                FROM mtd_quarterly_drafts
+                WHERE draft_id = ?
+                """,
+                (str(body.draft_id),),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Draft not found.")
+            if row["user_id"] != user_id:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail="Draft belongs to another user.",
+                )
+            policy_version = row["policy_version"] or POLICY_SPEC_VERSION
+            draft_exp = datetime.datetime.fromisoformat(row["expires_at"])
+            if draft_exp < now:
+                raise HTTPException(status.HTTP_410_GONE, detail="Draft expired.")
+            token = str(uuid.uuid4())
+            confirm_exp = now + datetime.timedelta(minutes=HMRC_MTD_CONFIRM_TTL_MINUTES)
+            conn.execute(
+                """
+                INSERT INTO mtd_quarterly_confirmation_tokens (
+                    token, draft_id, user_id, report_hash, policy_version, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    token,
+                    str(body.draft_id),
+                    user_id,
+                    row["report_hash"],
+                    policy_version,
+                    now.isoformat(),
+                    confirm_exp.isoformat(),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return MTDQuarterlyConfirmResponse(
+        confirmation_token=token,
+        policy_version=policy_version,
+        expires_at=confirm_exp,
+    )
+
+
+@app.post(
     "/integrations/hmrc/mtd/quarterly-update",
     response_model=HMRCMTDQuarterlySubmissionStatus,
     status_code=status.HTTP_202_ACCEPTED,
@@ -474,8 +745,11 @@ async def submit_hmrc_mtd_quarterly_update(
     request: HMRCMTDQuarterlySubmissionRequest,
     user_id: str = Depends(get_current_user_id),
 ):
+    if HMRC_REQUIRE_EXPLICIT_CONFIRM:
+        _require_and_consume_mtd_confirmation(request, user_id)
     started_at = datetime.datetime.now(datetime.UTC)
     used_fallback = False
+    fraud_headers = FraudPreventionHeaders().generate(user_id=user_id)
     try:
         result = await submit_quarterly_update_to_hmrc(
             request=request,
@@ -488,6 +762,9 @@ async def submit_hmrc_mtd_quarterly_update(
             hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
             hmrc_quarterly_endpoint_path=HMRC_QUARTERLY_ENDPOINT_PATH,
             request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
+            fraud_headers=fraud_headers,
+            max_retries=HMRC_HTTP_MAX_RETRIES,
+            retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
         )
     except ValueError as exc:
         detail = str(exc)
@@ -508,6 +785,9 @@ async def submit_hmrc_mtd_quarterly_update(
                 hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
                 hmrc_quarterly_endpoint_path=HMRC_QUARTERLY_ENDPOINT_PATH,
                 request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
+                fraud_headers=fraud_headers,
+                max_retries=HMRC_HTTP_MAX_RETRIES,
+                retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
             )
             result.message = (
                 f"{result.message} Fallback applied because direct mode was not ready: {detail}"
@@ -538,6 +818,9 @@ async def submit_hmrc_mtd_quarterly_update(
                 hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
                 hmrc_quarterly_endpoint_path=HMRC_QUARTERLY_ENDPOINT_PATH,
                 request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
+                fraud_headers=fraud_headers,
+                max_retries=HMRC_HTTP_MAX_RETRIES,
+                retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
             )
             result.message = (
                 f"{result.message} Fallback applied after HMRC status error: {exc.response.status_code}."
@@ -568,6 +851,9 @@ async def submit_hmrc_mtd_quarterly_update(
                 hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
                 hmrc_quarterly_endpoint_path=HMRC_QUARTERLY_ENDPOINT_PATH,
                 request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
+                fraud_headers=fraud_headers,
+                max_retries=HMRC_HTTP_MAX_RETRIES,
+                retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
             )
             result.message = f"{result.message} Fallback applied after HMRC connectivity error."
         else:
@@ -853,3 +1139,12 @@ async def get_vat_obligations(
 ):
     """Get VAT obligations/deadlines"""
     return get_vat_obligations_simulated(vrn)
+
+
+@app.on_event("startup")
+async def _on_startup() -> None:
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    init_integrations_db()

@@ -1,8 +1,19 @@
+"""Provider contract tests (Pact). Disabled unless ENABLE_CONTRACT_TESTS=1."""
+
+import os
+import sys
+
+import pytest
+
+if os.getenv("ENABLE_CONTRACT_TESTS") != "1":
+    pytest.skip(
+        "Contract tests are disabled. Set ENABLE_CONTRACT_TESTS=1 and install pact-python to run.",
+        allow_module_level=True,
+    )
+
 import asyncio
 import datetime
-import os
 import socket
-import sys
 import tempfile
 import threading
 import time
@@ -12,7 +23,6 @@ from pathlib import Path
 from typing import Callable
 
 import httpx
-import pytest
 import uvicorn
 from pact import Verifier
 from sqlalchemy import delete
@@ -24,12 +34,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from app import models
 from app.database import Base, get_db
 from app.main import app, get_current_user_id
-
-if os.getenv("ENABLE_CONTRACT_TESTS") != "1":
-    pytest.skip(
-        "Contract tests are disabled. Set ENABLE_CONTRACT_TESTS=1 to run.",
-        allow_module_level=True,
-    )
 
 CONSUMER_NAME = "TaxEngineService"
 PROVIDER_NAME = "TransactionsService"
@@ -160,4 +164,3 @@ def test_transaction_service_honours_pact_with_tax_engine(provider_runtime: Prov
 
     verifier.verify()
     assert verifier.results
-

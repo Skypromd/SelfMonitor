@@ -29,8 +29,8 @@ def test_list_plans():
     assert "growth" in data
     assert "pro" in data
     assert "business" in data
-    assert data["starter"]["amount"] == 900
-    assert data["pro"]["amount"] == 1500
+    assert data["starter"]["amount"] == 1500
+    assert data["pro"]["amount"] == 2100
 
 
 def test_checkout_free_plan():
@@ -99,6 +99,7 @@ def test_webhook_checkout_completed(tmp_path):
     init_db()
 
     payload = json.dumps({
+        "id": "evt_test_checkout_1",
         "type": "checkout.session.completed",
         "data": {
             "object": {
@@ -116,4 +117,19 @@ def test_webhook_checkout_completed(tmp_path):
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
 
+    dup = client.post("/webhook", content=payload)
+    assert dup.status_code == 200
+    assert dup.json().get("duplicate") is True
+
     billing_main.DB_PATH = old_db
+
+
+def test_webhook_requires_signature_when_not_dev_mode(monkeypatch):
+    import app.main as billing_main
+
+    monkeypatch.setattr(billing_main, "DEV_MODE", False)
+    monkeypatch.setattr(billing_main, "STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+
+    resp = client.post("/webhook", content=b"{}")
+    assert resp.status_code == 400
+    assert "signature" in resp.json()["detail"].lower()

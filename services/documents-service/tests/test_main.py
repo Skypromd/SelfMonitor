@@ -38,10 +38,21 @@ def _fake_document(user_id: str = USER_ID, filename: str = "receipt.pdf"):
 # --- Health endpoint ---
 
 def test_health_check():
-    client = TestClient(app)
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    async def override_get_db():
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(return_value=None)
+        yield mock_session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        client = TestClient(app)
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert data.get("database") == "connected"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 
 # --- Auth ---

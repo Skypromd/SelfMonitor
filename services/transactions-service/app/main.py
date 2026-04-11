@@ -1,4 +1,6 @@
 import datetime
+import logging
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -19,6 +21,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
 
 app = FastAPI(
     title="Transactions Service",
@@ -40,15 +43,25 @@ get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 async def import_transactions(
     request: schemas.TransactionImportRequest,
     user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db)
+    limits: PlanLimits = Depends(get_plan_limits),
+    db: AsyncSession = Depends(get_db),
 ):
     """Imports a batch of transactions for an account into the database."""
+    existing_month = await crud.count_transactions_in_calendar_month(db, user_id=user_id)
+    incoming = len(request.transactions)
+    if existing_month + incoming > limits.transactions_per_month_limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Monthly transaction limit ({limits.transactions_per_month_limit}) would be exceeded. "
+                f"Recorded this month: {existing_month}, batch size: {incoming}. Upgrade your plan or wait until next month."
+            ),
+        )
     import_result = await crud.create_transactions(
         db,
         user_id=user_id,
         account_id=request.account_id,
         transactions=request.transactions,
-        auth_token=auth_token,
     )
     return schemas.TransactionImportResponse(
         message="Import request accepted",
@@ -135,11 +148,11 @@ async def update_transaction_category(
     db: AsyncSession = Depends(get_db)
 ):
     """Updates the category of a single transaction in the database."""
-    updated_transaction = await crud.update_transaction_category(
+    updated_transaction = await crud.update_transaction(
         db,
         user_id=user_id,
         transaction_id=transaction_id,
-        category=update_request.category
+        update_request=update_request,
     )
     if not updated_transaction:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")

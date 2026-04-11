@@ -136,10 +136,10 @@ FAQ: list[dict[str, Any]] = [
         "answer": (
             "We have 5 plans:\n"
             "- **Free** — basic tracking, no card needed\n"
-            "- **Starter £9/mo** — bank sync + invoices\n"
-            "- **Growth £12/mo** — + expense tracking + reports\n"
-            "- **Pro £15/mo** — + HMRC auto-submission + advanced AI\n"
-            "- **Business £25/mo** — multi-entity, API access, priority support\n\n"
+            "- **Starter £15/mo ex VAT** — bank sync + core tax tools\n"
+            "- **Growth £18/mo ex VAT** — + higher limits, invoices & forecasting\n"
+            "- **Pro £21/mo ex VAT** — + HMRC MTD, AI assistant, API\n"
+            "- **Business £30/mo ex VAT** — team seats, marketplace, white-label\n\n"
             "All paid plans include a 14-day free trial."
         ),
     },

@@ -1,9 +1,18 @@
+import asyncio
 import datetime
+import hashlib
+import json
+import logging
 import uuid
 from typing import Dict, Literal
 
 import httpx
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+# HMRC may return 429 / transient 5xx — safe to retry. Do not retry 4xx validation errors.
+_RETRYABLE_STATUS = frozenset({429, 502, 503, 504})
 
 
 def _next_month_same_day(date_value: datetime.date) -> datetime.date:
@@ -73,6 +82,17 @@ class HMRCMTDQuarterlySubmissionRequest(BaseModel):
     report: HMRCMTDQuarterlyReport
     submission_channel: Literal["api", "agent_copilot", "manual"] = "api"
     correlation_id: str | None = None
+    confirmation_token: str | None = Field(
+        default=None,
+        description="From POST .../quarterly-update/confirm when HMRC_REQUIRE_EXPLICIT_CONFIRM is enabled.",
+    )
+
+
+def compute_quarterly_report_fingerprint(report: HMRCMTDQuarterlyReport) -> str:
+    """SHA-256 of canonical JSON (sorted keys) for draft ↔ submit binding."""
+    data = json.loads(report.model_dump_json())
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class HMRCMTDQuarterlySubmissionStatus(BaseModel):
@@ -161,6 +181,10 @@ def _token_is_valid(expiry: datetime.datetime) -> bool:
     return (expiry - datetime.timedelta(seconds=30)) > datetime.datetime.now(datetime.UTC)
 
 
+def _should_retry_http_status(status_code: int) -> bool:
+    return status_code in _RETRYABLE_STATUS
+
+
 async def _fetch_hmrc_oauth_access_token(
     *,
     token_url: str,
@@ -168,6 +192,8 @@ async def _fetch_hmrc_oauth_access_token(
     client_secret: str,
     scope: str,
     timeout_seconds: float,
+    max_retries: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> str:
     key = _cache_key(token_url, client_id, scope)
     cached = _token_cache.get(key)
@@ -184,14 +210,45 @@ async def _fetch_hmrc_oauth_access_token(
     if scope:
         form_payload["scope"] = scope
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            token_url,
-            data=form_payload,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=timeout_seconds,
-        )
-    response.raise_for_status()
+    for attempt in range(1, max(1, max_retries) + 1):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    token_url,
+                    data=form_payload,
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                    timeout=timeout_seconds,
+                )
+            response.raise_for_status()
+            break
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            if attempt < max_retries and _should_retry_http_status(code):
+                delay = retry_backoff_seconds * (2 ** (attempt - 1))
+                logger.warning(
+                    "HMRC OAuth token HTTP %s (attempt %s/%s), retry in %.2fs",
+                    code,
+                    attempt,
+                    max_retries,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as exc:
+            if attempt < max_retries:
+                delay = retry_backoff_seconds * (2 ** (attempt - 1))
+                logger.warning(
+                    "HMRC OAuth token network error (attempt %s/%s): %s, retry in %.2fs",
+                    attempt,
+                    max_retries,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+
     payload = response.json()
     access_token = str(payload.get("access_token") or "").strip()
     if not access_token:
@@ -215,26 +272,59 @@ async def _post_hmrc_quarterly_update(
     correlation_id: str | None,
     timeout_seconds: float,
     fraud_headers: Dict[str, str] | None = None,
+    max_retries: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> httpx.Response:
-    headers = {
+    base_headers = {
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
         "Content-Type": "application/json",
         "Gov-Client-Connection-Method": "DESKTOP_APP_DIRECT",
     }
     if fraud_headers:
-        headers.update(fraud_headers)
+        base_headers.update(fraud_headers)
     if correlation_id:
-        headers["CorrelationId"] = correlation_id
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            endpoint_url,
-            headers=headers,
-            json=report_payload.model_dump(mode="json"),
-            timeout=timeout_seconds,
-        )
-    response.raise_for_status()
-    return response
+        base_headers["CorrelationId"] = correlation_id
+    body = report_payload.model_dump(mode="json")
+
+    for attempt in range(1, max(1, max_retries) + 1):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    endpoint_url,
+                    headers=base_headers,
+                    json=body,
+                    timeout=timeout_seconds,
+                )
+            response.raise_for_status()
+            return response
+        except httpx.HTTPStatusError as exc:
+            code = exc.response.status_code
+            if attempt < max_retries and _should_retry_http_status(code):
+                delay = retry_backoff_seconds * (2 ** (attempt - 1))
+                logger.warning(
+                    "HMRC quarterly POST HTTP %s (attempt %s/%s), retry in %.2fs",
+                    code,
+                    attempt,
+                    max_retries,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.NetworkError) as exc:
+            if attempt < max_retries:
+                delay = retry_backoff_seconds * (2 ** (attempt - 1))
+                logger.warning(
+                    "HMRC quarterly POST network error (attempt %s/%s): %s, retry in %.2fs",
+                    attempt,
+                    max_retries,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
 
 
 async def submit_quarterly_update_to_hmrc(
@@ -250,6 +340,8 @@ async def submit_quarterly_update_to_hmrc(
     hmrc_quarterly_endpoint_path: str,
     request_timeout_seconds: float = 20.0,
     fraud_headers: Dict[str, str] | None = None,
+    max_retries: int = 3,
+    retry_backoff_seconds: float = 0.5,
 ) -> HMRCMTDQuarterlySubmissionStatus:
     validation_errors = validate_quarterly_report(request.report)
     if validation_errors:
@@ -257,16 +349,13 @@ async def submit_quarterly_update_to_hmrc(
 
     endpoint = f"{hmrc_direct_api_base_url.rstrip('/')}/{hmrc_quarterly_endpoint_path.strip('/')}"
     receipt_ref = f"HMRC-MTD-{datetime.datetime.now(datetime.UTC):%Y%m%d%H%M%S}-{uuid.uuid4().hex[:8]}"
-    print(
-        "Direct HMRC quarterly submission prepared:",
-        {
-            "user_id": user_id,
-            "endpoint": endpoint,
-            "quarter": request.report.period.quarter,
-            "tax_year_start": request.report.period.tax_year_start.isoformat(),
-            "policy_code": request.report.policy_code,
-            "correlation_id": request.correlation_id,
-        },
+    logger.info(
+        "HMRC quarterly submission prepared user_id=%s endpoint=%s quarter=%s tax_year_start=%s correlation_id=%s",
+        user_id,
+        endpoint,
+        request.report.period.quarter,
+        request.report.period.tax_year_start.isoformat(),
+        request.correlation_id,
     )
     if not hmrc_direct_submission_enabled:
         return HMRCMTDQuarterlySubmissionStatus(
@@ -292,6 +381,8 @@ async def submit_quarterly_update_to_hmrc(
         client_secret=hmrc_oauth_client_secret,
         scope=hmrc_oauth_scope,
         timeout_seconds=request_timeout_seconds,
+        max_retries=max_retries,
+        retry_backoff_seconds=retry_backoff_seconds,
     )
     response = await _post_hmrc_quarterly_update(
         endpoint_url=endpoint,
@@ -300,6 +391,8 @@ async def submit_quarterly_update_to_hmrc(
         correlation_id=request.correlation_id,
         timeout_seconds=request_timeout_seconds,
         fraud_headers=fraud_headers,
+        max_retries=max_retries,
+        retry_backoff_seconds=retry_backoff_seconds,
     )
     hmrc_response_json: dict[str, object] = {}
     if response.content:

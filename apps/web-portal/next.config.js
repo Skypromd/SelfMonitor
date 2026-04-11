@@ -18,6 +18,33 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_API_GATEWAY_URL: process.env.NEXT_PUBLIC_API_GATEWAY_URL,
   },
+
+  /** Single marketing home: old `/landing` URL → `/` (no duplicate page) */
+  async redirects() {
+    return [
+      {
+        source: '/landing',
+        destination: '/',
+        permanent: true,
+        locale: false,
+      },
+    ];
+  },
+
+  /**
+   * Proxy API to nginx-gateway — browser calls same-origin `/api/...`, Next forwards to :8000.
+   * Requires gateway: `docker compose up -d nginx-gateway` from repo root.
+   */
+  async rewrites() {
+    const base = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+    const origin = base.replace(/\/api\/?$/, '') || 'http://localhost:8000';
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${origin}/api/:path*`,
+      },
+    ];
+  },
 }
 
 module.exports = nextConfig

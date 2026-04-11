@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, JSON
+from sqlalchemy import BigInteger, Column, String, DateTime, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 import uuid
@@ -11,6 +11,7 @@ class Document(Base):
     user_id = Column(String, nullable=False, index=True)
     filename = Column(String, nullable=False)
     filepath = Column(String, nullable=False)
+    file_size_bytes = Column(BigInteger, nullable=True)
     status = Column(String, nullable=False, default='processing')
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     extracted_data = Column(JSON, nullable=True)

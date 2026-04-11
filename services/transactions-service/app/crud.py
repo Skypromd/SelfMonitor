@@ -6,6 +6,7 @@ from typing import List
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func
 from sqlalchemy.future import select
 
 from . import models, schemas
@@ -15,6 +16,32 @@ RECEIPT_DRAFT_ACCOUNT_NAMESPACE = uuid.UUID(
     os.getenv("RECEIPT_DRAFT_ACCOUNT_NAMESPACE", "f0b6e53b-0dd0-4f65-91d2-7bb272f8ea20")
 )
 RECEIPT_DRAFT_PREFIX = "receipt-draft-"
+
+async def count_transactions_in_calendar_month(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    ref: datetime.date | None = None,
+) -> int:
+    """Count rows for user in ref's calendar month (inclusive start, exclusive next month)."""
+    if ref is None:
+        ref = datetime.date.today()
+    start = ref.replace(day=1)
+    if ref.month == 12:
+        end = datetime.date(ref.year + 1, 1, 1)
+    else:
+        end = datetime.date(ref.year, ref.month + 1, 1)
+    result = await db.execute(
+        select(func.count())
+        .select_from(models.Transaction)
+        .where(
+            models.Transaction.user_id == user_id,
+            models.Transaction.date >= start,
+            models.Transaction.date < end,
+        )
+    )
+    return int(result.scalar_one() or 0)
+
 
 async def get_suggested_category(description: str) -> str | None:
     """Calls the categorization service to get a suggested category."""

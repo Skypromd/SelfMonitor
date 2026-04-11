@@ -63,6 +63,9 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
+
+from .connection_store import get_connection_count, increment_connection_count
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -105,9 +108,19 @@ async def health_check():
 @app.post("/connections/initiate", response_model=InitiateConnectionResponse)
 async def initiate_connection(
     request: InitiateConnectionRequest,
-    user_id: str = Depends(get_current_user_id)
+    user_id: str = Depends(get_current_user_id),
+    limits: PlanLimits = Depends(get_plan_limits),
 ):
-    print(f"User {user_id} is initiating connection with {request.provider_id}")
+    current = get_connection_count(user_id)
+    if current >= limits.bank_connections_limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Bank connection limit for your plan ({limits.plan}) is "
+                f"{limits.bank_connections_limit}. Disconnect an existing connection or upgrade."
+            ),
+        )
+    logger.info("User %s initiating connection with %s", user_id, request.provider_id)
     consent_url = f"https://fake-bank-provider.com/consent?client_id={request.provider_id}&redirect_uri={request.redirect_uri}&scope=transactions"
     return InitiateConnectionResponse(consent_url=consent_url)
 
@@ -117,9 +130,20 @@ async def handle_provider_callback(
     state: Optional[str] = None,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
+    limits: PlanLimits = Depends(get_plan_limits),
 ):
     if not code:
         raise HTTPException(status_code=400, detail="Authorization code is missing")
+
+    current = get_connection_count(user_id)
+    if current >= limits.bank_connections_limit:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Bank connection limit for your plan ({limits.plan}) is "
+                f"{limits.bank_connections_limit}. Cannot add another connection."
+            ),
+        )
 
     logger.info("Exchanging authorization code for access token")
     connection_id = uuid.uuid4()
@@ -147,6 +171,8 @@ async def handle_provider_callback(
             [t.model_dump() for t in mock_transactions],
         )
         task_id = task.id
+
+    increment_connection_count(user_id)
 
     return CallbackResponse(
         connection_id=connection_id,

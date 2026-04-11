@@ -10,6 +10,11 @@ Calculates tax liabilities based on categorized transactions.
 | POST | /calculate | Yes | Calculate tax liability for a given period and jurisdiction |
 | POST | /calculate-and-submit | Yes | Calculate tax and submit to HMRC via integrations service |
 
+## Estimate vs submit
+
+- **`/calculate`** (и аналогичные read-only сценарии): оценка обязательств **без** отправки в HMRC; доступен согласно продуктовой матрице планов.
+- **Submit в HMRC** (в т.ч. через `integrations-service` quarterly): только после **явного подтверждения** пользователя; в проде включайте `HMRC_REQUIRE_EXPLICIT_CONFIRM=true` на `integrations-service`. См. `docs/POLICY_SPEC.md` и `docs/runbooks/HMRC_INTEGRATIONS_ENV.md`.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |

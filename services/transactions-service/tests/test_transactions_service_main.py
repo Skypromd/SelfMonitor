@@ -24,7 +24,17 @@ TEST_USER_ID = "test-user@example.com"
 
 
 def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
-    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "plan": "starter",
+            "bank_connections_limit": 1,
+            "transactions_per_month_limit": 500,
+            "storage_limit_gb": 2,
+        },
+        AUTH_SECRET_KEY,
+        algorithm=AUTH_ALGORITHM,
+    )
     return {"Authorization": f"Bearer {token}"}
 
 # --- Test Database Setup ---

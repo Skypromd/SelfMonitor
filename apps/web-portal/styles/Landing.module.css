@@ -9,15 +9,102 @@
   font-family: 'Inter', sans-serif;
 }
 
+/* Semantic icon colours — same idea as pricing tiers (teal / violet / amber …) */
+.accentTeal {
+  color: #2dd4bf;
+}
+.accentTealDeep {
+  color: #14b8a6;
+}
+.accentViolet {
+  color: #a78bfa;
+}
+.accentVioletStrong {
+  color: #8b5cf6;
+}
+.accentAmber {
+  color: #fbbf24;
+}
+.accentAmberDeep {
+  color: #d97706;
+}
+.accentSky {
+  color: #38bdf8;
+}
+.accentRose {
+  color: #fb7185;
+}
+.accentEmerald {
+  color: #34d399;
+}
+.accentBlue {
+  color: #60a5fa;
+}
+.accentIndigo {
+  color: #818cf8;
+}
+.accentCyan {
+  color: #22d3ee;
+}
+.accentMuted {
+  color: #94a3b8;
+}
+.accentGreenPlay {
+  color: #4ade80;
+}
+
+/* Platform category header — tinted “squircle” (semantic group) */
+.categoryIconWrap {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.iconCategoryTax {
+  background: linear-gradient(145deg, rgba(13, 148, 136, 0.35), rgba(124, 58, 237, 0.12));
+  border-color: rgba(45, 212, 191, 0.28);
+  color: #5eead4;
+}
+
+.iconCategoryMoney {
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.25), rgba(13, 148, 136, 0.1));
+  border-color: rgba(52, 211, 153, 0.22);
+  color: #34d399;
+}
+
+.iconCategoryInvoicing {
+  background: linear-gradient(145deg, rgba(139, 92, 246, 0.28), rgba(13, 148, 136, 0.08));
+  border-color: rgba(167, 139, 250, 0.25);
+  color: #c4b5fd;
+}
+
+.iconCategoryMortgage {
+  background: linear-gradient(145deg, rgba(217, 119, 6, 0.28), rgba(245, 158, 11, 0.08));
+  border-color: rgba(251, 191, 36, 0.22);
+  color: #fbbf24;
+}
+
+.iconCategoryAi {
+  background: linear-gradient(145deg, rgba(99, 102, 241, 0.28), rgba(139, 92, 246, 0.1));
+  border-color: rgba(129, 140, 248, 0.25);
+  color: #a5b4fc;
+}
+
 /* ---------- navbar ---------- */
 
 .navbar {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(15, 23, 42, 0.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(16px) saturate(1.2);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
 }
 
 .navInner {
@@ -30,12 +117,42 @@
   gap: 2rem;
 }
 
-.navBrand {
-  font-size: 1.15rem;
+/* Brand: monogram + wordmark (same idea as legacy lpNav) */
+.navBrandRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-shrink: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.navBrandRow:hover .navWordmark {
+  color: #f1f5f9;
+}
+
+.navMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: linear-gradient(145deg, #0d9488, #14b8a6);
+  color: #fff;
   font-weight: 800;
-  color: #14b8a6;
+  font-size: 0.72rem;
   letter-spacing: -0.03em;
   flex-shrink: 0;
+  box-shadow: 0 2px 12px rgba(13, 148, 136, 0.35);
+}
+
+.navWordmark {
+  font-size: 1.12rem;
+  font-weight: 800;
+  color: var(--lp-text);
+  letter-spacing: -0.04em;
+  transition: color 0.2s;
 }
 
 .navLinks {
@@ -61,8 +178,8 @@
 .heroBadge {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 1rem;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem 0.4rem 0.45rem;
   border-radius: 999px;
   border: 1px solid rgba(20, 184, 166, 0.3);
   background: rgba(20, 184, 166, 0.08);
@@ -71,6 +188,18 @@
   font-weight: 600;
   letter-spacing: 0.04em;
   margin-bottom: 1.5rem;
+}
+
+.heroBadgeIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .container {
@@ -235,12 +364,12 @@
   color: #fff;
 }
 
-/* ---------- trust pills ---------- */
+/* ---------- trust pills (match pricing trial badge) ---------- */
 
 .trustPills {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
+  gap: 0.65rem;
   justify-content: center;
   margin-bottom: 2.5rem;
 }
@@ -248,42 +377,87 @@
 .trustPill {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.45rem 1rem;
-  border-radius: 999px;
-  border: 1px solid var(--lp-border);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--lp-text-muted);
-  font-size: 0.85rem;
-  font-weight: 500;
+  gap: 0.45rem;
+  padding: 0.35rem 0.85rem 0.35rem 0.4rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--lp-accent-teal);
+  background: rgba(45, 212, 191, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.3);
   white-space: nowrap;
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
 }
 
-/* ---------- stats row ---------- */
+.trustPillIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.trustPill:hover {
+  border-color: rgba(13, 148, 136, 0.55);
+  box-shadow: 0 4px 18px rgba(13, 148, 136, 0.15);
+  transform: translateY(-2px);
+}
+
+/* ---------- stats (pricing-style mini cards) ---------- */
 
 .statsRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2rem;
-  justify-content: center;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  max-width: 920px;
+  margin: 0 auto;
+}
+
+.statCard {
+  background: var(--lp-bg);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.5rem 1.25rem 1.4rem;
+  text-align: center;
+  position: relative;
+  transition: border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.statCard:hover {
+  border-color: rgba(13, 148, 136, 0.4);
+  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.12);
+  transform: translateY(-3px);
 }
 
 .statItem {
   text-align: center;
 }
 
-.statValue {
-  display: block;
-  font-size: 1.5rem;
-  font-weight: 700;
+.statCard .statValue {
   color: var(--lp-accent-teal-light);
 }
 
+.statValue {
+  display: block;
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--lp-text);
+  letter-spacing: -0.03em;
+}
+
 .statLabel {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   color: var(--lp-text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  margin-top: 0.35rem;
 }
 
 /* ---------- card grids ---------- */
@@ -300,20 +474,40 @@
   gap: 1.5rem;
 }
 
-/* ---------- generic card ---------- */
+/* ---------- generic card (same surface + motion as .pricingCard) ---------- */
 
 .card {
-  background: var(--lp-bg-card);
+  background: var(--lp-bg);
   border: 1px solid var(--lp-border);
   border-radius: 12px;
-  padding: 1.75rem;
-  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+  padding: 2rem 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .card:hover {
   border-color: rgba(13, 148, 136, 0.4);
   box-shadow: 0 8px 32px rgba(13, 148, 136, 0.12);
   transform: translateY(-3px);
+}
+
+.cardIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 1rem;
+}
+
+.cardEmoji {
+  font-size: 1.4rem;
+  line-height: 1;
 }
 
 .cardIcon {
@@ -354,6 +548,194 @@
   font-weight: 500;
 }
 
+/* ---------- services platform (2026 layout) ---------- */
+
+.sectionServices {
+  background:
+    radial-gradient(ellipse 85% 45% at 50% 0%, rgba(13, 148, 136, 0.12) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 100% 80%, rgba(124, 58, 237, 0.06) 0%, transparent 50%),
+    var(--lp-bg-elevated);
+}
+
+.servicesIntro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 2.75rem;
+}
+
+.platformBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 1rem 0.4rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a5f3fc;
+  background: rgba(13, 148, 136, 0.15);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+}
+
+.platformBadgeIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.platformBadgeMuted {
+  color: var(--lp-text-muted);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--lp-border);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+
+.platformBadgeMuted .platformBadgeIconWrap {
+  color: var(--lp-text-muted);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+
+.serviceCategory {
+  margin-bottom: 3.25rem;
+}
+
+.serviceCategory:last-of-type {
+  margin-bottom: 0;
+}
+
+.categoryHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.35rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.categoryTitles {
+  flex: 1;
+  min-width: 200px;
+}
+
+.categoryEyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lp-accent-teal-light);
+  margin: 0 0 0.35rem;
+}
+
+.categoryTitle {
+  font-size: clamp(1.2rem, 2.5vw, 1.45rem);
+  font-weight: 700;
+  color: var(--lp-text);
+  margin: 0 0 0.35rem;
+  letter-spacing: -0.02em;
+}
+
+.categorySubtitle {
+  font-size: 0.95rem;
+  color: var(--lp-text-muted);
+  margin: 0;
+  line-height: 1.5;
+  max-width: 720px;
+}
+
+.servicesBento {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.serviceCardPro {
+  background: var(--lp-bg);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 2rem 1.5rem 1.75rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.serviceCardPro:hover {
+  border-color: rgba(13, 148, 136, 0.4);
+  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.12);
+  transform: translateY(-3px);
+}
+
+.serviceCardInner {
+  padding: 0;
+}
+
+.cardIconSvg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  margin-bottom: 1rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.serviceCardTitle {
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--lp-text);
+  margin: 0 0 0.45rem;
+  letter-spacing: -0.02em;
+}
+
+.serviceCardDesc {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--lp-text-muted);
+  margin: 0;
+}
+
+.serviceTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+}
+
+.tagPill {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  color: var(--lp-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+@media (max-width: 640px) {
+  .categoryHeader {
+    flex-direction: column;
+  }
+  .servicesBento {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- pricing ---------- */
 
 .pricingGrid {
@@ -371,7 +753,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+  transition: border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .pricingCard .btnPrimary,
@@ -464,20 +846,31 @@
 }
 
 .pricingFeatures li {
-  position: relative;
-  padding-left: 1.25rem;
-  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
   color: var(--lp-text-muted);
   font-size: 0.88rem;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
-.pricingFeatures li::before {
-  content: '✓';
-  position: absolute;
-  left: 0;
-  color: var(--lp-accent-teal-light);
+.pricingFeatureIcon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-top: 0.12rem;
+  opacity: 0.92;
+}
+
+/* Cloud backup tier size — gold emphasis (matches CTA / premium accents) */
+.pricingFeatureVolume {
   font-weight: 700;
+  color: var(--lp-accent-gold-light);
+  letter-spacing: 0.03em;
 }
 
 /* ---------- CTA section ---------- */
@@ -489,6 +882,8 @@
     radial-gradient(ellipse 60% 50% at 50% 50%, rgba(217, 119, 6, 0.1) 0%, transparent 70%),
     radial-gradient(ellipse 60% 60% at 40% 60%, rgba(13, 148, 136, 0.12) 0%, transparent 70%),
     var(--lp-bg);
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
 }
 
 .ctaSmall {
@@ -501,8 +896,9 @@
 /* ---------- footer ---------- */
 
 .footer {
-  background: rgba(0, 0, 0, 0.25);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.6), rgba(0, 0, 0, 0.35));
   padding: 3.5rem 0 2rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
 }
 
 .footerTop {
@@ -512,11 +908,33 @@
   margin-bottom: 2.5rem;
 }
 
+.footerBrandRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.footerMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #0d9488, #14b8a6);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.65rem;
+  letter-spacing: -0.03em;
+  flex-shrink: 0;
+}
+
 .footerLogo {
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--lp-text);
-  margin: 0 0 0.5rem;
+  margin: 0;
 }
 
 .footerTagline {
@@ -581,20 +999,32 @@
 .storeButton {
   display: inline-flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1.5rem;
-  background: rgba(255,255,255,0.08);
+  gap: 0.85rem;
+  padding: 0.85rem 1.5rem;
+  background: var(--lp-bg);
   border: 1px solid var(--lp-border);
   border-radius: 12px;
   color: var(--lp-text);
   text-decoration: none;
-  transition: all 0.2s;
+  transition: border-color 0.28s, box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .storeButton:hover {
-  background: rgba(255,255,255,0.12);
-  border-color: var(--lp-accent-teal);
-  transform: translateY(-2px);
+  border-color: rgba(13, 148, 136, 0.4);
+  box-shadow: 0 8px 28px rgba(13, 148, 136, 0.12);
+  transform: translateY(-3px);
+}
+
+.storeIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .storeIcon {
@@ -634,21 +1064,46 @@
 .mobileContent {
   display: flex;
   flex-direction: column;
+  background: var(--lp-bg);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 2rem 1.5rem 1.75rem;
+  transition: border-color 0.28s, box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mobileContent:hover {
+  border-color: rgba(13, 148, 136, 0.35);
+  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.1);
+  transform: translateY(-2px);
 }
 
 .mobileBadge {
-  display: inline-block;
-  padding: 0.4rem 1rem;
-  background: rgba(13,148,136,0.15);
-  border: 1px solid rgba(13,148,136,0.3);
-  border-radius: 999px;
-  color: var(--lp-accent-teal-light);
-  font-size: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.9rem 0.35rem 0.4rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  color: var(--lp-accent-teal);
+  background: rgba(45, 212, 191, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  border-radius: 20px;
   margin-bottom: 1.5rem;
   width: fit-content;
+}
+
+.mobileBadgeIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
 }
 
 .mobileDesc {
@@ -682,6 +1137,18 @@
   flex-shrink: 0;
 }
 
+.mobileFeatureIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
 /* ---------- phone mockup ---------- */
 .mobilePreview {
   display: flex;
@@ -690,11 +1157,22 @@
 
 .phoneFrame {
   width: 280px;
-  background: #1a1a2e;
+  background: linear-gradient(165deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
   border-radius: 36px;
   padding: 12px;
-  border: 2px solid rgba(148,163,184,0.2);
-  box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(148,163,184,0.1);
+  border: 1px solid var(--lp-border);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.45),
+    0 8px 32px rgba(13, 148, 136, 0.08);
+  transition: border-color 0.28s, box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.phoneFrame:hover {
+  border-color: rgba(13, 148, 136, 0.35);
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.5),
+    0 8px 36px rgba(13, 148, 136, 0.14);
+  transform: translateY(-4px);
 }
 
 .phoneNotch {
@@ -730,10 +1208,16 @@
 }
 
 .phoneCard {
-  background: var(--lp-bg-elevated);
+  background: var(--lp-bg);
   border: 1px solid var(--lp-border);
   border-radius: 12px;
-  padding: 1rem;
+  padding: 1rem 1rem 0.95rem;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.phoneCard:hover {
+  border-color: rgba(13, 148, 136, 0.3);
+  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.08);
 }
 
 .phoneCardLabel {
@@ -759,11 +1243,47 @@
 
 .phoneNav {
   display: flex;
-  justify-content: space-around;
-  padding: 0.75rem 0 0.25rem;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.25rem;
+  padding: 0.65rem 0.15rem 0.2rem;
   border-top: 1px solid var(--lp-border);
   margin-top: auto;
-  font-size: 1.25rem;
+}
+
+.phoneNavItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.phoneNavIconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.phoneNavLabel {
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lp-text-muted);
+  line-height: 1;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- charts grid ---------- */
@@ -775,11 +1295,14 @@
 }
 
 .chartCard {
-  background: var(--lp-bg-card);
+  background: var(--lp-bg);
   border: 1px solid var(--lp-border);
   border-radius: 12px;
-  padding: 1.5rem;
-  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+  padding: 2rem 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  transition: border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .chartCard:hover {
@@ -790,9 +1313,10 @@
 
 .chartLabel {
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--lp-text);
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.75rem;
+  letter-spacing: -0.02em;
 }
 
 .chartCaption {
@@ -811,26 +1335,32 @@
 }
 
 .testimonialCard {
-  background: var(--lp-bg-card);
+  background: var(--lp-bg);
   border: 1px solid var(--lp-border);
-  border-radius: 16px;
-  padding: 2rem;
+  border-radius: 12px;
+  padding: 2rem 1.5rem 1.75rem;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+  transition: border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .testimonialCard:hover {
-  border-color: rgba(13, 148, 136, 0.35);
-  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.1);
+  border-color: rgba(13, 148, 136, 0.4);
+  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.12);
   transform: translateY(-3px);
 }
 
 .testimonialStars {
+  display: flex;
+  gap: 0.2rem;
   color: #d97706;
   font-size: 1.1rem;
   letter-spacing: 0.05em;
+}
+
+.testimonialStarIcon {
+  flex-shrink: 0;
 }
 
 .testimonialQuote {
@@ -892,18 +1422,32 @@
 }
 
 .roiColumn {
-  background: var(--lp-bg-card);
-  border-radius: 16px;
-  padding: 2rem;
-  border: 2px solid transparent;
+  background: var(--lp-bg);
+  border-radius: 12px;
+  padding: 2rem 1.5rem 1.75rem;
+  border: 1px solid var(--lp-border);
+  transition: border-color 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .roiColumnBad {
   border-color: rgba(239, 68, 68, 0.35);
 }
 
+.roiColumnBad:hover {
+  border-color: rgba(239, 68, 68, 0.55);
+  box-shadow: 0 8px 32px rgba(239, 68, 68, 0.12);
+  transform: translateY(-3px);
+}
+
 .roiColumnGood {
-  border-color: rgba(20, 184, 166, 0.35);
+  border-color: rgba(20, 184, 166, 0.4);
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.15);
+}
+
+.roiColumnGood:hover {
+  border-color: rgba(13, 148, 136, 0.55);
+  box-shadow: 0 8px 32px rgba(13, 148, 136, 0.14);
+  transform: translateY(-3px);
 }
 
 .roiColumnTitle {
@@ -969,6 +1513,10 @@
   .pricingGrid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .statsRow {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 520px;
+  }
   .footerTop {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -988,7 +1536,9 @@
     padding: 4rem 0 3rem;
   }
   .statsRow {
-    gap: 1.25rem;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    max-width: 520px;
   }
   .mobileShowcase {
     grid-template-columns: 1fr;
@@ -1029,8 +1579,10 @@
     align-items: center;
   }
   .statsRow {
-    flex-direction: column;
-    align-items: center;
+    grid-template-columns: 1fr;
+    max-width: 280px;
+    margin-left: auto;
+    margin-right: auto;
   }
   .chartsGrid {
     grid-template-columns: 1fr;

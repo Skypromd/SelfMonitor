@@ -1,4 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func
 from sqlalchemy.future import select
 from . import models, schemas
 import uuid
@@ -22,8 +23,29 @@ _FEEDBACK_FIELDS: tuple[str, ...] = (
     "is_potentially_deductible",
 )
 
-async def create_document(db: AsyncSession, user_id: str, filename: str, filepath: str) -> models.Document:
-    db_document = models.Document(user_id=user_id, filename=filename, filepath=filepath)
+async def total_file_size_bytes_for_user(db: AsyncSession, user_id: str) -> int:
+    result = await db.execute(
+        select(func.coalesce(func.sum(models.Document.file_size_bytes), 0)).where(
+            models.Document.user_id == user_id
+        )
+    )
+    return int(result.scalar_one() or 0)
+
+
+async def create_document(
+    db: AsyncSession,
+    user_id: str,
+    filename: str,
+    filepath: str,
+    *,
+    file_size_bytes: int = 0,
+) -> models.Document:
+    db_document = models.Document(
+        user_id=user_id,
+        filename=filename,
+        filepath=filepath,
+        file_size_bytes=file_size_bytes,
+    )
     db.add(db_document)
     await db.commit()
     await db.refresh(db_document)

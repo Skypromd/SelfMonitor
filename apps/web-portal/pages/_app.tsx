@@ -8,7 +8,13 @@ import '../styles/globals.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
 const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
-const LOCALIZATION_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || `${API_GATEWAY_URL}/localization`;
+/** Same-origin path — proxied to gateway by `next.config.js` rewrites (avoids cross-origin :8000 from the browser) */
+const LOCALIZATION_URL = '/api/localization';
+
+/** Dev: set NEXT_PUBLIC_SKIP_I18N_FETCH=1 to avoid calling :8000 when the gateway is not running */
+const SKIP_I18N_FETCH = process.env.NEXT_PUBLIC_SKIP_I18N_FETCH === '1';
+
+let i18nOfflineNotified = false;
 
 type AuthUser = {
   email: string;
@@ -54,17 +60,40 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   useEffect(() => {
     const fetchTranslations = async () => {
       const lang = locale || defaultLocale || 'en-GB';
-      // Sync locale into context so useTranslation uses correct locale for formatting
       setLocale(lang);
+      if (SKIP_I18N_FETCH) {
+        setTranslations({});
+        return;
+      }
+      const url = (loc: string) => `${LOCALIZATION_URL}/translations/${loc}/all`;
       try {
-        const response = await fetch(`${LOCALIZATION_URL}/translations/${lang}/all`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch translations');
+        let res = await fetch(url(lang));
+        if (res.status === 404 && lang !== 'en-GB') {
+          res = await fetch(url('en-GB'));
         }
-        const data = await response.json();
-        setTranslations(data);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch translations (${res.status})`);
+        }
+        setTranslations(await res.json());
       } catch (error) {
-        console.error('Could not load translations:', error);
+        setTranslations({});
+        if (process.env.NODE_ENV !== 'development') {
+          return;
+        }
+        const msg = error instanceof Error ? error.message : String(error);
+        const likelyOffline =
+          (error instanceof TypeError && msg === 'Failed to fetch') ||
+          msg.includes('NetworkError');
+        if (likelyOffline) {
+          if (!i18nOfflineNotified) {
+            i18nOfflineNotified = true;
+            console.info(
+              '[i18n] Gateway not running on localhost:8000 — translations skipped. UI still works. Start: docker compose up -d nginx-gateway',
+            );
+          }
+          return;
+        }
+        console.warn('[i18n] Translations error:', msg);
       }
     };
 
@@ -89,7 +118,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
 
   useEffect(() => {
     const saved = localStorage.getItem('preferredLocale');
-    if (!saved && (router.pathname === '/' || router.pathname === '/landing')) {
+    if (!saved && router.pathname === '/') {
       router.replace('/welcome');
     }
   }, [router]);
@@ -100,7 +129,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
       setToken(storedToken);
       setUser(decodeUserFromToken(storedToken));
       fetchUserInfo(storedToken);
-    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register' && router.pathname !== '/login' && router.pathname !== '/welcome' && router.pathname !== '/checkout-success' && router.pathname !== '/checkout-cancel' && router.pathname !== '/forgot-password' && router.pathname !== '/reset-password') {
+    } else if (router.pathname !== '/' && router.pathname !== '/register' && router.pathname !== '/login' && router.pathname !== '/welcome' && router.pathname !== '/checkout-success' && router.pathname !== '/checkout-cancel' && router.pathname !== '/forgot-password' && router.pathname !== '/reset-password') {
       router.replace('/');
     }
   }, [router.pathname, router]);
@@ -140,7 +169,7 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     } catch { /* ignore */ }
   }
 
-  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel' || router.pathname === '/forgot-password' || router.pathname === '/reset-password') {
+  if (router.pathname === '/' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel' || router.pathname === '/forgot-password' || router.pathname === '/reset-password') {
     return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }
 

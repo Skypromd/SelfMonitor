@@ -23,7 +23,9 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import JSONResponse
 
 from . import crud, schemas
 from .celery_app import ocr_processing_task
@@ -104,6 +106,7 @@ for parent in Path(__file__).resolve().parents:
 from libs.shared_auth.jwt_fastapi import (  # noqa: E402,I001,I002,C0411
     build_jwt_auth_dependencies,
 )
+from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits  # noqa: E402
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 OCR_REVIEW_COMPLETION_SECONDS = Histogram(
@@ -119,8 +122,19 @@ OCR_MANUAL_OVERRIDES_TOTAL = Counter(
 
 
 @app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+async def health_check(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception as exc:
+        return JSONResponse(
+            {
+                "status": "degraded",
+                "database": "unreachable",
+                "detail": str(exc)[:240],
+            },
+            status_code=503,
+        )
+    return {"status": "ok", "database": "connected"}
 
 
 @app.get("/metrics")
@@ -136,6 +150,7 @@ async def metrics() -> Response:
 async def upload_document(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
+    limits: PlanLimits = Depends(get_plan_limits),
     db: AsyncSession = Depends(get_db),
 ):
     """Accepts a document, uploads it to S3, creates a DB record, and triggers OCR."""
@@ -166,11 +181,24 @@ async def upload_document(
 
     # --- File size validation ---
     contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE_BYTES:
+    file_len = len(contents)
+    if file_len > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File too large. Maximum size is {MAX_FILE_SIZE_MB}MB.",
         )
+
+    limit_bytes = limits.storage_limit_gb * (1024**3)
+    used_bytes = await crud.total_file_size_bytes_for_user(db, user_id=user_id)
+    if used_bytes + file_len > limit_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Storage quota exceeded for plan '{limits.plan}' "
+                f"({limits.storage_limit_gb} GB). Remove documents or upgrade."
+            ),
+        )
+
     await file.seek(0)
 
     s3_key = f"{user_id}/{uuid.uuid4()}{file_extension}"
@@ -183,7 +211,11 @@ async def upload_document(
         ) from e
 
     db_document = await crud.create_document(
-        db, user_id=user_id, filename=safe_filename, filepath=s3_key
+        db,
+        user_id=user_id,
+        filename=safe_filename,
+        filepath=s3_key,
+        file_size_bytes=file_len,
     )
 
     # Trigger background OCR task with persisted file key.

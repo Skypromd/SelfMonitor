@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Date, DateTime, Float, JSON, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import Column, Date, DateTime, Float, JSON, String, Uuid
 from sqlalchemy.sql import func
 import uuid
 from .database import Base
@@ -7,9 +6,9 @@ from .database import Base
 class Transaction(Base):
     __tablename__ = "transactions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    id = Column(Uuid(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
     user_id = Column(String, nullable=False, index=True)
-    account_id = Column(UUID(as_uuid=True), nullable=False, index=True)
+    account_id = Column(Uuid(as_uuid=True), nullable=False, index=True)
 
     provider_transaction_id = Column(String, nullable=False)
     date = Column(Date, nullable=False)
@@ -18,6 +17,8 @@ class Transaction(Base):
     currency = Column(String(3), nullable=False)
 
     category = Column(String, nullable=True)
+    tax_category = Column(String, nullable=True)
+    business_use_percent = Column(Float, nullable=True)
     reconciliation_status = Column(String, nullable=True)
     ignored_candidate_ids = Column(JSON, nullable=True)
 

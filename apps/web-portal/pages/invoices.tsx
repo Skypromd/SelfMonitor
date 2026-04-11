@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const INVOICE_SERVICE_URL =
-  process.env.NEXT_PUBLIC_INVOICE_SERVICE_URL || 'http://localhost:8013';
+  process.env.NEXT_PUBLIC_INVOICE_SERVICE_URL || 'http://localhost:8000/api/invoices';
 
 type InvoiceStatus = 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled' | 'partially_paid';
 

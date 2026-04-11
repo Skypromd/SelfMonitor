@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+/** Production: set EXPO_PUBLIC_API_GATEWAY_URL to the public nginx URL (e.g. https://api.example.com/api) — never a raw service port. */
 const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8080/api';
 const CACHE_PREFIX = 'api.cache.v1.';
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;

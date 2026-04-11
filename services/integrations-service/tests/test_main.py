@@ -59,6 +59,29 @@ def _valid_quarterly_payload() -> dict[str, object]:
     }
 
 
+def test_resolve_hmrc_urls_sandbox(monkeypatch):
+    monkeypatch.setenv("HMRC_ENV", "sandbox")
+    monkeypatch.delenv("HMRC_DIRECT_API_BASE_URL", raising=False)
+    monkeypatch.delenv("HMRC_OAUTH_TOKEN_URL", raising=False)
+    from app.main import resolve_hmrc_urls_from_env
+
+    api, token, label = resolve_hmrc_urls_from_env()
+    assert label == "sandbox"
+    assert "test-api.service.hmrc.gov.uk" in api
+    assert "oauth/token" in token
+
+
+def test_resolve_hmrc_urls_production(monkeypatch):
+    monkeypatch.setenv("HMRC_ENV", "production")
+    monkeypatch.delenv("HMRC_DIRECT_API_BASE_URL", raising=False)
+    monkeypatch.delenv("HMRC_OAUTH_TOKEN_URL", raising=False)
+    from app.main import resolve_hmrc_urls_from_env
+
+    api, token, label = resolve_hmrc_urls_from_env()
+    assert label == "production"
+    assert api.startswith("https://api.service.hmrc.gov.uk")
+
+
 def test_hmrc_mtd_spec_endpoint():
     response = client.get(
         "/integrations/hmrc/mtd/quarterly-update/spec",
@@ -68,6 +91,94 @@ def test_hmrc_mtd_spec_endpoint():
     payload = response.json()
     assert payload["schema_version"] == "hmrc-mtd-itsa-quarterly-v1"
     assert "report.period" in payload["required_sections"]
+
+
+def _isolated_db(monkeypatch, tmp_path):
+    db = tmp_path / "integrations-isolated.db"
+    monkeypatch.setattr("app.main.INTEGRATIONS_DB_PATH", str(db))
+    from app.main import init_integrations_db
+
+    init_integrations_db()
+
+
+def test_submit_hmrc_mtd_quarterly_update_rejects_without_confirmation_when_required(
+    monkeypatch, tmp_path
+):
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_REQUIRE_EXPLICIT_CONFIRM", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=_valid_quarterly_payload(),
+    )
+    assert response.status_code == 403
+    assert "explicit confirmation" in response.json()["detail"].lower()
+
+
+def test_hmrc_mtd_draft_confirm_submit_flow(monkeypatch, tmp_path):
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_REQUIRE_EXPLICIT_CONFIRM", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    report = _valid_quarterly_payload()["report"]
+    r_draft = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/draft",
+        headers=_headers(),
+        json={"report": report},
+    )
+    assert r_draft.status_code == 201
+    draft_id = r_draft.json()["draft_id"]
+    r_conf = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/confirm",
+        headers=_headers(),
+        json={"draft_id": draft_id},
+    )
+    assert r_conf.status_code == 200
+    token = r_conf.json()["confirmation_token"]
+    payload = _valid_quarterly_payload()
+    payload["confirmation_token"] = token
+    r_submit = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=payload,
+    )
+    assert r_submit.status_code == 202
+    r_again = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=payload,
+    )
+    assert r_again.status_code == 403
+    assert "already used" in r_again.json()["detail"].lower()
+
+
+def test_hmrc_mtd_submit_rejects_report_changed_after_confirm(monkeypatch, tmp_path):
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_REQUIRE_EXPLICIT_CONFIRM", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    report = _valid_quarterly_payload()["report"]
+    r_draft = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/draft",
+        headers=_headers(),
+        json={"report": report},
+    )
+    draft_id = r_draft.json()["draft_id"]
+    r_conf = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/confirm",
+        headers=_headers(),
+        json={"draft_id": draft_id},
+    )
+    token = r_conf.json()["confirmation_token"]
+    payload = _valid_quarterly_payload()
+    payload["confirmation_token"] = token
+    payload["report"]["financials"]["turnover"] = 999999.0
+    r_submit = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=payload,
+    )
+    assert r_submit.status_code == 400
+    assert "hash mismatch" in r_submit.json()["detail"].lower()
 
 
 def test_submit_hmrc_mtd_quarterly_update_accepts_valid_payload(monkeypatch):
@@ -218,4 +329,9 @@ def test_hmrc_mtd_operational_readiness_endpoint(monkeypatch):
     assert payload["direct_submission_enabled"] is True
     assert payload["fallback_to_simulation_enabled"] is True
     assert payload["oauth_credentials_configured"] is True
+    assert payload["hmrc_environment"] in {"sandbox", "production"}
+    assert "hmrc_api_base_url" in payload
+    assert "oauth_token_host" in payload
+    assert payload["http_max_retries"] >= 1
+    assert payload["http_retry_backoff_seconds"] >= 0.0
     assert payload["readiness_band"] in {"ready", "degraded", "not_ready"}

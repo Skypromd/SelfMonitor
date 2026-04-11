@@ -57,10 +57,10 @@ DB_PATH = os.getenv(
 # ── Plan definitions ──────────────────────────────────────────────────────────
 PLANS: dict[str, dict] = {
     "free":         {"name": "Free",         "amount": 0,    "currency": "gbp", "interval": None,    "price_id": os.getenv("STRIPE_PRICE_FREE", "")},
-    "starter":      {"name": "Starter",      "amount": 900,  "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_STARTER", "")},
-    "growth":       {"name": "Growth",       "amount": 1200, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_GROWTH", "")},
-    "pro":          {"name": "Pro",          "amount": 1500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_PRO", "")},
-    "business":     {"name": "Business",     "amount": 2500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_BUSINESS", "")},
+    "starter":      {"name": "Starter",      "amount": 1500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_STARTER", "")},
+    "growth":       {"name": "Growth",       "amount": 1800, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_GROWTH", "")},
+    "pro":          {"name": "Pro",          "amount": 2100, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_PRO", "")},
+    "business":     {"name": "Business",     "amount": 3000, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_BUSINESS", "")},
 }
 PLAN_AMOUNT_GBP = {k: v["amount"] / 100 for k, v in PLANS.items()}
 
@@ -82,6 +82,23 @@ app.add_middleware(
 )
 
 Instrumentator().instrument(app).expose(app)
+
+
+def _claim_stripe_webhook_event(event_id: str) -> bool:
+    """Return True if this is the first time we see event_id (should process)."""
+    if not event_id:
+        return True
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO stripe_webhook_events (event_id, received_at) VALUES (?, ?)",
+                (event_id, int(time.time())),
+            )
+            conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+
 
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db() -> sqlite3.Connection:
@@ -149,6 +166,13 @@ def init_db() -> None:
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pay_email   ON payments(user_email)")
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+                event_id TEXT PRIMARY KEY,
+                received_at INTEGER NOT NULL
+            )
+        """)
 
         conn.commit()
 
@@ -473,30 +497,77 @@ async def stripe_webhook(
     stripe_signature: Optional[str] = Header(None, alias="stripe-signature"),
 ) -> dict:
     payload = await request.body()
-    if STRIPE_WEBHOOK_SECRET and stripe_signature:
+
+    if not DEV_MODE:
+        if not STRIPE_WEBHOOK_SECRET:
+            raise HTTPException(
+                status_code=503,
+                detail="STRIPE_WEBHOOK_SECRET must be set when STRIPE_SECRET_KEY is configured.",
+            )
+        if not stripe_signature:
+            raise HTTPException(
+                status_code=400,
+                detail="Missing Stripe-Signature header",
+            )
         try:
-            event = stripe.Webhook.construct_event(payload, stripe_signature, STRIPE_WEBHOOK_SECRET)
+            event = stripe.Webhook.construct_event(
+                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+            )
         except stripe.SignatureVerificationError as exc:
             raise HTTPException(status_code=400, detail="Invalid signature") from exc
+        event_id = str(getattr(event, "id", "") or "")
+        event_type = str(event.type)
+        so = event.data.object
+    elif STRIPE_WEBHOOK_SECRET and stripe_signature:
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
+            )
+        except stripe.SignatureVerificationError as exc:
+            raise HTTPException(status_code=400, detail="Invalid signature") from exc
+        event_id = str(getattr(event, "id", "") or "")
+        event_type = str(event.type)
+        so = event.data.object
     else:
         try:
-            event = json.loads(payload)
+            event_dict = json.loads(payload)
         except Exception:
             return {"status": "ignored"}
+        event_id = str(event_dict.get("id") or "")
+        event_type = str(event_dict.get("type") or "")
+        so = (event_dict.get("data") or {}).get("object") or {}
 
-    event_type = event.get("type") if isinstance(event, dict) else event.type
+    if event_id and not _claim_stripe_webhook_event(event_id):
+        logger.info("stripe webhook duplicate event_id=%s", event_id)
+        return {"status": "ok", "duplicate": True}
 
     if event_type == "checkout.session.completed":
-        so = event["data"]["object"] if isinstance(event, dict) else event.data.object
-        customer_email = so.get("customer_email") or so.get("customer_details", {}).get("email", "")
+        customer_email = so.get("customer_email") or so.get("customer_details", {}).get(
+            "email", ""
+        )
         plan = so.get("metadata", {}).get("plan", "starter")
         if customer_email:
-            _upsert_subscription(email=customer_email, plan=plan, status="trialing" if so.get("subscription") else "active", stripe_customer_id=so.get("customer", ""), stripe_subscription_id=so.get("subscription", ""), stripe_session_id=so.get("id", ""))
+            _upsert_subscription(
+                email=customer_email,
+                plan=plan,
+                status="trialing" if so.get("subscription") else "active",
+                stripe_customer_id=so.get("customer", ""),
+                stripe_subscription_id=so.get("subscription", ""),
+                stripe_session_id=so.get("id", ""),
+            )
 
     elif event_type in ("customer.subscription.updated", "customer.subscription.deleted"):
-        so = event["data"]["object"] if isinstance(event, dict) else event.data.object
         with get_db() as conn:
-            conn.execute("UPDATE subscriptions SET status=?,current_period_end=?,updated_at=? WHERE stripe_subscription_id=?", (so.get("status","inactive"), so.get("current_period_end"), int(time.time()), so.get("id",""))); conn.commit()
+            conn.execute(
+                "UPDATE subscriptions SET status=?,current_period_end=?,updated_at=? WHERE stripe_subscription_id=?",
+                (
+                    so.get("status", "inactive"),
+                    so.get("current_period_end"),
+                    int(time.time()),
+                    so.get("id", ""),
+                ),
+            )
+            conn.commit()
 
     return {"status": "ok"}
 

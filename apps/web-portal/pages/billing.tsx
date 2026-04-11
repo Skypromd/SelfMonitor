@@ -44,7 +44,7 @@ interface Sub {
 }
 
 const PLAN_AMOUNT_GBP: Record<string, number> = {
-  free: 0, starter: 9, growth: 12, pro: 15, business: 25,
+  free: 0, starter: 15, growth: 18, pro: 21, business: 30,
 };
 
 const fmt = (n: number) =>

@@ -249,7 +249,7 @@ export default function BankSyncScreen() {
                   <Text style={styles.upgradeEmoji}>💡</Text>
                   <Text style={styles.upgradeTitle}>Need more syncs?</Text>
                   <Text style={styles.upgradeText}>
-                    Upgrade to Growth (£12/mo) for 2 syncs per day
+                    Upgrade to Growth (£18/mo ex VAT) for 2 syncs per day
                   </Text>
                   <AnimatedPressable onPress={() => {}}>
                     <View style={styles.upgradeButton}>

@@ -20,8 +20,9 @@ TEST_AUTH_ALGORITHM = "HS256"
 client = TestClient(app)
 
 
-def auth_headers(user_id: str) -> dict[str, str]:
-    token = jwt.encode({"sub": user_id}, TEST_AUTH_SECRET, algorithm=TEST_AUTH_ALGORITHM)
+def auth_headers(user_id: str, **extra_claims: object) -> dict[str, str]:
+    payload: dict[str, object] = {"sub": user_id, **extra_claims}
+    token = jwt.encode(payload, TEST_AUTH_SECRET, algorithm=TEST_AUTH_ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -53,6 +54,22 @@ def test_trigger_and_complete_job():
 
     assert latest["status"] == "completed"
     assert latest["result"]["rows_processed"] == 15000
+
+
+def test_plan_middleware_blocks_mortgage_for_starter():
+    r = client.get(
+        "/mortgage/types",
+        headers=auth_headers("u@example.com", plan="starter"),
+    )
+    assert r.status_code == 403
+
+
+def test_plan_middleware_allows_mortgage_for_pro():
+    r = client.get(
+        "/mortgage/types",
+        headers=auth_headers("u@example.com", plan="pro"),
+    )
+    assert r.status_code == 200
 
 
 def test_job_scope_is_isolated_by_user():
