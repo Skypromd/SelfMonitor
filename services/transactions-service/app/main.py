@@ -197,6 +197,25 @@ async def update_transaction_category(
     return updated_transaction
 
 
+@app.patch(
+    "/transactions/receipt-drafts/{draft_transaction_id}",
+    response_model=schemas.Transaction,
+)
+async def update_receipt_draft_transaction(
+    draft_transaction_id: uuid.UUID,
+    payload: schemas.ReceiptDraftUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Updates OCR-corrected fields on a receipt draft (amount, date, vendor, category)."""
+    updated = await crud.update_receipt_draft(
+        db, user_id=user_id, draft_transaction_id=draft_transaction_id, payload=payload
+    )
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="receipt_draft_not_found")
+    return updated
+
+
 @app.post("/transactions/receipt-drafts", response_model=schemas.ReceiptDraftCreateResponse)
 async def create_receipt_draft_transaction(
     payload: schemas.ReceiptDraftCreateRequest,

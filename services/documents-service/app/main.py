@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List
 
 import boto3  # type: ignore[import-untyped]
+import httpx
 from botocore.client import Config  # type: ignore[import-untyped]
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 from fastapi import (
@@ -73,6 +74,8 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 # --- S3 Configuration ---
+TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://transactions-service:80")
+
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "documents-bucket")
 # For local development with LocalStack, boto3 needs the endpoint_url.
 S3_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
@@ -279,6 +282,7 @@ async def review_document(
     document_id: uuid.UUID,
     payload: schemas.DocumentReviewUpdateRequest,
     user_id: str = Depends(get_current_user_id),
+    bearer: str = Depends(get_bearer_token),
     db: AsyncSession = Depends(get_db),
 ):
     updated = await crud.update_document_review(
@@ -305,5 +309,28 @@ async def review_document(
     review_status = str(extracted_data.get("review_status") or "").strip().lower()
     if review_status in {"corrected", "ignored"}:
         OCR_MANUAL_OVERRIDES_TOTAL.labels(review_status=review_status).inc()
+
+    # Propagate corrected OCR fields to the receipt draft transaction
+    draft_id = extracted_data.get("receipt_draft_transaction_id")
+    if draft_id and review_status in {"corrected", "confirmed"}:
+        update_body: dict = {}
+        if payload.total_amount is not None:
+            update_body["total_amount"] = payload.total_amount
+        if payload.vendor_name is not None:
+            update_body["vendor_name"] = payload.vendor_name
+        if payload.transaction_date is not None:
+            update_body["transaction_date"] = str(payload.transaction_date)
+        if payload.suggested_category is not None:
+            update_body["suggested_category"] = payload.suggested_category
+        if update_body:
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    await client.patch(
+                        f"{TRANSACTIONS_SERVICE_URL}/transactions/receipt-drafts/{draft_id}",
+                        json=update_body,
+                        headers={"Authorization": f"Bearer {bearer}"},
+                    )
+            except Exception:
+                pass  # non-blocking: document review already saved
 
     return updated

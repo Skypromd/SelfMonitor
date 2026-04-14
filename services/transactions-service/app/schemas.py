@@ -106,3 +106,10 @@ class ReceiptDraftIgnoreCandidateRequest(BaseModel):
 
 class ReceiptDraftStateUpdateResponse(BaseModel):
     draft_transaction: Transaction
+
+
+class ReceiptDraftUpdateRequest(BaseModel):
+    total_amount: Optional[float] = Field(default=None, gt=0)
+    vendor_name: Optional[str] = None
+    transaction_date: Optional[datetime.date] = None
+    suggested_category: Optional[str] = None

@@ -19,6 +19,9 @@ type ReceiptResult = {
   amount: number;
   merchant: string;
   date: string;
+  documentId?: string;
+  filename?: string;
+  category?: string;
 };
 
 function AnimatedPressable({
@@ -119,37 +122,43 @@ export default function ReceiptScanScreen() {
 
   const processReceipt = useCallback(async (uri: string) => {
     setProcessing(true);
+    const filename = 'receipt.jpg';
     try {
       const formData = new FormData();
-      formData.append('file', {
-        uri,
-        type: 'image/jpeg',
-        name: 'receipt.jpg',
-      } as any);
-      const res = await apiCall('/documents/receipts', {
-        method: 'POST',
-        body: formData,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setResult({
-          amount: data.amount ?? 42.99,
-          merchant: data.merchant ?? 'Office Supplies Co',
-          date: data.date ?? new Date().toISOString().split('T')[0],
-        });
-      } else {
-        setResult({
-          amount: 42.99,
-          merchant: 'Office Supplies Co',
-          date: new Date().toISOString().split('T')[0],
-        });
+      formData.append('file', { uri, type: 'image/jpeg', name: filename } as any);
+      const uploadRes = await apiCall('/documents/upload', { method: 'POST', body: formData });
+      if (!uploadRes.ok) {
+        Alert.alert('Upload failed', 'Could not upload receipt. Please try again.');
+        return;
       }
-    } catch {
+      const doc = await uploadRes.json();
+      const docId: string = doc.id;
+
+      // Poll for OCR results (up to 10 seconds)
+      let extracted = doc.extracted_data;
+      for (let i = 0; i < 5 && !extracted?.total_amount; i++) {
+        await new Promise(r => setTimeout(r, 2000));
+        try {
+          const pollRes = await apiCall(`/documents/${docId}`, { method: 'GET' });
+          if (pollRes.ok) {
+            const polled = await pollRes.json();
+            extracted = polled.extracted_data;
+          }
+        } catch {
+          // continue polling
+        }
+      }
+
       setResult({
-        amount: 42.99,
-        merchant: 'Office Supplies Co',
-        date: new Date().toISOString().split('T')[0],
+        amount: extracted?.total_amount ?? 0,
+        merchant: extracted?.vendor_name ?? '',
+        date: extracted?.transaction_date ?? new Date().toISOString().split('T')[0],
+        documentId: docId,
+        filename,
+        category: extracted?.suggested_category ?? 'office_supplies',
       });
+    } catch (err: any) {
+      Alert.alert('Error', err?.message ?? 'Failed to process receipt');
     } finally {
       setProcessing(false);
     }
@@ -157,19 +166,33 @@ export default function ReceiptScanScreen() {
 
   const saveAsTransaction = useCallback(async () => {
     if (!result) return;
+    if (!result.documentId) {
+      Alert.alert('Error', 'Document ID missing — please re-scan the receipt');
+      return;
+    }
+    if (!result.amount || result.amount <= 0) {
+      Alert.alert('Amount required', 'Please enter a valid amount before saving');
+      return;
+    }
     setSaving(true);
     try {
-      const res = await apiCall('/transactions/transactions', {
+      const res = await apiCall('/transactions/receipt-drafts', {
         method: 'POST',
         body: JSON.stringify({
-          description: result.merchant,
-          amount: -result.amount,
-          date: result.date,
-          category: 'business_expense',
+          document_id: result.documentId,
+          filename: result.filename ?? 'receipt.jpg',
+          transaction_date: result.date,
+          total_amount: result.amount,
+          currency: 'GBP',
+          vendor_name: result.merchant || undefined,
+          suggested_category: result.category || 'office_supplies',
         }),
       });
-      if (!res.ok) throw new Error('Failed to save transaction');
-      Alert.alert('Saved', 'Receipt saved as transaction');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail ?? 'Failed to save receipt draft');
+      }
+      Alert.alert('Saved', 'Receipt queued for bank reconciliation');
       setImageUri(null);
       setResult(null);
     } catch (err: any) {
@@ -261,11 +284,11 @@ export default function ReceiptScanScreen() {
             </View>
 
             <AnimatedPressable onPress={saveAsTransaction} disabled={saving}>
-              <View style={styles.saveButton}>
+              <View style={[styles.saveButton, (!result?.amount || result.amount <= 0) && { opacity: 0.5 }]}>
                 {saving ? (
                   <ActivityIndicator color={colors.textInverse} />
                 ) : (
-                  <Text style={styles.saveButtonText}>Save as Transaction</Text>
+                  <Text style={styles.saveButtonText}>Save as Receipt Draft</Text>
                 )}
               </View>
             </AnimatedPressable>

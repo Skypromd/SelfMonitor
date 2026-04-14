@@ -349,6 +349,41 @@ async def create_or_get_receipt_draft_transaction(
     return db_transaction, False
 
 
+async def update_receipt_draft(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    draft_transaction_id: uuid.UUID,
+    payload: schemas.ReceiptDraftUpdateRequest,
+) -> models.Transaction | None:
+    result = await db.execute(
+        select(models.Transaction).filter(
+            models.Transaction.id == draft_transaction_id,
+            models.Transaction.user_id == user_id,
+            models.Transaction.provider_transaction_id.like(f"{RECEIPT_DRAFT_PREFIX}%"),
+        )
+    )
+    draft = result.scalars().first()
+    if not draft:
+        return None
+    if payload.total_amount is not None:
+        draft.amount = -abs(payload.total_amount)
+    if payload.transaction_date is not None:
+        draft.date = payload.transaction_date
+    if payload.vendor_name is not None:
+        desc = str(draft.description or "")
+        if "(" in desc and desc.endswith(")"):
+            article = desc[desc.index("(") + 1 : -1]
+            draft.description = f"Receipt draft: {payload.vendor_name} ({article})"
+        else:
+            draft.description = f"Receipt draft: {payload.vendor_name}"
+    if payload.suggested_category is not None:
+        draft.category = payload.suggested_category
+    await db.commit()
+    await db.refresh(draft)
+    return draft
+
+
 async def list_unmatched_receipt_drafts(
     db: AsyncSession,
     *,

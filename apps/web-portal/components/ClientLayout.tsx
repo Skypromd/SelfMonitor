@@ -1,7 +1,7 @@
 import {
-  Activity, BarChart2, Bot, CalendarDays, CreditCard, ExternalLink, FileText, Gift,
-  Globe, Headphones, Home, LayoutDashboard, Lock, LogOut, Menu, Receipt, Send, Settings,
-  ShoppingBag, User, Wallet, X,
+  Activity, BarChart2, Bot, CalendarDays, ClipboardCheck, CreditCard, ExternalLink,
+  FileText, Gift, Globe, Headphones, Home, LayoutDashboard, Lock, LogOut, Menu,
+  Receipt, Send, Settings, ShoppingBag, User, Wallet, X,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -89,8 +89,9 @@ export default function ClientLayout({
     { href: '/dashboard',       label: t('nav.dashboard'),    icon: <LayoutDashboard size={17} /> },
     { href: '/activity',        label: t('nav.activity'),     icon: <Activity size={17} /> },
     { href: '/transactions',    label: t('nav.transactions'), icon: <Wallet size={17} /> },
-    { href: '/documents',       label: t('nav.documents'),    icon: <FileText size={17} /> },
-    { href: '/reports',         label: t('nav.reports'),      icon: <BarChart2 size={17} /> },
+    { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
+    { href: '/tax-preparation',  label: 'Tax Return',            icon: <ClipboardCheck size={17} /> },
+    { href: '/reports',          label: t('nav.reports'),        icon: <BarChart2 size={17} /> },
     { href: '/marketplace',     label: t('nav.marketplace'),  icon: <ShoppingBag size={17} /> },
     { href: '/submission',      label: t('nav.submission'),   icon: <Send size={17} /> },
     { href: '/profile',         label: t('nav.profile'),      icon: <User size={17} /> },
