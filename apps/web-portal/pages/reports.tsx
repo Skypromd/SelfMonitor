@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
-const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || 'http://localhost:8011';
+const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || '/api/analytics';
 
 type ReportsPageProps = {
   token: string;
@@ -443,7 +443,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   };
 
   return (
-    <div className={styles.dashboard}>
+    <div className={styles.pageContainer}>
       <h1>{t('nav.reports')}</h1>
       <p>{t('reports.description')}</p>
       <div className={styles.subContainer}>
@@ -771,3 +771,4 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     </div>
   );
 }
+

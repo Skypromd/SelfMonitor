@@ -17,14 +17,15 @@ import sqlite3
 import time
 import uuid
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 import httpx
 import stripe
+from jose import JWTError, jwt  # type: ignore[import-untyped]
 from apscheduler.schedulers.background import (
     BackgroundScheduler,  # type: ignore[import-untyped]
 )
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel
@@ -36,7 +37,7 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:80")
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "").strip()
 DEV_MODE = not bool(STRIPE_SECRET_KEY)
 
 # ── SMTP ───────────────────────────────────────────────────────────────────────
@@ -82,6 +83,52 @@ app.add_middleware(
 )
 
 Instrumentator().instrument(app).expose(app)
+
+
+def _decode_billing_jwt(authorization: str | None) -> dict[str, Any]:
+    if not AUTH_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AUTH_SECRET_KEY is not configured",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    token = authorization[7:].strip()
+    try:
+        return jwt.decode(token, AUTH_SECRET_KEY, algorithms=["HS256"])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+
+def _jwt_allows_billing_admin(payload: dict[str, Any]) -> bool:
+    if payload.get("is_admin"):
+        return True
+    perms = payload.get("perms")
+    if isinstance(perms, list) and "*" in {str(p) for p in perms}:
+        return True
+    scopes = payload.get("scopes")
+    if not isinstance(scopes, list):
+        return False
+    s = {str(x) for x in scopes}
+    return "billing:*" in s or "billing:read" in s
+
+
+def require_billing_admin(
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    payload = _decode_billing_jwt(authorization)
+    if not _jwt_allows_billing_admin(payload):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return payload
 
 
 def _claim_stripe_webhook_event(event_id: str) -> bool:
@@ -573,12 +620,30 @@ async def stripe_webhook(
 
 
 @app.get("/subscription/{email}", response_model=SubscriptionInfo)
-def get_subscription(email: str) -> SubscriptionInfo:
+def get_subscription(
+    email: str,
+    authorization: str | None = Header(default=None),
+) -> SubscriptionInfo:
+    payload = _decode_billing_jwt(authorization)
+    sub_claim = payload.get("sub")
+    if not (payload.get("is_admin") or sub_claim == email):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot read another user's subscription",
+        )
     with get_db() as conn:
-        row = conn.execute("SELECT * FROM subscriptions WHERE email=? ORDER BY updated_at DESC LIMIT 1", (email,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM subscriptions WHERE email=? ORDER BY updated_at DESC LIMIT 1",
+            (email,),
+        ).fetchone()
     if not row:
         return SubscriptionInfo(email=email, plan="free", status="none")
-    return SubscriptionInfo(email=email, plan=row["plan"], status=row["status"], current_period_end=row["current_period_end"])
+    return SubscriptionInfo(
+        email=email,
+        plan=row["plan"],
+        status=row["status"],
+        current_period_end=row["current_period_end"],
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -586,7 +651,7 @@ def get_subscription(email: str) -> SubscriptionInfo:
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/subscriptions")
 async def list_subscriptions(
-    request: Request,
+    _admin: Annotated[dict, Depends(require_billing_admin)],
     status: Optional[str] = None,
     plan: Optional[str] = None,
     limit: int = 100,
@@ -616,6 +681,7 @@ async def list_subscriptions(
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/invoices")
 async def list_invoices(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
     user_email: Optional[str] = None,
     status: Optional[str] = None,
     plan: Optional[str] = None,
@@ -641,7 +707,10 @@ async def list_invoices(
 
 
 @app.post("/invoices")
-async def create_invoice(body: InvoiceCreate) -> dict:
+async def create_invoice(
+    body: InvoiceCreate,
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     today = datetime.date.today()
     amount = body.amount if body.amount is not None else PLAN_AMOUNT_GBP.get(body.plan, 0)
     period_start = body.period_start or str(today.replace(day=1))
@@ -669,7 +738,11 @@ async def create_invoice(body: InvoiceCreate) -> dict:
 
 
 @app.patch("/invoices/{invoice_id}")
-async def update_invoice(invoice_id: str, body: InvoicePatch) -> dict:
+async def update_invoice(
+    invoice_id: str,
+    body: InvoicePatch,
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
         if not row:
@@ -689,7 +762,10 @@ async def update_invoice(invoice_id: str, body: InvoicePatch) -> dict:
 
 
 @app.post("/invoices/{invoice_id}/send")
-async def send_invoice(invoice_id: str) -> dict:
+async def send_invoice(
+    invoice_id: str,
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
         if not row:
@@ -721,7 +797,10 @@ async def send_invoice(invoice_id: str) -> dict:
 
 
 @app.post("/invoices/{invoice_id}/mark-paid")
-async def mark_invoice_paid(invoice_id: str) -> dict:
+async def mark_invoice_paid(
+    invoice_id: str,
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     today_str = str(datetime.date.today())
     with get_db() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
@@ -739,7 +818,9 @@ async def mark_invoice_paid(invoice_id: str) -> dict:
 
 
 @app.post("/invoices/generate-batch")
-async def generate_batch_invoices() -> dict:
+async def generate_batch_invoices(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     """Manually trigger the auto-invoice generator."""
     _auto_generate_invoices()
     return {"status": "ok", "message": "Batch invoice generation complete"}
@@ -750,6 +831,7 @@ async def generate_batch_invoices() -> dict:
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/payments")
 async def list_payments(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
     user_email: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
@@ -770,7 +852,9 @@ async def list_payments(
 # ── Analytics ──────────────────────────────────────════════════════════════════
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/analytics/overview")
-async def analytics_overview() -> dict:
+async def analytics_overview(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     """
     KPI summary: MRR, ARR, active subscriptions, total invoiced, outstanding, collected.
     """
@@ -815,7 +899,10 @@ async def analytics_overview() -> dict:
 
 
 @app.get("/analytics/revenue")
-async def analytics_revenue(months: int = Query(12, ge=1, le=36)) -> dict:
+async def analytics_revenue(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+    months: int = Query(12, ge=1, le=36),
+) -> dict:
     """Monthly revenue (collected + outstanding) for the last N months."""
     today = datetime.date.today()
     result = []
@@ -854,7 +941,9 @@ async def analytics_revenue(months: int = Query(12, ge=1, le=36)) -> dict:
 
 
 @app.get("/analytics/plans")
-async def analytics_plans() -> dict:
+async def analytics_plans(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     """Subscription count and MRR by plan."""
     with get_db() as conn:
         rows = conn.execute("""
@@ -879,7 +968,9 @@ async def analytics_plans() -> dict:
 
 
 @app.get("/analytics/invoice-status")
-async def analytics_invoice_status() -> dict:
+async def analytics_invoice_status(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     """Invoice counts by status (for donut/pie chart)."""
     with get_db() as conn:
         rows = conn.execute("SELECT status, COUNT(*) as cnt, SUM(amount) as total FROM invoices GROUP BY status").fetchall()
@@ -887,7 +978,10 @@ async def analytics_invoice_status() -> dict:
 
 
 @app.get("/analytics/mrr-trend")
-async def analytics_mrr_trend(months: int = Query(12, ge=1, le=36)) -> dict:
+async def analytics_mrr_trend(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+    months: int = Query(12, ge=1, le=36),
+) -> dict:
     """Estimated MRR each month based on active subscriptions at billing date."""
     today = datetime.date.today()
     result = []
@@ -912,11 +1006,101 @@ async def analytics_mrr_trend(months: int = Query(12, ge=1, le=36)) -> dict:
     return {"data": result}
 
 
+@app.get("/admin/revenue/cohorts")
+async def admin_revenue_cohorts(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+    months_back: int = Query(18, ge=1, le=60),
+) -> dict:
+    with get_db() as conn:
+        srows = conn.execute("SELECT created_at, status FROM subscriptions").fetchall()
+    by_month: dict[str, dict[str, int]] = defaultdict(lambda: {"signups": 0, "still_active": 0})
+    for r in srows:
+        ts = int(r["created_at"])
+        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+        key = dt.strftime("%Y-%m")
+        by_month[key]["signups"] += 1
+        if r["status"] in ("active", "trialing"):
+            by_month[key]["still_active"] += 1
+    sorted_keys = sorted(by_month.keys(), reverse=True)[:months_back]
+    cohorts = [
+        {
+            "cohort_month": k,
+            "signups": by_month[k]["signups"],
+            "still_active": by_month[k]["still_active"],
+            "retention_pct": round(100.0 * by_month[k]["still_active"] / max(by_month[k]["signups"], 1), 1),
+        }
+        for k in sorted_keys
+    ]
+    return {"cohorts": cohorts}
+
+
+@app.get("/admin/revenue/forecast")
+async def admin_revenue_forecast(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+    horizon_months: int = Query(6, ge=1, le=24),
+    lookback_months: int = Query(6, ge=2, le=36),
+) -> dict:
+    today = datetime.date.today()
+    mrr_points: list[float] = []
+    with get_db() as conn:
+        for i in range(lookback_months - 1, -1, -1):
+            m = today.month - i
+            y = today.year
+            while m <= 0: m += 12; y -= 1
+            while m > 12: m -= 12; y += 1
+            month_start = datetime.date(y, m, 1)
+            month_end = (month_start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
+            ms = int(time.mktime(month_start.timetuple()))
+            me = int(time.mktime(month_end.timetuple()))
+            qrows = conn.execute(
+                "SELECT plan, status FROM subscriptions WHERE created_at<=? AND (status NOT IN ('cancelled','inactive') OR updated_at>=?)",
+                (me, ms),
+            ).fetchall()
+            mrr_points.append(round(sum(PLAN_AMOUNT_GBP.get(r["plan"], 0) for r in qrows if r["status"] in ("active", "trialing")), 2))
+    growth_rates = [
+        (mrr_points[i] - mrr_points[i-1]) / mrr_points[i-1]
+        for i in range(1, len(mrr_points)) if mrr_points[i-1] > 0
+    ]
+    avg_growth = sum(growth_rates[-3:]) / len(growth_rates[-3:]) if growth_rates else 0.0
+    cur = float(mrr_points[-1]) if mrr_points else 0.0
+    forward = []
+    for h in range(1, horizon_months + 1):
+        cur = cur * (1 + avg_growth)
+        forward.append({"month_offset": h, "mrr_gbp": round(cur, 2)})
+    return {"lookback_mrr": mrr_points, "assumed_monthly_growth_rate": round(avg_growth, 4), "forward_mrr": forward}
+
+
+@app.get("/admin/revenue/ltv")
+async def admin_revenue_ltv(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
+    with get_db() as conn:
+        payers = conn.execute("SELECT COUNT(DISTINCT user_email) AS n, SUM(amount) AS rev FROM payments WHERE status='success'").fetchone()
+        subs_row = conn.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS churned FROM subscriptions").fetchone()
+    n_payers = int(payers["n"] or 0)
+    revenue = float(payers["rev"] or 0)
+    arpu = revenue / max(n_payers, 1)
+    total = int(subs_row["total"] or 0)
+    churned = int(subs_row["churned"] or 0)
+    churn_rate = churned / max(total, 1)
+    simple_ltv = arpu / max(churn_rate, 0.0001)
+    return {
+        "paying_customers": n_payers,
+        "total_payment_volume_gbp": round(revenue, 2),
+        "arpu_gbp": round(arpu, 2),
+        "approx_churn_rate": round(churn_rate, 4),
+        "simple_ltv_gbp": round(simple_ltv, 2),
+        "method": "arpu / max(churn_rate, 0.0001) — informational only",
+    }
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ── Legacy admin stats endpoint ────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/admin/stats")
-async def admin_stats(request: Request) -> dict:
+async def admin_stats(
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
     with get_db() as conn:
         rows = conn.execute("SELECT plan, status, COUNT(*) as cnt FROM subscriptions GROUP BY plan, status").fetchall()
         total_row = conn.execute("SELECT COUNT(*) as cnt FROM subscriptions").fetchone()

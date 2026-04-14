@@ -1,3 +1,4 @@
+/* Auth pages (login, register, forgot-password) — centred form */
 .container {
   min-height: 100vh;
   display: flex;
@@ -167,9 +168,119 @@
   margin-bottom: 1.25rem;
 }
 
-.dashboard {
+/* ── Page layout containers (unified system) ─────────── */
+.pageContainer {
   width: 100%;
-  max-width: 800px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.pageContainerWide {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.pageContainerFull {
+  width: 100%;
+}
+
+/* ── Page header ─────────────────────────────────────── */
+.pageHeader {
+  margin-bottom: 2rem;
+}
+
+.pageEyebrow {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lp-accent-teal);
+  margin: 0 0 0.25rem;
+}
+
+.pageTitle {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--lp-text);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+}
+
+.pageLead {
+  font-size: 0.95rem;
+  color: var(--lp-text-muted);
+  max-width: 600px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Shared component classes ────────────────────────── */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--lp-bg-elevated);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.6rem 1.25rem;
+  background: var(--lp-accent-teal);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.btn:hover { opacity: 0.88; }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--lp-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.35rem;
+}
+
+@media (max-width: 1023px) {
+  .pageContainer,
+  .pageContainerWide {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  .pageContainer,
+  .pageContainerWide,
+  .pageContainerFull {
+    padding: 1rem;
+  }
+  .pageTitle { font-size: 1.35rem; }
 }
 
 .dashboardHeader {
@@ -180,11 +291,6 @@
   margin-bottom: 1rem;
 }
 
-.dashboard h1 {
-  font-size: 2.5rem;
-  color: var(--lp-text);
-  margin: 0;
-}
 
 .logoutButton {
   padding: 0.75rem 1rem;
@@ -1208,6 +1314,9 @@
   border-bottom: 1px solid var(--lp-border);
   display: grid;
   grid-template-columns: repeat(4, 1fr);
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .lpStat {
@@ -1791,6 +1900,458 @@
   background: rgba(13,148,136,0.18);
   color: #14b8a6;
   font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PANEL — layout shell, hero, KPIs (used by AdminConsole)
+═══════════════════════════════════════════════════════════════ */
+.adminShell {
+  width: 100%;
+  max-width: min(1420px, 100%);
+  margin: 0 auto;
+}
+
+.pageHeader {
+  position: relative;
+  margin-bottom: 2rem;
+  padding: 1.75rem 2rem 1.85rem;
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.75) 45%, rgba(15, 23, 42, 0.85) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 18px;
+  box-shadow: 0 4px 32px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.pageHeader::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 85% 70% at 0% -10%, rgba(20, 184, 166, 0.2), transparent 52%),
+    radial-gradient(ellipse 60% 50% at 100% 100%, rgba(99, 102, 241, 0.1), transparent 45%);
+  pointer-events: none;
+}
+
+.pageHeader::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(20, 184, 166, 0.35), transparent);
+}
+
+.pageEyebrow {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #14b8a6;
+}
+
+.pageTitle {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0.65rem;
+  font-size: clamp(1.6rem, 3vw, 2.15rem);
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  color: #f8fafc;
+  line-height: 1.15;
+}
+
+.pageLead {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  max-width: 52ch;
+  font-size: 0.98rem;
+  line-height: 1.55;
+  color: #94a3b8;
+}
+
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+@media (min-width: 1100px) {
+  .kpiGrid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .kpiGrid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+.kpiCard {
+  position: relative;
+  padding: 1.15rem 1.2rem 1.2rem;
+  background: linear-gradient(165deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.88) 100%);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.18);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.18s;
+}
+
+.kpiCard::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 1rem;
+  right: 1rem;
+  height: 2px;
+  border-radius: 0 0 3px 3px;
+  background: linear-gradient(90deg, transparent, rgba(20, 184, 166, 0.7), transparent);
+  opacity: 0.85;
+}
+
+.kpiCard:hover {
+  border-color: rgba(20, 184, 166, 0.22);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  transform: translateY(-1px);
+}
+
+.kpiLabel {
+  margin: 0 0 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.kpiValue {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #f1f5f9;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.sectionHeader {
+  margin-bottom: 1.35rem;
+}
+
+.sectionTitle {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #f1f5f9;
+  border: none;
+  padding: 0;
+}
+
+.sectionSubtitle {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.subContainer .sectionHeader + * {
+  margin-top: 0;
+}
+
+.subContainer .sectionHeader h2.sectionTitle {
+  border: none;
+  padding: 0;
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+}
+
+.tableResponsive {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.tableResponsive .table {
+  margin-top: 0;
+}
+
+.tableCaption {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.emptyState {
+  margin: 1rem 0;
+  text-align: center;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.adminFiltersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  align-items: end;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.filterField span {
+  letter-spacing: 0.02em;
+}
+
+.tableActionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #14b8a6;
+  background: rgba(13, 148, 136, 0.12);
+  border: 1px solid rgba(20, 184, 166, 0.28);
+  border-radius: 8px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+
+.tableActionButton:hover {
+  background: rgba(13, 148, 136, 0.2);
+  border-color: rgba(20, 184, 166, 0.45);
+  color: #5eead4;
+}
+
+.adminStatusForm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: flex-end;
+}
+
+.billingControlPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.presetButton {
+  padding: 0.45rem 1rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+
+.presetButton:hover {
+  color: #e2e8f0;
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.presetButtonActive {
+  color: #14b8a6;
+  background: rgba(13, 148, 136, 0.15);
+  border-color: rgba(20, 184, 166, 0.35);
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.12);
+}
+
+.statusPillsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.checkboxPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.82rem;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.adminActionsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.secondaryButton {
+  background: transparent !important;
+  color: #cbd5e1 !important;
+  border: 1px solid rgba(148, 163, 184, 0.25) !important;
+}
+
+.secondaryButton:hover {
+  border-color: rgba(20, 184, 166, 0.35) !important;
+  color: #e2e8f0 !important;
+}
+
+.billingVisualGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin: 1.25rem 0;
+}
+
+@media (max-width: 900px) {
+  .billingVisualGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.chartSubtitle {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin: 0 0 0.75rem;
+}
+
+.lineChart {
+  width: 100%;
+  height: 140px;
+  display: block;
+}
+
+.lineChartPath {
+  fill: none;
+  stroke: #14b8a6;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 6px rgba(20, 184, 166, 0.35));
+}
+
+.barChartCard {
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 14px;
+  padding: 1rem 1.15rem;
+  min-height: 180px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 4fr auto;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.55rem;
+}
+
+.barLabel {
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barValue {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #5eead4;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.invoiceExportGroup,
+.invoiceActionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.toastHost {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 380px;
+}
+
+.toast {
+  padding: 0.85rem 1.1rem;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 500;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.toastSuccess {
+  background: rgba(15, 23, 42, 0.95);
+  color: #6ee7b7;
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.toastError {
+  background: rgba(55, 22, 22, 0.92);
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.toastInfo {
+  background: rgba(30, 41, 59, 0.96);
+  color: #e2e8f0;
+}
+
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(15, 23, 42, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.modalCard {
+  width: 100%;
+  max-width: 480px;
+  background: linear-gradient(180deg, #1e293b 0%, #172033 100%);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const REFERRAL_SERVICE_URL =
-  process.env.NEXT_PUBLIC_REFERRAL_SERVICE_URL || 'http://localhost:8017';
+  process.env.NEXT_PUBLIC_REFERRAL_SERVICE_URL || '/api/referrals';
 
 type ReferralCode = {
   id: string;
@@ -128,10 +128,10 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
 
   const fmt = (v: number) => `£${v.toFixed(2)}`;
 
-  if (loading) return <div className={styles.container}><p style={{ color: 'var(--lp-text-muted)' }}>Loading referrals…</p></div>;
+  if (loading) return <div className={styles.pageContainer}><p style={{ color: 'var(--lp-text-muted)' }}>Loading referrals…</p></div>;
 
   return (
-    <div className={styles.container}>
+    <div className={styles.pageContainer}>
       <div className={styles.header}>
         <h1 className={styles.title}>Referral Programme</h1>
         <button className={styles.btn} onClick={createCode} disabled={creating}>

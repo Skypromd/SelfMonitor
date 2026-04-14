@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Bar,
     BarChart,
@@ -15,6 +15,7 @@ import {
     Tooltip,
     XAxis, YAxis,
 } from 'recharts';
+import { clientSurfaceUrl } from '../lib/adminSurface';
 import bStyles from '../styles/Billing.module.css';
 import styles from '../styles/Home.module.css';
 
@@ -125,9 +126,9 @@ function KpiCard({ label, value, sub, accent = '#14b8a6' }: { label: string; val
 // ══════════════════════════════════════════════════════════════════════════════
 // ── Main Page ─────────────────────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
-type BillingPageProps = { token: string };
+type BillingPageProps = { token: string; user?: { is_admin?: boolean } };
 
-export default function BillingPage({ token }: BillingPageProps) {
+export default function BillingPage({ token, user }: BillingPageProps) {
   const router = useRouter();
 
   const [overview, setOverview]     = useState<Overview | null>(null);
@@ -145,42 +146,47 @@ export default function BillingPage({ token }: BillingPageProps) {
 
   const flash = (msg: string) => { setActionMsg(msg); setTimeout(() => setActionMsg(''), 4000); };
 
+  const authHeaders = useMemo(
+    () => ({ Authorization: `Bearer ${token}` }),
+    [token],
+  );
+
   const fetchAll = useCallback(async () => {
     setLoading(true); setError('');
     try {
       const [ov, rv, pl, is_, inv, su] = await Promise.all([
-        fetch(`${BILLING_URL}/analytics/overview`).then(r => r.json()),
-        fetch(`${BILLING_URL}/analytics/revenue?months=12`).then(r => r.json()),
-        fetch(`${BILLING_URL}/analytics/plans`).then(r => r.json()),
-        fetch(`${BILLING_URL}/analytics/invoice-status`).then(r => r.json()),
-        fetch(`${BILLING_URL}/invoices?limit=200`).then(r => r.json()),
-        fetch(`${BILLING_URL}/subscriptions?limit=200`).then(r => r.json()),
+        fetch(`${BILLING_URL}/analytics/overview`, { headers: authHeaders }).then((r) => r.json()),
+        fetch(`${BILLING_URL}/analytics/revenue?months=12`, { headers: authHeaders }).then((r) => r.json()),
+        fetch(`${BILLING_URL}/analytics/plans`, { headers: authHeaders }).then((r) => r.json()),
+        fetch(`${BILLING_URL}/analytics/invoice-status`, { headers: authHeaders }).then((r) => r.json()),
+        fetch(`${BILLING_URL}/invoices?limit=200`, { headers: authHeaders }).then((r) => r.json()),
+        fetch(`${BILLING_URL}/subscriptions?limit=200`, { headers: authHeaders }).then((r) => r.json()),
       ]);
       setOverview(ov); setRevenue(rv.data || []); setPlans(pl.data || []);
       setInvStatus(is_.data || []); setInvoices(inv.items || []); setSubs(su.items || []);
     } catch {
-      setError('⚠️ Cannot reach billing service (port 8016). Run start-services.ps1 first.');
+      setError('⚠️ Billing service unreachable. Ensure the API gateway is up (e.g. localhost:8000).');
     } finally { setLoading(false); }
-  }, []);
+  }, [authHeaders]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const sendInvoice = async (id: string) => {
-    const res = await fetch(`${BILLING_URL}/invoices/${id}/send`, { method: 'POST' });
+    const res = await fetch(`${BILLING_URL}/invoices/${id}/send`, { method: 'POST', headers: authHeaders });
     const d = await res.json();
     flash(d.email_sent ? '✅ Invoice emailed to customer' : '⚠️ Status updated — SMTP not configured for email dispatch');
     fetchAll();
   };
 
   const markPaid = async (id: string) => {
-    await fetch(`${BILLING_URL}/invoices/${id}/mark-paid`, { method: 'POST' });
+    await fetch(`${BILLING_URL}/invoices/${id}/mark-paid`, { method: 'POST', headers: authHeaders });
     flash('✅ Invoice marked as paid');
     fetchAll();
   };
 
   const generateBatch = async () => {
     flash('⏳ Generating monthly invoices…');
-    await fetch(`${BILLING_URL}/invoices/generate-batch`, { method: 'POST' });
+    await fetch(`${BILLING_URL}/invoices/generate-batch`, { method: 'POST', headers: authHeaders });
     flash('✅ Batch generation complete'); fetchAll();
   };
 
@@ -189,21 +195,40 @@ export default function BillingPage({ token }: BillingPageProps) {
     (!statusFilter || inv.status === statusFilter)
   );
 
+  useEffect(() => {
+    if (user && user.is_admin === false) {
+      void router.replace('/my-subscription');
+    }
+  }, [user, router]);
+
+  if (user && user.is_admin === false) {
+    return null;
+  }
+
   return (
     <>
-      <Head><title>Billing — SelfMonitor</title></Head>
-      <div style={{ background: '#0a0f1e', minHeight: '100vh', padding: '24px 32px', maxWidth: 1440, margin: '0 auto' }}>
+      <Head><title>Platform billing — SelfMonitor</title></Head>
+      <div className={styles.pageContainerWide}>
 
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
           <div>
-            <h1 style={{ color: '#f1f5f9', margin: 0, fontSize: 28, fontWeight: 800 }}>💰 Billing &amp; Accounting</h1>
+            <h1 style={{ color: '#f1f5f9', margin: 0, fontSize: 28, fontWeight: 800 }}>💰 Platform billing &amp; revenue</h1>
             <p style={{ color: '#64748b', margin: '4px 0 0', fontSize: 14 }}>
-              Internal subscription control · Invoice management · Revenue analytics
+              Operator-only: all subscribers, MRR/ARR, and invoice batch tools — not your personal subscription
             </p>
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <button className={bStyles.btnSecondary} onClick={() => router.push('/dashboard')}>← Dashboard</button>
+            <button
+              className={bStyles.btnSecondary}
+              onClick={() => {
+                const d = clientSurfaceUrl('/dashboard');
+                if (d.startsWith('http')) window.location.href = d;
+                else void router.push(d);
+              }}
+            >
+              ← Dashboard
+            </button>
             <button className={bStyles.btnPrimary} onClick={generateBatch}>⚡ Generate Invoices</button>
             <button className={bStyles.btnSecondary} onClick={fetchAll}>↻ Refresh</button>
           </div>

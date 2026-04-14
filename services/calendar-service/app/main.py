@@ -74,6 +74,26 @@ def init_calendar_db() -> None:
         conn.close()
 
 
+def migrate_calendar_db() -> None:
+    """Add new columns to existing DB; safe to run on every startup."""
+    new_columns = [
+        "ALTER TABLE calendar_events ADD COLUMN event_time TEXT",
+        "ALTER TABLE calendar_events ADD COLUMN category TEXT NOT NULL DEFAULT 'personal'",
+        "ALTER TABLE calendar_events ADD COLUMN is_completed INTEGER NOT NULL DEFAULT 0",
+    ]
+    with db_lock:
+        conn = _connect()
+        try:
+            for sql in new_columns:
+                try:
+                    conn.execute(sql)
+                except sqlite3.OperationalError:
+                    pass  # column already exists
+            conn.commit()
+        finally:
+            conn.close()
+
+
 def reset_calendar_db_for_tests() -> None:
     with db_lock:
         conn = _connect()
@@ -87,20 +107,38 @@ class CalendarEventCreate(BaseModel):
     event_title: str
     event_date: datetime.date
     notes: Optional[str] = None
+    event_time: Optional[str] = None      # "HH:MM"
+    category: str = "personal"            # hmrc | invoice | meeting | personal | other
+    is_completed: bool = False
+
+
+class CalendarEventUpdate(BaseModel):
+    event_title: Optional[str] = None
+    event_date: Optional[datetime.date] = None
+    notes: Optional[str] = None
+    event_time: Optional[str] = None
+    category: Optional[str] = None
+    is_completed: Optional[bool] = None
 
 
 class CalendarEventRecord(CalendarEventCreate):
     id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    created_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
+    created_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC)
+    )
 
 
 def _row_to_event(row: sqlite3.Row) -> CalendarEventRecord:
+    keys = row.keys()
     return CalendarEventRecord(
         id=uuid.UUID(row["id"]),
         user_id=row["user_id"],
         event_title=row["event_title"],
         event_date=datetime.date.fromisoformat(row["event_date"]),
         notes=row["notes"],
+        event_time=row["event_time"] if "event_time" in keys else None,
+        category=row["category"] if "category" in keys else "personal",
+        is_completed=bool(row["is_completed"]) if "is_completed" in keys else False,
         created_at=datetime.datetime.fromisoformat(row["created_at"]),
     )
 
@@ -111,8 +149,10 @@ def create_event(event: CalendarEventRecord) -> None:
         try:
             conn.execute(
                 """
-                INSERT INTO calendar_events (id, user_id, event_title, event_date, notes, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO calendar_events
+                  (id, user_id, event_title, event_date, notes, created_at,
+                   event_time, category, is_completed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(event.id),
@@ -121,6 +161,9 @@ def create_event(event: CalendarEventRecord) -> None:
                     event.event_date.isoformat(),
                     event.notes,
                     event.created_at.isoformat(),
+                    event.event_time,
+                    event.category,
+                    int(event.is_completed),
                 ),
             )
             conn.commit()
@@ -154,6 +197,61 @@ def list_events(
     return [_row_to_event(row) for row in rows]
 
 
+def get_event_by_id(event_id: str) -> Optional[CalendarEventRecord]:
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM calendar_events WHERE id = ?", (event_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+    return _row_to_event(row) if row else None
+
+
+def update_event(event_id: str, upd: CalendarEventUpdate) -> Optional[CalendarEventRecord]:
+    fields: list[str] = []
+    params: list[object] = []
+
+    if upd.event_title is not None:
+        fields.append("event_title = ?"); params.append(upd.event_title)
+    if upd.event_date is not None:
+        fields.append("event_date = ?"); params.append(upd.event_date.isoformat())
+    if upd.notes is not None:
+        fields.append("notes = ?"); params.append(upd.notes)
+    if upd.event_time is not None:
+        fields.append("event_time = ?"); params.append(upd.event_time)
+    if upd.category is not None:
+        fields.append("category = ?"); params.append(upd.category)
+    if upd.is_completed is not None:
+        fields.append("is_completed = ?"); params.append(int(upd.is_completed))
+
+    if fields:
+        params.append(event_id)
+        with db_lock:
+            conn = _connect()
+            try:
+                conn.execute(
+                    f"UPDATE calendar_events SET {', '.join(fields)} WHERE id = ?",
+                    tuple(params),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    return get_event_by_id(event_id)
+
+
+def delete_event_by_id(event_id: str) -> None:
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute("DELETE FROM calendar_events WHERE id = ?", (event_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+
 @app.post("/events", response_model=CalendarEventRecord, status_code=status.HTTP_201_CREATED)
 async def create_calendar_event(
     event: CalendarEventCreate,
@@ -183,4 +281,51 @@ async def get_my_calendar_events(
     return list_events(current_user_id, start_date, end_date)
 
 
+@app.put("/events/{event_id}", response_model=CalendarEventRecord)
+async def update_calendar_event(
+    event_id: str,
+    upd: CalendarEventUpdate,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    event = get_event_by_id(event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.user_id != current_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    updated = update_event(event_id, upd)
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Update failed")
+    return updated
+
+
+@app.delete("/events/{event_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_calendar_event(
+    event_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    event = get_event_by_id(event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.user_id != current_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    delete_event_by_id(event_id)
+
+
+@app.patch("/events/{event_id}/complete", response_model=CalendarEventRecord)
+async def toggle_complete_calendar_event(
+    event_id: str,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    event = get_event_by_id(event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    if event.user_id != current_user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+    updated = update_event(event_id, CalendarEventUpdate(is_completed=not event.is_completed))
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Update failed")
+    return updated
+
+
 init_calendar_db()
+migrate_calendar_db()

@@ -1,4 +1,5 @@
 # isort: skip_file
+import asyncio
 import datetime
 import email.mime.multipart
 import email.mime.text
@@ -15,7 +16,9 @@ import uuid
 from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any, Optional
+from urllib.parse import unquote
 
+import httpx
 import pyotp  # type: ignore[import-untyped]
 import qrcode  # type: ignore[import-untyped]
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
@@ -43,6 +46,23 @@ AUTH_ADMIN_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin_password")
 AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "true"
 REQUIRE_ADMIN_2FA = os.getenv("AUTH_REQUIRE_ADMIN_2FA", "true").lower() == "true"
 
+_DEFAULT_ADMIN_HEALTH_TARGETS: tuple[tuple[str, str], ...] = (
+    ("auth-service", "http://auth-service:80/health"),
+    ("billing-service", "http://billing-service:80/health"),
+    ("user-profile-service", "http://user-profile-service:80/health"),
+    ("documents-service", "http://documents-service:80/health"),
+    ("compliance-service", "http://compliance-service:80/health"),
+    ("integrations-service", "http://integrations-service:80/health"),
+    ("invoice-service", "http://invoice-service:80/health"),
+    ("support-ai-service", "http://support-ai-service:8020/health"),
+    ("finops-monitor", "http://finops-monitor:8021/health"),
+    ("mtd-agent", "http://mtd-agent:8022/health"),
+    ("voice-gateway", "http://voice-gateway:8023/health"),
+    ("agent-service", "http://agent-service:80/health"),
+    ("analytics-service", "http://analytics-service:80/health"),
+    ("referral-service", "http://referral-service:80/health"),
+)
+
 # --- SMTP / Email ---
 SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -50,6 +70,15 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
+
+_AUTH_CORS_BASE = ["http://localhost:3000", "http://192.168.0.248:3000"]
+_AUTH_CORS_EXTRA = os.getenv("AUTH_CORS_EXTRA_ORIGINS", "").strip()
+AUTH_CORS_ORIGINS = list(
+    dict.fromkeys(
+        _AUTH_CORS_BASE
+        + [o.strip() for o in _AUTH_CORS_EXTRA.split(",") if o.strip()]
+    )
+)
 
 app = FastAPI(
     title="Auth Service",
@@ -59,7 +88,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://192.168.0.248:3000"],
+    allow_origins=AUTH_CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -254,6 +283,21 @@ def _seed_admin_user(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _ensure_configured_admin_privileges(conn: sqlite3.Connection) -> None:
+    """If someone registered via /register with AUTH_ADMIN_EMAIL, they stay is_admin=0 until fixed."""
+    row = conn.execute(
+        "SELECT is_admin FROM users WHERE email = ?", (AUTH_ADMIN_EMAIL,)
+    ).fetchone()
+    if row is None:
+        return
+    if int(row["is_admin"] or 0) == 0:
+        conn.execute(
+            "UPDATE users SET is_admin = 1 WHERE email = ?",
+            (AUTH_ADMIN_EMAIL,),
+        )
+        conn.commit()
+
+
 def init_auth_db() -> None:
     with db_lock:
         conn = _connect()
@@ -315,6 +359,7 @@ def init_auth_db() -> None:
         conn.commit()
         if AUTH_BOOTSTRAP_ADMIN:
             _seed_admin_user(conn)
+            _ensure_configured_admin_privileges(conn)
         conn.close()
 
 
@@ -811,6 +856,7 @@ async def login_for_access_token(
     token_data: dict[str, object] = {
         "sub": user.email,
         "is_admin": user.is_admin,
+        **_jwt_rbac_claims(user.is_admin),
         **_jwt_subscription_claims(user.email),
     }
     access_token = create_access_token(
@@ -970,6 +1016,7 @@ async def exchange_api_key_for_token(body: ApiKeyExchangeRequest, request: Reque
     token_data: dict[str, object] = {
         "sub": user.email,
         "is_admin": user.is_admin,
+        **_jwt_rbac_claims(user.is_admin),
         **_jwt_subscription_claims(user.email),
     }
     access_token = create_access_token(
@@ -1215,7 +1262,7 @@ async def phone_verify_code(
     return {"verified": True, "phone": phone}
 
 
-
+@app.get("/me", response_model=User)
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
@@ -1284,6 +1331,172 @@ async def deactivate_user(
     # Return the updated user model
     user_to_deactivate.is_active = False
     return user_to_deactivate
+
+
+class AdminUserListItem(BaseModel):
+    email: str
+    is_active: bool
+    is_admin: bool
+    is_two_factor_enabled: bool
+    plan: str
+    subscription_status: str
+
+
+class AdminUserListOut(BaseModel):
+    total: int
+    page: int
+    limit: int
+    items: list[AdminUserListItem]
+
+
+class AdminUserDetailOut(BaseModel):
+    email: str
+    is_active: bool
+    is_admin: bool
+    is_two_factor_enabled: bool
+    plan: str
+    subscription_status: str
+    trial_end: Optional[str] = None
+
+
+@app.get("/admin/users", response_model=AdminUserListOut)
+async def admin_list_users(
+    _admin: Annotated[User, Depends(require_admin)],
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    plan: Optional[str] = None,
+    status: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    offset = (page - 1) * limit
+    where: list[str] = []
+    params: list[Any] = []
+    if plan:
+        where.append("COALESCE(s.plan, 'free') = ?")
+        params.append(plan)
+    if status:
+        where.append("COALESCE(s.status, 'active') = ?")
+        params.append(status)
+    if search:
+        where.append("LOWER(u.email) LIKE ?")
+        params.append(f"%{search.lower()}%")
+    wh = (" WHERE " + " AND ".join(where)) if where else ""
+
+    base_from = """
+        FROM users u
+        LEFT JOIN subscriptions s ON u.email = s.user_email
+    """
+    count_sql = "SELECT COUNT(*) " + base_from + wh
+    list_sql = (
+        """
+        SELECT u.email, u.is_active, u.is_admin, u.is_two_factor_enabled,
+               COALESCE(s.plan, 'free') AS plan,
+               COALESCE(s.status, 'active') AS subscription_status
+        """
+        + base_from
+        + wh
+        + " ORDER BY u.email LIMIT ? OFFSET ?"
+    )
+
+    with db_lock:
+        conn = _connect()
+        try:
+            total = int(conn.execute(count_sql, params).fetchone()[0])
+            rows = conn.execute(list_sql, params + [limit, offset]).fetchall()
+        finally:
+            conn.close()
+
+    items = [
+        AdminUserListItem(
+            email=str(r["email"]),
+            is_active=bool(r["is_active"]),
+            is_admin=bool(r["is_admin"]),
+            is_two_factor_enabled=bool(r["is_two_factor_enabled"]),
+            plan=str(r["plan"]),
+            subscription_status=str(r["subscription_status"]),
+        )
+        for r in rows
+    ]
+    return AdminUserListOut(total=total, page=page, limit=limit, items=items)
+
+
+@app.get("/admin/users/{user_email:path}", response_model=AdminUserDetailOut)
+async def admin_get_user(
+    user_email: str,
+    _admin: Annotated[User, Depends(require_admin)],
+):
+    email = unquote(user_email).strip()
+    row = get_user_record(email)
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    sub = get_subscription(email)
+    return AdminUserDetailOut(
+        email=str(row["email"]),
+        is_active=bool(row["is_active"]),
+        is_admin=bool(row["is_admin"]),
+        is_two_factor_enabled=bool(row["is_two_factor_enabled"]),
+        plan=str(sub.get("plan", "free")),
+        subscription_status=str(sub.get("status", "active")),
+        trial_end=str(sub["trial_end"]) if sub.get("trial_end") else None,
+    )
+
+
+def _admin_health_targets() -> list[tuple[str, str]]:
+    raw = os.getenv("ADMIN_HEALTH_SERVICE_URLS", "").strip()
+    if not raw:
+        return list(_DEFAULT_ADMIN_HEALTH_TARGETS)
+    out: list[tuple[str, str]] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or "|" not in part:
+            continue
+        name, url = part.split("|", 1)
+        name, url = name.strip(), url.strip()
+        if name and url:
+            out.append((name, url))
+    return out or list(_DEFAULT_ADMIN_HEALTH_TARGETS)
+
+
+async def _probe_service_health(
+    client: httpx.AsyncClient, name: str, url: str
+) -> dict[str, Any]:
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(url)
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {
+            "service": name,
+            "ok": 200 <= r.status_code < 300,
+            "status_code": r.status_code,
+            "latency_ms": ms,
+        }
+    except Exception as exc:
+        ms = int((time.perf_counter() - t0) * 1000)
+        return {
+            "service": name,
+            "ok": False,
+            "status_code": None,
+            "latency_ms": ms,
+            "error": str(exc)[:220],
+        }
+
+
+@app.get("/admin/health/services")
+async def admin_health_services(
+    _admin: Annotated[User, Depends(require_admin)],
+):
+    targets = _admin_health_targets()
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        checks = await asyncio.gather(
+            *(_probe_service_health(client, name, url) for name, url in targets)
+        )
+    healthy = sum(1 for c in checks if c.get("ok"))
+    return {
+        "ok": healthy == len(checks),
+        "checked": len(checks),
+        "healthy": healthy,
+        "services": list(checks),
+    }
 
 
 # --- Subscription Endpoints ---
@@ -1380,6 +1593,22 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
         "white_label": True,
     },
 }
+
+
+def _jwt_rbac_claims(is_admin: bool) -> dict[str, object]:
+    if is_admin:
+        return {
+            "role": "platform_admin",
+            "roles": ["admin"],
+            "scopes": ["billing:read", "support:read", "support:write"],
+            "perms": ["*"],
+        }
+    return {
+        "role": "user",
+        "roles": ["user"],
+        "scopes": [],
+        "perms": ["portal.use"],
+    }
 
 
 def _jwt_subscription_claims(email: str) -> dict[str, object]:
@@ -1965,9 +2194,14 @@ async def refresh_token(
 ):
     """Issue a new access token (refresh flow simplified — Bearer auth confirms identity)."""
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    refresh_claims = _jwt_subscription_claims(current_user.email)
+    refresh_claims: dict[str, object] = {
+        "sub": current_user.email,
+        "is_admin": current_user.is_admin,
+        **_jwt_rbac_claims(current_user.is_admin),
+        **_jwt_subscription_claims(current_user.email),
+    }
     new_access = create_access_token(
-        data={"sub": current_user.email, **refresh_claims},
+        data=refresh_claims,
         expires_delta=access_token_expires,
     )
     # Refresh token: long-lived JWT (7 days) — client should store and re-use

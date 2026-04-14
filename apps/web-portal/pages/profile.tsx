@@ -2,9 +2,9 @@ import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } fro
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
-const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
-const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
-const PROFILE_SERVICE_URL = process.env.NEXT_PUBLIC_PROFILE_SERVICE_URL || 'http://localhost:8005';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || '/api/auth';
+const PROFILE_SERVICE_URL = process.env.NEXT_PUBLIC_PROFILE_SERVICE_URL || '/api/profile';
 
 type ProfilePageProps = {
   token: string;
@@ -260,7 +260,7 @@ export default function ProfilePage({ token }: ProfilePageProps) {
       : 'Weak';
 
   return (
-    <div>
+    <div className={styles.pageContainer}>
       <h1>{t('profile.title')}</h1>
       <p>Fetch and update your profile data from a protected endpoint.</p>
       <div className={styles.subContainer}>

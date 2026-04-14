@@ -144,7 +144,7 @@ HMRC_SUBMISSION_EVENTS: deque[dict[str, Any]] = deque(maxlen=HMRC_SLO_WINDOW_SIZ
 # --- SQLite / local DB ---
 INTEGRATIONS_DB_PATH = os.getenv(
     "INTEGRATIONS_DB_PATH",
-    str(Path(__file__).parent.parent / "integrations.db"),
+    "/tmp/integrations.db",
 )
 INTEGRATIONS_PROCESSING_DELAY_SECONDS = _parse_non_negative_float_env(
     "INTEGRATIONS_PROCESSING_DELAY_SECONDS", 2.0
@@ -612,6 +612,11 @@ async def submit_tax_return(
         request=request,
         status_value="pending",
         message="Submission received and queued for HMRC processing.",
+    )
+    return _row_to_submission(
+        _connect().execute(
+            "SELECT * FROM submissions WHERE submission_id = ?", (str(submission_id),)
+        ).fetchone()
     )
 
 

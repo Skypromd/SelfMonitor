@@ -29,6 +29,8 @@ app = FastAPI(
     version="1.0.0"
 )
 
+KAFKA_ENABLED: bool = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
+
 # Instrument the app for OpenTelemetry
 setup_telemetry(app)
 

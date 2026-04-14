@@ -108,9 +108,9 @@
 }
 
 .navInner {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 0 1.5rem;
+  padding: 0 2rem;
   height: 60px;
   display: flex;
   align-items: center;
@@ -203,9 +203,9 @@
 }
 
 .container {
-  max-width: 1100px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 0 1.5rem;
+  padding: 0 2rem;
 }
 
 /* ---------- section rhythm ---------- */

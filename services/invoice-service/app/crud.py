@@ -14,41 +14,35 @@ from .invoice_calculator import InvoiceCalculator
 async def create_invoice(
     db: AsyncSession,
     user_id: str,
-    invoice_data: schemas.InvoiceCreate
+    invoice_data: schemas.CalculatedInvoice
 ) -> models.Invoice:
     """Create new invoice with line items"""
 
-    # Generate invoice number if not provided
-    if not invoice_data.invoice_number:
-        invoice_data.invoice_number = await generate_invoice_number(db, user_id)
+    invoice_number = await generate_invoice_number(db, user_id)
 
-    # Create invoice object
     db_invoice = models.Invoice(
         id=str(uuid4()),
         user_id=user_id,
         company_id=invoice_data.company_id,
-        invoice_number=invoice_data.invoice_number,
+        invoice_number=invoice_number,
         client_name=invoice_data.client_name,
         client_email=invoice_data.client_email,
         client_address=invoice_data.client_address,
-        invoice_date=invoice_data.invoice_date or date.today(),
+        issue_date=datetime.utcnow(),
         due_date=invoice_data.due_date,
-        payment_terms=invoice_data.payment_terms,
-        po_number=invoice_data.po_number,
         subtotal=invoice_data.subtotal,
-        tax_amount=invoice_data.tax_amount,
+        vat_amount=invoice_data.total_vat,
         total_amount=invoice_data.total_amount,
-        discount_percentage=invoice_data.discount_percentage,
-        discount_amount=invoice_data.discount_amount,
+        vat_rate=invoice_data.vat_rate,
         currency=invoice_data.currency or "GBP",
         notes=invoice_data.notes,
-        status=schemas.InvoiceStatus.DRAFT
+        terms_conditions=invoice_data.terms_conditions,
+        status=schemas.InvoiceStatus.DRAFT,
     )
 
     db.add(db_invoice)
-    await db.flush()  # Get the ID
+    await db.flush()
 
-    # Add line items
     for line_item_data in invoice_data.line_items:
         db_line_item = models.InvoiceLineItem(
             id=str(uuid4()),
@@ -57,9 +51,9 @@ async def create_invoice(
             category=line_item_data.category,
             quantity=line_item_data.quantity,
             unit_price=line_item_data.unit_price,
-            total_amount=line_item_data.total_amount,
-            tax_rate=line_item_data.tax_rate,
-            tax_amount=line_item_data.tax_amount
+            line_total=line_item_data.line_total,
+            vat_rate=line_item_data.vat_rate,
+            vat_amount=line_item_data.vat_amount,
         )
         db.add(db_line_item)
 
@@ -87,29 +81,54 @@ async def get_invoices_filtered(
     user_id: str,
     filters: schemas.InvoiceReportFilters,
     skip: int = 0,
-    limit: int = 50
+    limit: int = 25,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    search: Optional[str] = None,
 ) -> List[models.Invoice]:
-    """Get filtered list of invoices"""
-    query = select(models.Invoice).where(models.Invoice.user_id == user_id)
+    """Get filtered list of invoices with search and sorting"""
+    query = (
+        select(models.Invoice)
+        .options(
+            selectinload(models.Invoice.line_items),
+            selectinload(models.Invoice.payments),
+        )
+        .where(models.Invoice.user_id == user_id)
+    )
 
-    # Apply filters
     if filters.start_date:
-        query = query.where(models.Invoice.invoice_date >= filters.start_date)
+        query = query.where(models.Invoice.issue_date >= filters.start_date)
 
     if filters.end_date:
-        query = query.where(models.Invoice.invoice_date <= filters.end_date)
+        query = query.where(models.Invoice.issue_date <= filters.end_date)
 
     if filters.status:
         query = query.where(models.Invoice.status.in_(filters.status))
 
-    if filters.client_name:
+    if search:
+        query = query.where(
+            or_(
+                models.Invoice.client_name.ilike(f"%{search}%"),
+                models.Invoice.invoice_number.ilike(f"%{search}%"),
+            )
+        )
+    elif filters.client_name:
         query = query.where(models.Invoice.client_name.ilike(f"%{filters.client_name}%"))
 
     if filters.company_id:
         query = query.where(models.Invoice.company_id == filters.company_id)
 
-    # Add pagination and ordering
-    query = query.order_by(desc(models.Invoice.created_at)).offset(skip).limit(limit)
+    sort_column_map = {
+        "created_at": models.Invoice.created_at,
+        "due_date": models.Invoice.due_date,
+        "issue_date": models.Invoice.issue_date,
+        "total_amount": models.Invoice.total_amount,
+        "client_name": models.Invoice.client_name,
+        "status": models.Invoice.status,
+    }
+    col = sort_column_map.get(sort_by, models.Invoice.created_at)
+    query = query.order_by(asc(col) if sort_order == "asc" else desc(col))
+    query = query.offset(skip).limit(limit)
 
     result = await db.execute(query)
     return result.scalars().all()

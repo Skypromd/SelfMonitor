@@ -1,0 +1,52 @@
+/* ════════════════════════════════════════════════════════════
+   containers.module.css — single source of width for the app
+   Import this wherever you need a named container class.
+   App pages use Home.module.css which re-exports these values.
+   ════════════════════════════════════════════════════════════ */
+
+/* ── Landing marketing sections ───────────────────────── */
+.landingContainer {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+/* ── Auth forms (login / register / forgot-pw) ─────────── */
+.authContainer {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2rem;
+  background: var(--lp-bg);
+}
+
+/* ── App pages inside Layout (sidebar + content) ──────── */
+.pageContainer {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.pageContainerWide {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.pageContainerFull {
+  width: 100%;
+}
+
+/* ── Responsive ───────────────────────────────────────── */
+@media (max-width: 1023px) {
+  .landingContainer { padding: 0 1.5rem; }
+  .pageContainer, .pageContainerWide { max-width: 100%; }
+}
+
+@media (max-width: 767px) {
+  .landingContainer { padding: 0 1rem; }
+  .pageContainer, .pageContainerWide, .pageContainerFull { padding: 1rem; }
+}

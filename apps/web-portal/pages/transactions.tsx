@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
-const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
-const BANKING_SERVICE_URL = process.env.NEXT_PUBLIC_BANKING_SERVICE_URL || 'http://localhost:8015';
-const CATEGORIZATION_SERVICE_URL = process.env.NEXT_PUBLIC_CATEGORIZATION_SERVICE_URL || 'http://localhost:8020';
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
+const BANKING_SERVICE_URL =
+  process.env.NEXT_PUBLIC_BANKING_SERVICE_URL || '/api/banking';
+const CATEGORIZATION_SERVICE_URL =
+  process.env.NEXT_PUBLIC_CATEGORIZATION_SERVICE_URL || '/api/categorization';
 
 type Transaction = {
   id: string;
@@ -52,63 +54,57 @@ type UnmatchedReceiptDraftsResponse = {
 };
 
 function BankConnection({ token, onConnectionComplete }: { token: string, onConnectionComplete: (accountId: string) => void }) {
-  const [consentUrl, setConsentUrl] = useState('');
   const [error, setError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isGranting, setIsGranting] = useState(false);
 
-  const handleInitiate = async () => {
+  const handleConnectBank = async () => {
     setError('');
     setIsConnecting(true);
     try {
+      const callbackUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}/connect-bank/callback`
+        : 'http://localhost:3000/connect-bank/callback';
+
       const response = await fetch(`${BANKING_SERVICE_URL}/connections/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ provider_id: 'mock_bank', redirect_uri: 'http://localhost:3000' })
+        body: JSON.stringify({ provider_id: 'truelayer', redirect_uri: callbackUrl }),
       });
-      if (!response.ok) throw new Error('Failed to initiate connection');
+      if (!response.ok) throw new Error((await response.json()).detail || 'Failed to initiate connection');
       const data = await response.json();
-      setConsentUrl(data.consent_url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
-    } finally {
-      setIsConnecting(false);
-    }
-  };
 
-  const handleGrant = async () => {
-    setError('');
-    setIsGranting(true);
-    try {
-      const response = await fetch(`${BANKING_SERVICE_URL}/connections/callback?code=fake_auth_code`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (!response.ok) throw new Error('Failed to complete connection');
-      const data = await response.json();
-      onConnectionComplete(data.connection_id);
+      // Store token so the callback page can use it
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('bankingToken', token);
+      }
+      // Real OAuth redirect to TrueLayer
+      window.location.href = data.consent_url;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
-    } finally {
-      setIsGranting(false);
+      setIsConnecting(false);
     }
   };
 
   return (
     <div className={styles.subContainer}>
-      <h2>Bank Connections</h2>
-      {!consentUrl ? (
-        <button onClick={handleInitiate} className={styles.button} disabled={isConnecting} type="button">
-          {isConnecting ? 'Starting connection...' : 'Connect a Bank Account'}
-        </button>
-      ) : (
-        <div>
-          <p>Click the link to grant access at your bank:</p>
-          <button className={styles.inlineLinkButton} disabled={isGranting} onClick={handleGrant} type="button">
-            {consentUrl}
-          </button>
-        </div>
-      )}
-      {error && <p className={styles.error}>{error}</p>}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+        <h2 style={{ margin: 0 }}>Bank Connections</h2>
+        <span style={{ fontSize: '0.78rem', color: 'var(--lp-muted)', background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.3)', borderRadius: 999, padding: '2px 10px' }}>
+          Powered by TrueLayer Open Banking
+        </span>
+      </div>
+      <p style={{ color: 'var(--lp-muted)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>
+        Connect your bank account to automatically import transactions. You control when data syncs — we never fetch automatically.
+      </p>
+      <button
+        onClick={handleConnectBank}
+        disabled={isConnecting}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1.5rem', background: 'var(--lp-accent-teal)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, cursor: isConnecting ? 'wait' : 'pointer', opacity: isConnecting ? 0.7 : 1, fontSize: '0.95rem' }}
+        type="button"
+      >
+        🏦 {isConnecting ? 'Redirecting to your bank…' : 'Connect Bank Account'}
+      </button>
+      {error && <p className={styles.error} style={{ marginTop: '0.75rem' }}>{error}</p>}
     </div>
   );
 }
@@ -537,7 +533,7 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
 export default function TransactionsPage({ token }: TransactionsPageProps) {
     const [connectedAccountId, setConnectedAccountId] = useState('');
     return (
-        <div className={styles.dashboard}>
+        <div className={styles.pageContainer}>
             <h1>Transactions</h1>
             <p>Connect your bank account to import and categorize your transactions.</p>
             <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />

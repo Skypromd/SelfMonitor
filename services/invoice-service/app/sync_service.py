@@ -120,7 +120,7 @@ class InvoiceTransactionSync:
             "amount": float(invoice.total_amount),  # type: ignore
             "currency": str(invoice.currency),
             "description": f"Invoice {invoice.invoice_number} - {invoice.client_name}",
-            "date": invoice.invoice_date.isoformat() if invoice.invoice_date else datetime.now().date().isoformat(),  # type: ignore
+            "date": invoice.issue_date.isoformat() if invoice.issue_date else datetime.now().date().isoformat(),  # type: ignore
             "type": "income",
             "category": "Business Income",
             "subcategory": "Professional Services",
@@ -135,7 +135,7 @@ class InvoiceTransactionSync:
                 "line_items_count": len(invoice.line_items or []),
                 "payment_terms": int(invoice.payment_terms) if invoice.payment_terms else None,
                 "due_date": invoice.due_date.isoformat() if invoice.due_date else None,  # type: ignore
-                "tax_amount": float(invoice.tax_amount or 0),  # type: ignore
+                "tax_amount": float(invoice.vat_amount or 0),  # type: ignore
                 "subtotal": float(invoice.subtotal or 0)  # type: ignore
             }
         }
@@ -146,10 +146,10 @@ class InvoiceTransactionSync:
             transaction["status"] = "completed"
             transaction["metadata"]["payment_confirmed"] = True
         elif invoice_status == schemas.InvoiceStatus.PARTIALLY_PAID.value:
-            transaction["amount"] = float(invoice.paid_amount or 0)
+            transaction["amount"] = float(invoice.total_amount or 0)
             transaction["status"] = "pending"
             transaction["metadata"]["partial_payment"] = True
-            transaction["metadata"]["remaining_balance"] = float(invoice.total_amount - (invoice.paid_amount or 0))  # type: ignore
+            transaction["metadata"]["remaining_balance"] = 0.0
         elif invoice_status == schemas.InvoiceStatus.SENT.value:
             transaction["status"] = "pending"
             transaction["metadata"]["invoice_sent"] = True
@@ -166,7 +166,7 @@ class InvoiceTransactionSync:
                 line_items_data.append({
                     "description": item.description,
                     "category": item.category,
-                    "amount": float(item.total_amount),  # type: ignore
+                    "amount": float(item.line_total),  # type: ignore
                     "quantity": float(item.quantity),  # type: ignore
                     "unit_price": float(item.unit_price)  # type: ignore
                 })

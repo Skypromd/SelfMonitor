@@ -1,43 +1,130 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import './tokens.css';
 
-:root {
-  --lp-bg: #0f172a;
-  --lp-bg-elevated: #1e293b;
-  --lp-bg-card: #334155;
-  --lp-text: #f1f5f9;
-  --lp-text-muted: #94a3b8;
-  --lp-accent-teal: #0d9488;
-  --lp-accent-teal-light: #14b8a6;
-  --lp-accent-gold: #d97706;
-  --lp-accent-gold-light: #f59e0b;
-  --lp-border: rgba(148, 163, 184, 0.15);
-}
+/* ── Base reset ─────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
 
 html {
   scroll-behavior: smooth;
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
 }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  padding: 0;
+html, body {
   margin: 0;
-  background: var(--lp-bg);
-  color: var(--lp-text);
-  font-family: 'Inter', sans-serif;
+  padding: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 a {
-  color: var(--lp-accent-teal);
+  color: var(--accent-hover);
   text-decoration: none;
-  transition: color 0.2s;
+  transition: color var(--ease-fast);
+}
+a:hover { color: var(--accent-light); }
+
+/* ── Focus ring ─────────────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
-a:hover {
-  color: var(--lp-accent-teal-light);
+/* ── Scrollbar (webkit) ─────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.18);
+  border-radius: var(--radius-full);
 }
+::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.35); }
+
+/* ── Selection ──────────────────────────────────────── */
+::selection {
+  background: rgba(13, 148, 136, 0.32);
+  color: var(--text-primary);
+}
+
+/* ══════════════════════════════════════════════════════
+   ANIMATIONS & KEYFRAMES
+   ══════════════════════════════════════════════════════ */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+  70%  { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+@keyframes pulse-danger {
+  0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.45); }
+  70%  { box-shadow: 0 0 0 7px rgba(239, 68, 68, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+@keyframes countPulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.035); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-5px); }
+}
+@keyframes drawerIn {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+
+/* ── Reusable utility classes ───────────────────────── */
+.pageEnter      { animation: fadeInUp var(--ease-base) ease-out; }
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--bg-surface) 25%,
+    var(--bg-card) 50%,
+    var(--bg-surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+.healthOnline   { animation: pulse-ring 2.2s infinite; }
+.healthDanger   { animation: pulse-danger 1.6s infinite; }
+.kpiUpdated     { animation: countPulse 280ms ease; }
+.bottomSheet    { animation: slideUp var(--ease-slow) cubic-bezier(0.32, 0.72, 0, 1); }
+
+/* ── Touch targets (mobile) ─────────────────────────── */
+@media (max-width: 767px) {
+  button, a, [role="button"] { min-height: 44px; }
+}
+
+/* ── Safe areas (iPhone notch) ──────────────────────── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safeBottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safeTop    { padding-top:    env(safe-area-inset-top); }
+}
+
+/* ── Hide scrollbar utility ─────────────────────────── */
+.noScrollbar::-webkit-scrollbar { display: none; }
+.noScrollbar { -ms-overflow-style: none; scrollbar-width: none; }

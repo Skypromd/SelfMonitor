@@ -2,7 +2,7 @@ import Image from 'next/image';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import styles from '../styles/Home.module.css';
 
-const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
+const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || '/api/auth';
 
 type SecurityPageProps = {
   onAuthSessionUpdated?: (accessToken: string, refreshToken?: string | null) => void;
@@ -1032,7 +1032,7 @@ export default function SecurityPage({
   }, [deliveryChannelFilter, deliveryStatusFilter, deliveryWindowHours]);
 
   return (
-    <div className={styles.dashboard}>
+    <div className={styles.pageContainer}>
       <header className={styles.pageHeader}>
         <p className={styles.pageEyebrow}>Account protection</p>
         <h1 className={styles.pageTitle}>Security Center</h1>
@@ -1491,3 +1491,4 @@ export default function SecurityPage({
     </div>
   );
 }
+

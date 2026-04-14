@@ -313,6 +313,7 @@
     "plpgsql",
     "popleft",
     "postgis",
+    "practolog",
     "Prefs",
     "PREFS",
     "Pressable",

@@ -3,8 +3,8 @@ import { useRouter } from 'next/router';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
-const DOCUMENTS_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENTS_SERVICE_URL || 'http://localhost:8006';
-const QNA_SERVICE_URL = process.env.NEXT_PUBLIC_QNA_SERVICE_URL || 'http://localhost:8014';
+const DOCUMENTS_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENTS_SERVICE_URL || '/api/documents';
+const QNA_SERVICE_URL = process.env.NEXT_PUBLIC_QNA_SERVICE_URL || '/api/qna';
 
 type DocumentsPageProps = {
   token: string;
@@ -434,7 +434,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
   };
 
   return (
-    <div className={styles.dashboard}>
+    <div className={styles.pageContainer}>
       <h1>{t('nav.documents')}</h1>
       <p>{t('documents.description')}</p>
       <div className={styles.subContainer}>
@@ -707,3 +707,4 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
     </div>
   );
 }
+

@@ -490,3 +490,43 @@ def test_api_key_forbidden_on_free_plan():
     headers = {"Authorization": f"Bearer {token}"}
     resp = client.post("/api-keys", headers=headers, json={})
     assert resp.status_code == 403
+
+
+def test_admin_users_list_forbidden_for_non_admin():
+    email = "nonadmin-list@example.com"
+    _register_and_login(email)
+    token = _register_and_login(email)
+    r = client.get("/admin/users", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 403
+
+
+def test_admin_users_list_ok():
+    email = "admin-list@example.com"
+    client.post("/register", json={"email": email, "password": STRONG_PASSWORD})
+    set_user_admin_for_tests(email, True)
+    login = client.post("/token", data={"username": email, "password": STRONG_PASSWORD})
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+    r = client.get("/admin/users", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "total" in data and "items" in data
+    assert isinstance(data["items"], list)
+
+
+def test_admin_user_detail_ok():
+    email = "admin-detail@example.com"
+    target = "target-user@example.com"
+    client.post("/register", json={"email": email, "password": STRONG_PASSWORD})
+    client.post("/register", json={"email": target, "password": STRONG_PASSWORD})
+    set_user_admin_for_tests(email, True)
+    login = client.post("/token", data={"username": email, "password": STRONG_PASSWORD})
+    token = login.json()["access_token"]
+    from urllib.parse import quote
+
+    r = client.get(
+        f"/admin/users/{quote(target, safe='')}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["email"] == target

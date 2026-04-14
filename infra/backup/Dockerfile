@@ -2,14 +2,13 @@ FROM alpine:latest
 
 # Install required packages
 RUN apk add --no-cache \
-    postgresql15-client \
+    postgresql-client \
     redis \
     curl \
-    awscli \
     bash \
     gzip \
     tar \
-    cron \
+    dcron \
     docker-cli
 
 # Create backup user

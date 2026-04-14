@@ -1,8 +1,175 @@
 """
-UK Tax Calculators — PAYE, Rental, CIS, Dividend, Crypto.
+UK Tax Calculators — PAYE, Rental, CIS, Dividend, Crypto, Self-Employed.
 Matching Pie.tax's calculator collection for competitive parity.
 """
+from typing import Optional
 from pydantic import BaseModel
+
+# ── 2025/26 constants ────────────────────────────────────────────────────────
+_PA = 12_570.0          # Personal Allowance
+_BRT_LIMIT = 37_700.0   # Basic-rate band top (above PA)
+_HRT_LIMIT = 125_140.0  # Additional-rate threshold (= PA taper fully withdrawn)
+_BRT = 0.20
+_HRT = 0.40
+_ART = 0.45
+_NI_LPL = 12_570.0      # Class 4 Lower Profits Limit
+_NI_UPL = 50_270.0      # Class 4 Upper Profits Limit
+_NI_C4_MAIN = 0.06      # Class 4 main rate 2025/26
+_NI_C4_ADD = 0.02       # Class 4 additional rate
+_NI_C2_WEEKLY = 3.45    # Class 2 flat rate / week
+_NI_C2_SMALL_PROFITS = 6_725.0   # Small Profits Threshold (Class 2 exemption)
+_TRADING_ALLOWANCE = 1_000.0
+_DIVIDEND_ALLOWANCE = 500.0
+_CGT_EXEMPT = 3_000.0
+
+
+def _income_tax_bands(taxable_income: float) -> tuple[float, float, float]:
+    """Return (basic, higher, additional) income tax amounts."""
+    basic = min(taxable_income, _BRT_LIMIT) * _BRT
+    higher = max(min(taxable_income - _BRT_LIMIT, _HRT_LIMIT - _PA - _BRT_LIMIT), 0) * _HRT
+    additional = max(taxable_income - (_HRT_LIMIT - _PA), 0) * _ART
+    return basic, higher, additional
+
+
+def _personal_allowance(total_income: float) -> float:
+    """PA tapers £1 for every £2 over £100,000."""
+    taper_threshold = 100_000.0
+    if total_income <= taper_threshold:
+        return _PA
+    reduction = (total_income - taper_threshold) / 2.0
+    return max(_PA - reduction, 0.0)
+
+
+# ── Self-Employed comprehensive calculator ───────────────────────────────────
+
+class UKSelfEmployedTaxResult(BaseModel):
+    gross_trading_income: float
+    trading_allowance_used: float
+    allowable_expenses_used: float
+    net_profit: float
+    losses_brought_forward_used: float
+    adjusted_profit: float
+    personal_allowance: float
+    pa_taper_reduction: float
+    marriage_allowance_received: float
+    taxable_income: float
+    basic_rate_tax: float
+    higher_rate_tax: float
+    additional_rate_tax: float
+    total_income_tax: float
+    ni_class2: float
+    ni_class4_main: float
+    ni_class4_additional: float
+    total_ni: float
+    student_loan_repayment: float
+    pension_tax_relief: float
+    total_tax_and_ni: float
+    payment_on_account_jan: float
+    payment_on_account_jul: float
+    net_take_home: float
+    effective_tax_rate_percent: float
+
+
+_STUDENT_LOAN_PLANS: dict[str, tuple[float, float]] = {
+    "plan1": (22_015.0, 0.09),
+    "plan2": (27_295.0, 0.09),
+    "plan4": (31_395.0, 0.09),
+    "plan5": (25_000.0, 0.09),
+    "postgrad": (21_000.0, 0.06),
+}
+
+
+def calculate_self_employed_tax(
+    gross_trading_income: float,
+    allowable_expenses: float = 0.0,
+    pension_contributions: float = 0.0,
+    student_loan_plan: Optional[str] = None,
+    marriage_allowance_received: float = 0.0,
+    losses_brought_forward: float = 0.0,
+    use_trading_allowance: bool = False,
+) -> UKSelfEmployedTaxResult:
+    """Full 2025/26 UK self-employed tax calculation."""
+
+    # 1. Net profit
+    if use_trading_allowance and allowable_expenses < _TRADING_ALLOWANCE:
+        trading_allowance_used = min(gross_trading_income, _TRADING_ALLOWANCE)
+        expenses_used = 0.0
+    else:
+        trading_allowance_used = 0.0
+        expenses_used = allowable_expenses
+
+    net_profit = max(gross_trading_income - trading_allowance_used - expenses_used, 0.0)
+
+    # 2. Losses brought forward
+    loss_used = min(losses_brought_forward, net_profit)
+    adjusted_profit = net_profit - loss_used
+
+    # 3. Pension tax relief (basic rate added back)
+    pension_relief = pension_contributions * _BRT
+
+    # 4. Personal allowance (with taper for > £100k)
+    total_income_for_pa = adjusted_profit - pension_contributions
+    pa = _personal_allowance(total_income_for_pa)
+    pa_reduction = _PA - pa
+    effective_pa = min(pa + marriage_allowance_received, adjusted_profit)
+
+    # 5. Income tax
+    taxable = max(adjusted_profit - pension_contributions - effective_pa, 0.0)
+    basic, higher, additional = _income_tax_bands(taxable)
+    income_tax = basic + higher + additional
+
+    # 6. Class 2 NI
+    ni_c2 = _NI_C2_WEEKLY * 52 if adjusted_profit >= _NI_C2_SMALL_PROFITS else 0.0
+
+    # 7. Class 4 NI
+    ni_c4_main_base = max(min(adjusted_profit, _NI_UPL) - _NI_LPL, 0.0)
+    ni_c4_add_base = max(adjusted_profit - _NI_UPL, 0.0)
+    ni_c4_main = ni_c4_main_base * _NI_C4_MAIN
+    ni_c4_add = ni_c4_add_base * _NI_C4_ADD
+    total_ni = ni_c2 + ni_c4_main + ni_c4_add
+
+    # 8. Student loan
+    sl_repayment = 0.0
+    if student_loan_plan and student_loan_plan in _STUDENT_LOAN_PLANS:
+        threshold, rate = _STUDENT_LOAN_PLANS[student_loan_plan]
+        sl_repayment = max(adjusted_profit - threshold, 0.0) * rate
+
+    # 9. Totals
+    total_tax_ni = income_tax + total_ni + sl_repayment
+
+    # 10. Payments on Account (each = 50% of prior year tax+NI, due Jan 31 + Jul 31)
+    poa = round((income_tax + total_ni) * 0.50, 2)
+
+    net_take_home = gross_trading_income - expenses_used - total_tax_ni
+    effective_rate = (total_tax_ni / gross_trading_income * 100) if gross_trading_income > 0 else 0.0
+
+    return UKSelfEmployedTaxResult(
+        gross_trading_income=round(gross_trading_income, 2),
+        trading_allowance_used=round(trading_allowance_used, 2),
+        allowable_expenses_used=round(expenses_used, 2),
+        net_profit=round(net_profit, 2),
+        losses_brought_forward_used=round(loss_used, 2),
+        adjusted_profit=round(adjusted_profit, 2),
+        personal_allowance=round(pa, 2),
+        pa_taper_reduction=round(pa_reduction, 2),
+        marriage_allowance_received=round(marriage_allowance_received, 2),
+        taxable_income=round(taxable, 2),
+        basic_rate_tax=round(basic, 2),
+        higher_rate_tax=round(higher, 2),
+        additional_rate_tax=round(additional, 2),
+        total_income_tax=round(income_tax, 2),
+        ni_class2=round(ni_c2, 2),
+        ni_class4_main=round(ni_c4_main, 2),
+        ni_class4_additional=round(ni_c4_add, 2),
+        total_ni=round(total_ni, 2),
+        student_loan_repayment=round(sl_repayment, 2),
+        pension_tax_relief=round(pension_relief, 2),
+        total_tax_and_ni=round(total_tax_ni, 2),
+        payment_on_account_jan=poa,
+        payment_on_account_jul=poa,
+        net_take_home=round(net_take_home, 2),
+        effective_tax_rate_percent=round(effective_rate, 1),
+    )
 
 
 class PAYETaxResult(BaseModel):

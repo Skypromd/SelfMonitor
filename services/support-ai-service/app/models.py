@@ -39,12 +39,23 @@ class TicketORM(Base):  # type: ignore
     subject = Column(String, nullable=False)
     message = Column(Text, nullable=False)
     status = Column(String, default="open")
+    assigned_to = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(
         DateTime,
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class TicketMessageORM(Base):  # type: ignore
+    __tablename__ = "ticket_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticket_id = Column(String, nullable=False, index=True)
+    author_role = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class FeedbackORM(Base):  # type: ignore
@@ -99,10 +110,38 @@ class TicketOut(BaseModel):
     priority: str
     subject: str
     status: str
+    assigned_to: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class TicketMessageCreate(BaseModel):
+    author_role: str = "agent"
+    body: str
+
+    @field_validator("author_role")
+    @classmethod
+    def role_ok(cls, v: str) -> str:
+        if v not in {"user", "agent", "system"}:
+            raise ValueError("author_role must be user, agent, or system")
+        return v
+
+
+class TicketMessageOut(BaseModel):
+    id: int
+    ticket_id: str
+    author_role: str
+    body: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TicketAssignBody(BaseModel):
+    assigned_to: str
 
 
 class FeedbackCreate(BaseModel):

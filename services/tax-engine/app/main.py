@@ -23,11 +23,34 @@ MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL = os.getenv(
 )
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
 INVOICE_SERVICE_URL = os.getenv("INVOICE_SERVICE_URL", "http://invoice-service:80")
-DEDUCTIBLE_EXPENSE_CATEGORIES = {"transport", "subscriptions", "office_supplies"}
-UK_PERSONAL_ALLOWANCE = 12570.0
+# Full HMRC allowable expense categories (Self Assessment SA103F)
+DEDUCTIBLE_EXPENSE_CATEGORIES = {
+    "transport", "travel", "fuel", "mileage",
+    "subscriptions", "office_supplies", "office", "stationery",
+    "professional_fees", "legal", "accounting",
+    "advertising", "marketing", "promotion",
+    "insurance",
+    "utilities", "rent", "premises", "home_office",
+    "phone", "internet", "communication",
+    "training", "education", "courses",
+    "equipment", "tools", "hardware", "software",
+    "bank_charges", "financial_charges",
+    "clothing", "uniform",
+    "repairs", "maintenance",
+    "staff_costs", "wages",
+    "cost_of_goods", "materials", "stock",
+    "pension",
+}
+UK_PERSONAL_ALLOWANCE = 12_570.0
+UK_BASIC_RATE_LIMIT = 37_700.0    # taxable income where 20% band ends
+UK_HIGHER_RATE_LIMIT = 125_140.0  # above this = 45% (PA fully tapered)
 UK_BASIC_TAX_RATE = 0.20
-UK_CLASS4_NIC_LOWER_PROFITS_LIMIT = 12570.0
-UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT = 50270.0
+UK_HIGHER_TAX_RATE = 0.40
+UK_ADDITIONAL_TAX_RATE = 0.45
+UK_CLASS2_NI_ANNUAL = 179.40      # £3.45 × 52 weeks
+UK_CLASS2_SMALL_PROFITS = 6_725.0
+UK_CLASS4_NIC_LOWER_PROFITS_LIMIT = 12_570.0
+UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT = 50_270.0
 UK_CLASS4_NIC_MAIN_RATE = 0.06
 UK_CLASS4_NIC_ADDITIONAL_RATE = 0.02
 DEFAULT_MTD_ITSA_RULES: list[dict[str, Any]] = [
@@ -107,11 +130,18 @@ class TaxCalculationResult(BaseModel):
     total_expenses: float
     taxable_profit: float
     personal_allowance_used: float
+    pa_taper_reduction: float
     taxable_amount_after_allowance: float
+    basic_rate_tax: float
+    higher_rate_tax: float
+    additional_rate_tax: float
     estimated_income_tax_due: float
+    estimated_class2_nic_due: float
     estimated_class4_nic_due: float
     estimated_effective_tax_rate: float
     estimated_tax_due: float
+    payment_on_account_jan: float
+    payment_on_account_jul: float
     mtd_obligation: dict[str, Any]
     summary_by_category: List[TaxSummaryItem]
 
@@ -386,6 +416,25 @@ def _build_mtd_quarterly_submission_payload(
     }
 
 
+def _personal_allowance_for_income(total_income: float) -> float:
+    """PA tapers £1 for every £2 over £100,000; fully withdrawn at £125,140."""
+    taper_threshold = 100_000.0
+    if total_income <= taper_threshold:
+        return UK_PERSONAL_ALLOWANCE
+    reduction = (total_income - taper_threshold) / 2.0
+    return max(UK_PERSONAL_ALLOWANCE - reduction, 0.0)
+
+
+def _calculate_income_tax(taxable_after_pa: float) -> tuple[float, float, float]:
+    """Returns (basic, higher, additional) income tax components."""
+    basic = min(taxable_after_pa, UK_BASIC_RATE_LIMIT) * UK_BASIC_TAX_RATE
+    higher_base = max(min(taxable_after_pa - UK_BASIC_RATE_LIMIT,
+                          UK_HIGHER_RATE_LIMIT - UK_PERSONAL_ALLOWANCE - UK_BASIC_RATE_LIMIT), 0.0)
+    higher = higher_base * UK_HIGHER_TAX_RATE
+    additional = max(taxable_after_pa - (UK_HIGHER_RATE_LIMIT - UK_PERSONAL_ALLOWANCE), 0.0) * UK_ADDITIONAL_TAX_RATE
+    return basic, higher, additional
+
+
 def _calculate_class4_nic(taxable_profit: float) -> float:
     if taxable_profit <= UK_CLASS4_NIC_LOWER_PROFITS_LIMIT:
         return 0.0
@@ -449,14 +498,19 @@ async def calculate_tax(
             summary_map.setdefault(category, 0.0)
             summary_map[category] += t.amount
 
-    # 3. Apply simplified UK tax rules
+    # 3. Full UK 2025/26 self-employed tax rules
     taxable_profit = max(total_income - total_expenses, 0.0)
-    personal_allowance_used = min(taxable_profit, UK_PERSONAL_ALLOWANCE)
-    taxable_amount_after_allowance = max(0, taxable_profit - UK_PERSONAL_ALLOWANCE)
-    estimated_income_tax = taxable_amount_after_allowance * UK_BASIC_TAX_RATE
+    pa = _personal_allowance_for_income(taxable_profit)
+    pa_taper = UK_PERSONAL_ALLOWANCE - pa
+    personal_allowance_used = min(taxable_profit, pa)
+    taxable_amount_after_allowance = max(taxable_profit - pa, 0.0)
+    basic_tax, higher_tax, additional_tax = _calculate_income_tax(taxable_amount_after_allowance)
+    estimated_income_tax = basic_tax + higher_tax + additional_tax
+    estimated_class2_nic = UK_CLASS2_NI_ANNUAL if taxable_profit >= UK_CLASS2_SMALL_PROFITS else 0.0
     estimated_class4_nic = _calculate_class4_nic(taxable_profit)
-    estimated_tax = estimated_income_tax + estimated_class4_nic
+    estimated_tax = estimated_income_tax + estimated_class2_nic + estimated_class4_nic
     effective_tax_rate = (estimated_tax / taxable_profit) if taxable_profit > 0 else 0.0
+    poa = round((estimated_income_tax + estimated_class4_nic) * 0.50, 2)
 
     # 4. Prepare summary
     summary_by_category = [
@@ -479,11 +533,18 @@ async def calculate_tax(
         total_expenses=round(total_expenses, 2),
         taxable_profit=round(taxable_profit, 2),
         personal_allowance_used=round(personal_allowance_used, 2),
+        pa_taper_reduction=round(pa_taper, 2),
         taxable_amount_after_allowance=round(taxable_amount_after_allowance, 2),
+        basic_rate_tax=round(basic_tax, 2),
+        higher_rate_tax=round(higher_tax, 2),
+        additional_rate_tax=round(additional_tax, 2),
         estimated_income_tax_due=round(estimated_income_tax, 2),
+        estimated_class2_nic_due=round(estimated_class2_nic, 2),
         estimated_class4_nic_due=round(estimated_class4_nic, 2),
         estimated_effective_tax_rate=round(effective_tax_rate, 4),
         estimated_tax_due=round(estimated_tax, 2),
+        payment_on_account_jan=poa,
+        payment_on_account_jul=poa,
         mtd_obligation=mtd_obligation,
         summary_by_category=summary_by_category,
     )
@@ -624,6 +685,7 @@ from .calculators import (
     CISTaxResult, calculate_cis,
     DividendTaxResult, calculate_dividend_tax,
     CryptoTaxResult, calculate_crypto_tax,
+    UKSelfEmployedTaxResult, calculate_self_employed_tax,
 )
 
 @app.post("/calculators/paye", response_model=PAYETaxResult)
@@ -653,6 +715,34 @@ async def dividend_calculator(dividend_income: float, other_income: float = 0):
 @app.post("/calculators/crypto", response_model=CryptoTaxResult)
 async def crypto_tax_calculator(total_gains: float, total_losses: float = 0, other_income: float = 0):
     return calculate_crypto_tax(total_gains, total_losses, other_income)
+
+
+class SelfEmployedCalcRequest(BaseModel):
+    gross_trading_income: float
+    allowable_expenses: float = 0.0
+    pension_contributions: float = 0.0
+    student_loan_plan: Optional[str] = None
+    marriage_allowance_received: float = 0.0
+    losses_brought_forward: float = 0.0
+    use_trading_allowance: bool = False
+
+
+@app.post("/calculators/self-employed", response_model=UKSelfEmployedTaxResult)
+async def self_employed_calculator(req: SelfEmployedCalcRequest):
+    """
+    Full 2025/26 UK self-employed tax calculator.
+    Covers: Income Tax (3 bands), PA taper, Class 2 & 4 NI,
+    trading allowance, pension relief, student loan, payments on account.
+    """
+    return calculate_self_employed_tax(
+        gross_trading_income=req.gross_trading_income,
+        allowable_expenses=req.allowable_expenses,
+        pension_contributions=req.pension_contributions,
+        student_loan_plan=req.student_loan_plan,
+        marriage_allowance_received=req.marriage_allowance_received,
+        losses_brought_forward=req.losses_brought_forward,
+        use_trading_allowance=req.use_trading_allowance,
+    )
 
 
 # === Auto-collect and prepare HMRC reports ===

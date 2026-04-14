@@ -99,10 +99,25 @@ docker compose --profile graphql up --build -d
 ```bash
 cd apps/web-portal
 npm install --no-package-lock
+cp .env.example .env.local   # optional: edit .env.local for practolog / prod URLs
 npm run dev
 ```
 
 Web portal: `http://localhost:3000`
+
+#### Deploy: web portal ↔ API gateway
+
+| Topic | What to do |
+|--------|------------|
+| **Env** | Copy `apps/web-portal/.env.local` from comments in repo or create it. Use **same-origin** API paths (`NEXT_PUBLIC_API_GATEWAY_URL=/api`, `NEXT_PUBLIC_AUTH_SERVICE_URL=/api/auth`, etc.) so the browser calls `http://localhost:3000/api/...` and Next.js **rewrites** proxy to the gateway (see `apps/web-portal/next.config.js`). Avoid `http://localhost:8000` in `NEXT_PUBLIC_*` for the browser unless nginx CORS is fully configured for every route you use. |
+| **Backend** | Gateway: `http://localhost:8000`. Typical local backend: `scripts/start_backend_v1.ps1` / `scripts/start_backend_v1.sh` or `docker compose` + `nginx-gateway`. |
+| **nginx** | After editing `nginx/nginx.conf` or `nginx/snippets/*`, rebuild/restart: `docker compose up -d --build nginx-gateway`. Snippet `nginx/snippets/cors_api_gateway.conf` adds CORS for preflight when clients hit **:8000** directly (e.g. mobile). |
+| **v1 slice** | Lean stack: `scripts/compose_v1_up.ps1` / `.sh` — includes `partner-registry` for `/api/partners`. |
+| **Operator subdomain `practolog`** | Optional: separate **origin** for operators (different `sessionStorage` from end users). Enable in `apps/web-portal/.env.local`: `NEXT_PUBLIC_ADMIN_SUBDOMAIN_ENABLED=1`, `NEXT_PUBLIC_ADMIN_HOST=practolog.localhost`, `NEXT_PUBLIC_CLIENT_ORIGIN=http://localhost:3000`, `NEXT_PUBLIC_ADMIN_ORIGIN=http://practolog.localhost:3000`. Then open **`http://practolog.localhost:3000`** for `/admin`, `/admin/login`, Platform billing (`/billing`). Clients use **`http://localhost:3000`**. Logic: `apps/web-portal/middleware.ts`, helpers: `apps/web-portal/lib/adminSurface.ts`. **Production:** DNS + TLS for e.g. `practolog.example.com` and `app.example.com`; set the four variables to HTTPS origins. |
+| **Admin account** | Not created via `/register`. Use auth bootstrap (`AUTH_BOOTSTRAP_ADMIN`, `AUTH_ADMIN_EMAIL`, `AUTH_ADMIN_PASSWORD` in root `.env`) and **`/admin/login`** (on practolog host when subdomain mode is on). |
+| **Build** | `cd apps/web-portal && npm run build` (CI parity). |
+
+Further production checklists: `docs/TODO_PRODUCTION.md`, `docs/COMPOSE_PRODUCTION.md`, `docs/GO_LIVE_CHECKLIST.md`.
 
 ### 3. Mobile App
 

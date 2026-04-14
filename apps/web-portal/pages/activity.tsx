@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
-const COMPLIANCE_SERVICE_URL = process.env.NEXT_PUBLIC_COMPLIANCE_SERVICE_URL || 'http://localhost:8003';
+const COMPLIANCE_SERVICE_URL =
+  process.env.NEXT_PUBLIC_COMPLIANCE_SERVICE_URL || '/api/compliance';
 const FALLBACK_USER_ID = 'fake-user-123';
 
 type ActivityPageProps = {
@@ -62,7 +63,7 @@ export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
   };
 
   return (
-    <div className={styles.dashboard}>
+    <div className={styles.pageContainer}>
       <h1>{t('nav.activity')}</h1>
       <p>{t('activity.description')}</p>
       {error && <p className={styles.error}>{error}</p>}
@@ -103,3 +104,4 @@ export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
     </div>
   );
 }
+

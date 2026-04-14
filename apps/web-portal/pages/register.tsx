@@ -2,9 +2,10 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { FormEvent, useEffect, useState } from 'react';
+import { adminSurfaceUrl } from '../lib/adminSurface';
 import styles from '../styles/Home.module.css';
 
-const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || '/api/auth';
 
 const PLAN_NAMES: Record<string, string> = {
   free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'Pro', business: 'Business',
@@ -280,6 +281,13 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
                   <div>✓ Downgrade or cancel anytime</div>
                 </div>
               ) : null}
+
+              <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 1rem', lineHeight: 1.55 }}>
+                Регистрация создаёт <strong style={{ color: '#94a3b8' }}>клиентский аккаунт</strong> (как у пользователя продукта).
+                Вход для администратора платформы — отдельно:{' '}
+                <a href={adminSurfaceUrl('/admin/login')} style={{ color: '#14b8a6' }}>операторский вход</a>
+                {' '}(учётная запись из bootstrap в .env / Docker, не эта форма).
+              </p>
 
               <form onSubmit={handleRegister} style={{ width: '100%' }}>
                 <label htmlFor="reg-name">Full name <span style={{ color: '#64748b', fontWeight: 400 }}>(optional)</span></label>

@@ -94,6 +94,7 @@ services:
       POSTGRES_DB: "${POSTGRES_DB:-db_user_profile}"
     volumes:
       - postgres_master_data:/var/lib/postgresql/data
+      - ./infra/postgres/docker-init:/docker-entrypoint-initdb.d:ro
     networks:
       - default_network
     healthcheck:
@@ -365,6 +366,13 @@ services:
       AUTH_RUNTIME_CLEANUP_ENABLED: "${AUTH_RUNTIME_CLEANUP_ENABLED:-true}"
       AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS: "${AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS:-300}"
       AUTH_DB_PATH: "/tmp/auth.db"
+      # Локальная разработка: задайте в корневом .env (см. .env.example)
+      AUTH_BOOTSTRAP_ADMIN: "${AUTH_BOOTSTRAP_ADMIN:-false}"
+      AUTH_ADMIN_EMAIL: "${AUTH_ADMIN_EMAIL:-admin@example.com}"
+      AUTH_ADMIN_PASSWORD: "${AUTH_ADMIN_PASSWORD:-admin_password}"
+      AUTH_REQUIRE_ADMIN_2FA: "${AUTH_REQUIRE_ADMIN_2FA:-true}"
+      APP_BASE_URL: "${APP_BASE_URL:-http://localhost:3000}"
+      AUTH_CORS_EXTRA_ORIGINS: "${AUTH_CORS_EXTRA_ORIGINS:-http://practolog.localhost:3000}"
     # ports are no longer exposed directly
     networks:
       - default_network
@@ -678,6 +686,7 @@ services:
       dockerfile: services/integrations-service/Dockerfile
     container_name: integrations-service
     environment:
+      INTEGRATIONS_DB_PATH: "${INTEGRATIONS_DB_PATH:-/tmp/integrations.db}"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       HMRC_DIRECT_API_BASE_URL: "${HMRC_DIRECT_API_BASE_URL:-https://api.service.hmrc.gov.uk}"
       HMRC_DIRECT_SUBMISSION_ENABLED: "${HMRC_DIRECT_SUBMISSION_ENABLED:-false}"

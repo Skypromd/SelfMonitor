@@ -3,6 +3,7 @@ from datetime import datetime, date, timedelta, timezone
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, extract
+from sqlalchemy.orm import selectinload
 from dataclasses import dataclass
 import httpx  # For external service integration
 
@@ -33,8 +34,8 @@ class InvoiceReportingService:
         # Base query filter
         base_filter = and_(
             models.Invoice.user_id == user_id,
-            models.Invoice.invoice_date >= start_date,
-            models.Invoice.invoice_date <= end_date
+            models.Invoice.issue_date >= start_date,
+            models.Invoice.issue_date <= end_date
         )
 
         if company_id:
@@ -45,7 +46,6 @@ class InvoiceReportingService:
             select(
                 func.count(models.Invoice.id).label('total_invoices'),
                 func.sum(models.Invoice.total_amount).label('total_billed'),
-                func.sum(models.Invoice.paid_amount).label('total_collected'),
                 func.avg(models.Invoice.total_amount).label('avg_invoice_value')
             )
             .where(base_filter)
@@ -65,7 +65,7 @@ class InvoiceReportingService:
 
         status_summary = {}
         for row in status_result.fetchall():
-            status_summary[row.status.value] = {
+            status_summary[str(row.status)] = {
                 'count': row.count,
                 'amount': float(row.amount or 0)
             }
@@ -74,7 +74,7 @@ class InvoiceReportingService:
         category_result = await self.db.execute(
             select(
                 models.InvoiceLineItem.category,
-                func.sum(models.InvoiceLineItem.total_amount).label('total_amount'),
+                func.sum(models.InvoiceLineItem.line_total).label('total_amount'),
                 func.count(models.InvoiceLineItem.id).label('item_count')
             )
             .join(models.Invoice)
@@ -116,8 +116,8 @@ class InvoiceReportingService:
             period_end=end_date,
             total_invoices=stats.total_invoices or 0,
             total_billed=float(stats.total_billed or 0),
-            total_collected=float(stats.total_collected or 0),
-            outstanding_amount=float((stats.total_billed or 0) - (stats.total_collected or 0)),
+            total_collected=0.0,
+            outstanding_amount=float(stats.total_billed or 0),
             avg_invoice_value=float(stats.avg_invoice_value or 0),
             status_summary=status_summary,
             category_breakdown=category_breakdown,

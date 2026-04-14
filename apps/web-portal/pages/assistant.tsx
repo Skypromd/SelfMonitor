@@ -5,7 +5,7 @@ import styles from '../styles/Home.module.css';
 
 
 const AI_AGENT_URL =
-  process.env.NEXT_PUBLIC_AI_AGENT_SERVICE_URL || 'http://localhost:8019';
+  process.env.NEXT_PUBLIC_AI_AGENT_SERVICE_URL || '/api/agent';
 
 type Role = 'user' | 'assistant';
 
@@ -132,7 +132,7 @@ export default function AssistantPage({ token }: AssistantPageProps) {
     d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className={styles.container} style={{ display: 'flex', gap: '1.5rem', height: 'calc(100vh - 120px)' }}>
+    <div className={styles.pageContainerFull} style={{ display: 'flex', gap: '1.5rem', height: 'calc(100vh - 120px)' }}>
       {/* Sidebar */}
       <div style={{ width: 260, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
         <div className={styles.card}>

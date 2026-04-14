@@ -98,7 +98,7 @@ export default function SupportPage({ token }: SupportPageProps) {
       <Head>
         <title>Support &amp; Feedback — SelfMonitor</title>
       </Head>
-      <div className={styles.dashboard}>
+      <div className={styles.pageContainer}>
         <div className={styles.pageHeader}>
           <p className={styles.pageEyebrow}>Help Centre</p>
           <h1 className={styles.pageTitle}>💬 Support &amp; Feedback</h1>
@@ -376,3 +376,4 @@ export default function SupportPage({ token }: SupportPageProps) {
     </>
   );
 }
+

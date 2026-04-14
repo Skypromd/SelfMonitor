@@ -1,13 +1,42 @@
+import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import type { AdminTab } from '../lib/adminRoutes';
+import { clientSurfaceUrl, inactivityLogoutLocation } from '../lib/adminSurface';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
-const AUTH_SERVICE_BASE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
-const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || 'http://localhost:8016';
-const BILLING_SERVICE_URL = process.env.NEXT_PUBLIC_BILLING_SERVICE_URL || 'http://localhost:8024';
+/** Same-origin `/api` (Next.js rewrites → gateway :8000) avoids browser CORS; use absolute URL in env only if you must. */
+function browserApiPrefix(): string {
+  const raw = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
+  if (/^https?:\/\//i.test(raw)) {
+    return raw.replace(/\/$/, '');
+  }
+  return raw.startsWith('/') ? raw.replace(/\/$/, '') : '/api';
+}
+
+const API_P = browserApiPrefix();
+
+const AUTH_SERVICE_BASE_URL =
+  process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || `${API_P}/auth`;
+const PARTNER_REGISTRY_URL =
+  process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || `${API_P}/partners`;
+const BILLING_SERVICE_URL =
+  process.env.NEXT_PUBLIC_BILLING_SERVICE_URL || `${API_P}/billing`;
+const SUPPORT_SERVICE_URL =
+  process.env.NEXT_PUBLIC_SUPPORT_SERVICE_URL || `${API_P}/support`;
 const TOAST_DURATION_MS = 4200;
 
 type AdminUser = { email: string; is_admin: boolean };
+
+type AdminDirectoryUser = {
+  email: string;
+  is_active: boolean;
+  is_admin: boolean;
+  is_two_factor_enabled: boolean;
+  plan: string;
+  subscription_status: string;
+};
 
 type BillingPlanStat = {
   plan: string;
@@ -28,9 +57,10 @@ type BillingAdminStats = {
   recent_subscriptions: { email: string; plan: string; status: string; created_at: number; has_stripe: boolean }[];
 };
 
-type AdminPageProps = {
+export type AdminPageProps = {
   token: string;
   user?: AdminUser;
+  section: AdminTab;
 };
 
 type PeriodPreset = 'custom' | '7d' | '30d' | 'qtd';
@@ -115,36 +145,23 @@ const toIsoDate = (value: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-type AdminTab = 'overview' | 'subscriptions' | 'users' | 'billing' | 'leadops' | 'invoices' | 'ai-agent' | 'health' | 'support';
-
-const TAB_LABELS: Record<AdminTab, string> = {
-  overview: '📊 Overview',
-  subscriptions: '💳 Subscriptions',
-  users: '👥 Users',
-  billing: '🤝 Partner Billing',
-  leadops: '🔄 Lead Ops',
-  invoices: '🧾 Invoices',
-  'ai-agent': '🤖 AI Agent',
-  health: '🟢 System Health',
-  support: '💬 Support Tickets',
+type SupportTicketRow = {
+  id: string;
+  user_email: string;
+  category: string;
+  priority: string;
+  subject: string;
+  status: string;
+  created_at: string;
 };
 
-const MOCK_TICKETS = [
-  { id: 'SM-10421', user: 'alice@example.com',    subject: 'Bank connection failing since update', category: 'Technical', priority: 'high',   status: 'open',     created: '2026-03-05 09:14', rating: null },
-  { id: 'SM-10420', user: 'bob@startup.io',        subject: 'How do I export to Xero?',            category: 'Billing',   priority: 'low',    status: 'resolved', created: '2026-03-04 14:30', rating: 5    },
-  { id: 'SM-10419', user: 'charlie@freelance.co',  subject: 'HMRC submission gave error 1046',      category: 'Technical', priority: 'high',   status: 'open',     created: '2026-03-04 11:05', rating: null },
-  { id: 'SM-10418', user: 'diana@consultco.com',   subject: 'Request: dark mode for mobile app',   category: 'Feature',   priority: 'low',    status: 'resolved', created: '2026-03-03 16:50', rating: 4    },
-  { id: 'SM-10417', user: 'evan@photography.me',   subject: 'Charged twice this month',             category: 'Billing',   priority: 'medium', status: 'open',     created: '2026-03-03 10:22', rating: null },
-  { id: 'SM-10416', user: 'fiona@designstudio.uk', subject: 'Can\'t update VAT number in profile',  category: 'Account',   priority: 'medium', status: 'resolved', created: '2026-03-02 09:00', rating: 5    },
-];
-
-const MOCK_FEEDBACK = [
-  { date: '2026-03-05', rating: 5, comment: 'Love the new dashboard! MRR tracking is exactly what I needed.', user: 'diana@consultco.com' },
-  { date: '2026-03-04', rating: 4, comment: 'Bank sync is a bit slow sometimes but overall great product.',   user: 'evan@photography.me' },
-  { date: '2026-03-03', rating: 5, comment: 'The AI assistant saved me hours on my tax return.',             user: 'alice@example.com' },
-  { date: '2026-03-02', rating: 3, comment: 'Would love a bulk transaction editor.',                          user: 'greg@tradie.co.uk' },
-  { date: '2026-03-01', rating: 5, comment: 'Best self-employed finance app I have used. Worth every penny.', user: 'helen@shopowner.com' },
-];
+type SupportStats = {
+  total_tickets: number;
+  open_tickets: number;
+  resolved_tickets: number;
+  avg_rating: number;
+  total_sessions: number;
+};
 
 const MOCK_PLAN_STATS = [
   { plan: 'Starter',  price: 9,  count: 187, mrr: 1683, color: '#14b8a6' },
@@ -172,14 +189,15 @@ const MOCK_USERS = [
 ];
 
 const SYSTEM_SERVICES = [
-  { name: 'Auth Service',     port: 8001, path: '/health' },
-  { name: 'Analytics',        port: 8009, path: '/health' },
-  { name: 'Localization',     port: 8012, path: '/health' },
-  { name: 'User Profile',     port: 8005, path: '/health' },
-  { name: 'Advice / AI',      port: 8010, path: '/health' },
-  { name: 'Documents',        port: 8006, path: '/health' },
-  { name: 'Partner Registry', port: 8016, path: '/health' },
-  { name: 'Transactions',     port: 8003, path: '/health' },
+  { name: 'Auth Service', route: '/api/auth', healthUrl: `${API_P}/auth/health` },
+  { name: 'Analytics', route: '/api/analytics', healthUrl: `${API_P}/analytics/health` },
+  { name: 'Localization', route: '/api/localization', healthUrl: `${API_P}/localization/translations/health` },
+  { name: 'User Profile', route: '/api/profile', healthUrl: `${API_P}/profile/health` },
+  { name: 'Advice / AI', route: '/api/advice', healthUrl: `${API_P}/advice/health` },
+  { name: 'Documents', route: '/api/documents', healthUrl: `${API_P}/documents/health` },
+  { name: 'Partner Registry', route: '/api/partners', healthUrl: `${API_P}/partners/partners` },
+  { name: 'Transactions', route: '/api/transactions', healthUrl: `${API_P}/transactions/health` },
+  { name: 'Support AI', route: '/api/support', healthUrl: `${API_P}/support/health` },
 ];
 
 const AI_AGENT_PERMISSIONS = [
@@ -194,7 +212,7 @@ const AI_AGENT_PERMISSIONS = [
   { id: 'deploy_changes',    label: 'Deploy frontend/backend updates',   available: false, defaultOn: false },
 ];
 
-export default function AdminPage({ token, user }: AdminPageProps) {
+export default function AdminConsole({ token, user, section }: AdminPageProps) {
   const [emailToDeactivate, setEmailToDeactivate] = useState('');
   const [leadId, setLeadId] = useState('');
   const [leadStatus, setLeadStatus] = useState<LeadLifecycleStatus>('qualified');
@@ -226,9 +244,12 @@ export default function AdminPage({ token, user }: AdminPageProps) {
   const [invoiceExportLoadingKey, setInvoiceExportLoadingKey] = useState<string | null>(null);
   const [selectedPartnerModal, setSelectedPartnerModal] = useState<BillingReportByPartner | null>(null);
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
   const [userSearch, setUserSearch] = useState('');
   const [userPlanFilter, setUserPlanFilter] = useState('all');
+  const [adminDirectoryUsers, setAdminDirectoryUsers] = useState<AdminDirectoryUser[]>([]);
+  const [adminDirectoryTotal, setAdminDirectoryTotal] = useState(0);
+  const [adminUsersLoadError, setAdminUsersLoadError] = useState<string | null>(null);
+  const [isAdminUsersLoading, setIsAdminUsersLoading] = useState(false);
   const [agentEnabled, setAgentEnabled] = useState(false);
   const [agentPerms, setAgentPerms] = useState<Record<string, boolean>>(
     Object.fromEntries(AI_AGENT_PERMISSIONS.map((p) => [p.id, p.defaultOn])),
@@ -236,6 +257,10 @@ export default function AdminPage({ token, user }: AdminPageProps) {
   const [serviceStatuses, setServiceStatuses] = useState<Record<string, 'checking' | 'online' | 'offline'>>({});
   const [billingAdminStats, setBillingAdminStats] = useState<BillingAdminStats | null>(null);
   const [isBillingStatsLoading, setIsBillingStatsLoading] = useState(false);
+  const [supportTickets, setSupportTickets] = useState<SupportTicketRow[] | null>(null);
+  const [supportStats, setSupportStats] = useState<SupportStats | null>(null);
+  const [supportApiError, setSupportApiError] = useState<string | null>(null);
+  const router = useRouter();
   const { t } = useTranslation();
 
   const pushToast = (kind: ToastKind, message: string) => {
@@ -254,7 +279,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
       inactivityTimer.current = setTimeout(() => {
         sessionStorage.removeItem('authToken');
-        window.location.replace('/?reason=inactivity');
+        window.location.replace(inactivityLogoutLocation());
       }, TIMEOUT_MS);
     };
     const events = ['mousemove', 'keydown', 'click', 'touchstart', 'scroll'];
@@ -265,6 +290,83 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!token || section !== 'support') return;
+    let cancelled = false;
+    (async () => {
+      setSupportApiError(null);
+      try {
+        const headers = { Authorization: `Bearer ${token}` };
+        const [tr, st] = await Promise.all([
+          fetch(`${SUPPORT_SERVICE_URL}/tickets?limit=100`, { headers }),
+          fetch(`${SUPPORT_SERVICE_URL}/stats`, { headers }),
+        ]);
+        if (cancelled) return;
+        if (tr.ok) {
+          setSupportTickets(await tr.json());
+        } else {
+          setSupportTickets([]);
+        }
+        if (st.ok) {
+          setSupportStats(await st.json());
+        } else {
+          setSupportStats(null);
+        }
+        if (!tr.ok && !st.ok) {
+          setSupportApiError('Support service unavailable (start support-ai-service / nginx route).');
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setSupportApiError(e instanceof Error ? e.message : 'Support fetch failed');
+          setSupportTickets([]);
+          setSupportStats(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, section]);
+
+  useEffect(() => {
+    if (!token || section !== 'users') return;
+    let cancelled = false;
+    const handle = window.setTimeout(() => {
+      void (async () => {
+        setIsAdminUsersLoading(true);
+        setAdminUsersLoadError(null);
+        try {
+          const params = new URLSearchParams({ page: '1', limit: '100' });
+          if (userSearch.trim()) params.set('search', userSearch.trim());
+          if (userPlanFilter !== 'all') params.set('plan', userPlanFilter);
+          const res = await fetch(`${AUTH_SERVICE_BASE_URL}/admin/users?${params}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!res.ok) {
+            throw new Error(`Users API returned ${res.status}`);
+          }
+          const data = await res.json();
+          if (!cancelled) {
+            setAdminDirectoryUsers(Array.isArray(data.items) ? data.items : []);
+            setAdminDirectoryTotal(typeof data.total === 'number' ? data.total : 0);
+          }
+        } catch (e) {
+          if (!cancelled) {
+            setAdminUsersLoadError(e instanceof Error ? e.message : 'Failed to load users');
+            setAdminDirectoryUsers([]);
+            setAdminDirectoryTotal(0);
+          }
+        } finally {
+          if (!cancelled) setIsAdminUsersLoading(false);
+        }
+      })();
+    }, 320);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(handle);
+    };
+  }, [token, section, userSearch, userPlanFilter]);
 
   // ── Fetch real billing/subscription stats ────────────────────────────────────
   useEffect(() => {
@@ -790,16 +892,15 @@ export default function AdminPage({ token, user }: AdminPageProps) {
   }
 
   // ── Computed values ──────────────────────────────────────────────────────────
-  const TOTAL_MRR = MOCK_PLAN_STATS.reduce((sum, p) => sum + p.mrr, 0);
-  const TOTAL_PAYING = MOCK_PLAN_STATS.reduce((sum, p) => sum + p.count, 0);
+  const mockTotalMrr = MOCK_PLAN_STATS.reduce((sum, p) => sum + p.mrr, 0);
+  const mockTotalPaying = MOCK_PLAN_STATS.reduce((sum, p) => sum + p.count, 0);
+  const TOTAL_MRR = billingAdminStats?.total_mrr ?? mockTotalMrr;
+  const TOTAL_PAYING =
+    billingAdminStats?.total_subscribers ??
+    billingAdminStats?.total_active ??
+    mockTotalPaying;
   const MRR_MAX = Math.max(...MOCK_MRR_HISTORY.map((m) => m.mrr));
   const PLAN_MAX = Math.max(...MOCK_PLAN_STATS.map((p) => p.count));
-
-  const filteredUsers = MOCK_USERS.filter((u) => {
-    const matchSearch = !userSearch || u.email.toLowerCase().includes(userSearch.toLowerCase());
-    const matchPlan = userPlanFilter === 'all' || u.plan.toLowerCase() === userPlanFilter.toLowerCase();
-    return matchSearch && matchPlan;
-  });
 
   const checkAllServices = async () => {
     const initial: Record<string, 'checking' | 'online' | 'offline'> = {};
@@ -810,7 +911,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
         try {
           const ctrl = new AbortController();
           const timer = window.setTimeout(() => ctrl.abort(), 3500);
-          const resp = await fetch(`http://localhost:${service.port}${service.path}`, { signal: ctrl.signal });
+          const resp = await fetch(service.healthUrl, { signal: ctrl.signal });
           window.clearTimeout(timer);
           setServiceStatuses((prev) => ({ ...prev, [service.name]: resp.ok ? 'online' : 'offline' }));
         } catch {
@@ -826,31 +927,17 @@ export default function AdminPage({ token, user }: AdminPageProps) {
     s === 'online' ? '🟢' : s === 'checking' ? '🟡' : '🔴';
 
   return (
-    <div className={styles.dashboard}>
+    <div className={`${styles.pageContainerWide} ${styles.adminShell}`}>
       <div className={styles.pageHeader}>
         <p className={styles.pageEyebrow}>Operations Console</p>
         <h1 className={styles.pageTitle}>{t('nav.admin')}</h1>
         <p className={styles.pageLead}>Full visibility and control over your SelfMonitor business — revenue, users, partners, and AI automation.</p>
       </div>
 
-      {/* ── Tab Navigation ──────────────────────────────────────────────── */}
-      <div className={styles.adminTabBar}>
-        {(Object.keys(TAB_LABELS) as AdminTab[]).map((tab) => (
-          <button
-            key={tab}
-            className={`${styles.adminTab} ${activeTab === tab ? styles.adminTabActive : ''}`}
-            onClick={() => setActiveTab(tab)}
-            type="button"
-          >
-            {TAB_LABELS[tab]}
-          </button>
-        ))}
-      </div>
-
       {/* ══════════════════════════════════════════════════════════════════
           OVERVIEW TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'overview' && (
+      {section === 'overview' && (
         <>
           {/* KPI Grid */}
           <div className={styles.kpiGrid}>
@@ -871,7 +958,9 @@ export default function AdminPage({ token, user }: AdminPageProps) {
             </div>
             <div className={styles.kpiCard}>
               <p className={styles.kpiLabel}>ARPU</p>
-              <p className={styles.kpiValue}>£{(TOTAL_MRR / TOTAL_PAYING).toFixed(2)}</p>
+              <p className={styles.kpiValue}>
+                £{TOTAL_PAYING > 0 ? (TOTAL_MRR / TOTAL_PAYING).toFixed(2) : '0.00'}
+              </p>
               <p className={styles.kpiSub}>Avg revenue per user</p>
             </div>
             <div className={styles.kpiCard}>
@@ -977,7 +1066,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       {/* ══════════════════════════════════════════════════════════════════
           SUBSCRIPTIONS TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'subscriptions' && (() => {
+      {section === 'subscriptions' && (() => {
         // Use real data from billing-service if available, else fall back to mock
         const planColors: Record<string, string> = {
           starter: '#14b8a6', growth: '#6366f1', pro: '#f59e0b', business: '#ec4899', free: '#64748b',
@@ -1179,13 +1268,15 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       {/* ══════════════════════════════════════════════════════════════════
           USERS TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'users' && (
+      {section === 'users' && (
         <>
           {/* Filters */}
           <div className={styles.subContainer}>
             <div className={styles.sectionHeader}>
               <h2 className={styles.sectionTitle}>User Management</h2>
-              <p className={styles.sectionSubtitle}>Search, filter, and manage all {MOCK_USERS.length} registered users. (Demo data — connect Auth API for live records.)</p>
+              <p className={styles.sectionSubtitle}>
+                Live directory from auth-service ({adminDirectoryTotal} users). Refreshes shortly after you change filters.
+              </p>
             </div>
             <div className={styles.adminFiltersGrid}>
               <label className={styles.filterField}>
@@ -1214,47 +1305,48 @@ export default function AdminPage({ token, user }: AdminPageProps) {
               </label>
             </div>
 
-            <p className={styles.tableCaption}>Showing {filteredUsers.length} of {MOCK_USERS.length} users</p>
+            {adminUsersLoadError && (
+              <p style={{ color: '#f87171', marginBottom: 12 }}>{adminUsersLoadError}</p>
+            )}
+            <p className={styles.tableCaption}>
+              {isAdminUsersLoading ? 'Loading…' : `Showing ${adminDirectoryUsers.length} of ${adminDirectoryTotal} users (page size 100)`}
+            </p>
             <div className={styles.tableResponsive}>
               <table className={styles.table}>
                 <thead>
                   <tr>
                     <th>Email</th>
                     <th>Plan</th>
-                    <th>Status</th>
-                    <th>Joined</th>
-                    <th>Next Bill</th>
-                    <th>Revenue (£)</th>
+                    <th>Subscription</th>
+                    <th>Active</th>
+                    <th>Admin</th>
+                    <th>2FA</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredUsers.length === 0 && (
+                  {!isAdminUsersLoading && adminDirectoryUsers.length === 0 && (
                     <tr>
                       <td colSpan={7}><p className={styles.emptyState}>No users match the current filter.</p></td>
                     </tr>
                   )}
-                  {filteredUsers.map((u) => (
-                    <tr key={u.id}>
+                  {adminDirectoryUsers.map((u) => (
+                    <tr key={u.email}>
                       <td>{u.email}</td>
                       <td><span className={styles.planBadge}>{u.plan}</span></td>
                       <td>
                         <span style={{
-                          color: u.status === 'active' ? '#34d399' : u.status === 'trialing' ? '#f59e0b' : '#f87171',
                           fontWeight: 600, textTransform: 'capitalize',
-                        }}>{u.status}</span>
+                          color: u.subscription_status === 'active' ? '#34d399' : '#94a3b8',
+                        }}>{u.subscription_status}</span>
                       </td>
-                      <td>{u.joined}</td>
-                      <td>{u.nextBill}</td>
-                      <td className={u.revenue > 0 ? styles.positive : ''}>{u.revenue > 0 ? `£${u.revenue}` : '—'}</td>
+                      <td>{u.is_active ? 'Yes' : 'No'}</td>
+                      <td>{u.is_admin ? 'Yes' : 'No'}</td>
+                      <td>{u.is_two_factor_enabled ? 'On' : 'Off'}</td>
                       <td>
-                        <button
-                          className={styles.tableActionButton}
-                          onClick={() => pushToast('info', `User ${u.email} details — connect live API to action.`)}
-                          type="button"
-                        >
-                          Manage
-                        </button>
+                        <Link className={styles.tableActionButton} href={`/admin/users/${encodeURIComponent(u.email)}`}>
+                          View
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -1288,7 +1380,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       {/* ══════════════════════════════════════════════════════════════════
           PARTNER BILLING TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'billing' && (
+      {section === 'billing' && (
         <>
           <div className={styles.subContainer}>
             <div className={styles.sectionHeader}>
@@ -1337,7 +1429,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
   )}
 
       {/* ══ LEAD OPS TAB ═══════════════════════════════════════════════════ */}
-      {activeTab === 'leadops' && (
+      {section === 'leadops' && (
         <>
       <div className={styles.subContainer}>
         <div className={styles.sectionHeader}>
@@ -1622,7 +1714,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       {/* ══════════════════════════════════════════════════════════════════
           INVOICES TAB
       ══════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'invoices' && (
+      {section === 'invoices' && (
         <>
       <div className={styles.subContainer}>
         <div className={styles.sectionHeader}>
@@ -1730,7 +1822,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
   )}
 
       {/* ══ AI AGENT TAB ════════════════════════════════════════════════════ */}
-      {activeTab === 'ai-agent' && (
+      {section === 'ai-agent' && (
         <>
           <div className={styles.subContainer}>
             <div className={styles.sectionHeader}>
@@ -1854,7 +1946,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
       )}
 
       {/* ══ SYSTEM HEALTH TAB ═══════════════════════════════════════════════ */}
-      {activeTab === 'health' && (
+      {section === 'health' && (
         <>
           <div className={styles.subContainer}>
             <div className={styles.sectionHeader}>
@@ -1877,7 +1969,7 @@ export default function AdminPage({ token, user }: AdminPageProps) {
                       <span className={styles.healthDot}>{s === 'online' ? '🟢' : s === 'checking' ? '🟡' : s === 'offline' ? '🔴' : '⚪'}</span>
                       <strong className={styles.healthName}>{svc.name}</strong>
                     </div>
-                    <p className={styles.healthPort}>Port {svc.port}</p>
+                    <p className={styles.healthPort}>Route {svc.route}</p>
                     <p className={styles.healthStatus} style={{ color: statusColor(s) }}>
                       {s === 'online' ? 'Online' : s === 'checking' ? 'Checking...' : s === 'offline' ? 'Offline' : 'Not checked'}
                     </p>
@@ -1923,127 +2015,119 @@ export default function AdminPage({ token, user }: AdminPageProps) {
         </>
       )}
 
-      {activeTab === 'support' && (
+      {section === 'support' && (
         <>
-          {/* KPI strip */}
           <div className={styles.kpiGrid}>
             <div className={styles.kpiCard}>
-              <p className={styles.kpiLabel}>Total Tickets</p>
-              <p className={styles.kpiValue}>{MOCK_TICKETS.length}</p>
-              <p className={styles.kpiSub}>All time (demo)</p>
+              <p className={styles.kpiLabel}>Total tickets</p>
+              <p className={styles.kpiValue}>{supportStats?.total_tickets ?? supportTickets?.length ?? '—'}</p>
+              <p className={styles.kpiSub}>From support-ai-service</p>
             </div>
             <div className={styles.kpiCard}>
               <p className={styles.kpiLabel}>Open</p>
               <p className={styles.kpiValue} style={{ color: '#f87171' }}>
-                {MOCK_TICKETS.filter(t => t.status === 'open').length}
+                {supportStats?.open_tickets ?? '—'}
               </p>
               <p className={styles.kpiSub}>Need response</p>
             </div>
             <div className={styles.kpiCard}>
-              <p className={styles.kpiLabel}>Resolved Today</p>
-              <p className={styles.kpiValue} style={{ color: '#34d399' }}>3</p>
-              <p className={styles.kpiSub}>March 5, 2026</p>
+              <p className={styles.kpiLabel}>Resolved (all time)</p>
+              <p className={styles.kpiValue} style={{ color: '#34d399' }}>
+                {supportStats?.resolved_tickets ?? '—'}
+              </p>
+              <p className={styles.kpiSub}>Per service stats</p>
             </div>
             <div className={styles.kpiCard}>
-              <p className={styles.kpiLabel}>Avg Rating</p>
+              <p className={styles.kpiLabel}>Avg rating</p>
               <p className={styles.kpiValue} style={{ color: '#f59e0b' }}>
-                {(MOCK_FEEDBACK.reduce((s, f) => s + f.rating, 0) / MOCK_FEEDBACK.length).toFixed(1)} ⭐
+                {supportStats != null ? `${supportStats.avg_rating.toFixed(1)} / 5` : '—'}
               </p>
-              <p className={styles.kpiSub}>Last 30 days</p>
+              <p className={styles.kpiSub}>Feedback in DB</p>
             </div>
           </div>
 
-          {/* Tickets table */}
+          {supportApiError && (
+            <p style={{ color: '#f87171', marginBottom: '1rem', fontSize: '0.9rem' }}>{supportApiError}</p>
+          )}
+
           <div className={styles.subContainer}>
             <div className={styles.subHeader}>
-              <h3 className={styles.subTitle}>Support Tickets</h3>
+              <h3 className={styles.subTitle}>Support tickets</h3>
               <a
-                href="http://localhost:3001"
+                href={clientSurfaceUrl('/support')}
                 target="_blank"
                 rel="noopener noreferrer"
                 className={styles.actionBtn}
                 style={{ textDecoration: 'none' }}
               >
-                Open AI Support Portal ↗
+                Open client Support
               </a>
             </div>
-            <table className={styles.dataTable}>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>User</th>
-                  <th>Subject</th>
-                  <th>Category</th>
-                  <th>Priority</th>
-                  <th>Status</th>
-                  <th>Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {MOCK_TICKETS.map(t => (
-                  <tr key={t.id}>
-                    <td><code style={{ fontSize: '.8rem' }}>{t.id}</code></td>
-                    <td style={{ fontSize: '.85rem' }}>{t.user}</td>
-                    <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject}</td>
-                    <td>{t.category}</td>
-                    <td>
-                      <span style={{
-                        padding: '.2rem .55rem',
-                        borderRadius: 20,
-                        fontSize: '.78rem',
-                        fontWeight: 600,
-                        background: t.priority === 'high' ? '#7f1d1d' : t.priority === 'medium' ? '#78350f' : '#14532d',
-                        color:      t.priority === 'high' ? '#f87171' : t.priority === 'medium' ? '#fbbf24' : '#34d399',
-                      }}>
-                        {t.priority}
-                      </span>
-                    </td>
-                    <td>
-                      <span style={{
-                        padding: '.2rem .55rem',
-                        borderRadius: 20,
-                        fontSize: '.78rem',
-                        fontWeight: 600,
-                        background: t.status === 'open' ? '#1e3a5f' : '#14532d',
-                        color:      t.status === 'open' ? '#93c5fd' : '#34d399',
-                      }}>
-                        {t.status}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: '.82rem', color: 'var(--text-muted)' }}>{t.created}</td>
+            {supportTickets === null ? (
+              <p style={{ color: 'var(--lp-text-muted)' }}>Loading tickets…</p>
+            ) : supportTickets.length === 0 ? (
+              <p style={{ color: 'var(--lp-text-muted)' }}>No tickets yet.</p>
+            ) : (
+              <table className={styles.dataTable}>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>User</th>
+                    <th>Subject</th>
+                    <th>Category</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Created</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {supportTickets.map((row) => (
+                    <tr key={row.id}>
+                      <td><code style={{ fontSize: '.8rem' }}>{row.id}</code></td>
+                      <td style={{ fontSize: '.85rem' }}>{row.user_email}</td>
+                      <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.subject}</td>
+                      <td>{row.category}</td>
+                      <td>
+                        <span style={{
+                          padding: '.2rem .55rem',
+                          borderRadius: 20,
+                          fontSize: '.78rem',
+                          fontWeight: 600,
+                          background: row.priority === 'high' ? '#7f1d1d' : row.priority === 'medium' ? '#78350f' : '#14532d',
+                          color: row.priority === 'high' ? '#f87171' : row.priority === 'medium' ? '#fbbf24' : '#34d399',
+                        }}>
+                          {row.priority}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{
+                          padding: '.2rem .55rem',
+                          borderRadius: 20,
+                          fontSize: '.78rem',
+                          fontWeight: 600,
+                          background: row.status === 'open' ? '#1e3a5f' : '#14532d',
+                          color: row.status === 'open' ? '#93c5fd' : '#34d399',
+                        }}>
+                          {row.status}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: '.82rem', color: 'var(--text-muted)' }}>
+                        {new Date(row.created_at).toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
 
-          {/* Feedback table */}
           <div className={styles.subContainer} style={{ marginTop: '1.5rem' }}>
             <div className={styles.subHeader}>
-              <h3 className={styles.subTitle}>Customer Feedback</h3>
+              <h3 className={styles.subTitle}>Customer feedback</h3>
             </div>
-            <table className={styles.dataTable}>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>User</th>
-                  <th>Rating</th>
-                  <th>Comment</th>
-                </tr>
-              </thead>
-              <tbody>
-                {MOCK_FEEDBACK.map((f, i) => (
-                  <tr key={i}>
-                    <td style={{ fontSize: '.82rem', color: 'var(--text-muted)' }}>{f.date}</td>
-                    <td style={{ fontSize: '.85rem' }}>{f.user}</td>
-                    <td>
-                      {'⭐'.repeat(f.rating)}
-                    </td>
-                    <td style={{ fontSize: '.85rem' }}>{f.comment}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <p style={{ color: 'var(--lp-text-muted)', fontSize: '0.9rem' }}>
+              Row-level feedback is not listed via API; use average rating above from GET /support/stats.
+            </p>
           </div>
         </>
       )}

@@ -13,18 +13,23 @@ Endpoints:
 """
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, List, Optional, cast
 
 from fastapi import (
     Depends,
     FastAPI,
+    Header,
     HTTPException,
     Query,
     WebSocket,
     WebSocketDisconnect,
+    status,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from jose import JWTError, jwt  # type: ignore[import-untyped]
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .agent import generate_response
@@ -34,7 +39,11 @@ from .models import (
     ChatStats,
     FeedbackCreate,
     FeedbackORM,
+    TicketAssignBody,
     TicketCreate,
+    TicketMessageCreate,
+    TicketMessageORM,
+    TicketMessageOut,
     TicketORM,
     TicketOut,
     engine,
@@ -48,10 +57,62 @@ logger = logging.getLogger("support-ai-service")
 # ── DB init ───────────────────────────────────────────────────────────────────
 Base.metadata.create_all(bind=engine)
 
+with engine.begin() as conn:
+    try:
+        conn.execute(text("ALTER TABLE tickets ADD COLUMN assigned_to VARCHAR"))
+    except Exception:
+        pass
+
+AUTH_SECRET_KEY = os.environ.get("AUTH_SECRET_KEY", "").strip()
+
+
+def _decode_support_jwt(authorization: str | None) -> dict[str, Any]:
+    if not AUTH_SECRET_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AUTH_SECRET_KEY is not configured",
+        )
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    token = authorization[7:].strip()
+    try:
+        return jwt.decode(token, AUTH_SECRET_KEY, algorithms=["HS256"])
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication token",
+        ) from exc
+
+
+def _jwt_allows_support_operator(payload: dict[str, Any]) -> bool:
+    if payload.get("is_admin"):
+        return True
+    perms = payload.get("perms")
+    if isinstance(perms, list) and "*" in {str(p) for p in perms}:
+        return True
+    scopes = payload.get("scopes")
+    if not isinstance(scopes, list):
+        return False
+    s = {str(x) for x in scopes}
+    return "support:*" in s or "support:read" in s or "support:write" in s
+
+
+def require_support_admin(
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any]:
+    payload = _decode_support_jwt(authorization)
+    if not _jwt_allows_support_operator(payload):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return payload
+
 # ── App ───────────────────────────────────────────────────────────────────────
 app = FastAPI(title="SelfMonitor Support AI Service", version="1.0.0")
-
-import os
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
 
@@ -131,6 +192,7 @@ def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
 
 @app.get("/tickets", response_model=List[TicketOut])
 def list_tickets(
+    _admin: dict = Depends(require_support_admin),
     status: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
     limit: int = Query(100, le=500),
@@ -147,16 +209,21 @@ def list_tickets(
 @app.patch("/tickets/{ticket_id}/status")
 def update_ticket_status(
     ticket_id: str,
-    status: str = Query(..., regex="^(open|in_progress|resolved|closed)$"),
+    _admin: dict = Depends(require_support_admin),
+    ticket_status: str = Query(
+        ...,
+        alias="status",
+        pattern="^(open|in_progress|resolved|closed)$",
+    ),
     db: Session = Depends(get_db),
 ) -> dict[str, str]:
     ticket = db.query(TicketORM).filter(TicketORM.id == ticket_id).first()
     if not ticket:
         raise HTTPException(404, "Ticket not found")
-    setattr(ticket, "status", status)
+    setattr(ticket, "status", ticket_status)
     setattr(ticket, "updated_at", datetime.now(timezone.utc))
     db.commit()
-    return {"id": ticket_id, "status": status}
+    return {"id": ticket_id, "status": ticket_status}
 
 
 # ── Feedback endpoint ──────────────────────────────────────────────────────────
@@ -172,7 +239,10 @@ def submit_feedback(
 
 # ── Stats (admin) ──────────────────────────────────────────────────────────────
 @app.get("/stats", response_model=ChatStats)
-def get_stats(db: Session = Depends(get_db)):
+def get_stats(
+    _admin: dict = Depends(require_support_admin),
+    db: Session = Depends(get_db),
+):
     total = db.query(TicketORM).count()
     open_ = db.query(TicketORM).filter(TicketORM.status == "open").count()
     resolved = db.query(TicketORM).filter(TicketORM.status == "resolved").count()
@@ -192,6 +262,77 @@ def get_stats(db: Session = Depends(get_db)):
         avg_rating=round(float(avg_rating), 1),
         total_sessions=sessions,
     )
+
+
+@app.get("/tickets/{ticket_id}/messages", response_model=List[TicketMessageOut])
+def list_ticket_messages(
+    ticket_id: str,
+    _admin: dict = Depends(require_support_admin),
+    db: Session = Depends(get_db),
+):
+    ticket = db.query(TicketORM).filter(TicketORM.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    rows = (
+        db.query(TicketMessageORM)
+        .filter(TicketMessageORM.ticket_id == ticket_id)
+        .order_by(TicketMessageORM.created_at.asc())
+        .all()
+    )
+    return rows
+
+
+@app.post("/tickets/{ticket_id}/messages", response_model=TicketMessageOut, status_code=201)
+def add_ticket_message(
+    ticket_id: str,
+    payload: TicketMessageCreate,
+    _admin: dict = Depends(require_support_admin),
+    db: Session = Depends(get_db),
+):
+    ticket = db.query(TicketORM).filter(TicketORM.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    msg = TicketMessageORM(
+        ticket_id=ticket_id,
+        author_role=payload.author_role,
+        body=payload.body,
+    )
+    db.add(msg)
+    ticket.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(msg)
+    return msg
+
+
+@app.patch("/tickets/{ticket_id}/assign")
+def assign_ticket(
+    ticket_id: str,
+    body: TicketAssignBody,
+    _admin: dict = Depends(require_support_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    ticket = db.query(TicketORM).filter(TicketORM.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    ticket.assigned_to = body.assigned_to
+    ticket.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"id": ticket_id, "assigned_to": body.assigned_to}
+
+
+@app.patch("/tickets/{ticket_id}/resolve")
+def resolve_ticket(
+    ticket_id: str,
+    _admin: dict = Depends(require_support_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    ticket = db.query(TicketORM).filter(TicketORM.id == ticket_id).first()
+    if not ticket:
+        raise HTTPException(404, "Ticket not found")
+    ticket.status = "resolved"
+    ticket.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"id": ticket_id, "status": "resolved"}
 
 
 # ── Health ────────────────────────────────────────────────────────────────────

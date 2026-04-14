@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
-const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || 'http://localhost:8009';
+const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || '/api/partners';
 
 type MarketplacePageProps = {
   token: string;
@@ -96,7 +96,7 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
   };
 
   return (
-    <div className={styles.dashboard}>
+    <div className={styles.pageContainer}>
       <h1>{t('nav.marketplace')}</h1>
       <p>{t('marketplace.description')}</p>
       {message && <p className={styles.message}>{message}</p>}
@@ -143,3 +143,4 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
     </div>
   );
 }
+

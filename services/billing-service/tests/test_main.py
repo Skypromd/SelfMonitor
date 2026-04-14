@@ -1,9 +1,11 @@
 """Tests for billing-service."""
 import os
+import time
 
 os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key")
 
 import pytest
+from jose import jwt
 from app.main import _upsert_subscription, app, init_db
 from fastapi.testclient import TestClient
 
@@ -11,6 +13,19 @@ from fastapi.testclient import TestClient
 init_db()
 
 client = TestClient(app)
+
+
+def _bearer(sub: str, is_admin: bool = False) -> dict[str, str]:
+    tok = jwt.encode(
+        {
+            "sub": sub,
+            "is_admin": is_admin,
+            "exp": int(time.time()) + 3600,
+        },
+        os.environ["AUTH_SECRET_KEY"],
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {tok}"}
 
 
 def test_health():
@@ -58,11 +73,32 @@ def test_checkout_unknown_plan():
 
 
 def test_subscription_not_found():
-    resp = client.get("/subscription/nobody@example.com")
+    resp = client.get(
+        "/subscription/nobody@example.com",
+        headers=_bearer("nobody@example.com"),
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["plan"] == "free"
     assert data["status"] == "none"
+
+
+def test_subscription_forbidden_wrong_user():
+    resp = client.get(
+        "/subscription/other@example.com",
+        headers=_bearer("me@example.com", is_admin=False),
+    )
+    assert resp.status_code == 403
+
+
+def test_analytics_requires_admin():
+    resp = client.get("/analytics/overview", headers=_bearer("u@x.com", is_admin=False))
+    assert resp.status_code == 403
+
+
+def test_analytics_admin_ok():
+    resp = client.get("/analytics/overview", headers=_bearer("admin@x.com", is_admin=True))
+    assert resp.status_code == 200
 
 
 def test_subscription_upsert_and_read(tmp_path):
@@ -78,7 +114,10 @@ def test_subscription_upsert_and_read(tmp_path):
         stripe_session_id="cs_test_123",
     )
 
-    resp = client.get("/subscription/user@example.com")
+    resp = client.get(
+        "/subscription/user@example.com",
+        headers=_bearer("user@example.com"),
+    )
     # Client uses the patched DB path
     assert resp.status_code == 200
     billing_main.DB_PATH = old_db

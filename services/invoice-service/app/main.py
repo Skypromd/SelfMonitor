@@ -31,7 +31,7 @@ app = FastAPI(
 )
 
 # Security
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -80,40 +80,94 @@ async def create_invoice(
         # Create invoice
         invoice = await crud.create_invoice(db, user_id=user_id, invoice_data=calculated_invoice)
 
-        # Sync to transactions service in background
         sync = InvoiceTransactionSync()
         background_tasks.add_task(
             sync.sync_invoice_to_transactions,
-            invoice.id,
-            token
+            invoice,
+            token,
         )
 
         return invoice
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create invoice: {str(e)}")
 
+@app.get("/invoices/chase-log", tags=["invoices"])
+async def get_chase_log(
+    user_id: str = Depends(get_current_user_id),
+):
+    """Get chase history for current user"""
+    return {"entries": [c for c in _chase_log if c.get("user_id") == user_id]}
+
+
+@app.get("/invoices/overdue/list", tags=["invoices"])
+async def list_overdue_invoices(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all overdue invoices with chase history"""
+    filters = schemas.InvoiceReportFilters()
+    invoices = await crud.get_invoices_filtered(db, user_id, filters)
+    overdue = []
+    for inv in invoices:
+        if inv.due_date and inv.status in ("sent", "partially_paid") and inv.due_date < datetime.utcnow():
+            days = (date.today() - inv.due_date.date()).days
+            chases = [c for c in _chase_log if c["invoice_id"] == str(inv.id) and c.get("user_id") == user_id]
+            overdue.append({
+                "invoice_id": str(inv.id),
+                "invoice_number": inv.invoice_number,
+                "client_name": inv.client_name,
+                "client_email": inv.client_email,
+                "total_amount": float(inv.total_amount),
+                "due_date": inv.due_date.date().isoformat(),
+                "days_overdue": days,
+                "chase_count": len(chases),
+                "last_chased": chases[-1]["sent_at"] if chases else None,
+            })
+    overdue.sort(key=lambda x: x["days_overdue"], reverse=True)
+    return {"overdue_count": len(overdue), "invoices": overdue}
+
+
+@app.get("/invoices/recurring", tags=["invoices"])
+async def list_recurring_invoices(
+    user_id: str = Depends(get_current_user_id),
+):
+    """List all recurring invoice configurations"""
+    return {"recurring_invoices": [r for r in _recurring_configs if r.get("user_id") == user_id]}
+
+
 @app.get("/invoices", response_model=List[schemas.Invoice], tags=["invoices"])
 async def list_invoices(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(25, ge=1, le=100),
     status: Optional[schemas.InvoiceStatus] = None,
     company_id: Optional[str] = None,
-    client_name: Optional[str] = None,
+    search: Optional[str] = Query(None, description="Search by client name or invoice number"),
+    sort_by: str = Query("created_at", description="Sort field: created_at|due_date|total_amount|client_name|status"),
+    sort_order: str = Query("desc", description="Sort direction: asc|desc"),
     start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None,
 ):
-    """List user's invoices with filtering"""
+    """List user's invoices with filtering, search and sorting"""
     filters = schemas.InvoiceReportFilters(
         start_date=start_date,
         end_date=end_date,
         status=[status] if status else None,
-        client_name=client_name,
-        company_id=company_id
+        client_name=search,
+        company_id=company_id,
     )
 
-    invoices = await crud.get_invoices_filtered(db, user_id=user_id, filters=filters, skip=skip, limit=limit)
+    invoices = await crud.get_invoices_filtered(
+        db,
+        user_id=user_id,
+        filters=filters,
+        skip=skip,
+        limit=limit,
+        sort_by=sort_by,
+        sort_order=sort_order,
+        search=search,
+    )
     return invoices
 
 @app.get("/invoices/{invoice_id}", response_model=schemas.Invoice, tags=["invoices"])
@@ -453,9 +507,11 @@ async def chase_invoice(
 
     days_overdue = (date.today() - invoice.due_date.date()).days if invoice.due_date else 0
 
+    user_chases = [c for c in _chase_log if c["invoice_id"] == invoice_id and c.get("user_id") == user_id]
     chase_entry = {
         "invoice_id": invoice_id,
-        "chase_number": len([c for c in _chase_log if c["invoice_id"] == invoice_id]) + 1,
+        "user_id": user_id,
+        "chase_number": len(user_chases) + 1,
         "sent_at": datetime.utcnow().isoformat(),
         "days_overdue": days_overdue,
         "status": "sent",
@@ -471,39 +527,6 @@ async def chase_invoice(
         "message": chase_entry["message"],
     }
 
-@app.get("/invoices/overdue/list", tags=["invoices"])
-async def list_overdue_invoices(
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all overdue invoices with chase history"""
-    filters = schemas.InvoiceReportFilters()
-    invoices = await crud.get_invoices_filtered(db, user_id, filters)
-    overdue = []
-    for inv in invoices:
-        if inv.due_date and inv.status in ("sent", "partially_paid") and inv.due_date < datetime.utcnow():
-            days = (date.today() - inv.due_date.date()).days
-            chases = [c for c in _chase_log if c["invoice_id"] == str(inv.id)]
-            overdue.append({
-                "invoice_id": str(inv.id),
-                "invoice_number": inv.invoice_number,
-                "client_name": inv.client_name,
-                "client_email": inv.client_email,
-                "total_amount": float(inv.total_amount),
-                "due_date": inv.due_date.date().isoformat(),
-                "days_overdue": days,
-                "chase_count": len(chases),
-                "last_chased": chases[-1]["sent_at"] if chases else None,
-            })
-    overdue.sort(key=lambda x: x["days_overdue"], reverse=True)
-    return {"overdue_count": len(overdue), "invoices": overdue}
-
-@app.get("/invoices/chase-log", tags=["invoices"])
-async def get_chase_log(
-    user_id: str = Depends(get_current_user_id),
-):
-    """Get full chase history"""
-    return {"entries": _chase_log}
 
 # === RECURRING INVOICE ENDPOINTS ===
 
@@ -549,12 +572,6 @@ async def create_recurring_invoice(
         "next_due_date": config.next_due_date,
     }
 
-@app.get("/invoices/recurring", tags=["invoices"])
-async def list_recurring_invoices(
-    user_id: str = Depends(get_current_user_id),
-):
-    """List all recurring invoice configurations"""
-    return {"recurring_invoices": _recurring_configs}
 
 @app.delete("/invoices/recurring/{recurring_id}", tags=["invoices"])
 async def cancel_recurring_invoice(

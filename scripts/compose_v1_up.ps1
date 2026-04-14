@@ -39,7 +39,10 @@ $services = [System.Collections.ArrayList]@(
   "mtd-agent",
   "invoice-service",
   "billing-service",
-  "localization-service"
+  "partner-registry",
+  "localization-service",
+  "analytics-service",
+  "support-ai-service"
 )
 
 if ($env:V1_INCLUDE_QNA_VECTOR -eq "1") {

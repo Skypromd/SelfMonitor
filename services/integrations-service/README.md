@@ -16,7 +16,7 @@ Facades external API integrations.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | AUTH_SECRET_KEY | Yes | - | JWT signing key |
-| INTEGRATIONS_DB_PATH | No | /tmp/integrations.db | Path to the SQLite integrations database |
+| INTEGRATIONS_DB_PATH | No | `/tmp/integrations.db` | Writable path for SQLite (required in Docker; app default matches this) |
 | INTEGRATIONS_PROCESSING_DELAY_SECONDS | No | 0.25 | Simulated HMRC processing delay |
 
 ## Running Locally

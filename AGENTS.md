@@ -15,7 +15,8 @@
 - 33 Docker containers, 14 mobile screens (Revolut-style), 28 web pages
 
 **Key files for context:**
-- `README.md` — full feature list, API endpoints, architecture
+- `README.md` — full feature list, API endpoints, architecture, **web portal deploy** (API rewrites, practolog, nginx)
+- `apps/web-portal/.env.example` — template for `NEXT_PUBLIC_*` and operator subdomain
 - `ROADMAP_TODO.md` — 4-phase launch plan (109 checkboxes)
 - `MONETIZATION_PLAN.md` — providers, 7 revenue streams, unit economics to £1M MRR
 - `BANK_SYNC_ECONOMICS.md` — sync model: button-only, no auto-sync, 92%+ margin
@@ -50,7 +51,14 @@ cd apps/web-portal
 npm install --no-package-lock
 npm run dev
 ```
-Dev server runs on `http://localhost:3000`. The `.env.local` file points API requests to `http://localhost:8000/api`.
+Dev server runs on `http://localhost:3000`.
+
+**Deploy / API wiring (read `README.md` → “Deploy: web portal ↔ API gateway”):**
+
+- **`apps/web-portal/.env.local`:** Use **relative** `NEXT_PUBLIC_*` URLs (`/api`, `/api/auth`, …) so the browser only talks to **:3000**; `next.config.js` **rewrites** forward `/api/*` to the nginx gateway (default upstream `http://localhost:8000`). Do not point `NEXT_PUBLIC_*` at `http://localhost:8000` in the browser unless nginx CORS is correctly set for every path you call.
+- **Operator subdomain `practolog` (optional):** Isolates operator UI in another origin (`sessionStorage` separate from clients). When `NEXT_PUBLIC_ADMIN_SUBDOMAIN_ENABLED=1`, set `NEXT_PUBLIC_ADMIN_HOST` (e.g. `practolog.localhost` dev, `practolog.example.com` prod), `NEXT_PUBLIC_CLIENT_ORIGIN`, `NEXT_PUBLIC_ADMIN_ORIGIN`. Middleware: `apps/web-portal/middleware.ts`. Defaults and examples: `.env.local` comments.
+- **nginx:** After changing gateway config, `docker compose up -d --build nginx-gateway`. CORS for direct :8000 access: `nginx/snippets/cors_api_gateway.conf`.
+- **Admin login:** `/admin/login`; admin user from bootstrap env, not public `/register`.
 
 ### Running the Mobile App (React Native / Expo)
 
@@ -114,7 +122,6 @@ The repo uses [cspell](https://cspell.org/) configured in `cspell.json`.
 - `ai-agent-service` uses `langchain` as an optional dependency — all imports are wrapped in `try/except ImportError`. If langchain is not installed the agent falls back to direct OpenAI calls.
 - `mtd-agent`: passing an explicit empty string `""` for `openai_api_key` disables OpenAI (does **not** fall back to the `OPENAI_API_KEY` env var). This is intentional for test isolation.
 - In `ai-agent-service` conftest, all async fixture methods must use `AsyncMock` (not `Mock`), and `get_available_tools()` must return a `dict`, not a list.
-- **PostgreSQL databases must be created manually**: The default Postgres image only creates `db_user_profile`. Services that use separate DBs (`db_transactions`, `db_compliance`, `db_documents`, `db_consent`, `db_partner`, `db_invoices`, `db_referral`) will crash on startup until you create them. After `docker compose up -d postgres-master` and it's healthy, run: `for db in db_transactions db_compliance db_documents db_consent db_partner db_invoices db_referral; do docker exec postgres_master psql -U user -d db_user_profile -c "CREATE DATABASE $db;"; done` — then restart the affected services.
-- **`integrations-service` SQLite path**: The service tries to write `integrations.db` to `/code/` but runs as `appuser` (no write access). Set `INTEGRATIONS_DB_PATH=/tmp/integrations.db` in the environment or use `docker compose run -d --name integrations-service -e INTEGRATIONS_DB_PATH=/tmp/integrations.db integrations-service`.
-- **`security-service`**: Build fails due to missing `package-lock.json`. This is an optional service and can be skipped for core development.
-- **`security-proxy`**: Requires SSL certs in `security/ssl/` which are not committed. Create an empty `security/ssl/` dir if compose warns, or skip this service.
+- **Postgres (first boot):** `postgres-master` mounts `infra/postgres/docker-init/` — on an **empty** data directory it creates `db_invoices`, `db_transactions`, `db_compliance`, `db_consent`, `db_documents`, `db_partner`, `db_referral`, and `mlflow` in addition to `POSTGRES_DB`. If you already have a volume from before this init script, create those databases once manually or recreate the volume.
+- **integrations-service:** SQLite file must be on a **writable** path. Compose sets `INTEGRATIONS_DB_PATH=/tmp/integrations.db` by default; the app default matches when env is unset locally.
+- **auth-service:** `tests/test_auth_service_main.py` targets a removed in-memory user store and is **ignored** via `services/auth-service/pytest.ini`. Use `tests/test_main.py` for the SQLite-backed API.

@@ -2,9 +2,8 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { FormEvent, useState } from 'react';
+import { loginWithPassword } from '../lib/authLogin';
 import styles from '../styles/Home.module.css';
-
-const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
 
 type LoginPageProps = { onLoginSuccess: (token: string) => void };
 
@@ -24,32 +23,26 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     if (!email.trim() || !password.trim()) { setError('Please enter your email and password.'); return; }
     setLoading(true);
     try {
-      const formData = new URLSearchParams();
-      formData.append('username', email.trim());
-      formData.append('password', password);
       const code = totpOverride || totpCode;
-      if (code) formData.append('scope', `totp:${code}`);
-
-      const res = await fetch(`${AUTH_SERVICE_URL}/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
+      const result = await loginWithPassword({
+        email: email.trim(),
+        password,
+        totpCode: code || undefined,
       });
-      const data = await res.json();
 
-      if (res.status === 403 && data.detail === '2FA_REQUIRED') {
+      if (!result.ok && result.status === 403 && result.detail === '2FA_REQUIRED') {
         setTotpRequired(true);
         setTotpCode('');
         setLoading(false);
         return;
       }
-      if (res.status === 403 && data.detail === 'ADMIN_2FA_SETUP_REQUIRED') {
+      if (!result.ok && result.status === 403 && result.detail === 'ADMIN_2FA_SETUP_REQUIRED') {
         setError('Admin accounts require two-factor authentication. Please enable 2FA in Security settings first, then log in again.');
         setLoading(false);
         return;
       }
-      if (!res.ok) throw new Error(data.detail || 'Login failed');
-      onLoginSuccess(data.access_token);
+      if (!result.ok) throw new Error(result.detail || 'Login failed');
+      onLoginSuccess(result.access_token);
     } catch (err: unknown) {
       if (err instanceof TypeError && err.message === 'Failed to fetch') {
         setError('Connection failed. Please try again.');
