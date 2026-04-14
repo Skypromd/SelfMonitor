@@ -1,11 +1,16 @@
 """
 AI Agent core — intent classification + response generation.
-Currently uses a rule-based mock. Replace `_call_llm()` with OpenAI/Anthropic call.
+Uses OpenAI GPT when available, falls back to rule-based responses.
 """
 
+import logging
+import os
 from typing import Any, Optional
 
 from .knowledge_base import GOODBYES, GREETINGS, THANKS, search_kb
+
+log = logging.getLogger(__name__)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # ── Intent types ──────────────────────────────────────────────────────────────
 INTENT_GREETING = "greeting"
@@ -57,32 +62,33 @@ def classify_intent(message: str) -> str:
     return INTENT_UNKNOWN
 
 
-def _call_llm(  # pylint: disable=unused-argument
+def _call_llm(
     system_prompt: str, user_message: str, history: list[dict[str, Any]]
 ) -> str:
-    """
-    LLM adapter — MOCK implementation.
-    ------------------------------------
-    To switch to OpenAI GPT-4o:
-        import openai
-        client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    """LLM adapter — uses OpenAI GPT-4o when available, falls back to static response."""
+    if not OPENAI_API_KEY:
+        return _static_fallback(user_message)
+    try:
+        import openai  # type: ignore[import-untyped]
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
         messages = (
             [{"role": "system", "content": system_prompt}]
-            + history
+            + history[-10:]   # keep last 10 turns for context
             + [{"role": "user", "content": user_message}]
         )
-        resp = client.chat.completions.create(model="gpt-4o", messages=messages)
-        return resp.choices[0].message.content
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            max_tokens=512,
+            temperature=0.4,
+        )
+        return resp.choices[0].message.content or _static_fallback(user_message)
+    except Exception as exc:
+        log.warning("OpenAI call failed in support agent: %s", exc)
+        return _static_fallback(user_message)
 
-    To switch to Anthropic Claude:
-        import anthropic
-        client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        resp = client.messages.create(model="claude-3-5-sonnet-20241022", max_tokens=512,
-                                      system=system_prompt,
-                                      messages=history + [{"role": "user", "content": user_message}])
-        return resp.content[0].text
-    """
-    # --- Mock: echo back a generic helpful message ---
+
+def _static_fallback(user_message: str) -> str:
     return (
         "I understand your question. Based on our knowledge base, I recommend checking the relevant "
         "section in your dashboard. If this doesn't resolve the issue, I can create a support ticket "

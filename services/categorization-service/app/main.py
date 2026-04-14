@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import Annotated, Optional
 
@@ -5,6 +6,9 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 app = FastAPI(
     title="Categorization Service",
@@ -118,30 +122,67 @@ _CATEGORY_RULES: dict[str, list[str]] = {
     ],
 }
 
+_VALID_CATEGORIES = set(_CATEGORY_RULES.keys()) | {
+    "transport", "fuel", "mileage", "office_supplies", "professional_fees",
+    "legal", "accounting", "advertising", "marketing", "insurance",
+    "utilities", "rent", "home_office", "phone", "internet", "training",
+    "equipment", "tools", "software", "bank_charges", "staff_costs",
+    "cost_of_goods", "pension",
+}
+
+_LLM_SYSTEM = (
+    "You are a UK transaction categorizer for a self-employed tax tool. "
+    "Given a bank transaction description, return ONLY a single category slug from this list: "
+    + ", ".join(sorted(_VALID_CATEGORIES))
+    + ". If none fits, return 'other'. Return only the slug, no explanation."
+)
+
+
 def suggest_category_from_rules(description: str) -> Optional[str]:
     """Categorize transaction by matching merchant name against UK rules database."""
     desc_lower = description.lower().strip()
-
     best_match: Optional[str] = None
     best_match_len = 0
-
     for category, merchants in _CATEGORY_RULES.items():
         for merchant in merchants:
             if merchant in desc_lower and len(merchant) > best_match_len:
                 best_match = category
                 best_match_len = len(merchant)
-
     return best_match
+
+
+def _llm_categorize(description: str) -> Optional[str]:
+    """GPT fallback when rules don't match."""
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        import openai  # type: ignore[import-untyped]
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": _LLM_SYSTEM},
+                {"role": "user",   "content": description[:200]},
+            ],
+            max_tokens=20,
+            temperature=0,
+        )
+        slug = (resp.choices[0].message.content or "").strip().lower().replace(" ", "_")
+        return slug if slug in _VALID_CATEGORIES else None
+    except Exception as exc:
+        log.debug("LLM categorize failed: %s", exc)
+        return None
+
 
 @app.post("/categorize", response_model=CategorizationResponse)
 async def categorize_transaction(
     request: CategorizationRequest,
     _user_id: str = Depends(get_current_user_id),
 ):
-    """
-    Takes a transaction description and returns a suggested category.
-    """
+    """Rules first, GPT-4o-mini fallback for unknown vendors."""
     category = suggest_category_from_rules(request.description)
+    if category is None:
+        category = _llm_categorize(request.description)
     return CategorizationResponse(category=category)
 
 

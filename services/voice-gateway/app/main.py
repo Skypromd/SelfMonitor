@@ -67,12 +67,16 @@ app.add_middleware(
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-async def _ask_agent(user_id: str, text: str, language: str = "en") -> str:
+async def _ask_agent(user_id: str, text: str, language: str = "en", token: str = "") -> str:
     """Forward text to SelfMate AI agent and return its response."""
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             f"{AGENT_SERVICE_URL}/chat",
-            json={"user_id": user_id, "message": text, "language": language},
+            json={"message": text, "language": language, "session_id": f"voice_{user_id}"},
+            headers=headers,
         )
         resp.raise_for_status()
         data = resp.json()
@@ -116,6 +120,7 @@ async def voice_ws(websocket: WebSocket):
             msg = await websocket.receive_json()
             msg_type = msg.get("type")
             user_id  = msg.get("user_id", "anonymous")
+            token    = msg.get("token", "")  # JWT passed by client
 
             if msg_type == "audio":
                 # Step 1: STT
@@ -146,7 +151,7 @@ async def voice_ws(websocket: WebSocket):
                 if _is_mtd_question(text):
                     response_text = await _ask_mtd_agent(user_id, text, language=lang)
                 else:
-                    response_text = await _ask_agent(user_id, text, language=lang)
+                    response_text = await _ask_agent(user_id, text, language=lang, token=token)
             except Exception as exc:
                 log.error("Agent error: %s", exc)
                 response_text = "I'm having trouble connecting to the AI service right now. Please try again."
@@ -185,6 +190,8 @@ async def health():
 class TextRequest(BaseModel):
     user_id: str
     text: str
+    token: str = ""   # JWT for downstream agent auth
+    language: str = "en"
 
 
 @app.post("/voice/text")
@@ -192,9 +199,9 @@ async def voice_text(req: TextRequest):
     """Text-in → AI response text-out (no audio generation)."""
     try:
         if _is_mtd_question(req.text):
-            response = await _ask_mtd_agent(req.user_id, req.text)
+            response = await _ask_mtd_agent(req.user_id, req.text, language=req.language)
         else:
-            response = await _ask_agent(req.user_id, req.text)
+            response = await _ask_agent(req.user_id, req.text, language=req.language, token=req.token)
     except Exception as exc:
         response = f"Agent unavailable: {exc}"
     return {"user_id": req.user_id, "input": req.text, "response": response}

@@ -4,8 +4,8 @@ import type { CSSProperties } from 'react';
 import styles from '../styles/Home.module.css';
 
 
-const AI_AGENT_URL =
-  process.env.NEXT_PUBLIC_AI_AGENT_SERVICE_URL || '/api/agent';
+const AI_AGENT_URL       = process.env.NEXT_PUBLIC_AI_AGENT_SERVICE_URL    || '/api/agent';
+const ORCHESTRATOR_URL   = process.env.NEXT_PUBLIC_ORCHESTRATOR_SERVICE_URL || '/api/orchestrator';
 
 type Role = 'user' | 'assistant';
 
@@ -14,17 +14,20 @@ type Message = {
   role: Role;
   content: string;
   timestamp: Date;
+  warnings?: string[];
+  agentsUsed?: string[];
+  confidence?: number;
 };
 
 type AssistantPageProps = { token: string };
 
 const QUICK_PROMPTS = [
+  'Prepare my tax return for this year',
+  'How much tax do I owe?',
+  'Check my receipts and unmatched items',
+  'Analyse my income and expenses',
+  'What are my HMRC deadlines?',
   'What expenses can I claim as self-employed?',
-  'How do I reduce my tax bill this year?',
-  'Explain Class 2 and Class 4 National Insurance',
-  'What is the trading allowance?',
-  'When are my self assessment deadlines?',
-  'How does the £1,000 property allowance work?',
 ];
 
 export default function AssistantPage({ token }: AssistantPageProps) {
@@ -67,15 +70,25 @@ export default function AssistantPage({ token }: AssistantPageProps) {
     setLoading(true);
 
     try {
-      const res = await fetch(`${AI_AGENT_URL}/chat`, {
+      // Try orchestrator first — richer multi-agent response
+      let res = await fetch(`${ORCHESTRATOR_URL}/orchestrate`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          message: text.trim(),
-          session_id: sessionId,
-          context: { user_type: 'self_employed', currency: 'GBP', region: 'UK' },
-        }),
+        body: JSON.stringify({ message: text.trim(), session_id: sessionId, language: 'en' }),
       });
+
+      // Fallback to direct agent if orchestrator unavailable
+      if (!res.ok && (res.status === 503 || res.status === 502 || res.status === 404)) {
+        res = await fetch(`${AI_AGENT_URL}/chat`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            message: text.trim(),
+            session_id: sessionId,
+            context: { user_type: 'self_employed', currency: 'GBP', region: 'UK' },
+          }),
+        });
+      }
 
       if (res.ok) {
         const data = await res.json();
@@ -84,6 +97,9 @@ export default function AssistantPage({ token }: AssistantPageProps) {
           role: 'assistant',
           content: data.response || data.message || JSON.stringify(data),
           timestamp: new Date(),
+          warnings: data.warnings ?? [],
+          agentsUsed: data.agents_used ?? [],
+          confidence: data.confidence,
         };
         setMessages((prev) => [...prev, reply]);
       } else if (res.status === 503 || res.status === 500) {
@@ -92,7 +108,7 @@ export default function AssistantPage({ token }: AssistantPageProps) {
           {
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: "I'm having trouble connecting right now. Please check that the AI agent service is running, or try again shortly.",
+            content: "I'm having trouble connecting right now. Please try again shortly.",
             timestamp: new Date(),
           },
         ]);
@@ -103,7 +119,7 @@ export default function AssistantPage({ token }: AssistantPageProps) {
           {
             id: crypto.randomUUID(),
             role: 'assistant',
-            content: `Error: ${err.detail || res.statusText}`,
+            content: `Error: ${(err as any).detail || res.statusText}`,
             timestamp: new Date(),
           },
         ]);
@@ -114,7 +130,7 @@ export default function AssistantPage({ token }: AssistantPageProps) {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: 'Unable to reach the AI service. Please ensure the assistant service is running on port 8019.',
+          content: 'Unable to reach the AI service. Please ensure the backend is running.',
           timestamp: new Date(),
         },
       ]);
@@ -209,6 +225,24 @@ export default function AssistantPage({ token }: AssistantPageProps) {
                     {msg.content}
                   </p>
                 </div>
+                {msg.role === 'assistant' && msg.warnings && msg.warnings.length > 0 && (
+                  <div style={{ marginTop: 6 }}>
+                    {msg.warnings.map((w, i) => (
+                      <div key={i} style={{ fontSize: '0.78rem', color: '#b45309', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, padding: '4px 8px', marginTop: 3 }}>
+                        ⚠️ {w}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {msg.role === 'assistant' && msg.agentsUsed && msg.agentsUsed.length > 0 && (
+                  <div style={{ marginTop: 4, display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {msg.agentsUsed.map(a => (
+                      <span key={a} style={{ fontSize: '0.68rem', background: 'rgba(13,148,136,0.1)', color: 'var(--lp-accent-teal)', border: '1px solid rgba(13,148,136,0.2)', borderRadius: 999, padding: '1px 7px' }}>
+                        {a}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div style={{ fontSize: '0.72rem', color: 'var(--lp-text-muted)', marginTop: 3, textAlign: msg.role === 'user' ? 'right' : 'left' }}>
                   {formatTime(msg.timestamp)}
                 </div>

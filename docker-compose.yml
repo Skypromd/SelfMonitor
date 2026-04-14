@@ -1137,6 +1137,38 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  orchestrator-service:
+    build: ./services/orchestrator-service
+    container_name: orchestrator-service
+    environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      REDIS_URL: "redis://redis:6379/9"
+      TAX_ENGINE_URL: "http://tax-engine:80"
+      TRANSACTIONS_SERVICE_URL: "http://transactions-service:80"
+      DOCUMENTS_SERVICE_URL: "http://documents-service:80"
+      INTEGRATIONS_SERVICE_URL: "http://integrations-service:80"
+      SUPPORT_AI_SERVICE_URL: "http://support-ai-service:8020"
+      ADVICE_SERVICE_URL: "http://advice-service:80"
+      INVOICE_SERVICE_URL: "http://invoice-service:80"
+      CATEGORIZATION_SERVICE_URL: "http://categorization-service:80"
+      ORCHESTRATOR_MODEL: "gpt-4o"
+      AGENT_TIMEOUT_SECONDS: "25"
+    depends_on:
+      - redis
+      - tax-engine
+      - transactions-service
+      - documents-service
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   # High Availability Database Volumes
   postgres_master_data:
