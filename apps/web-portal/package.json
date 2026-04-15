@@ -4,7 +4,7 @@
   "private": true,
   "description": "Next.js frontend for the main web application.",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0",
     "dev:hint": "node -e \"console.log('Сначала поднимите API: из корня репозитория scripts/start_backend_v1.ps1 (или .sh), затем npm run dev')\"",
     "build": "next build",
     "start": "next start",

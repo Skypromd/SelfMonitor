@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Linking, Modal, StyleSheet, Text, View } from 'react-native';
+import { Modal, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -20,6 +20,12 @@ import { apiRequest } from '../services/api';
 import { enqueueCategoryUpdate, flushQueue, getQueueCount } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
+import {
+  bankingCallbackQueryString,
+  bankingRedirectUri,
+  openBankingAuthSession,
+  parseBankingCallbackUrl,
+} from '../../lib/bankingOAuth';
 
 type Transaction = {
   id: string;
@@ -51,8 +57,7 @@ export default function TransactionsScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [summary, setSummary] = useState({ income: 0, expenses: 0 });
   const [providers, setProviders] = useState<Provider[]>([]);
-  const [selectedProvider, setSelectedProvider] = useState('mock_bank');
-  const [consentUrl, setConsentUrl] = useState('');
+  const [selectedProvider, setSelectedProvider] = useState('saltedge');
   const [accountId, setAccountId] = useState('');
   const [manualAccountId, setManualAccountId] = useState('');
   const [csvFile, setCsvFile] = useState<PickedFile | null>(null);
@@ -176,36 +181,41 @@ export default function TransactionsScreen() {
       setConnectError(t('transactions.offline_connect_error'));
       return;
     }
+    if (!token) {
+      setConnectError(t('transactions.connect_error'));
+      return;
+    }
     try {
+      const redirectUri = bankingRedirectUri();
       const response = await apiRequest('/banking/connections/initiate', {
         method: 'POST',
         token,
         body: JSON.stringify({
           provider_id: selectedProvider,
-          redirect_uri: 'selfmonitor://banking/callback',
+          redirect_uri: redirectUri,
         }),
       });
       if (!response.ok) throw new Error(t('transactions.connect_error'));
       const data = await response.json();
-      setConsentUrl(data.consent_url || '');
-      if (data.consent_url) {
-        Linking.openURL(data.consent_url);
-      }
-    } catch (err: any) {
-      setConnectError(err.message || t('transactions.connect_error'));
-    }
-  };
+      const consentUrl = data.consent_url as string | undefined;
+      if (!consentUrl) throw new Error(t('transactions.connect_error'));
 
-  const handleGrant = async () => {
-    setConnectMessage('');
-    setConnectError('');
-    try {
-      const response = await apiRequest(`/banking/connections/callback?code=fake_auth_code&provider_id=${selectedProvider}`);
-      if (!response.ok) throw new Error(t('transactions.connect_error'));
-      const data = await response.json();
-      setAccountId(data.account_id || '');
+      const session = await openBankingAuthSession(consentUrl, redirectUri);
+      if (session.type !== 'success' || !session.url) {
+        if (session.type === 'dismiss') return;
+        throw new Error(t('transactions.connect_error'));
+      }
+
+      const params = parseBankingCallbackUrl(session.url);
+      const qs = bankingCallbackQueryString(params);
+      const cb = await apiRequest(`/banking/connections/callback?${qs}`, {
+        method: 'GET',
+        token,
+      });
+      if (!cb.ok) throw new Error(t('transactions.connect_error'));
+      const out = await cb.json();
+      setAccountId(String(out.connection_id || ''));
       setConnectMessage(t('transactions.connect_success'));
-      setConsentUrl('');
     } catch (err: any) {
       setConnectError(err.message || t('transactions.connect_error'));
     }
@@ -343,9 +353,6 @@ export default function TransactionsScreen() {
             ))}
           </View>
           <PrimaryButton title={t('transactions.connect_bank')} onPress={handleInitiate} variant="secondary" haptic="medium" disabled={isOffline} />
-          {consentUrl ? (
-            <PrimaryButton title={t('transactions.confirm_consent')} onPress={handleGrant} style={styles.secondaryButton} haptic="medium" disabled={isOffline} />
-          ) : null}
           {accountId ? (
             <View style={styles.connectedRow}>
               <Badge label={t('transactions.connected_badge')} tone="success" />

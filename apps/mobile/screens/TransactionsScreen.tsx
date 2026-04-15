@@ -12,6 +12,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, fontSize } from '../theme';
 import { apiCall } from '../api';
+import {
+  bankingCallbackQueryString,
+  bankingRedirectUri,
+  openBankingAuthSession,
+  parseBankingCallbackUrl,
+} from '../lib/bankingOAuth';
 
 const CATEGORIES = [
   'income',
@@ -41,15 +47,35 @@ export default function TransactionsScreen() {
 
   const connectBank = useCallback(async () => {
     setConnectLoading(true);
+    setConnectionStatus(null);
     try {
+      const redirectUri = bankingRedirectUri();
+      const providerId = (
+        process.env.EXPO_PUBLIC_OPEN_BANKING_PROVIDER || 'saltedge'
+      )
+        .trim()
+        .toLowerCase();
       const res = await apiCall('/banking/connections/initiate', {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ provider_id: providerId, redirect_uri: redirectUri }),
       });
       if (!res.ok) throw new Error('Failed to initiate bank connection');
       const data = await res.json();
-      setConnectionStatus(data.authorization_url || data.message || 'Connection initiated');
-      if (data.account_id) setAccountId(data.account_id);
+      const consentUrl = data.consent_url as string | undefined;
+      if (!consentUrl) throw new Error('No consent URL');
+
+      const session = await openBankingAuthSession(consentUrl, redirectUri);
+      if (session.type !== 'success' || !session.url) {
+        if (session.type === 'dismiss') return;
+        throw new Error('Bank connection cancelled');
+      }
+      const params = parseBankingCallbackUrl(session.url);
+      const qs = bankingCallbackQueryString(params);
+      const cb = await apiCall(`/banking/connections/callback?${qs}`, { method: 'GET' });
+      if (!cb.ok) throw new Error('Callback failed');
+      const out = await cb.json();
+      setAccountId(String(out.connection_id || ''));
+      setConnectionStatus(out.message || 'Bank connected');
     } catch (err: any) {
       Alert.alert('Error', err.message);
     } finally {

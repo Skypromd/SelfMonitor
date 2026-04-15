@@ -29,15 +29,15 @@ export function useNetworkStatus() {
       return;
     });
 
-    const subscription = Network.addNetworkStateListener
-      ? Network.addNetworkStateListener(updateStatus)
-      : null;
+    const id = setInterval(() => {
+      Network.getNetworkStateAsync().then(updateStatus).catch(() => {
+        return;
+      });
+    }, 8000);
 
     return () => {
       mounted = false;
-      if (subscription && 'remove' in subscription) {
-        subscription.remove();
-      }
+      clearInterval(id);
     };
   }, []);
 

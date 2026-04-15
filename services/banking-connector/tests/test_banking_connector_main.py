@@ -24,6 +24,7 @@ def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
             "sub": user_id,
             "plan": "starter",
             "bank_connections_limit": 10,
+            "bank_sync_daily_limit": 3,
             "transactions_per_month_limit": 500,
             "storage_limit_gb": 2,
         },
@@ -31,6 +32,14 @@ def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
         algorithm=AUTH_ALGORITHM,
     )
     return {"Authorization": f"Bearer {token}"}
+
+def test_sync_quota_returns_limits():
+    response = client.get("/connections/sync-quota", headers=get_auth_headers())
+    assert response.status_code == 200
+    data = response.json()
+    assert data.get("daily_limit") == 3
+    assert "used_today" in data and "remaining" in data
+
 
 def test_initiate_connection_success():
     """
@@ -58,7 +67,10 @@ async def test_callback_schedules_celery_task(mocker):
 
     # Use a dummy code to trigger the endpoint
     auth_code = "test-auth-code"
-    response = client.get(f"/connections/callback?code={auth_code}", headers=get_auth_headers())
+    response = client.get(
+        f"/connections/callback?code={auth_code}&provider_id=mock_bank",
+        headers=get_auth_headers(),
+    )
 
     assert response.status_code == 200
     data = response.json()

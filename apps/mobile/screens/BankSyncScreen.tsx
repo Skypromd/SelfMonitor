@@ -13,6 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
+import {
+  bankingCallbackQueryString,
+  bankingRedirectUri,
+  openBankingAuthSession,
+  parseBankingCallbackUrl,
+} from '../lib/bankingOAuth';
 
 type BankConnection = {
   id: string;
@@ -125,16 +131,46 @@ export default function BankSyncScreen() {
   const connectNewBank = useCallback(async () => {
     setConnectLoading(true);
     try {
+      const redirectUri = bankingRedirectUri();
+      const providerId = (
+        process.env.EXPO_PUBLIC_OPEN_BANKING_PROVIDER || 'saltedge'
+      )
+        .trim()
+        .toLowerCase();
       const res = await apiCall('/banking/connections/initiate', {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({ provider_id: providerId, redirect_uri: redirectUri }),
       });
-      if (!res.ok) throw new Error('Failed to initiate connection');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof errBody.detail === 'string' ? errBody.detail : 'Failed to initiate connection',
+        );
+      }
       const data = await res.json();
-      Alert.alert('Bank Connection', data.authorization_url || 'Connection initiated');
+      const consentUrl = data.consent_url as string | undefined;
+      if (!consentUrl) throw new Error('No consent URL from server');
+
+      const session = await openBankingAuthSession(consentUrl, redirectUri);
+      if (session.type !== 'success' || !session.url) {
+        if (session.type === 'dismiss') {
+          return;
+        }
+        throw new Error('Bank connection was cancelled or did not return a callback URL');
+      }
+
+      const params = parseBankingCallbackUrl(session.url);
+      const qs = bankingCallbackQueryString(params);
+      const cb = await apiCall(`/banking/connections/callback?${qs}`, { method: 'GET' });
+      if (!cb.ok) {
+        const errBody = await cb.json().catch(() => ({}));
+        throw new Error(typeof errBody.detail === 'string' ? errBody.detail : 'Callback failed');
+      }
+      const out = await cb.json();
+      Alert.alert('Bank connected', out.message || 'Your bank is linked.');
       fetchConnections();
     } catch (err: any) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error', err.message || 'Connection failed');
     } finally {
       setConnectLoading(false);
     }

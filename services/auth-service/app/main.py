@@ -276,10 +276,10 @@ def _seed_admin_user(conn: sqlite3.Connection) -> None:
         return
     conn.execute(
         """
-        INSERT INTO users (email, hashed_password, is_active, is_admin, is_two_factor_enabled, two_factor_secret)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (email, hashed_password, is_active, is_admin, is_two_factor_enabled, two_factor_secret, role)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (AUTH_ADMIN_EMAIL, get_password_hash(AUTH_ADMIN_PASSWORD), 1, 1, 0, None),
+        (AUTH_ADMIN_EMAIL, get_password_hash(AUTH_ADMIN_PASSWORD), 1, 1, 0, None, "admin"),
     )
     conn.commit()
 
@@ -540,11 +540,13 @@ def authenticate_user(email: str, password: str) -> Optional[User]:
         return None
     if not verify_password(password, str(row["hashed_password"])):
         return None
+    role = str(row.get("role") or ("admin" if row["is_admin"] else "user"))
     return User(
         email=str(row["email"]),
         is_active=bool(row["is_active"]),
         is_admin=bool(row["is_admin"]),
         is_two_factor_enabled=bool(row["is_two_factor_enabled"]),
+        role=role,
     )
 
 
@@ -1596,6 +1598,7 @@ class SubscriptionResponse(BaseModel):
 PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     "free": {
         "bank_connections": 1,
+        "bank_sync_daily_limit": 0,
         "transactions_per_month": 200,
         "storage_limit_gb": 1,
         "ai_categorization": False,
@@ -1612,6 +1615,7 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     },
     "starter": {
         "bank_connections": 1,
+        "bank_sync_daily_limit": 1,
         "transactions_per_month": 500,
         "storage_limit_gb": 2,
         "ai_categorization": True,
@@ -1628,6 +1632,7 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     },
     "growth": {
         "bank_connections": 2,
+        "bank_sync_daily_limit": 2,
         "transactions_per_month": 2000,
         "storage_limit_gb": 6,
         "ai_categorization": True,
@@ -1644,6 +1649,7 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     },
     "pro": {
         "bank_connections": 3,
+        "bank_sync_daily_limit": 3,
         "transactions_per_month": 5000,
         "storage_limit_gb": 10,
         "ai_categorization": True,
@@ -1733,6 +1739,7 @@ def _jwt_subscription_claims(email: str) -> dict[str, object]:
     return {
         "plan": plan,
         "bank_connections_limit": feats["bank_connections"],
+        "bank_sync_daily_limit": int(feats.get("bank_sync_daily_limit", 0)),
         "transactions_per_month_limit": feats["transactions_per_month"],
         "storage_limit_gb": int(feats.get("storage_limit_gb", 2)),
         "mortgage_reports": bool(feats.get("mortgage_reports", False)),

@@ -365,7 +365,7 @@ services:
       AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS: "${AUTH_RUNTIME_RETENTION_REFRESH_REVOKED_DAYS:-30}"
       AUTH_RUNTIME_CLEANUP_ENABLED: "${AUTH_RUNTIME_CLEANUP_ENABLED:-true}"
       AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS: "${AUTH_RUNTIME_CLEANUP_INTERVAL_SECONDS:-300}"
-      AUTH_DB_PATH: "/tmp/auth.db"
+      AUTH_DB_PATH: "/data/auth.db"
       # Локальная разработка: задайте в корневом .env (см. .env.example)
       AUTH_BOOTSTRAP_ADMIN: "${AUTH_BOOTSTRAP_ADMIN:-false}"
       AUTH_ADMIN_EMAIL: "${AUTH_ADMIN_EMAIL:-admin@example.com}"
@@ -373,6 +373,8 @@ services:
       AUTH_REQUIRE_ADMIN_2FA: "${AUTH_REQUIRE_ADMIN_2FA:-true}"
       APP_BASE_URL: "${APP_BASE_URL:-http://localhost:3000}"
       AUTH_CORS_EXTRA_ORIGINS: "${AUTH_CORS_EXTRA_ORIGINS:-http://practolog.localhost:3000}"
+    volumes:
+      - auth_service_data:/data
     # ports are no longer exposed directly
     networks:
       - default_network
@@ -479,6 +481,18 @@ services:
       VAULT_ADDR: "${BANKING_VAULT_ADDR:-http://vault:8200}"
       VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID}"
       BANKING_CONNECTIONS_STORE_PATH: "${BANKING_CONNECTIONS_STORE_PATH:-/data/banking_user_connections.json}"
+      BANKING_SYNC_USAGE_PATH: "${BANKING_SYNC_USAGE_PATH:-/data/bank_sync_usage.json}"
+      TRUELAYER_CLIENT_ID: "${TRUELAYER_CLIENT_ID:-}"
+      TRUELAYER_CLIENT_SECRET: "${TRUELAYER_CLIENT_SECRET:-}"
+      TRUELAYER_REDIRECT_URI: "${TRUELAYER_REDIRECT_URI:-http://localhost:3000/connect-bank/callback}"
+      TRUELAYER_PRODUCTION: "${TRUELAYER_PRODUCTION:-0}"
+      BANKING_OPEN_BANKING_PROVIDER: "${BANKING_OPEN_BANKING_PROVIDER:-saltedge}"
+      BANKING_OAUTH_REDIRECT_URI: "${BANKING_OAUTH_REDIRECT_URI:-http://localhost:3000/connect-bank/callback}"
+      SALTEDGE_BASE_URL: "${SALTEDGE_BASE_URL:-https://www.saltedge.com/api/v5}"
+      SALTEDGE_APP_ID: "${SALTEDGE_APP_ID:-}"
+      SALTEDGE_SECRET: "${SALTEDGE_SECRET:-}"
+      SALTEDGE_CUSTOMER_PREFIX: "${SALTEDGE_CUSTOMER_PREFIX:-selfmonitor}"
+      SALTEDGE_SCOPES: "${SALTEDGE_SCOPES:-accounts,transactions}"
     volumes:
       - banking_connections_data:/data
     networks:
@@ -1086,6 +1100,8 @@ services:
     depends_on:
       - auth-service
     environment:
+      AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      COMPLIANCE_SERVICE_URL: "${BILLING_COMPLIANCE_SERVICE_URL:-http://compliance-service:80}"
       STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
       STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
       STRIPE_PRICE_STARTER: "${STRIPE_PRICE_STARTER:-}"
@@ -1207,6 +1223,7 @@ volumes:
   elasticsearch_data:
   security_logs:
   support_data:
+  auth_service_data:
 
 networks:
   default_network:

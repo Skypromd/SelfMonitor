@@ -1,6 +1,25 @@
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'http://10.0.2.2:8000/api';
+const DEFAULT_EMULATOR_API = 'http://10.0.2.2:8000/api';
+
+function stripTrailingSlashes(s: string): string {
+  return s.replace(/\/+$/, '');
+}
+
+/** Nginx API prefix including `/api` (paths are like `/documents/upload`). */
+export const API_URL = stripTrailingSlashes(
+  process.env.EXPO_PUBLIC_API_URL ||
+    process.env.EXPO_PUBLIC_API_GATEWAY_URL ||
+    DEFAULT_EMULATOR_API
+);
+
+/** Host origin for `/api/auth/*` when `EXPO_PUBLIC_AUTH_SERVICE_URL` is unset. */
+export function getAuthServiceOrigin(): string {
+  const explicit = process.env.EXPO_PUBLIC_AUTH_SERVICE_URL?.trim();
+  if (explicit) return stripTrailingSlashes(explicit);
+  if (API_URL.endsWith('/api')) return stripTrailingSlashes(API_URL.slice(0, -4));
+  return stripTrailingSlashes(API_URL);
+}
 
 export async function getToken(): Promise<string | null> {
   return await SecureStore.getItemAsync('authToken');

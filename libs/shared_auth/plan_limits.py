@@ -21,11 +21,21 @@ _get_bearer_token, _ = build_jwt_auth_dependencies()
 _DEFAULT_FREE = {
     "plan": "free",
     "bank_connections_limit": 1,
+    "bank_sync_daily_limit": 0,
     "transactions_per_month_limit": 200,
     "storage_limit_gb": 1,
     "mortgage_reports": False,
     "advanced_analytics": False,
     "cash_flow_forecast": False,
+}
+
+# Fallback when JWT predates bank_sync_daily_limit claim (align with BANK_SYNC_ECONOMICS.md).
+_BANK_SYNC_DAILY_BY_PLAN: dict[str, int] = {
+    "free": 0,
+    "starter": 1,
+    "growth": 2,
+    "pro": 3,
+    "business": 3,
 }
 
 # When JWT omits feature booleans (older tokens), infer from plan — keep in sync with auth-service PLAN_FEATURES.
@@ -42,6 +52,7 @@ _PLAN_FEATURE_DEFAULTS: dict[str, dict[str, bool]] = {
 class PlanLimits:
     plan: str
     bank_connections_limit: int
+    bank_sync_daily_limit: int
     transactions_per_month_limit: int
     storage_limit_gb: int
     mortgage_reports: bool = False
@@ -84,9 +95,11 @@ def plan_limits_from_payload(payload: dict[str, Any]) -> PlanLimits:
             return _bool_claim(payload, key, inferred[key])
         return inferred[key]
 
+    sync_fallback = _BANK_SYNC_DAILY_BY_PLAN.get(plan, _DEFAULT_FREE["bank_sync_daily_limit"])
     return PlanLimits(
         plan=plan,
         bank_connections_limit=_int_claim(payload, "bank_connections_limit", _DEFAULT_FREE["bank_connections_limit"]),
+        bank_sync_daily_limit=_int_claim(payload, "bank_sync_daily_limit", sync_fallback),
         transactions_per_month_limit=_int_claim(
             payload,
             "transactions_per_month_limit",

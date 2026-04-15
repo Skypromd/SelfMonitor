@@ -98,6 +98,10 @@ class SaltedgeProvider(BankingProvider):
                 raise ValueError("Salt Edge connect session response missing connect URL.")
             return connect_url
 
+    async def fetch_transactions(self, connection_id: str) -> List[Dict[str, Any]]:
+        """Fetch normalized transaction dicts for an existing Salt Edge connection (used on sync)."""
+        return await self._fetch_transactions(connection_id)
+
     async def _fetch_transactions(self, connection_id: str) -> List[Dict[str, Any]]:
         url = f"{self.base_url}/transactions"
         params = {"connection_id": connection_id}

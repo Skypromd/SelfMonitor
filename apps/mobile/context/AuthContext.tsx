@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getToken, setToken as storeToken, removeToken } from '../api';
+import {
+  getToken,
+  setToken as storeToken,
+  removeToken,
+  getAuthServiceOrigin,
+} from '../api';
 
 type User = {
   email: string;
@@ -46,7 +51,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const params = new URLSearchParams();
     params.append('username', email);
     params.append('password', password);
-    const res = await fetch(`http://10.0.2.2:8000/api/auth/token`, {
+    const authOrigin = getAuthServiceOrigin();
+    const res = await fetch(`${authOrigin}/api/auth/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
@@ -62,7 +68,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function register(email: string, password: string): Promise<string> {
-    const res = await fetch(`http://10.0.2.2:8000/api/auth/register`, {
+    const authOrigin = getAuthServiceOrigin();
+    const res = await fetch(`${authOrigin}/api/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),

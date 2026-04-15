@@ -4,6 +4,8 @@ import styles from '../styles/Home.module.css';
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
 const BANKING_SERVICE_URL =
   process.env.NEXT_PUBLIC_BANKING_SERVICE_URL || '/api/banking';
+const OPEN_BANKING_PROVIDER =
+  (process.env.NEXT_PUBLIC_OPEN_BANKING_PROVIDER || 'saltedge').trim().toLowerCase();
 const CATEGORIZATION_SERVICE_URL =
   process.env.NEXT_PUBLIC_CATEGORIZATION_SERVICE_URL || '/api/categorization';
 
@@ -53,9 +55,31 @@ type UnmatchedReceiptDraftsResponse = {
   total: number;
 };
 
+type SyncQuota = { daily_limit: number; used_today: number; remaining: number };
+
 function BankConnection({ token, onConnectionComplete }: { token: string, onConnectionComplete: (accountId: string) => void }) {
   const [error, setError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  const [syncQuota, setSyncQuota] = useState<SyncQuota | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${BANKING_SERVICE_URL}/connections/sync-quota`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as SyncQuota;
+        if (!cancelled && typeof data.daily_limit === 'number') setSyncQuota(data);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
 
   const handleConnectBank = async () => {
     setError('');
@@ -68,7 +92,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
       const response = await fetch(`${BANKING_SERVICE_URL}/connections/initiate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ provider_id: 'truelayer', redirect_uri: callbackUrl }),
+        body: JSON.stringify({ provider_id: OPEN_BANKING_PROVIDER, redirect_uri: callbackUrl }),
       });
       if (!response.ok) throw new Error((await response.json()).detail || 'Failed to initiate connection');
       const data = await response.json();
@@ -90,12 +114,21 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h2 style={{ margin: 0 }}>Bank Connections</h2>
         <span style={{ fontSize: '0.78rem', color: 'var(--lp-muted)', background: 'rgba(13,148,136,0.1)', border: '1px solid rgba(13,148,136,0.3)', borderRadius: 999, padding: '2px 10px' }}>
-          Powered by TrueLayer Open Banking
+          {OPEN_BANKING_PROVIDER === 'truelayer'
+            ? 'Powered by TrueLayer Open Banking'
+            : 'Powered by Salt Edge Open Banking'}
         </span>
       </div>
       <p style={{ color: 'var(--lp-muted)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>
         Connect your bank account to automatically import transactions. You control when data syncs — we never fetch automatically.
       </p>
+      {syncQuota && (
+        <p style={{ color: 'var(--lp-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+          {syncQuota.daily_limit <= 0
+            ? 'Manual bank sync is not included in your current plan (UTC daily limits).'
+            : `Manual syncs left today (UTC): ${syncQuota.remaining} of ${syncQuota.daily_limit}`}
+        </p>
+      )}
       <button
         onClick={handleConnectBank}
         disabled={isConnecting}

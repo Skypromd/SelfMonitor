@@ -1,7 +1,6 @@
 /**
- * TrueLayer OAuth callback page.
- * TrueLayer redirects here after user authorises: ?code=XYZ&state=user_id
- * We exchange the code via our banking-connector service, then redirect to /transactions.
+ * Open Banking callback: TrueLayer ?code=… | Salt Edge ?connection_id=…
+ * Completes the flow via banking-connector, then redirects to /transactions.
  */
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
@@ -19,6 +18,8 @@ export default function BankCallbackPage() {
     if (!router.isReady) return;
 
     const code = typeof router.query.code === 'string' ? router.query.code : '';
+    const connectionId =
+      typeof router.query.connection_id === 'string' ? router.query.connection_id : '';
     const error = typeof router.query.error === 'string' ? router.query.error : '';
 
     if (error) {
@@ -27,13 +28,12 @@ export default function BankCallbackPage() {
       return;
     }
 
-    if (!code) {
+    if (!code && !connectionId) {
       setStatus('error');
-      setMessage('No authorisation code received from bank.');
+      setMessage('No authorisation data received from bank (missing code or connection_id).');
       return;
     }
 
-    // Retrieve the JWT we saved before redirecting to TrueLayer
     const token =
       (typeof window !== 'undefined' && sessionStorage.getItem('bankingToken')) ||
       (typeof window !== 'undefined' && sessionStorage.getItem('authToken')) ||
@@ -47,10 +47,12 @@ export default function BankCallbackPage() {
 
     const exchange = async () => {
       try {
-        const res = await fetch(
-          `${BANKING_SERVICE_URL}/connections/callback?code=${encodeURIComponent(code)}`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
+        const qs = connectionId
+          ? `connection_id=${encodeURIComponent(connectionId)}`
+          : `code=${encodeURIComponent(code)}`;
+        const res = await fetch(`${BANKING_SERVICE_URL}/connections/callback?${qs}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = await res.json();
         if (!res.ok) throw new Error(data.detail || 'Exchange failed');
 
