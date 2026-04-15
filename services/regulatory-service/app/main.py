@@ -24,11 +24,15 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import date, datetime
+import uuid
+import xml.etree.ElementTree as ET
+from contextlib import asynccontextmanager
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -46,6 +50,16 @@ _RULE_FILES: Dict[str, str] = {
 }
 
 _rules_cache: Dict[str, Dict[str, Any]] = {}
+
+# ── In-memory stores (reset on restart) ─────────────────────────────────────
+_audit_log: List[Dict[str, Any]] = []
+_pending_updates: List[Dict[str, Any]] = []
+_detected_changes: List[Dict[str, Any]] = []
+_last_govuk_check: Optional[str] = None
+_change_analysis_cache: Optional[Dict[str, Any]] = None
+
+GOV_UK_TAX_RSS = "https://www.gov.uk/search/all.atom?keywords=tax+self-employed&order=updated-newest"
+GOV_UK_HMRC_RSS = "https://www.gov.uk/government/organisations/hm-revenue-customs.atom"
 
 
 def _load_rules(tax_year: str) -> Dict[str, Any]:
@@ -80,12 +94,73 @@ def _all_loaded_rules() -> List[Dict[str, Any]]:
     return result
 
 
+# ── GOV.UK RSS monitor ───────────────────────────────────────────────────────
+
+async def _fetch_govuk_changes() -> List[Dict[str, Any]]:
+    """Fetch recent HMRC/tax updates from GOV.UK atom feed."""
+    found: List[Dict[str, Any]] = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(GOV_UK_HMRC_RSS, follow_redirects=True)
+            if not resp.is_success:
+                return found
+            root = ET.fromstring(resp.text)
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
+            for entry in root.findall("atom:entry", ns)[:10]:
+                title = entry.findtext("atom:title", "", ns)
+                link_el = entry.find("atom:link", ns)
+                link = link_el.get("href", "") if link_el is not None else ""
+                updated = entry.findtext("atom:updated", "", ns)
+                summary = entry.findtext("atom:summary", "", ns)
+                found.append({
+                    "id": entry.findtext("atom:id", "", ns),
+                    "title": title,
+                    "link": link,
+                    "updated": updated,
+                    "summary": summary[:300] if summary else "",
+                    "source": "GOV.UK HMRC feed",
+                })
+    except Exception as exc:
+        logger.warning("GOV.UK RSS fetch failed: %s", exc)
+    return found
+
+
+async def _monitor_hmrc_changes() -> None:
+    """APScheduler job: check GOV.UK for regulatory changes."""
+    global _last_govuk_check, _detected_changes
+    _last_govuk_check = datetime.now(timezone.utc).isoformat()
+    new_items = await _fetch_govuk_changes()
+    if new_items:
+        _detected_changes = new_items
+        _audit_log.append({
+            "id": str(uuid.uuid4()),
+            "event": "hmrc_feed_check",
+            "timestamp": _last_govuk_check,
+            "detail": f"Fetched {len(new_items)} items from GOV.UK HMRC feed",
+            "actor": "scheduler",
+        })
+    logger.info("HMRC monitor: %d changes fetched at %s", len(new_items), _last_govuk_check)
+
+
 # ── FastAPI app ──────────────────────────────────────────────────────────────
+
+_scheduler = AsyncIOScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
+    _scheduler.add_job(_monitor_hmrc_changes, "interval", hours=24, id="hmrc_monitor", replace_existing=True)
+    _scheduler.start()
+    await _monitor_hmrc_changes()  # initial check on startup
+    yield
+    _scheduler.shutdown(wait=False)
+
 
 app = FastAPI(
     title="Regulatory Service",
     description="UK tax rules, rates, thresholds and deadlines — single source of truth",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -548,4 +623,571 @@ async def get_available_years() -> Dict[str, Any]:
     return {
         "available_years": list(_RULE_FILES.keys()),
         "current_tax_year": _tax_year_for_date(date.today()),
+    }
+
+
+# ── REG.17: Compliance score ──────────────────────────────────────────────────
+
+@app.get("/admin/regulatory/compliance-score")
+async def get_compliance_score() -> Dict[str, Any]:
+    """
+    REG.17 — Compliance score: percentage of rule files that are 'final' status
+    and up-to-date relative to today.
+    """
+    total = len(_RULE_FILES)
+    final_count = 0
+    outdated: List[str] = []
+    for year in _RULE_FILES:
+        try:
+            rules = _load_rules(year)
+            if rules.get("status") == "final":
+                final_count += 1
+                eff_to = rules.get("effective_to", "")
+                if eff_to and date.fromisoformat(eff_to) < date.today():
+                    outdated.append(year)
+        except Exception:
+            pass
+    score = round((final_count / total) * 100, 1) if total else 0.0
+    return {
+        "compliance_score_pct": score,
+        "total_rule_files": total,
+        "final_files": final_count,
+        "draft_files": total - final_count,
+        "outdated_files": outdated,
+        "status": "green" if score >= 95 else "amber" if score >= 80 else "red",
+        "as_of": date.today().isoformat(),
+    }
+
+
+# ── REG.13: Admin regulatory stats ────────────────────────────────────────────
+
+@app.get("/admin/regulatory/stats")
+async def get_regulatory_stats() -> Dict[str, Any]:
+    """
+    REG.13 — KPI data for the admin regulatory dashboard:
+    active rules count, recent changes, estimated affected users, compliance%.
+    """
+    current_year = _tax_year_for_date(date.today())
+    try:
+        current_rules = _load_rules(current_year)
+    except Exception:
+        current_rules = {}
+
+    # Count distinct rule sections
+    rule_sections = [k for k in current_rules if not k.startswith("_") and k not in ("tax_year", "version", "status", "source", "effective_from", "effective_to")]
+    active_rules_count = len(rule_sections)
+
+    # Changes in the last 90 days
+    since_90 = (date.today().replace(year=date.today().year - 1 if date.today().month <= 3 else date.today().year)).isoformat()
+    recent_changes: List[Dict[str, Any]] = []
+    for rules in _all_loaded_rules():
+        eff_from = rules.get("effective_from", "")
+        for change in rules.get("regulatory_changes_from_prior_year", []):
+            recent_changes.append({
+                "tax_year": rules["tax_year"],
+                "area": change.get("area", ""),
+                "description": change.get("description", ""),
+                "impact": change.get("impact", "low"),
+            })
+
+    # Estimated affected users: based on MTD threshold
+    mtd = current_rules.get("mtd_itsa", {})
+    mtd_threshold = mtd.get("threshold", 50000)
+    affected_pct = 35  # estimated % of self-employed above £50k threshold
+
+    compliance = await get_compliance_score()
+
+    return {
+        "active_rules_count": active_rules_count,
+        "tax_year": current_year,
+        "recent_changes_count": len(recent_changes),
+        "recent_changes": recent_changes[:10],
+        "affected_users_pct": affected_pct,
+        "mtd_threshold": mtd_threshold,
+        "compliance_score_pct": compliance["compliance_score_pct"],
+        "compliance_status": compliance["status"],
+        "govuk_feed_items": len(_detected_changes),
+        "last_feed_check": _last_govuk_check,
+        "pending_updates_count": len(_pending_updates),
+        "audit_log_count": len(_audit_log),
+    }
+
+
+# ── REG.12: AI analysis of detected changes ───────────────────────────────────
+
+class ChangeAnalysisRequest(BaseModel):
+    force_refresh: bool = False
+
+
+@app.post("/admin/regulatory/analyze-changes")
+async def analyze_regulatory_changes(req: ChangeAnalysisRequest) -> Dict[str, Any]:
+    """
+    REG.12 — GPT-4o-mini analyses detected GOV.UK changes:
+    what changed, who is affected, what code needs updating.
+    Falls back to rule-based summary when OpenAI unavailable.
+    """
+    global _change_analysis_cache
+
+    if _change_analysis_cache and not req.force_refresh:
+        return _change_analysis_cache
+
+    feed_items = _detected_changes[:5]
+    rule_changes: List[Dict[str, Any]] = []
+    for rules in _all_loaded_rules():
+        for change in rules.get("regulatory_changes_from_prior_year", []):
+            rule_changes.append({
+                "tax_year": rules["tax_year"],
+                **change,
+            })
+
+    recommendations: List[Dict[str, Any]] = []
+    alerts: List[Dict[str, Any]] = []
+
+    # Rule-based: check MTD thresholds across years for significant changes
+    years = list(_RULE_FILES.keys())
+    for i in range(len(years) - 1):
+        try:
+            old_r = _load_rules(years[i])
+            new_r = _load_rules(years[i + 1])
+            old_mtd = old_r.get("mtd_itsa", {}).get("threshold")
+            new_mtd = new_r.get("mtd_itsa", {}).get("threshold")
+            if old_mtd and new_mtd and old_mtd != new_mtd:
+                alerts.append({
+                    "severity": "high",
+                    "area": "MTD ITSA",
+                    "change": f"Threshold changed from £{old_mtd:,} to £{new_mtd:,} ({years[i]} → {years[i+1]})",
+                    "affects": "All users with income near threshold",
+                    "action": f"Update MTD eligibility check logic — threshold now £{new_mtd:,}",
+                    "files_to_update": ["services/mtd-agent/app/main.py", "services/regulatory-service/app/data/"],
+                })
+        except Exception:
+            pass
+
+    # AI narrative
+    ai_summary = None
+    ai_dev_notes = None
+    if OPENAI_API_KEY and (feed_items or rule_changes):
+        try:
+            changes_text = "\n".join(
+                f"- {item.get('title', item.get('area', 'Unknown'))}: {item.get('summary', item.get('description', ''))[:200]}"
+                for item in (feed_items or rule_changes)[:5]
+            )
+            prompt = (
+                "You are a UK tax compliance engineer reviewing regulatory changes. "
+                f"Recent changes detected:\n{changes_text}\n\n"
+                "Provide:\n1. One-sentence summary of what changed\n"
+                "2. Who is affected (type of taxpayer)\n"
+                "3. One specific code change recommendation\n"
+                "Be brief and technical."
+            )
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 300,
+                    },
+                )
+                if resp.is_success:
+                    ai_summary = resp.json()["choices"][0]["message"]["content"].strip()
+        except Exception as exc:
+            logger.warning("OpenAI change analysis failed: %s", exc)
+
+    result = {
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
+        "feed_items_analyzed": len(feed_items),
+        "rule_changes_analyzed": len(rule_changes),
+        "alerts": alerts,
+        "recommendations": recommendations,
+        "ai_summary": ai_summary,
+        "ai_dev_notes": ai_dev_notes,
+        "govuk_feed_items": feed_items[:3],
+    }
+    _change_analysis_cache = result
+
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "change_analysis_run",
+        "timestamp": result["analyzed_at"],
+        "detail": f"Analyzed {len(feed_items)} feed items, {len(rule_changes)} rule changes, {len(alerts)} alerts",
+        "actor": "admin",
+    })
+    return result
+
+
+# ── REG.15: Developer recommendations ────────────────────────────────────────
+
+@app.get("/admin/regulatory/dev-recommendations")
+async def get_dev_recommendations() -> Dict[str, Any]:
+    """
+    REG.15 — AI recommendations for code changes based on regulatory diffs.
+    Compares consecutive tax year files to identify threshold/rate changes.
+    """
+    recs: List[Dict[str, Any]] = []
+    years = sorted(_RULE_FILES.keys())
+    for i in range(len(years) - 1):
+        try:
+            old_r = _load_rules(years[i])
+            new_r = _load_rules(years[i + 1])
+            label = f"{years[i]} → {years[i+1]}"
+
+            # MTD threshold diff
+            old_mtd = old_r.get("mtd_itsa", {}).get("threshold")
+            new_mtd = new_r.get("mtd_itsa", {}).get("threshold")
+            if old_mtd != new_mtd:
+                recs.append({
+                    "priority": "high",
+                    "area": "MTD ITSA threshold",
+                    "change": label,
+                    "old_value": f"£{old_mtd:,}" if old_mtd else "N/A",
+                    "new_value": f"£{new_mtd:,}" if new_mtd else "N/A",
+                    "recommendation": f"Update MTD threshold check in mtd-agent and any hardcoded £{old_mtd:,} references",
+                    "files": ["services/mtd-agent/app/main.py", "apps/web-portal/pages/tax.tsx"],
+                })
+
+            # Class 4 NI rate diff
+            old_ni4 = old_r.get("national_insurance", {}).get("class_4", {}).get("main_rate")
+            new_ni4 = new_r.get("national_insurance", {}).get("class_4", {}).get("main_rate")
+            if old_ni4 != new_ni4:
+                recs.append({
+                    "priority": "medium",
+                    "area": "Class 4 NI rate",
+                    "change": label,
+                    "old_value": f"{int((old_ni4 or 0)*100)}%" if old_ni4 else "N/A",
+                    "new_value": f"{int((new_ni4 or 0)*100)}%" if new_ni4 else "N/A",
+                    "recommendation": "Check NI calculator for hardcoded rate; regulatory-service is now source of truth",
+                    "files": ["services/regulatory-service/app/data/"],
+                })
+
+            # Personal allowance diff
+            old_pa = old_r.get("income_tax", {}).get("personal_allowance")
+            new_pa = new_r.get("income_tax", {}).get("personal_allowance")
+            if old_pa != new_pa:
+                recs.append({
+                    "priority": "medium",
+                    "area": "Personal Allowance",
+                    "change": label,
+                    "old_value": f"£{old_pa:,}" if old_pa else "N/A",
+                    "new_value": f"£{new_pa:,}" if new_pa else "N/A",
+                    "recommendation": "Personal Allowance changed — verify tax calculator and self-assessment pages",
+                    "files": ["apps/web-portal/pages/calculators/"],
+                })
+
+            # VAT threshold diff
+            old_vat = old_r.get("vat", {}).get("registration_threshold")
+            new_vat = new_r.get("vat", {}).get("registration_threshold")
+            if old_vat != new_vat:
+                recs.append({
+                    "priority": "medium",
+                    "area": "VAT registration threshold",
+                    "change": label,
+                    "old_value": f"£{old_vat:,}" if old_vat else "N/A",
+                    "new_value": f"£{new_vat:,}" if new_vat else "N/A",
+                    "recommendation": "Update VAT eligibility check and user-facing threshold warning",
+                    "files": ["services/regulatory-service/app/data/"],
+                })
+        except Exception:
+            pass
+
+    return {
+        "recommendations": recs,
+        "total": len(recs),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "note": "Based on diff between consecutive tax year rule files",
+    }
+
+
+# ── REG.16: Pending rule updates + owner approval ─────────────────────────────
+
+class RuleUpdateProposal(BaseModel):
+    tax_year: str
+    field_path: str
+    old_value: Any
+    new_value: Any
+    reason: str
+    proposed_by: str = "system"
+
+
+@app.post("/admin/regulatory/propose-update")
+async def propose_rule_update(proposal: RuleUpdateProposal) -> Dict[str, Any]:
+    """REG.16 — Propose a rule update for owner approval."""
+    item = {
+        "id": str(uuid.uuid4()),
+        "tax_year": proposal.tax_year,
+        "field_path": proposal.field_path,
+        "old_value": proposal.old_value,
+        "new_value": proposal.new_value,
+        "reason": proposal.reason,
+        "proposed_by": proposal.proposed_by,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    _pending_updates.append(item)
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "rule_update_proposed",
+        "timestamp": item["created_at"],
+        "detail": f"{proposal.field_path} in {proposal.tax_year}: {proposal.old_value} → {proposal.new_value}",
+        "actor": proposal.proposed_by,
+    })
+    return {"status": "proposed", "update_id": item["id"]}
+
+
+@app.get("/admin/regulatory/pending-updates")
+async def list_pending_updates() -> Dict[str, Any]:
+    """REG.16 — List all pending rule updates awaiting owner approval."""
+    return {"pending": _pending_updates, "total": len(_pending_updates)}
+
+
+@app.post("/admin/regulatory/approve-update/{update_id}")
+async def approve_rule_update(update_id: str, approved_by: str = Query("owner")) -> Dict[str, Any]:
+    """REG.16 — Owner approves a pending rule update (marks as approved; actual file edit is manual)."""
+    item = next((u for u in _pending_updates if u["id"] == update_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Update not found")
+    item["status"] = "approved"
+    item["approved_by"] = approved_by
+    item["approved_at"] = datetime.now(timezone.utc).isoformat()
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "rule_update_approved",
+        "timestamp": item["approved_at"],
+        "detail": f"Update {update_id} approved by {approved_by}",
+        "actor": approved_by,
+    })
+    return {"status": "approved", "update_id": update_id}
+
+
+@app.post("/admin/regulatory/reject-update/{update_id}")
+async def reject_rule_update(update_id: str, rejected_by: str = Query("owner")) -> Dict[str, Any]:
+    """REG.16 — Owner rejects a pending rule update."""
+    item = next((u for u in _pending_updates if u["id"] == update_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Update not found")
+    item["status"] = "rejected"
+    item["rejected_by"] = rejected_by
+    item["rejected_at"] = datetime.now(timezone.utc).isoformat()
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "rule_update_rejected",
+        "timestamp": item["rejected_at"],
+        "detail": f"Update {update_id} rejected by {rejected_by}",
+        "actor": rejected_by,
+    })
+    return {"status": "rejected", "update_id": update_id}
+
+
+# ── REG.14: User notification dispatch ───────────────────────────────────────
+
+class NotificationRequest(BaseModel):
+    affected_user_emails: List[str]
+    change_summary: str
+    tax_year: str = "2025-26"
+    notification_type: str = "email"
+
+
+@app.post("/admin/regulatory/notify-users")
+async def notify_users(req: NotificationRequest) -> Dict[str, Any]:
+    """
+    REG.14 — Dispatch notifications to affected users about regulatory changes.
+    Logs intent; actual delivery requires email/push integration.
+    """
+    notification_id = str(uuid.uuid4())
+    ts = datetime.now(timezone.utc).isoformat()
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "users_notified",
+        "timestamp": ts,
+        "detail": f"Notification {notification_id}: {len(req.affected_user_emails)} users — {req.change_summary[:100]}",
+        "actor": "admin",
+        "notification_id": notification_id,
+        "affected_count": len(req.affected_user_emails),
+        "notification_type": req.notification_type,
+    })
+    return {
+        "notification_id": notification_id,
+        "dispatched": len(req.affected_user_emails),
+        "notification_type": req.notification_type,
+        "status": "queued",
+        "note": "Delivery requires SMTP/push integration — logged for audit",
+    }
+
+
+# ── REG.18: Audit trail ────────────────────────────────────────────────────────
+
+@app.get("/admin/regulatory/audit-trail")
+async def get_audit_trail(limit: int = Query(50, ge=1, le=200)) -> Dict[str, Any]:
+    """REG.18 — Return audit log of all regulatory events (rule changes, analyses, notifications)."""
+    return {
+        "events": list(reversed(_audit_log))[:limit],
+        "total": len(_audit_log),
+    }
+
+
+# ── REG.20: Budget analyzer ────────────────────────────────────────────────────
+
+class BudgetAnalysisRequest(BaseModel):
+    budget_name: str = "Spring Statement 2026"
+    raw_text: Optional[str] = None
+    url: Optional[str] = None
+
+
+@app.post("/rules/budget/analyze")
+async def analyze_budget(req: BudgetAnalysisRequest) -> Dict[str, Any]:
+    """
+    REG.20 — Analyze UK Budget announcements for tax changes.
+    Extracts key figures and compares with current rules.
+    """
+    extracted_changes: List[Dict[str, Any]] = []
+    ai_analysis = None
+
+    source_text = req.raw_text or ""
+
+    if req.url and not source_text:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(req.url, follow_redirects=True)
+                if resp.is_success:
+                    source_text = resp.text[:8000]
+        except Exception as exc:
+            logger.warning("Budget URL fetch failed: %s", exc)
+
+    if source_text and OPENAI_API_KEY:
+        try:
+            prompt = (
+                f"You are a UK tax analyst. Extract key tax changes from this UK Budget announcement: '{req.budget_name}'.\n"
+                f"Text excerpt: {source_text[:3000]}\n\n"
+                "Extract and return JSON with: income_tax_changes, ni_changes, vat_changes, mtd_changes, other_changes. "
+                "Each entry: {area, change_description, old_value, new_value, effective_date}. "
+                "Return only valid JSON."
+            )
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
+                    json={
+                        "model": "gpt-4o-mini",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": 600,
+                        "response_format": {"type": "json_object"},
+                    },
+                )
+                if resp.is_success:
+                    ai_analysis = resp.json()["choices"][0]["message"]["content"]
+        except Exception as exc:
+            logger.warning("Budget AI analysis failed: %s", exc)
+
+    # Rule-based: summarise current rules as baseline
+    current_year = _tax_year_for_date(date.today())
+    try:
+        baseline = _load_rules(current_year)
+        extracted_changes.append({
+            "area": "Baseline (current rules)",
+            "tax_year": current_year,
+            "personal_allowance": baseline.get("income_tax", {}).get("personal_allowance"),
+            "mtd_threshold": baseline.get("mtd_itsa", {}).get("threshold"),
+            "class4_ni_main": baseline.get("national_insurance", {}).get("class_4", {}).get("main_rate"),
+            "vat_threshold": baseline.get("vat", {}).get("registration_threshold"),
+        })
+    except Exception:
+        pass
+
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "budget_analyzed",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "detail": f"Budget analysis: {req.budget_name}",
+        "actor": "admin",
+    })
+
+    return {
+        "budget_name": req.budget_name,
+        "analyzed_at": datetime.now(timezone.utc).isoformat(),
+        "baseline_rules": extracted_changes,
+        "ai_analysis": ai_analysis,
+        "note": "AI extraction requires source text or URL. Rule-based baseline always available.",
+    }
+
+
+# ── REG.19: Scotland rates ────────────────────────────────────────────────────
+
+@app.get("/rules/rates/scotland")
+async def get_scotland_rates(year: str = Query("2025-26")) -> Dict[str, Any]:
+    """
+    REG.19 — Scottish income tax rates (different bands from rUK).
+    Scotland sets its own income tax rates and bands for non-savings, non-dividend income.
+    """
+    scotland_rates: Dict[str, Any] = {
+        "2024-25": {
+            "jurisdiction": "Scotland",
+            "personal_allowance": 12570,
+            "bands": [
+                {"name": "starter",      "rate": 0.19, "from": 0,     "to": 2162},
+                {"name": "basic",        "rate": 0.20, "from": 2162,  "to": 13118},
+                {"name": "intermediate", "rate": 0.21, "from": 13118, "to": 31092},
+                {"name": "higher",       "rate": 0.42, "from": 31092, "to": 62430},
+                {"name": "advanced",     "rate": 0.45, "from": 62430, "to": 125140},
+                {"name": "top",          "rate": 0.48, "from": 125140, "to": None},
+            ],
+            "notes": "Scottish rates for non-savings, non-dividend income. NI rates are UK-wide.",
+            "source": "Scottish Budget 2024-25",
+        },
+        "2025-26": {
+            "jurisdiction": "Scotland",
+            "personal_allowance": 12570,
+            "bands": [
+                {"name": "starter",      "rate": 0.19, "from": 0,     "to": 2306},
+                {"name": "basic",        "rate": 0.20, "from": 2306,  "to": 13991},
+                {"name": "intermediate", "rate": 0.21, "from": 13991, "to": 31092},
+                {"name": "higher",       "rate": 0.42, "from": 31092, "to": 62430},
+                {"name": "advanced",     "rate": 0.45, "from": 62430, "to": 125140},
+                {"name": "top",          "rate": 0.48, "from": 125140, "to": None},
+            ],
+            "notes": "Scottish rates 2025-26. Starter and basic rate bands adjusted.",
+            "source": "Scottish Budget 2025-26",
+        },
+        "2026-27": {
+            "jurisdiction": "Scotland",
+            "personal_allowance": 12570,
+            "bands": [
+                {"name": "starter",      "rate": 0.19, "from": 0,     "to": 2400},
+                {"name": "basic",        "rate": 0.20, "from": 2400,  "to": 14500},
+                {"name": "intermediate", "rate": 0.21, "from": 14500, "to": 32000},
+                {"name": "higher",       "rate": 0.42, "from": 32000, "to": 75000},
+                {"name": "advanced",     "rate": 0.45, "from": 75000, "to": 125140},
+                {"name": "top",          "rate": 0.48, "from": 125140, "to": None},
+            ],
+            "notes": "Scotland 2026-27 projected rates (subject to Scottish Budget confirmation).",
+            "source": "Projected — confirm against Scottish Budget 2026-27",
+        },
+    }
+
+    if year not in scotland_rates:
+        raise HTTPException(status_code=404, detail=f"Scotland rates not available for {year!r}")
+
+    return {"tax_year": year, "scotland_income_tax": scotland_rates[year]}
+
+
+# ── GOV.UK feed: manual trigger ──────────────────────────────────────────────
+
+@app.post("/admin/regulatory/trigger-feed-check")
+async def trigger_feed_check() -> Dict[str, Any]:
+    """REG.11 — Manually trigger GOV.UK HMRC feed check (also runs automatically every 24h)."""
+    await _monitor_hmrc_changes()
+    return {
+        "triggered_at": _last_govuk_check,
+        "items_found": len(_detected_changes),
+        "feed_items": _detected_changes[:5],
+    }
+
+
+@app.get("/admin/regulatory/feed-items")
+async def get_feed_items() -> Dict[str, Any]:
+    """Return latest GOV.UK HMRC feed items."""
+    return {
+        "last_check": _last_govuk_check,
+        "items": _detected_changes,
+        "total": len(_detected_changes),
     }

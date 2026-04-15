@@ -1,6 +1,6 @@
 import {
   BarChart2, Bot, CreditCard, ExternalLink, Globe, Headphones,
-  LayoutDashboard, LogOut, Menu, Receipt, Send, Stethoscope, Users, User,
+  LayoutDashboard, LogOut, Menu, Receipt, Send, ShieldCheck, Stethoscope, Users, User,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
@@ -35,6 +35,7 @@ const ADMIN_TABS: { tab: AdminTab; label: string; icon: ReactNode }[] = [
   { tab: 'ai-agent',       label: 'AI agent',        icon: <Bot size={17} /> },
   { tab: 'health',         label: 'System health',   icon: <Stethoscope size={17} /> },
   { tab: 'support',        label: 'Support',         icon: <Headphones size={17} /> },
+  { tab: 'regulatory',     label: 'Regulatory',      icon: <ShieldCheck size={17} /> },
 ];
 
 const LOCALE_FLAGS: Record<string, string> = {

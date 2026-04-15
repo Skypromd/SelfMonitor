@@ -12,6 +12,8 @@ Endpoints:
   GET        /health                 — health check
 """
 
+import asyncio
+import json as _json
 import logging
 import os
 from datetime import datetime, timezone
@@ -128,6 +130,23 @@ app.add_middleware(
 # ── In-memory session history (production: use Redis) ─────────────────────────
 _session_history: dict[str, list[dict[str, Any]]] = {}
 
+# ── ADM.10: Notification hub ────────────────────────────────────────────────────
+_admin_ws_clients: set[WebSocket] = set()
+
+
+async def _broadcast_notification(event_type: str, data: dict) -> None:
+    """Push an event to all connected admin WS clients (fire-and-forget)."""
+    if not _admin_ws_clients:
+        return
+    message = _json.dumps({"type": event_type, **data})
+    dead: set[WebSocket] = set()
+    for ws in list(_admin_ws_clients):
+        try:
+            await ws.send_text(message)
+        except Exception:  # noqa: BLE001
+            dead.add(ws)
+    _admin_ws_clients.difference_update(dead)
+
 
 # ── WebSocket chat ─────────────────────────────────────────────────────────────
 @app.websocket("/ws/chat/{session_id}")
@@ -181,12 +200,24 @@ async def websocket_chat(websocket: WebSocket, session_id: str):
 
 # ── Ticket endpoints ───────────────────────────────────────────────────────────
 @app.post("/tickets", response_model=TicketOut, status_code=201)
-def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
+async def create_ticket(payload: TicketCreate, db: Session = Depends(get_db)):
     ticket = TicketORM(**payload.model_dump())
     db.add(ticket)
     db.commit()
     db.refresh(ticket)
     logger.info("Ticket created: %s by %s", ticket.id, ticket.user_email)
+    asyncio.create_task(
+        _broadcast_notification(
+            "ticket.created",
+            {
+                "ticket_id": str(ticket.id),
+                "user_email": ticket.user_email,
+                "subject": ticket.subject,
+                "priority": ticket.priority,
+                "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+            },
+        )
+    )
     return ticket
 
 
@@ -207,7 +238,7 @@ def list_tickets(
 
 
 @app.patch("/tickets/{ticket_id}/status")
-def update_ticket_status(
+async def update_ticket_status(
     ticket_id: str,
     _admin: dict = Depends(require_support_admin),
     ticket_status: str = Query(
@@ -223,6 +254,12 @@ def update_ticket_status(
     setattr(ticket, "status", ticket_status)
     setattr(ticket, "updated_at", datetime.now(timezone.utc))
     db.commit()
+    asyncio.create_task(
+        _broadcast_notification(
+            "ticket.status_changed",
+            {"ticket_id": ticket_id, "new_status": ticket_status},
+        )
+    )
     return {"id": ticket_id, "status": ticket_status}
 
 
@@ -339,3 +376,45 @@ def resolve_ticket(
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "support-ai-service", "version": "1.0.0"}
+
+
+# ── ADM.10: Admin notification WebSocket ───────────────────────────────────────
+@app.websocket("/ws/admin/notifications")
+async def ws_admin_notifications(websocket: WebSocket):
+    """
+    Real-time admin notification stream.
+    Client must send a valid admin Bearer token as the first text message
+    within 5 seconds after connecting, otherwise the connection is closed.
+    Events pushed: ticket.created, ticket.status_changed, stats.updated
+    """
+    await websocket.accept()
+    try:
+        raw = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+    except (asyncio.TimeoutError, WebSocketDisconnect):
+        await websocket.close(code=1008, reason="Auth timeout")
+        return
+
+    token = raw.strip()
+    if token.startswith("Bearer "):
+        token = token[7:]
+    try:
+        payload = _decode_support_jwt(f"Bearer {token}")
+        if not _jwt_allows_support_operator(payload):
+            raise ValueError("Insufficient permissions")
+    except Exception:  # noqa: BLE001
+        await websocket.close(code=1008, reason="Unauthorized")
+        return
+
+    _admin_ws_clients.add(websocket)
+    logger.info("Admin WS connected — %d clients", len(_admin_ws_clients))
+    try:
+        while True:
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+            except asyncio.TimeoutError:
+                await websocket.send_text(_json.dumps({"type": "ping"}))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _admin_ws_clients.discard(websocket)
+        logger.info("Admin WS disconnected — %d clients", len(_admin_ws_clients))

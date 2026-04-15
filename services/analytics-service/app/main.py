@@ -30,7 +30,7 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
-from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.jwt_fastapi import build_admin_require_dependency, build_jwt_auth_dependencies
 from libs.shared_auth.plan_limits import plan_limits_from_payload
 from libs.shared_http.retry import get_json_with_retry
 
@@ -49,6 +49,7 @@ from .mortgage_requirements import (
 )
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+require_analytics_admin = build_admin_require_dependency(required_permission="billing:read")
 
 app = FastAPI(
     title="SelfMonitor Advanced Analytics & ML Pipeline",
@@ -2735,6 +2736,7 @@ async def get_dashboard_data(
 @app.post("/analytics/segmentation", response_model=Dict[str, Any])
 async def customer_segmentation(
     criteria: Dict[str, Any],
+    _admin: dict = Depends(require_analytics_admin),
     user_id: str = Depends(get_current_user_id),
 ):
     """Perform customer segmentation analysis"""
@@ -2775,6 +2777,7 @@ async def customer_segmentation(
 async def cohort_analysis(
     time_period: str = "monthly",
     metric: str = "retention",
+    _admin: dict = Depends(require_analytics_admin),
     _user_id: str = Depends(get_current_user_id),
 ):
     """Perform cohort analysis"""
@@ -2806,6 +2809,7 @@ async def cohort_analysis(
 async def detect_anomalies(
     data_source: str,
     sensitivity: float = 0.05,
+    _admin: dict = Depends(require_analytics_admin),
     user_id: str = Depends(get_current_user_id),
 ):
     """Run anomaly detection on specified data source"""

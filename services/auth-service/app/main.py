@@ -70,6 +70,7 @@ SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
 SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
+COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://compliance-service:8000")
 
 _AUTH_CORS_BASE = ["http://localhost:3000", "http://192.168.0.248:3000"]
 _AUTH_CORS_EXTRA = os.getenv("AUTH_CORS_EXTRA_ORIGINS", "").strip()
@@ -313,13 +314,20 @@ def init_auth_db() -> None:
             )
             """
         )
-        # Add phone columns if they don't exist yet (safe migration)
+        # Safe migrations — add columns if not present
+        for migration in [
+            "ALTER TABLE users ADD COLUMN phone TEXT",
+            "ALTER TABLE users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0",
+            # SEC.1: role column replaces boolean is_admin; kept for backward compat
+            "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'",
+        ]:
+            try:
+                conn.execute(migration)
+            except Exception:
+                pass
+        # SEC.1: backfill role from is_admin for existing rows
         try:
-            conn.execute("ALTER TABLE users ADD COLUMN phone TEXT")
-        except Exception:
-            pass
-        try:
-            conn.execute("ALTER TABLE users ADD COLUMN phone_verified INTEGER NOT NULL DEFAULT 0")
+            conn.execute("UPDATE users SET role='admin' WHERE is_admin=1 AND (role IS NULL OR role='user')")
         except Exception:
             pass
         conn.execute("""
@@ -515,11 +523,13 @@ def get_user(email: str) -> Optional[User]:
     row = get_user_record(email)
     if not row:
         return None
+    role = str(row.get("role") or ("admin" if row["is_admin"] else "user"))
     return User(
         email=str(row["email"]),
         is_active=bool(row["is_active"]),
         is_admin=bool(row["is_admin"]),
         is_two_factor_enabled=bool(row["is_two_factor_enabled"]),
+        role=role,
     )
 
 
@@ -578,14 +588,26 @@ async def get_current_active_user(
 async def require_admin(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ):
-    """
-    A dependency that checks if the current user has admin privileges.
-    """
-    if not current_user.is_admin:
+    """Dependency: requires admin or owner role (or legacy is_admin flag)."""
+    if not current_user.is_admin and current_user.role not in ("admin", "owner"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
         )
     return current_user
+
+
+def require_permission(permission: str):
+    """SEC.3 — Factory: returns a dependency that checks for a specific permission."""
+    async def _check(current_user: Annotated[User, Depends(get_current_active_user)]):
+        role = current_user.role or ("admin" if current_user.is_admin else "user")
+        perms = _ROLE_PERMISSIONS.get(role, [])
+        if "*" in perms or permission in perms:
+            return current_user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Permission '{permission}' required. Your role: {role}",
+        )
+    return _check
 
 
 # --- Endpoints ---
@@ -856,7 +878,7 @@ async def login_for_access_token(
     token_data: dict[str, object] = {
         "sub": user.email,
         "is_admin": user.is_admin,
-        **_jwt_rbac_claims(user.is_admin),
+        **_jwt_rbac_claims(user.is_admin, user.role),
         **_jwt_subscription_claims(user.email),
     }
     access_token = create_access_token(
@@ -1016,7 +1038,7 @@ async def exchange_api_key_for_token(body: ApiKeyExchangeRequest, request: Reque
     token_data: dict[str, object] = {
         "sub": user.email,
         "is_admin": user.is_admin,
-        **_jwt_rbac_claims(user.is_admin),
+        **_jwt_rbac_claims(user.is_admin, user.role),
         **_jwt_subscription_claims(user.email),
     }
     access_token = create_access_token(
@@ -1359,6 +1381,66 @@ class AdminUserDetailOut(BaseModel):
     trial_end: Optional[str] = None
 
 
+async def _post_audit_event(
+    actor_email: str,
+    action: str,
+    target: str,
+    details: dict,
+) -> None:
+    """Fire-and-forget: record admin action in compliance-service audit log."""
+    payload = {
+        "user_id": actor_email,
+        "action": action,
+        "resource": target,
+        "details": details,
+        "source": "auth-service",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(f"{COMPLIANCE_SERVICE_URL}/audit-events", json=payload)
+    except Exception:  # noqa: BLE001
+        pass  # audit is best-effort — never fail the primary request
+
+
+class ChangeRoleRequest(BaseModel):
+    role: str  # owner | admin | support_agent | user
+
+
+@app.patch("/admin/users/{user_email}/role")
+async def admin_change_user_role(
+    user_email: str,
+    req: ChangeRoleRequest,
+    admin: Annotated[User, Depends(require_admin)],
+) -> dict[str, object]:
+    """SEC.1 — Change a user's role (owner/admin/support_agent/user). Owner only."""
+    valid_roles = list(_ROLE_PERMISSIONS.keys())
+    if req.role not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role. Valid: {valid_roles}")
+    # Only owner can assign owner role
+    if req.role == "owner" and admin.role != "owner":
+        raise HTTPException(status_code=403, detail="Only owners can assign owner role")
+    with db_lock:
+        conn = _connect()
+        try:
+            existing = conn.execute("SELECT email FROM users WHERE email=?", (user_email,)).fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail=f"User {user_email} not found")
+            is_admin_val = 1 if req.role in ("admin", "owner") else 0
+            conn.execute("UPDATE users SET role=?, is_admin=? WHERE email=?", (req.role, is_admin_val, user_email))
+            conn.commit()
+        finally:
+            conn.close()
+    asyncio.create_task(
+        _post_audit_event(
+            actor_email=admin.email,
+            action="admin.change_user_role",
+            target=user_email,
+            details={"new_role": req.role},
+        )
+    )
+    return {"email": user_email, "new_role": req.role, "updated_by": admin.email}
+
+
 @app.get("/admin/users", response_model=AdminUserListOut)
 async def admin_list_users(
     _admin: Annotated[User, Depends(require_admin)],
@@ -1595,19 +1677,51 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
 }
 
 
-def _jwt_rbac_claims(is_admin: bool) -> dict[str, object]:
-    if is_admin:
-        return {
-            "role": "platform_admin",
-            "roles": ["admin"],
-            "scopes": ["billing:read", "support:read", "support:write"],
-            "perms": ["*"],
-        }
+# SEC.2: Role → permissions mapping
+_ROLE_PERMISSIONS: dict[str, list[str]] = {
+    "owner": [
+        "*",
+        "billing:read", "billing:write",
+        "support:read", "support:write",
+        "users:read", "users:write",
+        "regulatory:read", "regulatory:write", "regulatory:approve",
+        "analytics:read", "partners:read", "partners:write",
+        "admin:audit",
+    ],
+    "admin": [
+        "billing:read",
+        "support:read", "support:write",
+        "users:read", "users:write",
+        "regulatory:read", "regulatory:write",
+        "analytics:read", "partners:read",
+        "admin:audit",
+    ],
+    "support_agent": [
+        "support:read", "support:write",
+        "users:read",
+        "portal.use",
+    ],
+    "user": [
+        "portal.use",
+    ],
+}
+
+
+def _jwt_rbac_claims(is_admin: bool, role: str = "") -> dict[str, object]:
+    # Resolve role: explicit role field takes priority, is_admin is legacy fallback
+    effective_role = role if role in _ROLE_PERMISSIONS else ("admin" if is_admin else "user")
+    perms = _ROLE_PERMISSIONS.get(effective_role, ["portal.use"])
+    scopes: list[str] = []
+    if effective_role in ("owner", "admin"):
+        scopes = ["billing:read", "support:read", "support:write"]
+    elif effective_role == "support_agent":
+        scopes = ["support:read", "support:write"]
     return {
-        "role": "user",
-        "roles": ["user"],
-        "scopes": [],
-        "perms": ["portal.use"],
+        "role": effective_role,
+        "roles": [effective_role],
+        "scopes": scopes,
+        "perms": perms,
+        "permissions": perms,  # SEC.2: explicit permissions[] array
     }
 
 
@@ -2197,7 +2311,7 @@ async def refresh_token(
     refresh_claims: dict[str, object] = {
         "sub": current_user.email,
         "is_admin": current_user.is_admin,
-        **_jwt_rbac_claims(current_user.is_admin),
+        **_jwt_rbac_claims(current_user.is_admin, current_user.role),
         **_jwt_subscription_claims(current_user.email),
     }
     new_access = create_access_token(

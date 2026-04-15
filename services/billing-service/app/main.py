@@ -14,6 +14,7 @@ import logging
 import os
 import smtplib
 import sqlite3
+import threading
 import time
 import uuid
 from collections import defaultdict
@@ -38,6 +39,7 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:80")
 AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "").strip()
+COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://compliance-service:8000")
 DEV_MODE = not bool(STRIPE_SECRET_KEY)
 
 # ── SMTP ───────────────────────────────────────────────────────────────────────
@@ -1128,6 +1130,61 @@ async def admin_stats(
         "total_trialing": sum(p["trialing"] for p in by_plan),
         "total_in_db": total_row["cnt"] if total_row else 0,
         "recent_subscriptions": [{"email": r["email"], "plan": r["plan"], "status": r["status"], "created_at": r["created_at"], "has_stripe": bool(r["stripe_subscription_id"])} for r in recent],
+    }
+
+
+def _fire_audit_event(actor: str, action: str, target: str, details: dict) -> None:
+    """Background thread: record admin action in compliance-service."""
+    try:
+        httpx.post(
+            f"{COMPLIANCE_SERVICE_URL}/audit-events",
+            json={"user_id": actor, "action": action, "resource": target, "details": details, "source": "billing-service"},
+            timeout=3.0,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# ── ADM.8: Change user plan (admin) ───────────────────────────────────────────
+
+class ChangePlanRequest(BaseModel):
+    new_plan: str
+    new_status: str = "active"
+    reason: str = ""
+
+
+@app.patch("/admin/users/{user_email}/change-plan")
+async def admin_change_user_plan(
+    user_email: str,
+    req: ChangePlanRequest,
+    _admin: Annotated[dict, Depends(require_billing_admin)],
+) -> dict:
+    """ADM.8 — Admin changes a user's subscription plan."""
+    valid_plans = list(PLAN_AMOUNT_GBP.keys()) + ["free"]
+    if req.new_plan not in valid_plans:
+        raise HTTPException(status_code=400, detail=f"Invalid plan '{req.new_plan}'. Valid: {valid_plans}")
+    with get_db() as conn:
+        existing = conn.execute("SELECT * FROM subscriptions WHERE email=?", (user_email,)).fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"No subscription found for {user_email}")
+        now = int(__import__("time").time())
+        conn.execute(
+            "UPDATE subscriptions SET plan=?, status=?, updated_at=? WHERE email=?",
+            (req.new_plan, req.new_status, now, user_email),
+        )
+    actor = str(_admin.get("sub") or _admin.get("email") or "admin")
+    threading.Thread(
+        target=_fire_audit_event,
+        args=(actor, "admin.change_user_plan", user_email, {"new_plan": req.new_plan, "reason": req.reason}),
+        daemon=True,
+    ).start()
+    return {
+        "email": user_email,
+        "new_plan": req.new_plan,
+        "new_status": req.new_status,
+        "reason": req.reason,
+        "updated_at": now,
+        "message": f"Plan changed to {req.new_plan} ({req.new_status})",
     }
 
 

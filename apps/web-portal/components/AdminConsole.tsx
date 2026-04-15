@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { AdminTab } from '../lib/adminRoutes';
 import { clientSurfaceUrl, inactivityLogoutLocation } from '../lib/adminSurface';
 import { useTranslation } from '../hooks/useTranslation';
@@ -25,6 +25,8 @@ const BILLING_SERVICE_URL =
   process.env.NEXT_PUBLIC_BILLING_SERVICE_URL || `${API_P}/billing`;
 const SUPPORT_SERVICE_URL =
   process.env.NEXT_PUBLIC_SUPPORT_SERVICE_URL || `${API_P}/support`;
+const REGULATORY_SERVICE_URL =
+  process.env.NEXT_PUBLIC_REGULATORY_SERVICE_URL || `${API_P}/regulatory`;
 const TOAST_DURATION_MS = 4200;
 
 type AdminUser = { email: string; is_admin: boolean };
@@ -260,16 +262,31 @@ export default function AdminConsole({ token, user, section }: AdminPageProps) {
   const [supportTickets, setSupportTickets] = useState<SupportTicketRow[] | null>(null);
   const [supportStats, setSupportStats] = useState<SupportStats | null>(null);
   const [supportApiError, setSupportApiError] = useState<string | null>(null);
+
+  // ── Regulatory state ──────────────────────────────────────────────────────
+  const [regStats, setRegStats] = useState<Record<string, unknown> | null>(null);
+  const [regVersions, setRegVersions] = useState<Record<string, unknown>[]>([]);
+  const [regAnalysis, setRegAnalysis] = useState<Record<string, unknown> | null>(null);
+  const [regDevRecs, setRegDevRecs] = useState<Record<string, unknown>[]>([]);
+  const [regAuditLog, setRegAuditLog] = useState<Record<string, unknown>[]>([]);
+  const [regPending, setRegPending] = useState<Record<string, unknown>[]>([]);
+  const [regFeedItems, setRegFeedItems] = useState<Record<string, unknown>[]>([]);
+  const [regLoading, setRegLoading] = useState(false);
+  const [regAnalyzing, setRegAnalyzing] = useState(false);
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regActiveTab, setRegActiveTab] = useState<'overview' | 'analysis' | 'updates' | 'audit' | 'feed'>('overview');
+
   const router = useRouter();
   const { t } = useTranslation();
+  const _adminWsRef = useRef<WebSocket | null>(null);
 
-  const pushToast = (kind: ToastKind, message: string) => {
+  const pushToast = useCallback((kind: ToastKind, message: string) => {
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setToasts((current) => [...current, { id, kind, message }]);
     window.setTimeout(() => {
       setToasts((current) => current.filter((item) => item.id !== id));
     }, TOAST_DURATION_MS);
-  };
+  }, []);
 
   // ── Inactivity auto-logout: 15 minutes of no user activity ─────────────────
   const inactivityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -390,6 +407,57 @@ export default function AdminConsole({ token, user, section }: AdminPageProps) {
   const dismissToast = (id: string) => {
     setToasts((current) => current.filter((item) => item.id !== id));
   };
+
+  // ADM.10: Real-time admin notifications via WebSocket
+  useEffect(() => {
+    if (!token || typeof window === 'undefined') return;
+    const wsBase = SUPPORT_SERVICE_URL.replace(/^http/, 'ws').replace(/\/api\/support$/, '').replace(/\/api$/, '');
+    const wsUrl = `${wsBase}/support/ws/admin/notifications`;
+    let ws: WebSocket;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    const connect = () => {
+      try {
+        ws = new WebSocket(wsUrl);
+        _adminWsRef.current = ws;
+
+        ws.onopen = () => {
+          ws.send(`Bearer ${token}`);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data as string) as { type?: string; ticket_id?: string; subject?: string; new_status?: string };
+            if (msg.type === 'ticket.created') {
+              pushToast('info', `New ticket: ${msg.subject || msg.ticket_id}`);
+            } else if (msg.type === 'ticket.status_changed') {
+              pushToast('info', `Ticket ${msg.ticket_id} → ${msg.new_status}`);
+            }
+          } catch {
+            // ignore malformed messages
+          }
+        };
+
+        ws.onclose = () => {
+          reconnectTimer = setTimeout(connect, 10_000);
+        };
+
+        ws.onerror = () => {
+          ws.close();
+        };
+      } catch {
+        reconnectTimer = setTimeout(connect, 10_000);
+      }
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      _adminWsRef.current?.close();
+      _adminWsRef.current = null;
+    };
+  }, [token, pushToast]);
 
   useEffect(() => {
     const loadPartners = async () => {
@@ -877,6 +945,52 @@ export default function AdminConsole({ token, user, section }: AdminPageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // ── Load regulatory data ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (!token || section !== 'regulatory') return;
+    let cancelled = false;
+    const loadReg = async () => {
+      setRegLoading(true);
+      setRegError(null);
+      try {
+        const h = { Authorization: `Bearer ${token}` };
+        const [statsRes, versionsRes, devRecsRes, auditRes, pendingRes, feedRes] = await Promise.allSettled([
+          fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/stats`, { headers: h }),
+          fetch(`${REGULATORY_SERVICE_URL}/rules/versions`, { headers: h }),
+          fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/dev-recommendations`, { headers: h }),
+          fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/audit-trail?limit=20`, { headers: h }),
+          fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/pending-updates`, { headers: h }),
+          fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/feed-items`, { headers: h }),
+        ]);
+        if (cancelled) return;
+        if (statsRes.status === 'fulfilled' && statsRes.value.ok) setRegStats(await statsRes.value.json());
+        if (versionsRes.status === 'fulfilled' && versionsRes.value.ok) setRegVersions(await versionsRes.value.json());
+        if (devRecsRes.status === 'fulfilled' && devRecsRes.value.ok) {
+          const d = await devRecsRes.value.json();
+          setRegDevRecs(Array.isArray(d.recommendations) ? d.recommendations : []);
+        }
+        if (auditRes.status === 'fulfilled' && auditRes.value.ok) {
+          const d = await auditRes.value.json();
+          setRegAuditLog(Array.isArray(d.events) ? d.events : []);
+        }
+        if (pendingRes.status === 'fulfilled' && pendingRes.value.ok) {
+          const d = await pendingRes.value.json();
+          setRegPending(Array.isArray(d.pending) ? d.pending : []);
+        }
+        if (feedRes.status === 'fulfilled' && feedRes.value.ok) {
+          const d = await feedRes.value.json();
+          setRegFeedItems(Array.isArray(d.items) ? d.items : []);
+        }
+      } catch (e) {
+        if (!cancelled) setRegError(e instanceof Error ? e.message : 'Regulatory service unavailable');
+      } finally {
+        if (!cancelled) setRegLoading(false);
+      }
+    };
+    void loadReg();
+    return () => { cancelled = true; };
+  }, [token, section]);
+
   // ── Guard: admin-only access ──
   if (user && user.is_admin === false) {
     return (
@@ -906,6 +1020,50 @@ export default function AdminConsole({ token, user, section }: AdminPageProps) {
     const initial: Record<string, 'checking' | 'online' | 'offline'> = {};
     SYSTEM_SERVICES.forEach((s) => { initial[s.name] = 'checking'; });
     setServiceStatuses(initial);
+
+    // ADM.9 / ADM.4: Use auth-service /admin/health/services to avoid browser→localhost:port
+    try {
+      const res = await fetch(`${AUTH_SERVICE_BASE_URL}/admin/health/services`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data: Record<string, { ok: boolean; latency_ms?: number }> = await res.json();
+        const mapped: Record<string, 'online' | 'offline'> = {};
+        for (const [svcName, result] of Object.entries(data)) {
+          // auth-service returns service name as key
+          const matchedService = SYSTEM_SERVICES.find((s) =>
+            s.name.toLowerCase().replace(/[\s/]/g, '-').includes(svcName.toLowerCase()) ||
+            svcName.toLowerCase().includes(s.name.toLowerCase().split(' ')[0].toLowerCase())
+          );
+          if (matchedService) {
+            mapped[matchedService.name] = result.ok ? 'online' : 'offline';
+          }
+        }
+        // For services not returned by gateway, fall back to browser ping
+        const unmapped = SYSTEM_SERVICES.filter((s) => !(s.name in mapped));
+        const browserResults = await Promise.all(
+          unmapped.map(async (service) => {
+            try {
+              const ctrl = new AbortController();
+              const timer = window.setTimeout(() => ctrl.abort(), 3500);
+              const resp = await fetch(service.healthUrl, { signal: ctrl.signal });
+              window.clearTimeout(timer);
+              return { name: service.name, status: resp.ok ? 'online' : 'offline' } as const;
+            } catch {
+              return { name: service.name, status: 'offline' } as const;
+            }
+          })
+        );
+        const allResults: Record<string, 'online' | 'offline'> = { ...mapped };
+        browserResults.forEach(({ name, status }) => { allResults[name] = status; });
+        setServiceStatuses(allResults);
+        return;
+      }
+    } catch {
+      // fall through to browser-direct
+    }
+
+    // Fallback: browser-direct pings
     await Promise.all(
       SYSTEM_SERVICES.map(async (service) => {
         try {
@@ -2131,6 +2289,359 @@ export default function AdminConsole({ token, user, section }: AdminPageProps) {
           </div>
         </>
       )}
+
+      {/* ══ REGULATORY TAB ══════════════════════════════════════════════════ */}
+      {section === 'regulatory' && (() => {
+        const stats = regStats as Record<string, unknown> | null;
+        const complianceScore = typeof stats?.compliance_score_pct === 'number' ? stats.compliance_score_pct : 0;
+        const complianceStatus = stats?.compliance_status as string ?? 'unknown';
+        const statusColor = complianceStatus === 'green' ? '#34d399' : complianceStatus === 'amber' ? '#fbbf24' : '#f87171';
+
+        const runAnalysis = async () => {
+          setRegAnalyzing(true);
+          try {
+            const res = await fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/analyze-changes`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ force_refresh: true }),
+            });
+            if (res.ok) setRegAnalysis(await res.json());
+            else pushToast('error', 'Analysis failed');
+          } catch { pushToast('error', 'Regulatory service unavailable'); }
+          finally { setRegAnalyzing(false); }
+        };
+
+        const triggerFeedCheck = async () => {
+          try {
+            const res = await fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/trigger-feed-check`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              const d = await res.json();
+              setRegFeedItems(Array.isArray(d.feed_items) ? d.feed_items : []);
+              pushToast('success', `Feed checked — ${d.items_found} items found`);
+            }
+          } catch { pushToast('error', 'Feed check failed'); }
+        };
+
+        const approveUpdate = async (id: string) => {
+          try {
+            await fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/approve-update/${id}?approved_by=owner`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+            setRegPending((prev) => prev.map((u) => u.id === id ? { ...u, status: 'approved' } : u));
+            pushToast('success', 'Update approved');
+          } catch { pushToast('error', 'Approval failed'); }
+        };
+
+        const rejectUpdate = async (id: string) => {
+          try {
+            await fetch(`${REGULATORY_SERVICE_URL}/admin/regulatory/reject-update/${id}?rejected_by=owner`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+            setRegPending((prev) => prev.map((u) => u.id === id ? { ...u, status: 'rejected' } : u));
+            pushToast('success', 'Update rejected');
+          } catch { pushToast('error', 'Rejection failed'); }
+        };
+
+        const TAB_ITEMS = [
+          { id: 'overview', label: 'Overview' },
+          { id: 'analysis', label: 'AI Analysis' },
+          { id: 'updates',  label: 'Pending', badge: regPending.filter((u) => u.status === 'pending').length },
+          { id: 'audit',    label: 'Audit Trail' },
+          { id: 'feed',     label: 'GOV.UK Feed', badge: regFeedItems.length },
+        ];
+
+        return (
+          <>
+            {regError && <p style={{ color: '#f87171', marginBottom: '1rem', fontSize: '0.9rem' }}>{regError} — start regulatory-service</p>}
+
+            {/* KPI cards */}
+            <div className={styles.kpiGrid}>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Active Rules</p>
+                <p className={styles.kpiValue}>{regLoading ? '…' : String(stats?.active_rules_count ?? '—')}</p>
+                <p className={styles.kpiSub}>Tax year {String(stats?.tax_year ?? '—')}</p>
+              </div>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Rule Changes</p>
+                <p className={styles.kpiValue} style={{ color: '#f59e0b' }}>{regLoading ? '…' : String(stats?.recent_changes_count ?? '—')}</p>
+                <p className={styles.kpiSub}>From prior year</p>
+              </div>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Affected Users</p>
+                <p className={styles.kpiValue}>{regLoading ? '…' : `~${String(stats?.affected_users_pct ?? '—')}%`}</p>
+                <p className={styles.kpiSub}>Est. above MTD threshold</p>
+              </div>
+              <div className={styles.kpiCard}>
+                <p className={styles.kpiLabel}>Compliance Score</p>
+                <p className={styles.kpiValue} style={{ color: statusColor }}>
+                  {regLoading ? '…' : `${complianceScore}%`}
+                </p>
+                <p className={styles.kpiSub} style={{ color: statusColor }}>
+                  {complianceStatus === 'green' ? 'All rules current' : complianceStatus === 'amber' ? 'Some rules need review' : 'Action required'}
+                </p>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1.25rem', overflowX: 'auto', paddingBottom: '0.2rem', borderBottom: '1px solid var(--border, rgba(148,163,184,0.12))' }}>
+              {TAB_ITEMS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setRegActiveTab(tab.id as typeof regActiveTab)}
+                  style={{
+                    padding: '0.45rem 0.9rem',
+                    borderRadius: '0.45rem 0.45rem 0 0',
+                    border: 'none',
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap',
+                    fontWeight: regActiveTab === tab.id ? 700 : 500,
+                    fontSize: '0.86rem',
+                    background: regActiveTab === tab.id ? 'var(--bg-surface, #1e293b)' : 'transparent',
+                    color: regActiveTab === tab.id ? 'var(--accent, #14b8a6)' : 'var(--text-secondary, #94a3b8)',
+                    flexShrink: 0,
+                    display: 'flex', alignItems: 'center', gap: '0.35rem',
+                  }}
+                >
+                  {tab.label}
+                  {tab.badge !== undefined && Number(tab.badge) > 0 && (
+                    <span style={{ padding: '0 0.4rem', background: 'rgba(20,184,166,0.15)', color: '#14b8a6', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 700 }}>
+                      {String(tab.badge)}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Overview */}
+            {regActiveTab === 'overview' && (
+              <div className={styles.subContainer}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>Rule File Versions</h2>
+                  <p className={styles.sectionSubtitle}>Status of all loaded tax year rule files.</p>
+                </div>
+                <div className={styles.tableResponsive}>
+                  <table className={styles.table}>
+                    <thead>
+                      <tr><th>Tax Year</th><th>Version</th><th>Status</th><th>Effective From</th><th>Effective To</th><th>Source</th></tr>
+                    </thead>
+                    <tbody>
+                      {regVersions.length === 0 && !regLoading && (
+                        <tr><td colSpan={6}><p className={styles.emptyState}>No versions available.</p></td></tr>
+                      )}
+                      {(regVersions as Array<Record<string, unknown>>).map((v) => (
+                        <tr key={String(v.tax_year)}>
+                          <td><strong>{String(v.tax_year)}</strong></td>
+                          <td style={{ color: '#94a3b8', fontSize: '0.82rem' }}>{String(v.version ?? '—')}</td>
+                          <td>
+                            <span style={{
+                              padding: '0.15rem 0.55rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 700,
+                              background: v.status === 'final' ? 'rgba(52,211,153,0.12)' : 'rgba(251,191,36,0.12)',
+                              color: v.status === 'final' ? '#34d399' : '#fbbf24',
+                            }}>
+                              {String(v.status ?? 'unknown')}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: '0.82rem', color: '#94a3b8' }}>{String(v.effective_from ?? '—')}</td>
+                          <td style={{ fontSize: '0.82rem', color: '#94a3b8' }}>{String(v.effective_to ?? '—')}</td>
+                          <td style={{ fontSize: '0.78rem', color: '#64748b', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{String(v.source ?? '—')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Developer Recommendations */}
+                {regDevRecs.length > 0 && (
+                  <>
+                    <div className={styles.sectionHeader} style={{ marginTop: '1.5rem' }}>
+                      <h2 className={styles.sectionTitle}>Developer Recommendations</h2>
+                      <p className={styles.sectionSubtitle}>Code changes suggested by comparing consecutive tax year rules.</p>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {(regDevRecs as Array<Record<string, unknown>>).map((rec, i) => (
+                        <div key={i} style={{
+                          padding: '0.875rem 1rem',
+                          background: 'rgba(251,191,36,0.06)',
+                          border: `1px solid ${rec.priority === 'high' ? 'rgba(248,113,113,0.3)' : 'rgba(251,191,36,0.25)'}`,
+                          borderRadius: '0.625rem',
+                        }}>
+                          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', marginBottom: '0.4rem' }}>
+                            <span style={{ padding: '0.1rem 0.5rem', borderRadius: '999px', fontSize: '0.7rem', fontWeight: 700, background: rec.priority === 'high' ? 'rgba(248,113,113,0.15)' : 'rgba(251,191,36,0.15)', color: rec.priority === 'high' ? '#f87171' : '#fbbf24', flexShrink: 0 }}>
+                              {String(rec.priority ?? 'low')}
+                            </span>
+                            <strong style={{ color: '#f1f5f9', fontSize: '0.9rem' }}>{String(rec.area ?? '')}</strong>
+                            <span style={{ color: '#64748b', fontSize: '0.78rem', marginLeft: 'auto' }}>{String(rec.change ?? '')}</span>
+                          </div>
+                          <p style={{ margin: '0 0 0.4rem', fontSize: '0.85rem', color: '#94a3b8' }}>{String(rec.recommendation ?? '')}</p>
+                          {Array.isArray(rec.files) && (
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              {(rec.files as string[]).map((f) => (
+                                <code key={f} style={{ fontSize: '0.72rem', padding: '0.1rem 0.4rem', background: 'rgba(99,102,241,0.12)', color: '#818cf8', borderRadius: '0.25rem' }}>{f}</code>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* AI Analysis */}
+            {regActiveTab === 'analysis' && (
+              <div className={styles.subContainer}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>AI Regulatory Analysis</h2>
+                  <p className={styles.sectionSubtitle}>GPT-4o-mini analyses detected changes and generates actionable insights.</p>
+                </div>
+                <div className={styles.adminActionsRow}>
+                  <button className={styles.button} type="button" disabled={regAnalyzing} onClick={runAnalysis}>
+                    {regAnalyzing ? 'Analysing…' : '🤖 Run AI Analysis'}
+                  </button>
+                </div>
+                {regAnalysis && (
+                  <>
+                    <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.75rem' }}>
+                      Analysed {String(regAnalysis.feed_items_analyzed ?? 0)} feed items + {String(regAnalysis.rule_changes_analyzed ?? 0)} rule changes at {String(regAnalysis.analyzed_at ?? '').replace('T', ' ').slice(0, 19)}
+                    </p>
+                    {regAnalysis.ai_summary && (
+                      <div style={{ padding: '0.875rem 1rem', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '0.625rem', marginBottom: '1rem' }}>
+                        <p style={{ margin: 0, fontSize: '0.9rem', color: '#c7d2fe', lineHeight: 1.6 }}>
+                          🤖 {String(regAnalysis.ai_summary)}
+                        </p>
+                      </div>
+                    )}
+                    {Array.isArray(regAnalysis.alerts) && (regAnalysis.alerts as Array<Record<string, unknown>>).length > 0 && (
+                      <>
+                        <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f1f5f9', marginBottom: '0.5rem' }}>Alerts</h3>
+                        {(regAnalysis.alerts as Array<Record<string, unknown>>).map((alert, i) => (
+                          <div key={i} style={{ padding: '0.75rem 1rem', background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.2)', borderRadius: '0.5rem', marginBottom: '0.5rem' }}>
+                            <strong style={{ color: '#f87171', fontSize: '0.85rem' }}>{String(alert.area ?? '')}</strong>
+                            <p style={{ margin: '0.3rem 0 0', fontSize: '0.83rem', color: '#94a3b8' }}>{String(alert.change ?? '')}</p>
+                            {alert.action != null && <p style={{ margin: '0.3rem 0 0', fontSize: '0.83rem', color: '#fbbf24' }}>→ {String(alert.action)}</p>}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </>
+                )}
+                {!regAnalysis && <p style={{ color: '#64748b', fontSize: '0.9rem' }}>Click &quot;Run AI Analysis&quot; to generate insights from detected regulatory changes.</p>}
+              </div>
+            )}
+
+            {/* Pending updates */}
+            {regActiveTab === 'updates' && (
+              <div className={styles.subContainer}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>Pending Rule Updates</h2>
+                  <p className={styles.sectionSubtitle}>Proposed regulatory changes awaiting owner approval.</p>
+                </div>
+                {regPending.length === 0 ? (
+                  <p style={{ color: '#64748b' }}>No pending updates.</p>
+                ) : (
+                  <div className={styles.tableResponsive}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr><th>Tax Year</th><th>Field</th><th>Old Value</th><th>New Value</th><th>Reason</th><th>Status</th><th>Actions</th></tr>
+                      </thead>
+                      <tbody>
+                        {(regPending as Array<Record<string, unknown>>).map((u) => (
+                          <tr key={String(u.id)}>
+                            <td>{String(u.tax_year)}</td>
+                            <td><code style={{ fontSize: '0.78rem' }}>{String(u.field_path)}</code></td>
+                            <td style={{ color: '#f87171' }}>{String(u.old_value)}</td>
+                            <td style={{ color: '#34d399' }}>{String(u.new_value)}</td>
+                            <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#94a3b8', fontSize: '0.82rem' }}>{String(u.reason)}</td>
+                            <td>
+                              <span style={{
+                                padding: '0.15rem 0.5rem', borderRadius: '999px', fontSize: '0.72rem', fontWeight: 600,
+                                background: u.status === 'approved' ? 'rgba(52,211,153,0.12)' : u.status === 'rejected' ? 'rgba(248,113,113,0.12)' : 'rgba(251,191,36,0.12)',
+                                color: u.status === 'approved' ? '#34d399' : u.status === 'rejected' ? '#f87171' : '#fbbf24',
+                              }}>
+                                {String(u.status)}
+                              </span>
+                            </td>
+                            <td>
+                              {u.status === 'pending' && (
+                                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                  <button className={styles.tableActionButton} type="button" onClick={() => approveUpdate(String(u.id))}>Approve</button>
+                                  <button className={styles.tableActionButton} type="button" onClick={() => rejectUpdate(String(u.id))} style={{ color: '#f87171', borderColor: 'rgba(248,113,113,0.3)' }}>Reject</button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Audit trail */}
+            {regActiveTab === 'audit' && (
+              <div className={styles.subContainer}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>Audit Trail</h2>
+                  <p className={styles.sectionSubtitle}>All regulatory events: checks, analyses, approvals, notifications.</p>
+                </div>
+                {regAuditLog.length === 0 ? (
+                  <p style={{ color: '#64748b' }}>No audit events yet.</p>
+                ) : (
+                  <div className={styles.tableResponsive}>
+                    <table className={styles.table}>
+                      <thead>
+                        <tr><th>Timestamp</th><th>Event</th><th>Detail</th><th>Actor</th></tr>
+                      </thead>
+                      <tbody>
+                        {(regAuditLog as Array<Record<string, unknown>>).map((ev) => (
+                          <tr key={String(ev.id)}>
+                            <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>{String(ev.timestamp ?? '').replace('T', ' ').slice(0, 19)}</td>
+                            <td><code style={{ fontSize: '0.78rem', color: '#818cf8' }}>{String(ev.event)}</code></td>
+                            <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#94a3b8', fontSize: '0.83rem' }}>{String(ev.detail ?? '')}</td>
+                            <td style={{ fontSize: '0.82rem' }}>{String(ev.actor ?? '—')}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* GOV.UK Feed */}
+            {regActiveTab === 'feed' && (
+              <div className={styles.subContainer}>
+                <div className={styles.sectionHeader}>
+                  <h2 className={styles.sectionTitle}>GOV.UK HMRC Feed</h2>
+                  <p className={styles.sectionSubtitle}>Latest updates from HMRC atom feed. Auto-checked every 24h.</p>
+                </div>
+                <div className={styles.adminActionsRow}>
+                  <button className={styles.button} type="button" onClick={triggerFeedCheck}>🔄 Check Feed Now</button>
+                </div>
+                {regFeedItems.length === 0 ? (
+                  <p style={{ color: '#64748b', marginTop: '0.75rem' }}>No feed items — click &quot;Check Feed Now&quot; or regulatory-service will check automatically every 24h.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+                    {(regFeedItems as Array<Record<string, unknown>>).map((item, i) => (
+                      <div key={i} style={{ padding: '0.875rem 1rem', background: 'var(--bg-surface, #1e293b)', border: '1px solid var(--border, rgba(148,163,184,0.12))', borderRadius: '0.625rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                          <strong style={{ color: '#f1f5f9', fontSize: '0.9rem' }}>
+                            {item.link ? <a href={String(item.link)} target="_blank" rel="noopener noreferrer" style={{ color: '#818cf8', textDecoration: 'none' }}>{String(item.title)}</a> : String(item.title)}
+                          </strong>
+                          <span style={{ fontSize: '0.75rem', color: '#64748b', flexShrink: 0 }}>{String(item.updated ?? '').slice(0, 10)}</span>
+                        </div>
+                        {item.summary != null && <p style={{ margin: 0, fontSize: '0.82rem', color: '#94a3b8' }}>{String(item.summary)}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {selectedPartnerModal && report && (
         <div className={styles.modalBackdrop} onClick={() => setSelectedPartnerModal(null)} role="presentation">

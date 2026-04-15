@@ -2908,6 +2908,7 @@ def _self_employed_invoice_csv_response(
 @app.get("/partners", response_model=List[schemas.Partner])
 async def list_partners(
     service_type: Optional[str] = Query(None),
+    _user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     return await crud.list_partners(db, service_type=service_type)
@@ -2916,6 +2917,7 @@ async def list_partners(
 @app.get("/partners/{partner_id}", response_model=schemas.Partner)
 async def get_partner_details(
     partner_id: uuid.UUID,
+    _user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     partner = await crud.get_partner_by_id(db, str(partner_id))
