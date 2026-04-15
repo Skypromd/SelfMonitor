@@ -1,6 +1,8 @@
 # Production-oriented overrides. Merge with base:
 #   docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml config
 #   docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml --profile backup up -d
+# Optional host port lockdown (only security-proxy 80/443 on the host):
+#   ... -f docker-compose.prod.lockdown.yml up -d
 #
 # Copy .env.prod.example → .env.prod (never commit). Optional: Docker secrets / root-only files on host.
 # Compose merges lists (ports, depends_on) with the base file — internal service ports from base may still

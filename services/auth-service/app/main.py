@@ -45,6 +45,9 @@ AUTH_ADMIN_EMAIL = os.getenv("AUTH_ADMIN_EMAIL", "admin@example.com")
 AUTH_ADMIN_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin_password")
 AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "true"
 REQUIRE_ADMIN_2FA = os.getenv("AUTH_REQUIRE_ADMIN_2FA", "true").lower() == "true"
+_VERIFICATION_CODES_DEBUG = os.getenv(
+    "AUTH_EMAIL_VERIFICATION_DEBUG_RETURN_CODE", "false"
+).lower() in ("1", "true", "yes")
 
 _DEFAULT_ADMIN_HEALTH_TARGETS: tuple[tuple[str, str], ...] = (
     ("auth-service", "http://auth-service:80/health"),
@@ -218,6 +221,8 @@ class TeamInvite(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+    refresh_token: Optional[str] = None
+    expires_in: Optional[int] = None
 
 
 class ApiKeyCreate(BaseModel):
@@ -375,6 +380,7 @@ def reset_auth_db_for_tests() -> None:
     with db_lock:
         conn = _connect()
         conn.execute("DELETE FROM api_keys")
+        conn.execute("DELETE FROM sessions")
         conn.execute("DELETE FROM users")
         conn.execute("DELETE FROM subscriptions")
         conn.commit()
@@ -829,6 +835,7 @@ async def confirm_password_reset(body: PasswordResetConfirm):
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(
+    request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ):
     check_account_lockout(form_data.username)
@@ -887,7 +894,41 @@ async def login_for_access_token(
         data=token_data,
         expires_delta=access_token_expires,
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    refresh_expires = datetime.timedelta(days=7)
+    session_jti = uuid.uuid4().hex
+    now_utc = datetime.datetime.now(datetime.UTC)
+    refresh_token = create_access_token(
+        data={"sub": user.email, "type": "refresh", "jti": session_jti},
+        expires_delta=refresh_expires,
+    )
+    expires_refresh_at = now_utc + refresh_expires
+    client_host = request.client.host if request.client else None
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO sessions (session_id, user_email, issued_at, expires_at, ip, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_jti,
+                    user.email,
+                    now_utc.isoformat(),
+                    expires_refresh_at.isoformat(),
+                    client_host,
+                    request.headers.get("user-agent"),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        refresh_token=refresh_token,
+        expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
 
 
 @app.post("/api-keys", response_model=ApiKeyCreated, status_code=status.HTTP_201_CREATED)
@@ -1244,8 +1285,8 @@ async def phone_send_code(payload: PhoneSendRequest):
     )
 
     response: dict[str, Any] = {"sent": True}
-    if SMS_DEV_MODE:
-        response["dev_code"] = code  # expose only in dev — remove in production
+    if SMS_DEV_MODE and _VERIFICATION_CODES_DEBUG:
+        response["dev_code"] = code
     return response
 
 
@@ -2122,6 +2163,10 @@ class EmailVerificationRequestResp(BaseModel):
     message: str
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(min_length=24, max_length=4096)
+
+
 class TokenPairResponse(BaseModel):
     access_token: str
     refresh_token: str
@@ -2310,25 +2355,105 @@ async def revoke_all_sessions(
 
 
 @app.post("/token/refresh", response_model=TokenPairResponse)
-async def refresh_token(
-    current_user: Annotated[User, Depends(get_current_active_user)],
-):
-    """Issue a new access token (refresh flow simplified — Bearer auth confirms identity)."""
+async def refresh_token(request: Request, body: RefreshTokenRequest):
+    """Rotate refresh token and issue a new access token with subscription claims from DB."""
+    try:
+        payload: dict[str, Any] = jwt.decode(
+            body.refresh_token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            options={"require": ["exp"]},
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        ) from None
+    if payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+    email = str(payload.get("sub") or "")
+    jti = str(payload.get("jti") or "")
+    if not email or not jti:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+    user = get_user(email)
+    if user is None or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User inactive or missing",
+        )
+    now_utc = datetime.datetime.now(datetime.UTC)
+    refresh_expires = datetime.timedelta(days=7)
+    new_jti = uuid.uuid4().hex
+    expires_refresh_at = now_utc + refresh_expires
+    client_host = request.client.host if request.client else None
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT session_id, expires_at, revoked_at FROM sessions WHERE session_id = ? AND user_email = ?",
+                (jti, email),
+            ).fetchone()
+            if row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token not recognized",
+                )
+            if row["revoked_at"] is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token revoked",
+                )
+            exp_at = datetime.datetime.fromisoformat(str(row["expires_at"]))
+            if exp_at.tzinfo is None:
+                exp_at = exp_at.replace(tzinfo=datetime.timezone.utc)
+            if now_utc > exp_at:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token expired",
+                )
+            conn.execute(
+                "UPDATE sessions SET revoked_at = ?, revocation_reason = ? WHERE session_id = ?",
+                (now_utc.isoformat(), "rotated", jti),
+            )
+            conn.execute(
+                """
+                INSERT INTO sessions (session_id, user_email, issued_at, expires_at, ip, user_agent)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    new_jti,
+                    email,
+                    now_utc.isoformat(),
+                    expires_refresh_at.isoformat(),
+                    client_host,
+                    request.headers.get("user-agent"),
+                ),
+            )
+            conn.commit()
+        except HTTPException:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_claims: dict[str, object] = {
-        "sub": current_user.email,
-        "is_admin": current_user.is_admin,
-        **_jwt_rbac_claims(current_user.is_admin, current_user.role),
-        **_jwt_subscription_claims(current_user.email),
+        "sub": user.email,
+        "is_admin": user.is_admin,
+        **_jwt_rbac_claims(user.is_admin, user.role),
+        **_jwt_subscription_claims(user.email),
     }
     new_access = create_access_token(
         data=refresh_claims,
         expires_delta=access_token_expires,
     )
-    # Refresh token: long-lived JWT (7 days) — client should store and re-use
-    refresh_expires = datetime.timedelta(days=7)
     new_refresh = create_access_token(
-        data={"sub": current_user.email, "type": "refresh"},
+        data={"sub": user.email, "type": "refresh", "jti": new_jti},
         expires_delta=refresh_expires,
     )
     return TokenPairResponse(
@@ -2370,7 +2495,7 @@ async def request_email_verification(
     _log_security_event(current_user.email, "email_verification_requested")
     return EmailVerificationRequestResp(
         code_sent=True,
-        debug_code=code,  # In production, send via email; dev shows it directly
+        debug_code=code if _VERIFICATION_CODES_DEBUG else None,
         expires_at=expires_at,
         message="Verification code sent to your email address.",
     )

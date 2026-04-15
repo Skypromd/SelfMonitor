@@ -5,9 +5,17 @@ import os
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from app.main import (
-    app, get_user_record, reset_auth_db_for_tests, set_user_admin_for_tests,
-    _login_attempts, get_subscription, create_subscription, _expire_trial,
-    PLAN_FEATURES, SECRET_KEY, ALGORITHM,
+    app,
+    get_user_record,
+    reset_auth_db_for_tests,
+    set_user_admin_for_tests,
+    _login_attempts,
+    get_subscription,
+    create_subscription,
+    _expire_trial,
+    PLAN_FEATURES,
+    SECRET_KEY,
+    ALGORITHM,
 )
 import datetime
 import pyotp
@@ -530,3 +538,37 @@ def test_admin_user_detail_ok():
     )
     assert r.status_code == 200
     assert r.json()["email"] == target
+
+
+def test_login_returns_refresh_token():
+    email = "refresh-login@example.com"
+    client.post("/register", json={"email": email, "password": STRONG_PASSWORD})
+    resp = client.post("/token", data={"username": email, "password": STRONG_PASSWORD})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("refresh_token")
+    assert data.get("expires_in") == 30 * 60
+    dec = jose_jwt.decode(
+        data["refresh_token"], SECRET_KEY, algorithms=[ALGORITHM]
+    )
+    assert dec.get("type") == "refresh"
+    assert dec.get("sub") == email
+    assert dec.get("jti")
+
+
+def test_token_refresh_rotates_and_updates_access_claims():
+    email = "refresh-rotate@example.com"
+    client.post("/register", json={"email": email, "password": STRONG_PASSWORD})
+    login = client.post("/token", data={"username": email, "password": STRONG_PASSWORD})
+    rt = login.json()["refresh_token"]
+    at1 = login.json()["access_token"]
+    create_subscription(email, "pro")
+    rot = client.post("/token/refresh", json={"refresh_token": rt})
+    assert rot.status_code == 200
+    body = rot.json()
+    assert body["access_token"] != at1
+    assert body["refresh_token"] != rt
+    claims = jose_jwt.decode(body["access_token"], SECRET_KEY, algorithms=[ALGORITHM])
+    assert claims.get("plan") == "pro"
+    reused = client.post("/token/refresh", json={"refresh_token": rt})
+    assert reused.status_code == 401

@@ -1,8 +1,11 @@
 """
-Subscription limits embedded in JWT (issued by auth-service).
+Subscription limits from JWT claims (issued by auth-service).
 
-Services should use these claims for enforcement; fallbacks match free-tier defaults
-when tokens were issued before claims existed.
+Use for fast enforcement on each request. Claims are refreshed when the client calls
+``POST /token/refresh`` (refresh token) or logs in again — those paths rebuild claims from DB.
+
+For authoritative plan state in edge cases, call auth ``GET /subscription/me`` (requires access token).
+Fallbacks match free-tier defaults when tokens predate a claim.
 """
 
 from __future__ import annotations
