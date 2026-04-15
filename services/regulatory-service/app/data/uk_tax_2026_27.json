@@ -1,0 +1,139 @@
+{
+  "tax_year": "2026-27",
+  "effective_from": "2026-04-06",
+  "effective_to": "2027-04-05",
+  "version": "2025-11-30",
+  "status": "draft",
+  "source": "HMRC Autumn Budget 2024 projections (subject to change at Spring Budget 2026)",
+
+  "income_tax": {
+    "personal_allowance": 12570,
+    "personal_allowance_taper_threshold": 100000,
+    "personal_allowance_taper_rate": 0.5,
+    "bands": [
+      {"name": "basic",      "rate": 0.20, "from": 0,      "to": 37700},
+      {"name": "higher",     "rate": 0.40, "from": 37700,  "to": 125140},
+      {"name": "additional", "rate": 0.45, "from": 125140, "to": null}
+    ],
+    "notes": "DRAFT: All rates and bands projected to remain frozen until April 2028 per current policy."
+  },
+
+  "national_insurance": {
+    "class_2": {
+      "weekly_rate": 3.45,
+      "small_profits_threshold": 6725,
+      "lower_profits_limit": 12570,
+      "notes": "DRAFT: Rates subject to Spring Budget 2026 announcement."
+    },
+    "class_4": {
+      "lower_profits_limit": 12570,
+      "upper_profits_limit": 50270,
+      "main_rate": 0.06,
+      "additional_rate": 0.02,
+      "notes": "DRAFT: Projected to remain at 6% main rate."
+    }
+  },
+
+  "mtd_itsa": {
+    "mandatory_from": "2026-04-06",
+    "threshold": 50000,
+    "reporting_cadence": "quarterly_plus_final",
+    "quarterly_periods": [
+      {"quarter": "Q1", "period_start": "2026-04-06", "period_end": "2026-07-05", "deadline": "2026-08-07"},
+      {"quarter": "Q2", "period_start": "2026-07-06", "period_end": "2026-10-05", "deadline": "2026-11-07"},
+      {"quarter": "Q3", "period_start": "2026-10-06", "period_end": "2027-01-05", "deadline": "2027-02-07"},
+      {"quarter": "Q4", "period_start": "2027-01-06", "period_end": "2027-04-05", "deadline": "2027-05-07"}
+    ],
+    "final_declaration_deadline": "2028-01-31",
+    "notes": "MTD ITSA MANDATORY from April 2026 for income >£50k. First full year of quarterly digital reporting."
+  },
+
+  "vat": {
+    "registration_threshold": 90000,
+    "deregistration_threshold": 88000,
+    "standard_rate": 0.20,
+    "reduced_rate": 0.05,
+    "zero_rate": 0.00,
+    "flat_rate_scheme_available": true,
+    "notes": "DRAFT: VAT threshold projected to remain at £90k."
+  },
+
+  "student_loans": {
+    "plan_1": {"threshold": 25000, "rate": 0.09},
+    "plan_2": {"threshold": 27295, "rate": 0.09},
+    "plan_4": {"threshold": 31395, "rate": 0.09},
+    "plan_5": {"threshold": 25000, "rate": 0.09},
+    "postgraduate": {"threshold": 21000, "rate": 0.06},
+    "notes": "DRAFT: Plan 1 threshold projected to increase. Confirm at Budget."
+  },
+
+  "allowances": {
+    "trading_allowance": 1000,
+    "dividend_allowance": 500,
+    "capital_gains_annual_exempt": 3000,
+    "marriage_allowance_transfer": 1260,
+    "annual_investment_allowance": 1000000,
+    "use_of_home_flat_rate_weekly": 6,
+    "blind_persons_allowance": 3130
+  },
+
+  "allowable_expenses": {
+    "categories": [
+      {"code": "office_costs",      "hmrc_box": 17, "description": "Stationery, phone bills, postage, printing, software"},
+      {"code": "travel",            "hmrc_box": 18, "description": "Fuel, parking, train, bus, flights, accommodation"},
+      {"code": "clothing",          "hmrc_box": 19, "description": "Uniforms, protective equipment, costumes"},
+      {"code": "staff_costs",       "hmrc_box": 20, "description": "Salaries, subcontractors, National Insurance"},
+      {"code": "stock_materials",   "hmrc_box": 21, "description": "Raw materials, components, stock"},
+      {"code": "financial_costs",   "hmrc_box": 22, "description": "Insurance, bank charges, loan interest"},
+      {"code": "premises",          "hmrc_box": 23, "description": "Rent, rates, utilities, repairs and maintenance"},
+      {"code": "advertising",       "hmrc_box": 24, "description": "Marketing, website costs, advertising"},
+      {"code": "interest",          "hmrc_box": 25, "description": "Business loan interest"},
+      {"code": "professional_fees", "hmrc_box": 26, "description": "Accountant, solicitor, consultancy"},
+      {"code": "depreciation",      "hmrc_box": 27, "description": "Equipment, vehicles (use capital allowances)"},
+      {"code": "other_expenses",    "hmrc_box": 28, "description": "Other allowable business expenses"},
+      {"code": "use_of_home",       "hmrc_box": 28, "description": "Home office: flat rate £6/week or proportional"},
+      {"code": "vehicle_mileage",   "hmrc_box": 18, "description": "45p/mile first 10,000 miles, 25p thereafter"},
+      {"code": "subscriptions",     "hmrc_box": 17, "description": "Professional subscriptions, software"},
+      {"code": "training",          "hmrc_box": 26, "description": "Work-related training and education"},
+      {"code": "equipment",         "hmrc_box": 27, "description": "Tools, computers, machinery (via AIA)"},
+      {"code": "telephone",         "hmrc_box": 17, "description": "Business proportion of phone and broadband"},
+      {"code": "legal",             "hmrc_box": 26, "description": "Legal fees for business contracts"},
+      {"code": "accounting",        "hmrc_box": 26, "description": "Bookkeeping and accounting fees"},
+      {"code": "electric_vehicle",  "hmrc_box": 18, "description": "EV charging costs, zero-emission vehicle AIA"},
+      {"code": "pension",           "hmrc_box": 28, "description": "Employer pension contributions"},
+      {"code": "health_safety",     "hmrc_box": 28, "description": "First aid training, safety equipment"},
+      {"code": "bank_charges",      "hmrc_box": 22, "description": "Business bank account fees and charges"}
+    ],
+    "mileage_rates": {
+      "car_first_10000_miles": 0.45,
+      "car_over_10000_miles": 0.25,
+      "motorcycle": 0.24,
+      "bicycle": 0.20
+    }
+  },
+
+  "deadlines": [
+    {"name": "Tax Year Start",                 "date": "2026-04-06", "type": "info"},
+    {"name": "Tax Year End",                   "date": "2027-04-05", "type": "info"},
+    {"name": "Register for Self Assessment",   "date": "2026-10-05", "type": "action"},
+    {"name": "Paper Tax Return Deadline",      "date": "2026-10-31", "type": "deadline"},
+    {"name": "Online Tax Return Deadline",     "date": "2027-01-31", "type": "deadline"},
+    {"name": "Payment of Tax Due",             "date": "2027-01-31", "type": "payment"},
+    {"name": "Payment on Account (1st)",       "date": "2027-01-31", "type": "payment"},
+    {"name": "Payment on Account (2nd)",       "date": "2027-07-31", "type": "payment"},
+    {"name": "MTD Q1 Submission",              "date": "2026-08-07", "type": "mtd_quarterly"},
+    {"name": "MTD Q2 Submission",              "date": "2026-11-07", "type": "mtd_quarterly"},
+    {"name": "MTD Q3 Submission",              "date": "2027-02-07", "type": "mtd_quarterly"},
+    {"name": "MTD Q4 Submission",              "date": "2027-05-07", "type": "mtd_quarterly"}
+  ],
+
+  "regulatory_changes_from_prior_year": [
+    {
+      "area": "MTD ITSA",
+      "description": "MTD ITSA MANDATORY from this year for income >£50k. Self-employed and landlords must submit quarterly updates digitally.",
+      "impact": "new_mandatory_requirement",
+      "affects": "income_over_50k",
+      "action_required": "Ensure MTD-compatible software is set up before April 2026"
+    }
+  ]
+}

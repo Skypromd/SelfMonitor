@@ -23,36 +23,110 @@ MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL = os.getenv(
 )
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
 INVOICE_SERVICE_URL = os.getenv("INVOICE_SERVICE_URL", "http://invoice-service:80")
-# Full HMRC allowable expense categories (Self Assessment SA103F)
+REGULATORY_SERVICE_URL = os.getenv("REGULATORY_SERVICE_URL", "http://regulatory-service:8025")
+
+# ── Regulatory rates: fetched from regulatory-service at startup, ────────────
+# with hardcoded fallback (2025/26) so the service starts without regulatory-service.
+# On every /calculate call, rates from regulatory-service are used when available.
+_REGULATORY_RULES_CACHE: dict[str, Any] = {}
+
+async def _fetch_regulatory_rules(tax_year: str = "2025-26") -> dict[str, Any]:
+    """Fetch tax rules from regulatory-service. Returns cached fallback on failure."""
+    cache_key = tax_year
+    if cache_key in _REGULATORY_RULES_CACHE:
+        return _REGULATORY_RULES_CACHE[cache_key]
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{REGULATORY_SERVICE_URL}/rules/tax-year/{tax_year}")
+            if resp.is_success:
+                data = resp.json()
+                _REGULATORY_RULES_CACHE[cache_key] = data
+                return data
+    except Exception as exc:
+        logger.warning("Could not reach regulatory-service (%s) — using hardcoded fallback.", exc)
+    return {}
+
+def _extract_rates(rules: dict[str, Any]) -> dict[str, Any]:
+    """Extract flat rate values from regulatory-service response."""
+    it = rules.get("income_tax", {})
+    ni = rules.get("national_insurance", {})
+    allowances = rules.get("allowances", {})
+    bands = it.get("bands", [])
+    band_map = {b["name"]: b for b in bands}
+    expenses = rules.get("allowable_expenses", {})
+    expense_codes = {c["code"] for c in expenses.get("categories", [])}
+    return {
+        "personal_allowance": it.get("personal_allowance", 12570.0),
+        "pa_taper_threshold": it.get("personal_allowance_taper_threshold", 100000.0),
+        "basic_rate": band_map.get("basic", {}).get("rate", 0.20),
+        "basic_rate_limit": band_map.get("basic", {}).get("to", 37700.0),
+        "higher_rate": band_map.get("higher", {}).get("rate", 0.40),
+        "higher_rate_limit": band_map.get("higher", {}).get("to", 125140.0),
+        "additional_rate": band_map.get("additional", {}).get("rate", 0.45),
+        "class2_weekly": ni.get("class_2", {}).get("weekly_rate", 3.45),
+        "class2_small_profits": ni.get("class_2", {}).get("small_profits_threshold", 6725.0),
+        "class2_lpl": ni.get("class_2", {}).get("lower_profits_limit", 12570.0),
+        "class4_lpl": ni.get("class_4", {}).get("lower_profits_limit", 12570.0),
+        "class4_upl": ni.get("class_4", {}).get("upper_profits_limit", 50270.0),
+        "class4_main": ni.get("class_4", {}).get("main_rate", 0.06),
+        "class4_add": ni.get("class_4", {}).get("additional_rate", 0.02),
+        "trading_allowance": allowances.get("trading_allowance", 1000.0),
+        "expense_codes": expense_codes,
+    }
+
+# Hardcoded fallback (2025/26) — used only when regulatory-service unreachable
+_FALLBACK_RATES: dict[str, Any] = {
+    "personal_allowance": 12_570.0,
+    "pa_taper_threshold": 100_000.0,
+    "basic_rate": 0.20,
+    "basic_rate_limit": 37_700.0,
+    "higher_rate": 0.40,
+    "higher_rate_limit": 125_140.0,
+    "additional_rate": 0.45,
+    "class2_weekly": 3.45,
+    "class2_small_profits": 6_725.0,
+    "class2_lpl": 12_570.0,
+    "class4_lpl": 12_570.0,
+    "class4_upl": 50_270.0,
+    "class4_main": 0.06,
+    "class4_add": 0.02,
+    "trading_allowance": 1_000.0,
+    "expense_codes": set(),
+}
+
+# Kept as fallback constants (also used in calculators.py which is standalone)
+UK_PERSONAL_ALLOWANCE = 12_570.0
+UK_BASIC_RATE_LIMIT = 37_700.0
+UK_HIGHER_RATE_LIMIT = 125_140.0
+UK_BASIC_TAX_RATE = 0.20
+UK_HIGHER_TAX_RATE = 0.40
+UK_ADDITIONAL_TAX_RATE = 0.45
+UK_CLASS2_NI_ANNUAL = 179.40
+UK_CLASS2_SMALL_PROFITS = 6_725.0
+UK_CLASS4_NIC_LOWER_PROFITS_LIMIT = 12_570.0
+UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT = 50_270.0
+UK_CLASS4_NIC_MAIN_RATE = 0.06
+UK_CLASS4_NIC_ADDITIONAL_RATE = 0.02
+
+# Full HMRC allowable expense categories (SA103F) — fallback, extended from regulatory-service
 DEDUCTIBLE_EXPENSE_CATEGORIES = {
-    "transport", "travel", "fuel", "mileage",
-    "subscriptions", "office_supplies", "office", "stationery",
+    "transport", "travel", "fuel", "mileage", "vehicle_mileage",
+    "subscriptions", "office_supplies", "office_costs", "office", "stationery",
     "professional_fees", "legal", "accounting",
     "advertising", "marketing", "promotion",
-    "insurance",
-    "utilities", "rent", "premises", "home_office",
-    "phone", "internet", "communication",
+    "insurance", "financial_costs",
+    "utilities", "rent", "premises", "home_office", "use_of_home",
+    "phone", "internet", "communication", "telephone",
     "training", "education", "courses",
     "equipment", "tools", "hardware", "software",
     "bank_charges", "financial_charges",
     "clothing", "uniform",
     "repairs", "maintenance",
     "staff_costs", "wages",
-    "cost_of_goods", "materials", "stock",
-    "pension",
+    "cost_of_goods", "materials", "stock", "stock_materials",
+    "pension", "interest",
+    "electric_vehicle", "health_safety",
 }
-UK_PERSONAL_ALLOWANCE = 12_570.0
-UK_BASIC_RATE_LIMIT = 37_700.0    # taxable income where 20% band ends
-UK_HIGHER_RATE_LIMIT = 125_140.0  # above this = 45% (PA fully tapered)
-UK_BASIC_TAX_RATE = 0.20
-UK_HIGHER_TAX_RATE = 0.40
-UK_ADDITIONAL_TAX_RATE = 0.45
-UK_CLASS2_NI_ANNUAL = 179.40      # £3.45 × 52 weeks
-UK_CLASS2_SMALL_PROFITS = 6_725.0
-UK_CLASS4_NIC_LOWER_PROFITS_LIMIT = 12_570.0
-UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT = 50_270.0
-UK_CLASS4_NIC_MAIN_RATE = 0.06
-UK_CLASS4_NIC_ADDITIONAL_RATE = 0.02
 DEFAULT_MTD_ITSA_RULES: list[dict[str, Any]] = [
     {
         "policy_code": "UK_MTD_ITSA_2026",

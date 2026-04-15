@@ -607,12 +607,14 @@ services:
       - transactions-service
       - integrations-service
       - calendar-service
+      - regulatory-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${TAX_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       INTEGRATIONS_SERVICE_URL: "${TAX_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/submit-tax-return}"
       MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL: "${TAX_MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/mtd/quarterly-update}"
       CALENDAR_SERVICE_URL: "${TAX_CALENDAR_SERVICE_URL:-http://calendar-service/events}"
+      REGULATORY_SERVICE_URL: "${REGULATORY_SERVICE_URL:-http://regulatory-service:8025}"
       TAX_MTD_ITSA_RULES_JSON: '${TAX_MTD_ITSA_RULES_JSON:-[{"policy_code":"UK_MTD_ITSA_2026","effective_from":"2026-04-06","threshold":50000,"reporting_cadence":"quarterly_updates_plus_final_declaration"},{"policy_code":"UK_MTD_ITSA_2027","effective_from":"2027-04-06","threshold":30000,"reporting_cadence":"quarterly_updates_plus_final_declaration"},{"policy_code":"UK_MTD_ITSA_2028","effective_from":"2028-04-06","threshold":20000,"reporting_cadence":"quarterly_updates_plus_final_declaration"}]}'
       OTEL_SERVICE_NAME: "${TAX_OTEL_SERVICE_NAME:-tax-engine}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${TAX_OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}"
@@ -1167,6 +1169,23 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    restart: unless-stopped
+
+  regulatory-service:
+    build: ./services/regulatory-service
+    container_name: regulatory-service
+    environment:
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+    ports:
+      - "8025:8025"
+    networks:
+      - default_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8025/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
 
 volumes:
