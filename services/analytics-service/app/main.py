@@ -126,7 +126,12 @@ async def enforce_plan_feature_paths(request: Request, call_next):
             content={"detail": "Authentication required for this feature."},
         )
     token = auth.split(" ", 1)[1]
-    secret_key = os.environ["AUTH_SECRET_KEY"]
+    secret_key = os.environ["AUTH_SECRET_KEY"].strip()
+    if not secret_key:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Server misconfigured: AUTH_SECRET_KEY empty."},
+        )
     try:
         payload: dict[str, object] = jwt.decode(token, secret_key, algorithms=["HS256"])
     except JWTError:

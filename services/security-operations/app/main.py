@@ -38,7 +38,9 @@ app = FastAPI(
 )
 
 # Security Configuration
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "ultra_secure_key_for_production")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"].strip()
+if not AUTH_SECRET_KEY:
+    raise RuntimeError("AUTH_SECRET_KEY must be non-empty")
 AUTH_ALGORITHM = "HS256"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY", Fernet.generate_key().decode())
 THREAT_DETECTION_API_KEY = os.getenv("THREAT_DETECTION_API_KEY", secrets.token_hex(32))

@@ -35,11 +35,13 @@ async def lifespan(app: FastAPI):
     # Initialize Conversation Manager
     conversation_manager = ConversationManager(memory_manager)
 
-    # Initialize Main Agent
+    openai_key = os.environ["OPENAI_API_KEY"].strip()
+    if not openai_key:
+        raise RuntimeError("OPENAI_API_KEY must be non-empty")
     agent_instance = SelfMateAgent(
         memory_manager=memory_manager,
         tool_registry=tool_registry,
-        openai_api_key=os.getenv("OPENAI_API_KEY", "default_key"),
+        openai_api_key=openai_key,
         model="gpt-4-turbo-preview"
     )
 

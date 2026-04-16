@@ -38,7 +38,9 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:80")
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "").strip()
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"].strip()
+if not AUTH_SECRET_KEY:
+    raise RuntimeError("AUTH_SECRET_KEY must be non-empty")
 COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://compliance-service:80")
 DEV_MODE = not bool(STRIPE_SECRET_KEY)
 

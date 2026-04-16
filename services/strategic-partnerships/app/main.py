@@ -35,7 +35,9 @@ app = FastAPI(
 )
 
 # Authentication & API Keys
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "partnership_platform_key")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"].strip()
+if not AUTH_SECRET_KEY:
+    raise RuntimeError("AUTH_SECRET_KEY must be non-empty")
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/partnerships/auth/token")
 api_key_header = APIKeyHeader(name="X-Partner-API-Key", auto_error=False)
