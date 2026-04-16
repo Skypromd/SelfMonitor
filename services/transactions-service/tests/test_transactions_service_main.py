@@ -1,5 +1,5 @@
+import asyncio
 import pytest
-import pytest_asyncio
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -9,6 +9,9 @@ from jose import jwt
 # Adjust path to import app and other modules
 import sys
 import os
+
+os.environ.setdefault("AUTH_SECRET_KEY", "test-secret")
+os.environ.setdefault("INTERNAL_SERVICE_SECRET", "test-internal-secret")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 for module_name in list(sys.modules):
     if module_name == "app" or module_name.startswith("app."):
@@ -17,8 +20,9 @@ for module_name in list(sys.modules):
 from app.main import app
 from app.database import get_db, Base
 from app import schemas
+from libs.shared_auth.internal_jwt import encode_receipt_draft_internal_token
 
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 TEST_USER_ID = "test-user@example.com"
 
@@ -49,20 +53,24 @@ async def override_get_db():
 
 app.dependency_overrides[get_db] = override_get_db
 
-# Fixture to create/drop tables for each test function
-@pytest_asyncio.fixture()
-async def db_session():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+@pytest.fixture()
+def db_session():
+    async def _create() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    async def _drop() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+
+    asyncio.run(_create())
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    asyncio.run(_drop())
 
 # --- Tests ---
 client = TestClient(app)
 
-@pytest.mark.asyncio
-async def test_import_and_get_transactions(db_session):
+def test_import_and_get_transactions(db_session):
     account_id = str(uuid.uuid4())
     user_id = TEST_USER_ID
 
@@ -93,8 +101,7 @@ async def test_import_and_get_transactions(db_session):
     assert transactions[1]["description"] == "Coffee"
     assert transactions[0]["user_id"] == user_id
 
-@pytest.mark.asyncio
-async def test_update_transaction_category(db_session):
+def test_update_transaction_category(db_session):
     account_id = str(uuid.uuid4())
 
     # 1. Import a transaction
@@ -128,8 +135,7 @@ async def test_update_transaction_category(db_session):
     get_response_after_update = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers())
     assert get_response_after_update.json()[0]["category"] == "groceries"
 
-@pytest.mark.asyncio
-async def test_update_nonexistent_transaction(db_session):
+def test_update_nonexistent_transaction(db_session):
     non_existent_id = str(uuid.uuid4())
     response = client.patch(
         f"/transactions/{non_existent_id}",
@@ -139,8 +145,7 @@ async def test_update_nonexistent_transaction(db_session):
     assert response.status_code == 404
     assert response.json() == {"detail": "Transaction not found"}
 
-@pytest.mark.asyncio
-async def test_get_all_my_transactions(db_session):
+def test_get_all_my_transactions(db_session):
     # Import transactions for two different accounts but for the same user
     account_id_1 = str(uuid.uuid4())
     account_id_2 = str(uuid.uuid4())
@@ -160,8 +165,70 @@ async def test_get_all_my_transactions(db_session):
     assert "Salary" in descriptions
 
 
-@pytest.mark.asyncio
-async def test_create_receipt_draft_transaction_and_deduplicate(db_session):
+def test_transactions_me_rejects_user_token_with_internal_call_claim(db_session):
+    bad = jwt.encode(
+        {"sub": TEST_USER_ID, "internal_call": True},
+        AUTH_SECRET_KEY,
+        algorithm=AUTH_ALGORITHM,
+    )
+    response = client.get(
+        "/transactions/me",
+        headers={"Authorization": f"Bearer {bad}"},
+    )
+    assert response.status_code == 401
+
+
+def test_import_rejects_internal_service_token(db_session):
+    account_id = str(uuid.uuid4())
+    token = encode_receipt_draft_internal_token(
+        user_id=TEST_USER_ID, issuer="documents-service"
+    )
+    response = client.post(
+        "/import",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "txn-internal",
+                    "date": "2023-10-01",
+                    "description": "Test",
+                    "amount": -1.0,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 401
+
+
+def test_create_receipt_draft_accepts_internal_service_token(db_session):
+    payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "internal_worker_receipt.pdf",
+        "transaction_date": "2026-03-01",
+        "total_amount": 12.0,
+        "currency": "GBP",
+        "vendor_name": "Cafe",
+        "suggested_category": "meals",
+        "expense_article": "office_costs",
+        "is_potentially_deductible": False,
+    }
+    token = encode_receipt_draft_internal_token(
+        user_id=TEST_USER_ID, issuer="documents-service"
+    )
+    response = client.post(
+        "/transactions/receipt-drafts",
+        headers={"Authorization": f"Bearer {token}"},
+        json=payload,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["duplicated"] is False
+    assert data["transaction"]["user_id"] == TEST_USER_ID
+
+
+def test_create_receipt_draft_transaction_and_deduplicate(db_session):
     payload = {
         "document_id": str(uuid.uuid4()),
         "filename": "trainline_receipt.pdf",
@@ -199,8 +266,7 @@ async def test_create_receipt_draft_transaction_and_deduplicate(db_session):
     assert second_data["transaction"]["id"] == first_tx["id"]
 
 
-@pytest.mark.asyncio
-async def test_import_reconciles_matching_receipt_draft(db_session):
+def test_import_reconciles_matching_receipt_draft(db_session):
     account_id = str(uuid.uuid4())
     draft_payload = {
         "document_id": str(uuid.uuid4()),
@@ -256,8 +322,7 @@ async def test_import_reconciles_matching_receipt_draft(db_session):
     assert reconciled["category"] == "transport"
 
 
-@pytest.mark.asyncio
-async def test_manual_reconcile_unmatched_receipt_draft(db_session):
+def test_manual_reconcile_unmatched_receipt_draft(db_session):
     account_id = str(uuid.uuid4())
     draft_payload = {
         "document_id": str(uuid.uuid4()),
@@ -332,8 +397,7 @@ async def test_manual_reconcile_unmatched_receipt_draft(db_session):
     assert transactions[0]["id"] == draft_tx["id"]
 
 
-@pytest.mark.asyncio
-async def test_ignore_candidate_and_search_for_manual_match(db_session):
+def test_ignore_candidate_and_search_for_manual_match(db_session):
     account_id = str(uuid.uuid4())
     draft_payload = {
         "document_id": str(uuid.uuid4()),
@@ -407,8 +471,7 @@ async def test_ignore_candidate_and_search_for_manual_match(db_session):
     assert candidate["ignored"] is True
 
 
-@pytest.mark.asyncio
-async def test_ignore_and_reopen_receipt_draft(db_session):
+def test_ignore_and_reopen_receipt_draft(db_session):
     draft_payload = {
         "document_id": str(uuid.uuid4()),
         "filename": "ignored_receipt.pdf",

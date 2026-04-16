@@ -4,6 +4,7 @@ os.environ.setdefault("OPENAI_API_KEY", "")
 
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, patch
 
 from app.main import app
 
@@ -11,8 +12,9 @@ client = TestClient(app)
 
 
 def test_health():
-    resp = client.get("/health")
+    resp = client.get("/health", headers={"X-Request-Id": "reg-test-rid"})
     assert resp.status_code == 200
+    assert resp.headers.get("X-Request-Id") == "reg-test-rid"
     data = resp.json()
     assert data["status"] == "ok"
     assert "2025-26" in data["available_tax_years"]
@@ -253,3 +255,60 @@ def test_get_available_years():
     data = resp.json()
     assert "2025-26" in data["available_years"]
     assert "current_tax_year" in data
+
+
+def test_rules_changelog():
+    resp = client.get("/rules/changelog?limit=10")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "entries" in data
+    assert data["total"] >= 0
+
+
+def test_rules_diff_consecutive_years():
+    resp = client.get("/rules/diff?from=2024-25&to=2025-26")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["from"] == "2024-25"
+    assert data["to"] == "2025-26"
+    paths = {c["path"] for c in data["changes"]}
+    assert any("national_insurance.class_4.main_rate" in p for p in paths)
+
+
+def test_admin_govuk_watch():
+    resp = client.get("/admin/regulatory/govuk-watch")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["sources_configured"] >= 1
+    assert "pages" in data
+
+
+def test_validate_ai_diff_without_openai():
+    resp = client.post(
+        "/admin/regulatory/validate-ai-diff",
+        json={"tax_year_left": "2024-25", "tax_year_right": "2025-26", "source_url": "https://www.gov.uk/"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "action" in data or "valid" in data
+
+
+def test_scrape_live_mocked():
+    mock_fetch = AsyncMock(
+        return_value={
+            "path": "/guidance/test",
+            "url": "https://www.gov.uk/guidance/test",
+            "title": "Test",
+            "headings": [],
+            "amounts_gbp_sample": [12570.0],
+            "amounts_parsed_total": 1,
+            "amounts_distinct_count": 1,
+        },
+    )
+    with patch("app.main.fetch_and_extract_govuk_page", mock_fetch):
+        resp = client.post("/admin/regulatory/scrape-live", json={"path": "/guidance/test"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    assert data["results"][0]["amounts_gbp_sample"][0] == 12570.0
+    mock_fetch.assert_awaited()

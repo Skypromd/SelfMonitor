@@ -9,6 +9,7 @@ on:
       - "apps/web-portal/**"
       - "apps/mobile/**"
       - "tests/**"
+      - "libs/**"
       - "nginx/**"
       - ".github/workflows/ci.yaml"
 
@@ -45,7 +46,9 @@ jobs:
           - consent-service
           - documents-service
           - integrations-service
+          - mtd-agent
           - partner-registry
+          - regulatory-service
           - tax-engine
           - transactions-service
           - user-profile-service
@@ -73,6 +76,10 @@ jobs:
 
       - name: Run tests with pytest
         working-directory: ./services/${{ matrix.service }}
+        env:
+          AUTH_SECRET_KEY: test-ci-auth-secret
+          INTERNAL_SERVICE_SECRET: test-ci-internal-service-secret
+          REGULATORY_SKIP_EXTERNAL_WATCH: "1"
         run: |
           if [ -d tests ]; then
             pytest -q --cov=app --cov-report=term --cov-fail-under=20
@@ -96,7 +103,9 @@ jobs:
           - consent-service
           - documents-service
           - integrations-service
+          - mtd-agent
           - partner-registry
+          - regulatory-service
           - tax-engine
           - transactions-service
           - user-profile-service
@@ -165,6 +174,29 @@ jobs:
           pytest -q services/partner-registry/tests/test_main.py::test_invoice_pdf_and_accounting_exports \
             --cov=services/partner-registry/app --cov-append --cov-report=
           coverage report --fail-under=25
+
+  security-request-id:
+    name: Security — X-Request-Id middleware
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "fastapi>=0.115" pytest
+
+      - name: Run request-id tests
+        run: pytest -q tests/security/test_request_id.py
 
   contract-tests:
     name: Contract tests

@@ -48,7 +48,7 @@ See `README.md` "Quick Start" section. Key steps:
 
 ```bash
 cd apps/web-portal
-npm install --no-package-lock
+npm install
 npm run dev
 ```
 Dev server runs on `http://localhost:3000`.

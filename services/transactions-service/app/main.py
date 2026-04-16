@@ -20,8 +20,10 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
+from libs.shared_auth.internal_jwt import build_receipt_draft_create_user_id_dependency
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
+from libs.shared_http.request_id import RequestIdMiddleware
 
 app = FastAPI(
     title="Transactions Service",
@@ -29,12 +31,18 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.add_middleware(RequestIdMiddleware)
+
 KAFKA_ENABLED: bool = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
+logger = logging.getLogger(__name__)
 
 # Instrument the app for OpenTelemetry
 setup_telemetry(app)
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+if not os.environ.get("INTERNAL_SERVICE_SECRET", "").strip():
+    raise RuntimeError("INTERNAL_SERVICE_SECRET must be set and non-empty")
+get_user_id_for_receipt_draft_create = build_receipt_draft_create_user_id_dependency()
 
 # --- Endpoints ---
 @app.post(
@@ -219,7 +227,7 @@ async def update_receipt_draft_transaction(
 @app.post("/transactions/receipt-drafts", response_model=schemas.ReceiptDraftCreateResponse)
 async def create_receipt_draft_transaction(
     payload: schemas.ReceiptDraftCreateRequest,
-    user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_user_id_for_receipt_draft_create),
     db: AsyncSession = Depends(get_db),
 ):
     """Creates or reuses a receipt-derived draft transaction for tax expenses."""

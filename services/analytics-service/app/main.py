@@ -32,6 +32,7 @@ for parent in Path(__file__).resolve().parents:
 
 from libs.shared_auth.jwt_fastapi import build_admin_require_dependency, build_jwt_auth_dependencies
 from libs.shared_auth.plan_limits import plan_limits_from_payload
+from libs.shared_http.request_id import RequestIdMiddleware
 from libs.shared_http.retry import get_json_with_retry
 
 from .mortgage_requirements import (
@@ -60,6 +61,7 @@ app = FastAPI(
     version="2.0.0",
 )
 
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -119,16 +121,24 @@ async def enforce_plan_feature_paths(request: Request, call_next):
         return await call_next(request)
     auth = request.headers.get("authorization")
     if not auth or not auth.startswith("Bearer "):
-        return await call_next(request)
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authentication required for this feature."},
+        )
     token = auth.split(" ", 1)[1]
-    secret_key = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+    secret_key = os.environ["AUTH_SECRET_KEY"]
     try:
         payload: dict[str, object] = jwt.decode(token, secret_key, algorithms=["HS256"])
     except JWTError:
-        return await call_next(request)
-    # Tokens without `plan` are legacy/tests — do not gate (prod tokens from auth-service include `plan`).
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid authentication token"},
+        )
     if "plan" not in payload:
-        return await call_next(request)
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Subscription plan required for this feature."},
+        )
     limits = plan_limits_from_payload(payload)
     if _path_needs_mortgage(path) and not limits.mortgage_reports:
         return JSONResponse(

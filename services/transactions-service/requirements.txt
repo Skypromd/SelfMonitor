@@ -6,12 +6,11 @@ python-jose[cryptography]
 sqlalchemy[asyncio]>=2.0.27
 asyncpg
 alembic
-httpx
+httpx==0.27.2
 opentelemetry-distro
 opentelemetry-instrumentation-fastapi
 
 # Dependencies for testing
-pytest
-pytest-asyncio
+pytest>=8.2
 aiosqlite
 pact-python

@@ -10,10 +10,8 @@ import re
 import secrets
 import smtplib
 import sqlite3
-import threading
 import time
 import uuid
-from collections import defaultdict
 from datetime import timedelta
 from typing import Annotated, Any, Optional
 from urllib.parse import unquote
@@ -29,60 +27,31 @@ from passlib.context import CryptContext  # type: ignore[import-untyped]
 from prometheus_fastapi_instrumentator import Instrumentator
 from pydantic import BaseModel, EmailStr, Field
 
+from app.config import (
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    ALGORITHM,
+    APP_BASE_URL,
+    AUTH_ADMIN_EMAIL,
+    AUTH_ADMIN_PASSWORD,
+    AUTH_BOOTSTRAP_ADMIN,
+    AUTH_CORS_ORIGINS,
+    AUTH_DB_PATH,
+    COMPLIANCE_SERVICE_URL,
+    LOCKOUT_THRESHOLD,
+    REQUIRE_ADMIN_2FA,
+    SECRET_KEY,
+    SMTP_FROM,
+    SMTP_HOST,
+    SMTP_PASSWORD,
+    SMTP_PORT,
+    SMTP_USER,
+    VERIFICATION_CODES_DEBUG,
+    _DEFAULT_ADMIN_HEALTH_TARGETS,
+)
+from app import lockout
+from app.db import _connect, db_lock
+
 logger = logging.getLogger(__name__)
-
-# --- Configuration ---
-# The secret key is now read from an environment variable for better security.
-# A default value is provided for convenience in local development without Docker.
-SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-AUTH_DB_PATH = os.getenv(
-    "AUTH_DB_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "auth.db"),
-)
-AUTH_ADMIN_EMAIL = os.getenv("AUTH_ADMIN_EMAIL", "admin@example.com")
-AUTH_ADMIN_PASSWORD = os.getenv("AUTH_ADMIN_PASSWORD", "admin_password")
-AUTH_BOOTSTRAP_ADMIN = os.getenv("AUTH_BOOTSTRAP_ADMIN", "false").lower() == "true"
-REQUIRE_ADMIN_2FA = os.getenv("AUTH_REQUIRE_ADMIN_2FA", "true").lower() == "true"
-_VERIFICATION_CODES_DEBUG = os.getenv(
-    "AUTH_EMAIL_VERIFICATION_DEBUG_RETURN_CODE", "false"
-).lower() in ("1", "true", "yes")
-
-_DEFAULT_ADMIN_HEALTH_TARGETS: tuple[tuple[str, str], ...] = (
-    ("auth-service", "http://auth-service:80/health"),
-    ("billing-service", "http://billing-service:80/health"),
-    ("user-profile-service", "http://user-profile-service:80/health"),
-    ("documents-service", "http://documents-service:80/health"),
-    ("compliance-service", "http://compliance-service:80/health"),
-    ("integrations-service", "http://integrations-service:80/health"),
-    ("invoice-service", "http://invoice-service:80/health"),
-    ("support-ai-service", "http://support-ai-service:8020/health"),
-    ("finops-monitor", "http://finops-monitor:8021/health"),
-    ("mtd-agent", "http://mtd-agent:8022/health"),
-    ("voice-gateway", "http://voice-gateway:8023/health"),
-    ("agent-service", "http://agent-service:80/health"),
-    ("analytics-service", "http://analytics-service:80/health"),
-    ("referral-service", "http://referral-service:80/health"),
-)
-
-# --- SMTP / Email ---
-SMTP_HOST = os.getenv("SMTP_HOST", "")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
-SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
-APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
-COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://compliance-service:8000")
-
-_AUTH_CORS_BASE = ["http://localhost:3000", "http://192.168.0.248:3000"]
-_AUTH_CORS_EXTRA = os.getenv("AUTH_CORS_EXTRA_ORIGINS", "").strip()
-AUTH_CORS_ORIGINS = list(
-    dict.fromkeys(
-        _AUTH_CORS_BASE
-        + [o.strip() for o in _AUTH_CORS_EXTRA.split(",") if o.strip()]
-    )
-)
 
 app = FastAPI(
     title="Auth Service",
@@ -111,7 +80,6 @@ async def health_check():
 # --- Security Utils ---
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-db_lock = threading.Lock()
 
 
 def get_password_hash(password: str) -> str:
@@ -139,31 +107,6 @@ def validate_password_strength(password: str) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Password must contain: {', '.join(errors)}",
         )
-
-
-# --- Account Lockout ---
-_login_attempts: dict[str, list[float]] = defaultdict(list)
-LOCKOUT_THRESHOLD = 5
-LOCKOUT_WINDOW_SECONDS = 900  # 15 minutes
-
-
-def check_account_lockout(email: str) -> None:
-    now = time.time()
-    attempts = _login_attempts[email]
-    _login_attempts[email] = [t for t in attempts if now - t < LOCKOUT_WINDOW_SECONDS]
-    if len(_login_attempts[email]) >= LOCKOUT_THRESHOLD:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Account temporarily locked. Try again in 15 minutes.",
-        )
-
-
-def record_failed_attempt(email: str) -> None:
-    _login_attempts[email].append(time.time())
-
-
-def clear_failed_attempts(email: str) -> None:
-    _login_attempts.pop(email, None)
 
 
 def create_access_token(
@@ -267,12 +210,6 @@ class PasswordResetConfirm(BaseModel):
 
 
 # --- Database ---
-def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(AUTH_DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def _seed_admin_user(conn: sqlite3.Connection) -> None:
     existing = conn.execute(
         "SELECT email FROM users WHERE email = ?", (AUTH_ADMIN_EMAIL,)
@@ -369,11 +306,24 @@ def init_auth_db() -> None:
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_email)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS login_failed_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                attempted_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_login_failed_email_at ON login_failed_attempts(email, attempted_at)"
+        )
         conn.commit()
         if AUTH_BOOTSTRAP_ADMIN:
             _seed_admin_user(conn)
             _ensure_configured_admin_privileges(conn)
         conn.close()
+    lockout.prune_old_login_attempts()
 
 
 def reset_auth_db_for_tests() -> None:
@@ -381,6 +331,7 @@ def reset_auth_db_for_tests() -> None:
         conn = _connect()
         conn.execute("DELETE FROM api_keys")
         conn.execute("DELETE FROM sessions")
+        conn.execute("DELETE FROM login_failed_attempts")
         conn.execute("DELETE FROM users")
         conn.execute("DELETE FROM subscriptions")
         conn.commit()
@@ -828,7 +779,7 @@ async def confirm_password_reset(body: PasswordResetConfirm):
         conn.close()
 
     # Clear any login lockout so the user can sign in immediately
-    clear_failed_attempts(user_email)
+    lockout.clear_failed_attempts(user_email)
     logger.info("Password reset completed for %s", user_email)
     return {"message": "Password updated successfully. You can now log in with your new password."}
 
@@ -838,11 +789,11 @@ async def login_for_access_token(
     request: Request,
     form_data: Annotated[OAuth2PasswordRequestForm, Depends()],
 ):
-    check_account_lockout(form_data.username)
+    lockout.check_account_lockout(form_data.username)
 
     user = authenticate_user(form_data.username, form_data.password)
     if not user:
-        record_failed_attempt(form_data.username)
+        lockout.record_failed_attempt(form_data.username)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -882,7 +833,7 @@ async def login_for_access_token(
             headers={"X-Admin-2FA-Required": "setup"},
         )
 
-    clear_failed_attempts(form_data.username)
+    lockout.clear_failed_attempts(form_data.username)
     access_token_expires = datetime.timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     token_data: dict[str, object] = {
         "sub": user.email,
@@ -1285,7 +1236,7 @@ async def phone_send_code(payload: PhoneSendRequest):
     )
 
     response: dict[str, Any] = {"sent": True}
-    if SMS_DEV_MODE and _VERIFICATION_CODES_DEBUG:
+    if SMS_DEV_MODE and VERIFICATION_CODES_DEBUG:
         response["dev_code"] = code
     return response
 
@@ -2201,7 +2152,7 @@ async def get_security_state(
 
     legal_accepted_at = legal_row["accepted_at"] if legal_row else None
     legal_accepted_version = legal_row["version"] if legal_row else None
-    failed = len(_login_attempts.get(current_user.email, []))
+    failed = lockout.count_recent_failed_attempts(current_user.email)
 
     return SecurityStateResponse(
         email=current_user.email,
@@ -2495,7 +2446,7 @@ async def request_email_verification(
     _log_security_event(current_user.email, "email_verification_requested")
     return EmailVerificationRequestResp(
         code_sent=True,
-        debug_code=code if _VERIFICATION_CODES_DEBUG else None,
+        debug_code=code if VERIFICATION_CODES_DEBUG else None,
         expires_at=expires_at,
         message="Verification code sent to your email address.",
     )

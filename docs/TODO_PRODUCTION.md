@@ -87,6 +87,19 @@
 - [x] Cash-flow как часть Growth: отражено в `PLAN_FEATURES` и gating **`/forecast/cash-flow`**.
 - [x] **tax-engine:** разделение estimate vs submit в **`services/tax-engine/README.md`**.
 
+### 7a. Мини-роадмап (2–4 недели): tax-engine · regulatory-service · integrations-service
+
+Краткий **фокусный спринт** поверх общей программы **`docs/E2E_PRODUCTION_PROGRAM.md`** (в т.ч. фазы 1 и 4) и **§8–§9** ниже. Цель: согласованные цифры, устойчивость к сбоям regulatory и предсказуемый MTD-поток без новых «тихих» расхождений.
+
+| Неделя | Фокус | Ключевые задачи |
+|--------|--------|-----------------|
+| **1** | Контракты и данные | **regulatory-service:** проверить watch/scheduler в dev/stage (`REGULATORY_USE_CRON`, отсутствие внешних вызовов в CI — `REGULATORY_SKIP_EXTERNAL_WATCH`); после обновления JSON — smoke sanity/diff. **tax-engine:** зафиксировать версию/поля ответа `/calculate` (в т.ч. `breakdown`, disclaimer упрощений); не ломать **`/calculate-and-submit`**. **integrations-service:** один полный прогон **draft → confirm → submit** в sandbox по **`docs/release/HMRC_MTD_DIRECT_RUNBOOK.md`**. |
+| **2** | Устойчивость и тесты | **tax-engine ↔ regulatory:** TTL-кэш, таймауты; при недоступности regulatory — предсказуемый fallback + явная метка в ответе. Расширить pytest (граничные случаи `/calculate`, при необходимости мок **`/rules/tax-year/{year}`**). **integrations:** сверить с **E2E фаза 4** — идемпотентность submit, сохранение HMRC receipt / статусов (закрыть пробелы из backlog). |
+| **3** | Сквозной UX/API | **tax-engine + mtd-agent:** один сценарий «оценка → подготовка → явное подтверждение → submit» без дублирования бизнес-логики (**§9**). **Web/mobile:** тексты **estimate vs окончательная сумма** и ссылки на disclaimer (согласованно с **`AGENTS.md`**). |
+| **4** | Закрытие спринта | E2E sandbox: job в CI с секретами **или** зафиксированный ручной чеклист + артефакты (submission ids, скриншоты/логи). Обновить **`docs/architecture/SERVICES_MATRIX.md`**, при смене сроков/обязательств — **`docs/CALENDAR_AND_TAX_DEADLINES.md`**. |
+
+Связанные документы: **`services/tax-engine/README.md`**, **`docs/runbooks/HMRC_INTEGRATIONS_ENV.md`**, **`docs/production-scope.md`** (Tax / MTD).
+
 ---
 
 ## 8. Календарь и налоговые сроки
@@ -99,7 +112,8 @@
 
 - [x] Env и двухфазный submit: **`docs/runbooks/HMRC_INTEGRATIONS_ENV.md`**, **`HMRC_REQUIRE_EXPLICIT_CONFIRM`**, draft/confirm в **integrations-service**.
 - [x] Идемпотентность токена подтверждения (повторное использование →403); audit полей policy version в SQLite.
-- [ ] **tax-engine** + **mtd-agent:** один сквозной сценарий без дублирования — доработка кода.
+- [x] **libs/shared_mtd:** единая форма тела period summary для **mtd-agent** (согласована с полями turnover / allowable expenses); в **mtd-agent** зафиксировано, что прод-поток — **tax-engine + integrations-service**.
+- [ ] **tax-engine** + **mtd-agent:** один сквозной API-сценарий подготовки сумм (без расхождения логики расчёта между сервисами) — доработка кода.
 - [ ] E2E против **HMRC test-api** в CI с секретами.
 
 ---
@@ -167,4 +181,4 @@
 
 ---
 
-*Последнее обновление: 2026-04-10.*
+*Последнее обновление: 2026-04-16.*

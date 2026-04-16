@@ -15,13 +15,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+os.environ.setdefault("AUTH_SECRET_KEY", "test-secret")
 os.environ["AUTO_CREATE_SCHEMA"] = "true"
 
 from app import crud, models
 from app.database import Base, get_db
 from app.main import app
 
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 TEST_USER_ID = "test-user@example.com"
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"

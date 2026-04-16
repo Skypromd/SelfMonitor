@@ -21,9 +21,11 @@
   "national_insurance": {
     "class_2": {
       "weekly_rate": 3.45,
+      "weekly_rate_voluntary": 3.45,
       "small_profits_threshold": 6725,
       "lower_profits_limit": 12570,
-      "notes": "Class 2 NI effectively abolished from April 2024 for those with profits above Small Profits Threshold, but remains payable voluntarily for state pension credits."
+      "mandatory_annual_cash_gbp_when_profits_ge_lower_limit": 0,
+      "notes": "From 6 April 2024, Class 2 is not paid in-year when profits are at or above the small profits threshold; access to contributory benefits is maintained (treated as paid). Voluntary Class 2 may apply between small profits threshold and lower profits limit — see HMRC."
     },
     "class_4": {
       "lower_profits_limit": 12570,

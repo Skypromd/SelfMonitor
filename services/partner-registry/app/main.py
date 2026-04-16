@@ -34,13 +34,12 @@ for parent in Path(__file__).resolve().parents:
 
 from libs.shared_auth.jwt_fastapi import (
     DEFAULT_ALGORITHM,
-    DEFAULT_SECRET_KEY,
     build_jwt_auth_dependencies,
 )
 from libs.shared_http.retry import post_json_with_retry
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", DEFAULT_SECRET_KEY)
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", DEFAULT_ALGORITHM)
 BILLING_REPORT_ALLOWED_USERS = {
     item.strip()

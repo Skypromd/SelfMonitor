@@ -130,9 +130,7 @@ else:
     event_producer = None
 
 # --- Configuration ---
-AUTH_SECRET_KEY = os.getenv(
-    "AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var"
-)
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))

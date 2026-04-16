@@ -1,6 +1,8 @@
 import os
 import sys
 
+os.environ.setdefault("AUTH_SECRET_KEY", "test-secret")
+
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -9,7 +11,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from app import main as qna_main
 
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 
 

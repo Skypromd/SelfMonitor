@@ -98,7 +98,7 @@ docker compose --profile graphql up --build -d
 
 ```bash
 cd apps/web-portal
-npm install --no-package-lock
+npm install
 cp .env.example .env.local   # optional: edit .env.local for practolog / prod URLs
 npm run dev
 ```

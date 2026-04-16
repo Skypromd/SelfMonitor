@@ -8,12 +8,14 @@ from jose import jwt
 # Adjust path to import app and other modules
 import sys
 import os
+
+os.environ.setdefault("AUTH_SECRET_KEY", "test-secret")
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from app.main import app
 from app.database import get_db, Base
 
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 TEST_USER_ID = "test-user@example.com"
 
@@ -83,3 +85,18 @@ async def test_get_nonexistent_profile(db_session):
     response = client.get("/profiles/me", headers=get_auth_headers())
     assert response.status_code == 404
     assert response.json() == {"detail": "Profile not found"}
+
+
+@pytest.mark.asyncio
+async def test_profiles_me_requires_authentication(db_session):
+    response = client.get("/profiles/me")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_profiles_me_rejects_invalid_jwt(db_session):
+    response = client.get(
+        "/profiles/me",
+        headers={"Authorization": "Bearer not-a-valid-jwt"},
+    )
+    assert response.status_code == 401

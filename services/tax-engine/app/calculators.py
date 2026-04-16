@@ -24,10 +24,10 @@ _CGT_EXEMPT = 3_000.0
 
 
 def _income_tax_bands(taxable_income: float) -> tuple[float, float, float]:
-    """Return (basic, higher, additional) income tax amounts."""
+    """Taxable income after PA; bands align with HMRC slices (basic / higher / additional)."""
     basic = min(taxable_income, _BRT_LIMIT) * _BRT
-    higher = max(min(taxable_income - _BRT_LIMIT, _HRT_LIMIT - _PA - _BRT_LIMIT), 0) * _HRT
-    additional = max(taxable_income - (_HRT_LIMIT - _PA), 0) * _ART
+    higher = max(min(taxable_income, _HRT_LIMIT) - _BRT_LIMIT, 0) * _HRT
+    additional = max(taxable_income - _HRT_LIMIT, 0) * _ART
     return basic, higher, additional
 
 
@@ -71,10 +71,14 @@ class UKSelfEmployedTaxResult(BaseModel):
 
 
 _STUDENT_LOAN_PLANS: dict[str, tuple[float, float]] = {
-    "plan1": (22_015.0, 0.09),
+    "plan1": (24_990.0, 0.09),
+    "plan_1": (24_990.0, 0.09),
     "plan2": (27_295.0, 0.09),
+    "plan_2": (27_295.0, 0.09),
     "plan4": (31_395.0, 0.09),
+    "plan_4": (31_395.0, 0.09),
     "plan5": (25_000.0, 0.09),
+    "plan_5": (25_000.0, 0.09),
     "postgrad": (21_000.0, 0.06),
 }
 
@@ -118,8 +122,8 @@ def calculate_self_employed_tax(
     basic, higher, additional = _income_tax_bands(taxable)
     income_tax = basic + higher + additional
 
-    # 6. Class 2 NI
-    ni_c2 = _NI_C2_WEEKLY * 52 if adjusted_profit >= _NI_C2_SMALL_PROFITS else 0.0
+    # 6. Class 2 NI — £0 in-year cash when profits ≥ small profits threshold (treated as paid)
+    ni_c2 = 0.0
 
     # 7. Class 4 NI
     ni_c4_main_base = max(min(adjusted_profit, _NI_UPL) - _NI_LPL, 0.0)
@@ -130,8 +134,9 @@ def calculate_self_employed_tax(
 
     # 8. Student loan
     sl_repayment = 0.0
-    if student_loan_plan and student_loan_plan in _STUDENT_LOAN_PLANS:
-        threshold, rate = _STUDENT_LOAN_PLANS[student_loan_plan]
+    sl_key = (student_loan_plan or "").strip().lower().replace("-", "_")
+    if sl_key in _STUDENT_LOAN_PLANS:
+        threshold, rate = _STUDENT_LOAN_PLANS[sl_key]
         sl_repayment = max(adjusted_profit - threshold, 0.0) * rate
 
     # 9. Totals
@@ -260,7 +265,7 @@ def calculate_rental_tax(
         tax += remaining * 0.45
 
     tax = max(tax - interest_relief, 0)
-    ni2 = 179.40 if taxable > 12570 else 0
+    ni2 = 0.0
 
     return RentalTaxResult(
         rental_income=rental_income,
@@ -297,13 +302,10 @@ def calculate_cis(
     net = gross_payment - cis_deducted
     taxable = max(gross_payment - materials - other_expenses, 0)
 
-    tax = 0.0
-    remaining = max(taxable - 12570, 0)
-    basic = min(remaining, 37700)
-    tax += basic * 0.20
-    remaining -= basic
-    if remaining > 0:
-        tax += remaining * 0.40
+    t_inc = max(taxable - 12570, 0)
+    tax = min(t_inc, 37700) * 0.20
+    tax += max(min(t_inc, 125140) - 37700, 0) * 0.40
+    tax += max(t_inc - 125140, 0) * 0.45
 
     balance = max(tax - cis_deducted, 0)
 
@@ -333,24 +335,35 @@ class DividendTaxResult(BaseModel):
 def calculate_dividend_tax(
     dividend_income: float,
     other_income: float = 0,
+    *,
+    personal_allowance: Optional[float] = None,
+    dividend_allowance: Optional[float] = None,
+    basic_band_width: Optional[float] = None,
+    higher_band_top: Optional[float] = None,
 ) -> DividendTaxResult:
-    allowance = 500.0
+    pa = float(personal_allowance) if personal_allowance is not None else _PA
+    allowance = float(dividend_allowance) if dividend_allowance is not None else _DIVIDEND_ALLOWANCE
+    br_w = float(basic_band_width) if basic_band_width is not None else _BRT_LIMIT
+    hr_top = float(higher_band_top) if higher_band_top is not None else _HRT_LIMIT
     taxable = max(dividend_income - allowance, 0)
 
     total_income = other_income + dividend_income
-    income_above_pa = max(total_income - 12570, 0)
-    non_dividend_above_pa = max(other_income - 12570, 0)
+    income_above_pa = max(total_income - pa, 0)
+    non_dividend_above_pa = max(other_income - pa, 0)
 
-    basic_remaining = max(37700 - non_dividend_above_pa, 0)
+    basic_remaining = max(br_w - non_dividend_above_pa, 0)
     basic = min(taxable, basic_remaining)
     basic_tax = basic * 0.0875
 
-    higher_remaining = max(87440 - max(non_dividend_above_pa - 37700, 0) - basic, 0)
+    higher_remaining = max(
+        (hr_top - br_w) - max(non_dividend_above_pa - br_w, 0) - basic,
+        0,
+    )
     higher = min(max(taxable - basic, 0), higher_remaining) if taxable > basic else 0
     higher_tax = higher * 0.3375
 
     additional = max(taxable - basic - higher, 0)
-    additional_tax = additional * 0.3938
+    additional_tax = additional * 0.3935
 
     return DividendTaxResult(
         dividend_income=dividend_income,
@@ -378,13 +391,19 @@ def calculate_crypto_tax(
     total_gains: float,
     total_losses: float = 0,
     other_income: float = 0,
+    *,
+    personal_allowance: Optional[float] = None,
+    annual_exempt_amount: Optional[float] = None,
+    basic_band_width: Optional[float] = None,
 ) -> CryptoTaxResult:
-    exempt = 3000.0
+    pa = float(personal_allowance) if personal_allowance is not None else _PA
+    exempt = float(annual_exempt_amount) if annual_exempt_amount is not None else _CGT_EXEMPT
+    br_w = float(basic_band_width) if basic_band_width is not None else _BRT_LIMIT
     net = max(total_gains - total_losses, 0)
     taxable = max(net - exempt, 0)
 
-    income_above_pa = max(other_income - 12570, 0)
-    basic_remaining = max(37700 - income_above_pa, 0)
+    income_above_pa = max(other_income - pa, 0)
+    basic_remaining = max(br_w - income_above_pa, 0)
 
     basic = min(taxable, basic_remaining)
     basic_cgt = basic * 0.18

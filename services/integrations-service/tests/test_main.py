@@ -2,6 +2,8 @@ import os
 import sys
 from collections import deque
 
+os.environ.setdefault("AUTH_SECRET_KEY", "test-secret")
+
 import httpx
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -11,7 +13,7 @@ from app.main import app
 
 
 client = TestClient(app)
-AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 TEST_USER_ID = "integration-user@example.com"
 

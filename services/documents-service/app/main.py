@@ -1,4 +1,5 @@
 import datetime
+import logging
 import os
 
 # --- Helpers ---
@@ -27,6 +28,15 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
+
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
+
+from libs.shared_http.request_id import RequestIdMiddleware, get_request_id
 
 from . import crud, schemas
 from .celery_app import ocr_processing_task
@@ -91,6 +101,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://192.168.0.248:3000"],
@@ -98,13 +109,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-for parent in Path(__file__).resolve().parents:
-    if (parent / "libs").exists():
-        parent_str = str(parent)
-        if parent_str not in sys.path:
-            sys.path.append(parent_str)
-        break
 
 from libs.shared_auth.jwt_fastapi import (  # noqa: E402,I001,I002,C0411
     build_jwt_auth_dependencies,
@@ -330,7 +334,13 @@ async def review_document(
                         json=update_body,
                         headers={"Authorization": f"Bearer {bearer}"},
                     )
-            except Exception:
-                pass  # non-blocking: document review already saved
+            except Exception as exc:
+                logger.warning(
+                    "receipt draft sync failed request_id=%s draft_id=%s: %s",
+                    get_request_id(),
+                    draft_id,
+                    exc,
+                    exc_info=True,
+                )
 
     return updated

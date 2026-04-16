@@ -17,6 +17,8 @@ from typing import Any
 
 import httpx
 
+from libs.shared_mtd import build_mtd_self_employment_period_summary
+
 log = logging.getLogger(__name__)
 
 HMRC_BASE_URL     = os.getenv("HMRC_BASE_URL", "https://test-api.service.hmrc.gov.uk")
@@ -38,12 +40,14 @@ class HMRCClient:
 
     # ── auth ─────────────────────────────────────────────────────────────────
 
-    async def get_access_token(self, user_auth_code: str) -> str:
+    async def exchange_authorization_code(
+        self, user_auth_code: str
+    ) -> tuple[str, int | None]:
         """
         Exchange authorisation code for OAuth2 access token.
-        Called once per user during the MTD authorisation flow.
+        Returns (access_token, expires_in_seconds) per HMRC token response.
         """
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 f"{self._base}/oauth/token",
                 data={
@@ -56,8 +60,19 @@ class HMRCClient:
             )
             resp.raise_for_status()
             data = resp.json()
-            self._access_token = data["access_token"]
-            return self._access_token
+            token = data["access_token"]
+            raw_exp = data.get("expires_in")
+            expires_in: int | None
+            try:
+                expires_in = int(raw_exp) if raw_exp is not None else None
+            except (TypeError, ValueError):
+                expires_in = None
+            self._access_token = token
+            return token, expires_in
+
+    async def get_access_token(self, user_auth_code: str) -> str:
+        token, _ = await self.exchange_authorization_code(user_auth_code)
+        return token
 
     # ── period summaries (quarterly submission) ───────────────────────────────
 
@@ -76,20 +91,12 @@ class HMRCClient:
 
         Returns HMRC submission receipt with transactionReference.
         """
-        payload = {
-            "periodDates": {
-                "periodStartDate": period_start,
-                "periodEndDate":   period_end,
-            },
-            "periodIncome": {
-                "turnover": round(income, 2),
-                "other":    0.0,
-            },
-            "periodExpenses": {
-                "costOfGoods":       0.0,
-                "allowableExpenses": round(expenses, 2),
-            },
-        }
+        payload = build_mtd_self_employment_period_summary(
+            period_start_iso=period_start,
+            period_end_iso=period_end,
+            turnover=income,
+            allowable_expenses=expenses,
+        )
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(

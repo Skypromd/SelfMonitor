@@ -1,13 +1,14 @@
 # isort: skip_file
 import os
 import sys
+import tempfile
 import time
 import uuid
 
 from fastapi.testclient import TestClient
 from jose import jwt  # type: ignore[import-untyped]
 
-TEST_DB_PATH = "/tmp/analytics_service_test.db"
+TEST_DB_PATH = os.path.join(tempfile.gettempdir(), "analytics_service_test.db")
 os.environ["ANALYTICS_DB_PATH"] = TEST_DB_PATH
 os.environ["ANALYTICS_JOB_DURATION_SECONDS"] = "0.01"
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
@@ -21,7 +22,8 @@ client = TestClient(app)
 
 
 def auth_headers(user_id: str, **extra_claims: object) -> dict[str, str]:
-    payload: dict[str, object] = {"sub": user_id, **extra_claims}
+    payload: dict[str, object] = {"sub": user_id, "plan": "pro"}
+    payload.update(extra_claims)
     token = jwt.encode(payload, TEST_AUTH_SECRET, algorithm=TEST_AUTH_ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
 
@@ -70,6 +72,23 @@ def test_plan_middleware_allows_mortgage_for_pro():
         headers=auth_headers("u@example.com", plan="pro"),
     )
     assert r.status_code == 200
+
+
+def test_jobs_post_requires_authentication():
+    response = client.post(
+        "/jobs",
+        json={"job_type": "run_etl_transactions"},
+    )
+    assert response.status_code == 401
+
+
+def test_jobs_post_rejects_invalid_jwt():
+    response = client.post(
+        "/jobs",
+        json={"job_type": "run_etl_transactions"},
+        headers={"Authorization": "Bearer invalid.token.here"},
+    )
+    assert response.status_code == 401
 
 
 def test_job_scope_is_isolated_by_user():

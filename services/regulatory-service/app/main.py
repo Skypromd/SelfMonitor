@@ -15,6 +15,12 @@ Endpoints:
   GET  /rules/rates/vat                     — VAT thresholds and rates
   GET  /rules/allowable-expenses            — full HMRC SA103F expense categories
   GET  /rules/changes                       — regulatory changes since a date
+  GET  /rules/changelog                     — GOV.UK Content API detection log
+  GET  /rules/diff                          — core rule diff between two tax years
+  POST /admin/regulatory/scrape-live        — fetch GOV.UK HTML, extract £ amounts (RU.5–8 baseline)
+  POST /admin/regulatory/scrape-parse       — fetch + table/heuristic parse (employer_rates, NI, IT, CGT)
+  POST /admin/regulatory/parse-budget-annex — Budget annex-A HTML → amount hints
+  POST /admin/regulatory/validate-ai-diff   — GPT plausibility on diff between two frozen tax years
   POST /rules/analyze-user                  — AI: personalised impact analysis
   GET  /rules/versions                      — rule file versions and status
 """
@@ -24,6 +30,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import uuid
 import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
@@ -37,10 +44,36 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+for _rp in Path(__file__).resolve().parents:
+    if (_rp / "libs").exists():
+        _rps = str(_rp)
+        if _rps not in sys.path:
+            sys.path.append(_rps)
+        break
+
+from libs.shared_http.request_id import RequestIdMiddleware
+
+from app.collector import GOVUK_WATCH_SOURCES, check_govuk_sources_for_updates, fetch_and_extract_govuk_page
+from app.collector.govuk_scraper import fetch_html, scrape_and_parse
+from app.scheduler.cron import register_regulatory_jobs
+from app.validator import diff_tax_rule_dicts, validate_rate_change_ai, validate_tax_year_rules
+
 logger = logging.getLogger(__name__)
 
+
+def _regulatory_cors_origins() -> list[str]:
+    raw = os.getenv(
+        "REGULATORY_CORS_ORIGINS",
+        "http://localhost:3000,http://localhost:3001",
+    )
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
 DATA_DIR = Path(__file__).parent / "data"
+GOVUK_WATCH_STATE_PATH = DATA_DIR / "govuk_content_watch.json"
+RULES_CHANGELOG_PATH = DATA_DIR / "rules_changelog.json"
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+SKIP_EXTERNAL_GOVUK_WATCH = os.environ.get("REGULATORY_SKIP_EXTERNAL_WATCH", "").strip() in ("1", "true", "yes")
 
 # ── Tax year JSON files available ───────────────────────────────────────────
 _RULE_FILES: Dict[str, str] = {
@@ -56,6 +89,8 @@ _audit_log: List[Dict[str, Any]] = []
 _pending_updates: List[Dict[str, Any]] = []
 _detected_changes: List[Dict[str, Any]] = []
 _last_govuk_check: Optional[str] = None
+_last_govuk_content_check: Optional[str] = None
+_govuk_watch_snapshot: Dict[str, Any] = {}
 _change_analysis_cache: Optional[Dict[str, Any]] = None
 
 GOV_UK_TAX_RSS = "https://www.gov.uk/search/all.atom?keywords=tax+self-employed&order=updated-newest"
@@ -89,9 +124,48 @@ def _all_loaded_rules() -> List[Dict[str, Any]]:
     for year in _RULE_FILES:
         try:
             result.append(_load_rules(year))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("regulatory: could not load rules for %s: %s", year, exc)
     return result
+
+
+def _read_json_file(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _write_json_file(path: Path, data: Any) -> None:
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def _append_rules_changelog(events: List[Dict[str, Any]]) -> None:
+    if not events:
+        return
+    existing = _read_json_file(RULES_CHANGELOG_PATH, [])
+    if not isinstance(existing, list):
+        existing = []
+    ts = datetime.now(timezone.utc).isoformat()
+    for ev in events:
+        existing.append({"recorded_at": ts, "kind": "govuk_content_public_updated_at", **ev})
+    _write_json_file(RULES_CHANGELOG_PATH, existing)
+
+
+def _core_rules_subset(rules: Dict[str, Any]) -> Dict[str, Any]:
+    keys = (
+        "income_tax",
+        "national_insurance",
+        "allowances",
+        "mtd_itsa",
+        "vat",
+        "student_loans",
+    )
+    return {k: rules[k] for k in keys if k in rules}
 
 
 # ── GOV.UK RSS monitor ───────────────────────────────────────────────────────
@@ -126,20 +200,81 @@ async def _fetch_govuk_changes() -> List[Dict[str, Any]]:
 
 
 async def _monitor_hmrc_changes() -> None:
-    """APScheduler job: check GOV.UK for regulatory changes."""
-    global _last_govuk_check, _detected_changes
+    """APScheduler job: GOV.UK Content API (page metadata) + HMRC Atom feed."""
+    global _last_govuk_check, _last_govuk_content_check, _detected_changes, _govuk_watch_snapshot
     _last_govuk_check = datetime.now(timezone.utc).isoformat()
-    new_items = await _fetch_govuk_changes()
-    if new_items:
-        _detected_changes = new_items
+    merged_feed: List[Dict[str, Any]] = []
+
+    prev_state = _read_json_file(GOVUK_WATCH_STATE_PATH, {})
+    if not isinstance(prev_state, dict):
+        prev_state = {}
+    try:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            content_events, new_state = await check_govuk_sources_for_updates(client, prev_state)
+        _write_json_file(GOVUK_WATCH_STATE_PATH, new_state)
+        _govuk_watch_snapshot = new_state
+        _last_govuk_content_check = datetime.now(timezone.utc).isoformat()
+        if content_events:
+            _append_rules_changelog(content_events)
+            for ev in content_events:
+                merged_feed.append({
+                    "id": f"govuk-content:{ev['source_id']}",
+                    "title": f"GOV.UK updated: {ev.get('label', ev['source_id'])}",
+                    "link": f"https://www.gov.uk{ev['path']}",
+                    "updated": ev.get("public_updated_at") or "",
+                    "summary": (
+                        f"public_updated_at: {ev.get('previous_public_updated_at')!r} → {ev.get('public_updated_at')!r}"
+                    ),
+                    "source": "GOV.UK Content API",
+                })
+            _audit_log.append({
+                "id": str(uuid.uuid4()),
+                "event": "govuk_content_updated_at_change",
+                "timestamp": _last_govuk_content_check,
+                "detail": f"{len(content_events)} GOV.UK tax page(s) show new public_updated_at — review JSON rules",
+                "actor": "scheduler",
+            })
+    except Exception as exc:
+        logger.warning("GOV.UK Content API watch failed: %s", exc)
+
+    atom_items = await _fetch_govuk_changes()
+    merged_feed.extend(atom_items)
+    if merged_feed:
+        _detected_changes = merged_feed
+    if atom_items:
         _audit_log.append({
             "id": str(uuid.uuid4()),
             "event": "hmrc_feed_check",
             "timestamp": _last_govuk_check,
-            "detail": f"Fetched {len(new_items)} items from GOV.UK HMRC feed",
+            "detail": f"Fetched {len(atom_items)} items from GOV.UK HMRC Atom feed",
             "actor": "scheduler",
         })
-    logger.info("HMRC monitor: %d changes fetched at %s", len(new_items), _last_govuk_check)
+    logger.info(
+        "Regulatory monitor: %d feed entries (content+atom), atom=%d at %s",
+        len(_detected_changes),
+        len(atom_items),
+        _last_govuk_check,
+    )
+
+
+async def _weekly_govuk_parse() -> None:
+    """RU.15 weekly: re-fetch + parse key GOV.UK pages (audit only unless owner applies JSON)."""
+    ts = datetime.now(timezone.utc).isoformat()
+    done: list[str] = []
+    ty = _tax_year_for_date(date.today())
+    for sid in ("employer_rates", "self_employed_ni", "income_tax_rates"):
+        try:
+            await scrape_and_parse(sid, ty)
+            done.append(sid)
+        except Exception as exc:
+            logger.warning("weekly_govuk_parse %s: %s", sid, exc)
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "weekly_govuk_parse",
+        "timestamp": ts,
+        "detail": f"sources_ok={done}",
+        "actor": "scheduler",
+    })
 
 
 # ── FastAPI app ──────────────────────────────────────────────────────────────
@@ -149,11 +284,26 @@ _scheduler = AsyncIOScheduler()
 
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
-    _scheduler.add_job(_monitor_hmrc_changes, "interval", hours=24, id="hmrc_monitor", replace_existing=True)
-    _scheduler.start()
-    await _monitor_hmrc_changes()  # initial check on startup
+    for y in _RULE_FILES:
+        try:
+            for issue in validate_tax_year_rules(_load_rules(y)):
+                logger.warning("regulatory rules sanity [%s]: %s", y, issue)
+        except Exception as exc:
+            logger.warning("regulatory rules sanity failed [%s]: %s", y, exc)
+    if not SKIP_EXTERNAL_GOVUK_WATCH:
+        register_regulatory_jobs(
+            _scheduler,
+            daily_job=_monitor_hmrc_changes,
+            weekly_job=_weekly_govuk_parse,
+            skip_external=False,
+        )
+        _scheduler.start()
+        await _monitor_hmrc_changes()
+    else:
+        logger.info("REGULATORY_SKIP_EXTERNAL_WATCH set — GOV.UK RSS/Content API checks disabled")
     yield
-    _scheduler.shutdown(wait=False)
+    if not SKIP_EXTERNAL_GOVUK_WATCH:
+        _scheduler.shutdown(wait=False)
 
 
 app = FastAPI(
@@ -163,9 +313,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RequestIdMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_regulatory_cors_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -192,6 +343,26 @@ class UserAnalysisRequest(BaseModel):
     has_rental_income: bool = False
     has_dividends: bool = False
     additional_context: Optional[str] = None
+
+
+class ScrapeLiveRequest(BaseModel):
+    path: Optional[str] = None
+    source_id: Optional[str] = None
+
+
+class ScrapeParseRequest(BaseModel):
+    source_id: str
+    tax_year: str = "2025-26"
+
+
+class BudgetAnnexRequest(BaseModel):
+    budget_year: int = 2025
+
+
+class ValidateAiDiffRequest(BaseModel):
+    tax_year_left: str = "2024-25"
+    tax_year_right: str = "2025-26"
+    source_url: str = "https://www.gov.uk/"
 
 
 class RuleChangeItem(BaseModel):
@@ -283,8 +454,8 @@ async def get_mtd_threshold(
                     f"(income £{income:,.0f} ≥ £{next_threshold:,} threshold for {next_year}). "
                     f"Prepare MTD-compatible software now."
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("regulatory: next-year MTD warning skipped: %s", exc)
 
     return MtdThresholdResponse(
         tax_year=year,
@@ -423,6 +594,35 @@ async def get_regulatory_changes(
     return {"since": since, "changes": changes, "total": len(changes)}
 
 
+@app.get("/rules/changelog")
+async def get_rules_changelog(
+    limit: int = Query(100, ge=1, le=500),
+) -> Dict[str, Any]:
+    """Append-only log of GOV.UK Content API detections and other rule events."""
+    entries = _read_json_file(RULES_CHANGELOG_PATH, [])
+    if not isinstance(entries, list):
+        entries = []
+    tail = entries[-limit:] if limit else entries
+    return {"entries": tail, "total": len(entries), "returned": len(tail)}
+
+
+@app.get("/rules/diff")
+async def get_rules_diff(
+    from_year: str = Query(..., alias="from", description="Tax year e.g. 2024-25"),
+    to_year: str = Query(..., alias="to", description="Tax year e.g. 2025-26"),
+) -> Dict[str, Any]:
+    """Structural diff of core rule blocks between two frozen JSON tax years."""
+    old = _load_rules(from_year)
+    new = _load_rules(to_year)
+    changes = diff_tax_rule_dicts(_core_rules_subset(old), _core_rules_subset(new))
+    return {
+        "from": from_year,
+        "to": to_year,
+        "changes": changes,
+        "total": len(changes),
+    }
+
+
 # ── REG.10: AI personalised analysis ─────────────────────────────────────────
 
 @app.post("/rules/analyze-user")
@@ -493,14 +693,36 @@ async def analyze_user(req: UserAnalysisRequest) -> Dict[str, Any]:
             "tax": f"£{ni_main + ni_add:,.0f}",
         })
 
-    # Class 2 NI
     class2 = ni.get("class_2", {})
-    if req.estimated_annual_income >= class2.get("lower_profits_limit", 12570):
-        class2_annual = class2.get("weekly_rate", 3.45) * 52
+    spt = float(class2.get("small_profits_threshold", 6725))
+    lpl_c2 = float(class2.get("lower_profits_limit", 12570))
+    wk_vol = float(class2.get("weekly_rate_voluntary", class2.get("weekly_rate", 3.45)))
+    mandatory_ge_lpl = class2.get("mandatory_annual_cash_gbp_when_profits_ge_lower_limit")
+    inc = float(req.estimated_annual_income)
+    if mandatory_ge_lpl is not None:
+        if inc < spt:
+            pass
+        elif inc < lpl_c2:
+            warnings.append(
+                "Class 2: profits are in the voluntary band — consider paying Class 2 for National Insurance credits "
+                f"(about £{wk_vol * 52:.2f}/year at £{wk_vol}/week if you choose to pay)."
+            )
+        else:
+            c2_cash = float(mandatory_ge_lpl)
+            if c2_cash > 0:
+                estimated_tax += c2_cash
+                applicable_rules.append({
+                    "rule": "Class 2 NI (cash due)",
+                    "rate": f"£{wk_vol}/week reference",
+                    "on": "annual",
+                    "tax": f"£{c2_cash:.2f}",
+                })
+    elif inc >= lpl_c2:
+        class2_annual = wk_vol * 52
         estimated_tax += class2_annual
         applicable_rules.append({
             "rule": "Class 2 NI",
-            "rate": f"£{class2.get('weekly_rate', 3.45)}/week",
+            "rate": f"£{wk_vol}/week",
             "on": "52 weeks",
             "tax": f"£{class2_annual:.2f}",
         })
@@ -708,6 +930,8 @@ async def get_regulatory_stats() -> Dict[str, Any]:
         "compliance_status": compliance["status"],
         "govuk_feed_items": len(_detected_changes),
         "last_feed_check": _last_govuk_check,
+        "last_govuk_content_check": _last_govuk_content_check,
+        "govuk_watched_pages": len(_govuk_watch_snapshot) if _govuk_watch_snapshot else len(GOVUK_WATCH_SOURCES),
         "pending_updates_count": len(_pending_updates),
         "audit_log_count": len(_audit_log),
     }
@@ -1188,6 +1412,115 @@ async def get_feed_items() -> Dict[str, Any]:
     """Return latest GOV.UK HMRC feed items."""
     return {
         "last_check": _last_govuk_check,
+        "last_content_api_check": _last_govuk_content_check,
         "items": _detected_changes,
         "total": len(_detected_changes),
     }
+
+
+@app.get("/admin/regulatory/govuk-watch")
+async def get_govuk_watch_detail() -> Dict[str, Any]:
+    """Last known GOV.UK Content API metadata per watched page (persisted + in-memory)."""
+    disk = _read_json_file(GOVUK_WATCH_STATE_PATH, {})
+    if not isinstance(disk, dict):
+        disk = {}
+    return {
+        "last_content_api_check": _last_govuk_content_check,
+        "sources_configured": len(GOVUK_WATCH_SOURCES),
+        "persisted_page_count": len(disk),
+        "pages": disk,
+        "changelog_path": str(RULES_CHANGELOG_PATH),
+    }
+
+
+@app.post("/admin/regulatory/scrape-live")
+async def scrape_live(req: ScrapeLiveRequest) -> Dict[str, Any]:
+    """
+    Fetch live GOV.UK HTML and extract monetary figures + headings for analyst review.
+    Does not modify frozen JSON rules — use with Content API + manual / propose-update flow.
+    """
+    paths: List[str] = []
+    if req.path:
+        p = req.path.strip()
+        if not p.startswith("/"):
+            p = "/" + p
+        paths.append(p)
+    elif req.source_id:
+        match = next((s for s in GOVUK_WATCH_SOURCES if s["id"] == req.source_id), None)
+        if match is None:
+            raise HTTPException(status_code=404, detail=f"Unknown source_id: {req.source_id!r}")
+        paths.append(match["path"])
+    else:
+        paths = [s["path"] for s in GOVUK_WATCH_SOURCES]
+
+    results: List[Dict[str, Any]] = []
+    for p in paths:
+        try:
+            results.append(await fetch_and_extract_govuk_page(p))
+        except Exception as exc:
+            logger.warning("scrape-live failed for %s: %s", p, exc)
+            results.append({"path": p, "error": str(exc)})
+
+    ts = datetime.now(timezone.utc).isoformat()
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "govuk_html_scrape",
+        "timestamp": ts,
+        "detail": f"scrape-live: {len(paths)} page(s)",
+        "actor": "admin",
+    })
+    return {"scraped_at": ts, "results": results, "count": len(results)}
+
+
+@app.post("/admin/regulatory/scrape-parse")
+async def scrape_parse_live(req: ScrapeParseRequest) -> Dict[str, Any]:
+    """RU.5–RU.8: single HTTP fetch + structured table/heuristic parse."""
+    try:
+        payload = await scrape_and_parse(req.source_id, req.tax_year)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "govuk_scrape_parse",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "detail": f"{req.source_id} {req.tax_year}",
+        "actor": "admin",
+    })
+    return payload
+
+
+@app.post("/admin/regulatory/parse-budget-annex")
+async def parse_budget_annex(req: BudgetAnnexRequest) -> Dict[str, Any]:
+    """RU.19: fetch Budget annex A HTML and extract amount hints."""
+    from app.collector.budget_parser import budget_annex_path, parse_budget_annex_html
+
+    path = budget_annex_path(req.budget_year)
+    try:
+        _final, html = await fetch_html(path)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"GOV.UK fetch failed: {exc}") from exc
+    parsed = parse_budget_annex_html(html, f"budget_{req.budget_year}")
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "budget_annex_parse",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "detail": path,
+        "actor": "admin",
+    })
+    return {"path": path, "parsed": parsed}
+
+
+@app.post("/admin/regulatory/validate-ai-diff")
+async def validate_ai_diff(req: ValidateAiDiffRequest) -> Dict[str, Any]:
+    """RU.11: GPT checks plausibility of core JSON diff between two tax years."""
+    old_r = _load_rules(req.tax_year_left)
+    new_r = _load_rules(req.tax_year_right)
+    result = await validate_rate_change_ai(old_r, new_r, req.source_url)
+    _audit_log.append({
+        "id": str(uuid.uuid4()),
+        "event": "ai_validate_diff",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "detail": f"{req.tax_year_left} vs {req.tax_year_right}",
+        "actor": "admin",
+    })
+    return result

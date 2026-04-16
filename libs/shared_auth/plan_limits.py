@@ -64,7 +64,9 @@ class PlanLimits:
 
 
 def _secret_and_algo() -> tuple[str, str]:
-    secret = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
+    secret = os.environ["AUTH_SECRET_KEY"].strip()
+    if not secret:
+        raise RuntimeError("AUTH_SECRET_KEY must be non-empty")
     return secret, "HS256"
 
 

@@ -2,6 +2,8 @@ import asyncio
 import datetime
 import logging
 import os
+import sys
+from pathlib import Path
 
 import boto3  # type: ignore[import-untyped]
 import httpx
@@ -12,6 +14,15 @@ from botocore.exceptions import (  # type: ignore[import-untyped]
 )
 from celery import Celery  # type: ignore[import-untyped]
 from jose import jwt  # type: ignore[import-untyped]
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "libs").exists():
+        _root = str(_parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        break
+
+from libs.shared_auth.internal_jwt import encode_receipt_draft_internal_token
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -40,10 +51,12 @@ TRANSACTIONS_SERVICE_URL = os.getenv(
     "TRANSACTIONS_SERVICE_URL",
     "http://transactions-service/transactions/receipt-drafts",
 )
-AUTH_SECRET_KEY = os.getenv(
-    "AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var"
-)
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
+INTERNAL_SERVICE_ISSUER = (
+    os.getenv("INTERNAL_SERVICE_ISSUER", "documents-service").strip()
+    or "documents-service"
+)
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "documents-bucket")
 S3_ENDPOINT_URL = os.getenv("AWS_ENDPOINT_URL")
 OCR_REVIEW_CONFIDENCE_THRESHOLD = float(
@@ -165,7 +178,9 @@ def create_receipt_draft_transaction(
     }
 
     try:
-        token = _build_user_token(user_id)
+        token = encode_receipt_draft_internal_token(
+            user_id=user_id, issuer=INTERNAL_SERVICE_ISSUER
+        )
         with httpx.Client() as client:
             response = client.post(
                 TRANSACTIONS_SERVICE_URL,

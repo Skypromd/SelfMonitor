@@ -2,10 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY services/regulatory-service/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY app/ ./app/
+COPY libs /app/libs
+COPY services/regulatory-service/app /app/app
+
+ENV PYTHONPATH=/app
 
 EXPOSE 8025
 

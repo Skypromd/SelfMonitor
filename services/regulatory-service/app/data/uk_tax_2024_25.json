@@ -20,8 +20,11 @@
   "national_insurance": {
     "class_2": {
       "weekly_rate": 3.45,
+      "weekly_rate_voluntary": 3.45,
       "small_profits_threshold": 6725,
-      "lower_profits_limit": 12570
+      "lower_profits_limit": 12570,
+      "mandatory_annual_cash_gbp_when_profits_ge_lower_limit": 0,
+      "notes": "From 6 April 2024, no Class 2 liability in-year when profits exceed the small profits threshold (treated as paid for benefits)."
     },
     "class_4": {
       "lower_profits_limit": 12570,

@@ -2,6 +2,13 @@
 
 Handles user authentication, registration, and token management.
 
+## Layout
+
+- `app/config.py` — environment settings
+- `app/db.py` — SQLite pool lock and connections
+- `app/lockout.py` — failed-login tracking (SQLite, survives restarts)
+- `app/main.py` — FastAPI app and routes
+
 ## Endpoints
 
 | Method | Path | Auth | Description |
@@ -26,6 +33,8 @@ Handles user authentication, registration, and token management.
 | AUTH_ADMIN_EMAIL | No | admin@example.com | Default admin email |
 | AUTH_ADMIN_PASSWORD | No | admin_password | Default admin password |
 | AUTH_BOOTSTRAP_ADMIN | No | false | Seed an admin user on startup |
+| AUTH_MAX_FAILED_LOGIN_ATTEMPTS | No | 5 | Lockout threshold |
+| AUTH_ACCOUNT_LOCKOUT_MINUTES | No | 15 | Rolling window for failed logins |
 
 ## Running Locally
 

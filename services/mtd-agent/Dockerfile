@@ -1,11 +1,14 @@
 FROM python:3.12-slim
 
-WORKDIR /app
+WORKDIR /code
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY ./services/mtd-agent/requirements.txt /code/requirements.txt
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-COPY app/ ./app/
+COPY ./libs /code/libs
+COPY ./services/mtd-agent/app /code/app
+
+ENV PYTHONPATH=/code
 
 EXPOSE 8022
 

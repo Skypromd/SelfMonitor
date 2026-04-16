@@ -434,6 +434,9 @@ services:
       - categorization-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      INTERNAL_ALLOWED_ISSUERS: "${INTERNAL_ALLOWED_ISSUERS:-documents-service}"
+      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-selfmonitor-internal}"
       DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_transactions}"
       CATEGORIZATION_SERVICE_URL: "${CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
@@ -536,6 +539,9 @@ services:
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
       CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      INTERNAL_SERVICE_ISSUER: "${INTERNAL_SERVICE_ISSUER:-documents-service}"
+      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-selfmonitor-internal}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://minio:9000}"
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-minioadmin}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-minioadmin}"
@@ -594,6 +600,9 @@ services:
       - minio
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      INTERNAL_SERVICE_ISSUER: "${INTERNAL_SERVICE_ISSUER:-documents-service}"
+      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-selfmonitor-internal}"
       DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_documents}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://minio:9000}"
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-minioadmin}"
@@ -1045,7 +1054,9 @@ services:
     restart: unless-stopped
 
   mtd-agent:
-    build: ./services/mtd-agent
+    build:
+      context: .
+      dockerfile: services/mtd-agent/Dockerfile
     container_name: mtd-agent
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
@@ -1188,7 +1199,9 @@ services:
     restart: unless-stopped
 
   regulatory-service:
-    build: ./services/regulatory-service
+    build:
+      context: .
+      dockerfile: services/regulatory-service/Dockerfile
     container_name: regulatory-service
     environment:
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"

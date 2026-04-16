@@ -3,13 +3,25 @@ import logging
 import os
 import sys
 import json
+import time
 from pathlib import Path
 from typing import Any, List, Optional, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from .calculate_extended import (
+    build_estimate_disclaimers,
+    build_sa103_box_hints,
+    expenses_with_trading_allowance,
+    gift_aid_extend_basic_band,
+    payments_on_account_each,
+    rough_employee_class1_annual,
+    student_loan_repayment_annual,
+)
+from .calculators import calculate_crypto_tax, calculate_dividend_tax
 from .telemetry import setup_telemetry
 
 logger = logging.getLogger(__name__)
@@ -25,26 +37,33 @@ CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/
 INVOICE_SERVICE_URL = os.getenv("INVOICE_SERVICE_URL", "http://invoice-service:80")
 REGULATORY_SERVICE_URL = os.getenv("REGULATORY_SERVICE_URL", "http://regulatory-service:8025")
 
-# ── Regulatory rates: fetched from regulatory-service at startup, ────────────
-# with hardcoded fallback (2025/26) so the service starts without regulatory-service.
-# On every /calculate call, rates from regulatory-service are used when available.
-_REGULATORY_RULES_CACHE: dict[str, Any] = {}
+# ── Regulatory rates: TTL cache from regulatory-service; merge with fallback. ─
+_REGULATORY_RULES_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_REGULATORY_TTL_SEC = float(os.environ.get("TAX_REGULATORY_RULES_CACHE_TTL", "120"))
 
-async def _fetch_regulatory_rules(tax_year: str = "2025-26") -> dict[str, Any]:
-    """Fetch tax rules from regulatory-service. Returns cached fallback on failure."""
-    cache_key = tax_year
-    if cache_key in _REGULATORY_RULES_CACHE:
-        return _REGULATORY_RULES_CACHE[cache_key]
+
+async def _fetch_regulatory_rules(tax_year: str = "2025-26") -> tuple[dict[str, Any], str]:
+    """Fetch tax rules from regulatory-service. Returns (rules, provenance) for client disclosure."""
+    now = time.monotonic()
+    ent = _REGULATORY_RULES_CACHE.get(tax_year)
+    if ent is not None and (now - ent[0]) < _REGULATORY_TTL_SEC and ent[1]:
+        return ent[1], "cache"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(f"{REGULATORY_SERVICE_URL}/rules/tax-year/{tax_year}")
             if resp.is_success:
                 data = resp.json()
-                _REGULATORY_RULES_CACHE[cache_key] = data
-                return data
+                if not isinstance(data, dict):
+                    return {}, "invalid_response"
+                _REGULATORY_RULES_CACHE[tax_year] = (now, data)
+                if data:
+                    return data, "live"
+                return {}, "empty_response"
     except Exception as exc:
-        logger.warning("Could not reach regulatory-service (%s) — using hardcoded fallback.", exc)
-    return {}
+        logger.warning("Could not reach regulatory-service (%s) — using cache or fallback.", exc)
+    if ent is not None and ent[1]:
+        return ent[1], "stale_cache"
+    return {}, "fallback_defaults"
 
 def _extract_rates(rules: dict[str, Any]) -> dict[str, Any]:
     """Extract flat rate values from regulatory-service response."""
@@ -53,19 +72,21 @@ def _extract_rates(rules: dict[str, Any]) -> dict[str, Any]:
     allowances = rules.get("allowances", {})
     bands = it.get("bands", [])
     band_map = {b["name"]: b for b in bands}
+    c2 = ni.get("class_2", {})
     expenses = rules.get("allowable_expenses", {})
     expense_codes = {c["code"] for c in expenses.get("categories", [])}
     return {
         "personal_allowance": it.get("personal_allowance", 12570.0),
         "pa_taper_threshold": it.get("personal_allowance_taper_threshold", 100000.0),
+        "pa_taper_rate": it.get("personal_allowance_taper_rate", 0.5),
         "basic_rate": band_map.get("basic", {}).get("rate", 0.20),
         "basic_rate_limit": band_map.get("basic", {}).get("to", 37700.0),
         "higher_rate": band_map.get("higher", {}).get("rate", 0.40),
         "higher_rate_limit": band_map.get("higher", {}).get("to", 125140.0),
         "additional_rate": band_map.get("additional", {}).get("rate", 0.45),
-        "class2_weekly": ni.get("class_2", {}).get("weekly_rate", 3.45),
-        "class2_small_profits": ni.get("class_2", {}).get("small_profits_threshold", 6725.0),
-        "class2_lpl": ni.get("class_2", {}).get("lower_profits_limit", 12570.0),
+        "class2_weekly": c2.get("weekly_rate_voluntary", c2.get("weekly_rate", 3.45)),
+        "class2_small_profits": c2.get("small_profits_threshold", 6725.0),
+        "class2_lpl": c2.get("lower_profits_limit", 12570.0),
         "class4_lpl": ni.get("class_4", {}).get("lower_profits_limit", 12570.0),
         "class4_upl": ni.get("class_4", {}).get("upper_profits_limit", 50270.0),
         "class4_main": ni.get("class_4", {}).get("main_rate", 0.06),
@@ -74,10 +95,148 @@ def _extract_rates(rules: dict[str, Any]) -> dict[str, Any]:
         "expense_codes": expense_codes,
     }
 
+
+def _default_income_tax_bands() -> list[dict[str, Any]]:
+    return [
+        {"name": "basic", "rate": 0.20, "from": 0, "to": 37700},
+        {"name": "higher", "rate": 0.40, "from": 37700, "to": 125140},
+        {"name": "additional", "rate": 0.45, "from": 125140, "to": None},
+    ]
+
+
+def _merge_rates_from_rules(rules: dict[str, Any]) -> dict[str, Any]:
+    merged: dict[str, Any] = {**_FALLBACK_RATES}
+    if not isinstance(rules, dict):
+        rules = {}
+    if rules:
+        ext = _extract_rates(rules)
+        for k, v in ext.items():
+            if k == "expense_codes" and v:
+                merged[k] = v
+            elif k != "expense_codes" and v is not None:
+                merged[k] = v
+        it = rules.get("income_tax", {})
+        merged["income_tax_bands"] = it.get("bands") or _default_income_tax_bands()
+        merged["pa_taper_rate"] = float(it.get("personal_allowance_taper_rate", merged.get("pa_taper_rate", 0.5)))
+        merged["class_2_block"] = rules.get("national_insurance", {}).get("class_2", {})
+        alw = rules.get("allowances", {})
+        merged["allowances_detail"] = alw
+        merged["student_loans"] = rules.get("student_loans", {})
+        merged["cgt_annual_exempt"] = float(alw.get("capital_gains_annual_exempt", 3000))
+        merged["dividend_allowance_statutory"] = float(alw.get("dividend_allowance", 500))
+        merged["aia_cap"] = float(alw.get("annual_investment_allowance", 1_000_000))
+    else:
+        merged["income_tax_bands"] = _default_income_tax_bands()
+        merged["pa_taper_rate"] = 0.5
+        merged["class_2_block"] = {}
+        merged["allowances_detail"] = {}
+        merged["student_loans"] = {}
+        merged["cgt_annual_exempt"] = 3000.0
+        merged["dividend_allowance_statutory"] = 500.0
+        merged["aia_cap"] = 1_000_000.0
+    return merged
+
+
+def _uk_tax_year_label(d: datetime.date) -> str:
+    if (d.month, d.day) >= (4, 6):
+        y = d.year
+    else:
+        y = d.year - 1
+    return f"{y}-{str(y + 1)[2:]}"
+
+
+async def _rates_for_period_end(period_end: datetime.date) -> tuple[dict[str, Any], str]:
+    ty = _uk_tax_year_label(period_end)
+    rules, provenance = await _fetch_regulatory_rules(ty)
+    return _merge_rates_from_rules(rules), provenance
+
+
+async def _fetch_scottish_income_tax_bands(tax_year: str) -> list[dict[str, Any]] | None:
+    try:
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(
+                f"{REGULATORY_SERVICE_URL}/rules/rates/scotland",
+                params={"year": tax_year},
+            )
+            if not resp.is_success:
+                return None
+            data = resp.json()
+            sit = data.get("scotland_income_tax") or {}
+            bands = sit.get("bands")
+            return bands if isinstance(bands, list) and bands else None
+    except Exception as exc:
+        logger.warning("Scotland rates fetch failed (%s); falling back to rUK bands.", exc)
+    return None
+
+
+def _personal_allowance_effective(total_income: float, rates: dict[str, Any], extra_pa: float = 0.0) -> float:
+    pa = float(rates["personal_allowance"]) + float(extra_pa)
+    thr = float(rates["pa_taper_threshold"])
+    tr = float(rates.get("pa_taper_rate", 0.5))
+    if total_income <= thr:
+        return pa
+    reduction = (total_income - thr) * tr
+    return max(pa - reduction, 0.0)
+
+
+def _income_tax_from_bands(taxable_after_pa: float, bands: list[dict[str, Any]]) -> tuple[float, float, float]:
+    basic = higher = additional = 0.0
+    for band in sorted(bands, key=lambda b: float(b["from"])):
+        lo = float(band["from"])
+        hi = float(band["to"]) if band.get("to") is not None else float("inf")
+        rate = float(band["rate"])
+        chunk = max(0.0, min(taxable_after_pa, hi) - lo)
+        if chunk <= 0:
+            continue
+        amt = chunk * rate
+        name = band.get("name", "")
+        if name in ("starter", "basic", "intermediate"):
+            basic += amt
+        elif name == "higher":
+            higher += amt
+        elif name in ("additional", "advanced", "top"):
+            additional += amt
+        else:
+            basic += amt
+    return basic, higher, additional
+
+
+def _class4_nic_from_rates(taxable_profit: float, rates: dict[str, Any]) -> float:
+    lpl = float(rates["class4_lpl"])
+    upl = float(rates["class4_upl"])
+    if taxable_profit <= lpl:
+        return 0.0
+    main_band = max(min(taxable_profit, upl) - lpl, 0.0) * float(rates["class4_main"])
+    add_band = max(taxable_profit - upl, 0.0) * float(rates["class4_add"])
+    return main_band + add_band
+
+
+def _class2_annual_from_rates(taxable_profit: float, rates: dict[str, Any]) -> float:
+    c2 = rates.get("class_2_block") or {}
+    mandatory = c2.get("mandatory_annual_cash_gbp_when_profits_ge_lower_limit")
+    spt = float(c2.get("small_profits_threshold", rates["class2_small_profits"]))
+    lpl = float(c2.get("lower_profits_limit", rates["class2_lpl"]))
+    if mandatory is not None:
+        if taxable_profit < spt or taxable_profit < lpl:
+            return 0.0
+        return float(mandatory)
+    wk = float(c2.get("weekly_rate_voluntary", c2.get("weekly_rate", rates["class2_weekly"])))
+    return wk * 52.0 if taxable_profit >= lpl else 0.0
+
+
+def _deductible_categories_for_rates(rates: dict[str, Any]) -> set[str]:
+    codes = rates.get("expense_codes") or set()
+    if isinstance(codes, (list, tuple)):
+        codes = set(codes)
+    if not codes:
+        return set(DEDUCTIBLE_EXPENSE_CATEGORIES)
+    return set(DEDUCTIBLE_EXPENSE_CATEGORIES) | set(codes)
+
 # Hardcoded fallback (2025/26) — used only when regulatory-service unreachable
 _FALLBACK_RATES: dict[str, Any] = {
     "personal_allowance": 12_570.0,
     "pa_taper_threshold": 100_000.0,
+    "pa_taper_rate": 0.5,
     "basic_rate": 0.20,
     "basic_rate_limit": 37_700.0,
     "higher_rate": 0.40,
@@ -190,6 +349,27 @@ class TaxCalculationRequest(BaseModel):
     start_date: datetime.date
     end_date: datetime.date
     jurisdiction: str
+    region: Literal["england_wales", "scotland"] = "england_wales"
+    use_trading_allowance: bool = False
+    student_loan_plan: Optional[str] = None
+    marriage_allowance_received_gbp: float = 0.0
+    blind_persons_allowance_claimed: bool = False
+    gross_pension_contributions_self_employed_gbp: float = 0.0
+    annual_investment_allowance_claim_gbp: float = 0.0
+    use_of_home_weeks_at_flat_rate: int = 0
+    business_mileage_allowance_claim_gbp: float = 0.0
+    savings_interest_gross_gbp: float = 0.0
+    paye_gross_salary_in_period_gbp: float = 0.0
+    paye_tax_paid_in_period_gbp: float = 0.0
+    cis_suffered_in_period_gbp: float = 0.0
+    other_tax_credits_gbp: float = 0.0
+    gift_aid_net_donations_gbp: float = 0.0
+    dividend_income_gross_gbp: float = 0.0
+    chargeable_gains_gbp: float = 0.0
+    partnership_profit_share_gbp: float = 0.0
+    losses_brought_forward_gbp: float = 0.0
+    director_paye_gross_annual_gbp: float = 0.0
+    is_non_uk_resident: bool = False
 
 class TaxSummaryItem(BaseModel):
     category: str
@@ -218,6 +398,19 @@ class TaxCalculationResult(BaseModel):
     payment_on_account_jul: float
     mtd_obligation: dict[str, Any]
     summary_by_category: List[TaxSummaryItem]
+    student_loan_repayment_gbp: float = 0.0
+    dividend_income_tax_gbp: float = 0.0
+    capital_gains_tax_gbp: float = 0.0
+    savings_income_included_gbp: float = 0.0
+    paye_gross_included_gbp: float = 0.0
+    paye_tax_credit_applied_gbp: float = 0.0
+    cis_tax_credit_applied_gbp: float = 0.0
+    other_tax_credits_applied_gbp: float = 0.0
+    gross_tax_before_credits_gbp: float = 0.0
+    employee_ni_on_paye_estimate_gbp: float = 0.0
+    income_tax_region: str = "england_wales"
+    effective_allowable_expenses_gbp: float = 0.0
+    breakdown: dict[str, Any] = Field(default_factory=dict)
 
 
 def _parse_iso_date(value: Any) -> datetime.date | None:
@@ -490,37 +683,6 @@ def _build_mtd_quarterly_submission_payload(
     }
 
 
-def _personal_allowance_for_income(total_income: float) -> float:
-    """PA tapers £1 for every £2 over £100,000; fully withdrawn at £125,140."""
-    taper_threshold = 100_000.0
-    if total_income <= taper_threshold:
-        return UK_PERSONAL_ALLOWANCE
-    reduction = (total_income - taper_threshold) / 2.0
-    return max(UK_PERSONAL_ALLOWANCE - reduction, 0.0)
-
-
-def _calculate_income_tax(taxable_after_pa: float) -> tuple[float, float, float]:
-    """Returns (basic, higher, additional) income tax components."""
-    basic = min(taxable_after_pa, UK_BASIC_RATE_LIMIT) * UK_BASIC_TAX_RATE
-    higher_base = max(min(taxable_after_pa - UK_BASIC_RATE_LIMIT,
-                          UK_HIGHER_RATE_LIMIT - UK_PERSONAL_ALLOWANCE - UK_BASIC_RATE_LIMIT), 0.0)
-    higher = higher_base * UK_HIGHER_TAX_RATE
-    additional = max(taxable_after_pa - (UK_HIGHER_RATE_LIMIT - UK_PERSONAL_ALLOWANCE), 0.0) * UK_ADDITIONAL_TAX_RATE
-    return basic, higher, additional
-
-
-def _calculate_class4_nic(taxable_profit: float) -> float:
-    if taxable_profit <= UK_CLASS4_NIC_LOWER_PROFITS_LIMIT:
-        return 0.0
-    main_band_taxable = max(
-        min(taxable_profit, UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT) - UK_CLASS4_NIC_LOWER_PROFITS_LIMIT,
-        0.0,
-    )
-    additional_band_taxable = max(taxable_profit - UK_CLASS4_NIC_MAIN_RATE_UPPER_LIMIT, 0.0)
-    return (main_band_taxable * UK_CLASS4_NIC_MAIN_RATE) + (
-        additional_band_taxable * UK_CLASS4_NIC_ADDITIONAL_RATE
-    )
-
 # --- Endpoints ---
 @app.get("/metrics")
 async def metrics() -> Response:
@@ -539,6 +701,9 @@ async def calculate_tax(
     if request.jurisdiction != "UK":
         TAX_CALCULATIONS_TOTAL.labels(result="validation_error").inc()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only 'UK' jurisdiction is supported.")
+
+    rates, regulatory_source = await _rates_for_period_end(request.end_date)
+    deductible = _deductible_categories_for_rates(rates)
 
     # 1. Fetch all transactions for the user from the transactions-service
     try:
@@ -565,38 +730,164 @@ async def calculate_tax(
         if request.start_date <= t.date <= request.end_date:
             if t.amount > 0:
                 total_income += t.amount
-            elif t.category in DEDUCTIBLE_EXPENSE_CATEGORIES:
+            elif (t.category or "") in deductible:
                 total_expenses += abs(t.amount)
 
             category = t.category or "uncategorized"
             summary_map.setdefault(category, 0.0)
             summary_map[category] += t.amount
 
-    # 3. Full UK 2025/26 self-employed tax rules
-    taxable_profit = max(total_income - total_expenses, 0.0)
-    pa = _personal_allowance_for_income(taxable_profit)
-    pa_taper = UK_PERSONAL_ALLOWANCE - pa
-    personal_allowance_used = min(taxable_profit, pa)
-    taxable_amount_after_allowance = max(taxable_profit - pa, 0.0)
-    basic_tax, higher_tax, additional_tax = _calculate_income_tax(taxable_amount_after_allowance)
+    allowances_detail = rates.get("allowances_detail") or {}
+    tax_year = _uk_tax_year_label(request.end_date)
+    home_weekly = float(allowances_detail.get("use_of_home_flat_rate_weekly", 6))
+    use_home_amt = max(0, int(request.use_of_home_weeks_at_flat_rate)) * home_weekly
+    mileage_amt = max(0.0, request.business_mileage_allowance_claim_gbp)
+    deductible_pool = total_expenses + mileage_amt + use_home_amt
+    ta_cap = float(rates.get("trading_allowance", 1000))
+    effective_expenses = expenses_with_trading_allowance(
+        total_income,
+        deductible_pool,
+        request.use_trading_allowance,
+        ta_cap,
+    )
+    trading_core = total_income - effective_expenses
+    profit_pre_partnership = trading_core + max(0.0, request.partnership_profit_share_gbp)
+    aia_cap = float(rates.get("aia_cap", 1_000_000))
+    aia_used = min(max(0.0, request.annual_investment_allowance_claim_gbp), aia_cap)
+    pension = max(0.0, request.gross_pension_contributions_self_employed_gbp)
+    profit_after_relief = profit_pre_partnership - pension - aia_used
+    losses_bf = max(0.0, request.losses_brought_forward_gbp)
+    se_basis = max(0.0, profit_after_relief - losses_bf)
+    paye_gross = max(0.0, request.paye_gross_salary_in_period_gbp)
+    savings = max(0.0, request.savings_interest_gross_gbp)
+    taper_income = se_basis + paye_gross + savings
+    ma_cap = float(allowances_detail.get("marriage_allowance_transfer", 1260))
+    ma_recv = min(max(0.0, request.marriage_allowance_received_gbp), ma_cap)
+    blind_add = (
+        float(allowances_detail.get("blind_persons_allowance", 3130))
+        if request.blind_persons_allowance_claimed
+        else 0.0
+    )
+    extra_pa = ma_recv + blind_add
+    pa_eff = _personal_allowance_effective(taper_income, rates, extra_pa)
+    pa_nominal = float(rates["personal_allowance"]) + extra_pa
+    pa_taper = pa_nominal - pa_eff
+    personal_allowance_used = min(taper_income, pa_eff)
+    taxable_amount_after_allowance = max(taper_income - pa_eff, 0.0)
+    bands: list[dict[str, Any]] = list(rates.get("income_tax_bands") or _default_income_tax_bands())
+    income_region: str = request.region
+    scotland_fallback = False
+    if request.region == "scotland":
+        sb = await _fetch_scottish_income_tax_bands(tax_year)
+        if sb:
+            bands = sb
+        else:
+            scotland_fallback = True
+    breakdown: dict[str, Any] = {}
+    if scotland_fallback:
+        breakdown.setdefault("warnings", []).append(
+            "Scottish income tax bands were unavailable; rUK bands were used for this estimate."
+        )
+    if request.gift_aid_net_donations_gbp > 0:
+        if request.region == "england_wales":
+            bands = gift_aid_extend_basic_band(bands, request.gift_aid_net_donations_gbp)
+        else:
+            breakdown.setdefault("notes", []).append(
+                "Gift Aid basic-rate band extension is omitted for Scotland in this simplified model."
+            )
+    basic_tax, higher_tax, additional_tax = _income_tax_from_bands(taxable_amount_after_allowance, bands)
     estimated_income_tax = basic_tax + higher_tax + additional_tax
-    estimated_class2_nic = UK_CLASS2_NI_ANNUAL if taxable_profit >= UK_CLASS2_SMALL_PROFITS else 0.0
-    estimated_class4_nic = _calculate_class4_nic(taxable_profit)
-    estimated_tax = estimated_income_tax + estimated_class2_nic + estimated_class4_nic
-    effective_tax_rate = (estimated_tax / taxable_profit) if taxable_profit > 0 else 0.0
-    poa = round((estimated_income_tax + estimated_class4_nic) * 0.50, 2)
-
-    # 4. Prepare summary
+    estimated_class2_nic = _class2_annual_from_rates(se_basis, rates)
+    estimated_class4_nic = _class4_nic_from_rates(se_basis, rates)
+    sl_rules = rates.get("student_loans") or {}
+    sl_repay = student_loan_repayment_annual(taper_income, request.student_loan_plan, sl_rules)
+    div_tax = 0.0
+    div_gross = max(0.0, request.dividend_income_gross_gbp)
+    if div_gross > 0:
+        br_w = float(rates["basic_rate_limit"])
+        hr_top = float(rates["higher_rate_limit"])
+        da = float(rates.get("dividend_allowance_statutory", 500))
+        div_res = calculate_dividend_tax(
+            div_gross,
+            taper_income,
+            personal_allowance=pa_eff,
+            dividend_allowance=da,
+            basic_band_width=br_w,
+            higher_band_top=hr_top,
+        )
+        div_tax = float(div_res.total_dividend_tax)
+    cgt = 0.0
+    gains = max(0.0, request.chargeable_gains_gbp)
+    if gains > 0:
+        cg_res = calculate_crypto_tax(
+            gains,
+            0.0,
+            taper_income,
+            personal_allowance=pa_eff,
+            annual_exempt_amount=float(rates.get("cgt_annual_exempt", 3000)),
+            basic_band_width=float(rates["basic_rate_limit"]),
+        )
+        cgt = float(cg_res.total_cgt)
+    emp_ni = 0.0
+    if request.director_paye_gross_annual_gbp > 0:
+        emp_ni = rough_employee_class1_annual(request.director_paye_gross_annual_gbp)
+    paye_cred = max(0.0, request.paye_tax_paid_in_period_gbp)
+    cis_cred = max(0.0, request.cis_suffered_in_period_gbp)
+    other_cred = max(0.0, request.other_tax_credits_gbp)
+    credits = paye_cred + cis_cred + other_cred
+    gross_components = (
+        estimated_income_tax
+        + estimated_class2_nic
+        + estimated_class4_nic
+        + sl_repay
+        + div_tax
+        + cgt
+        + emp_ni
+    )
+    estimated_tax = max(0.0, gross_components - credits)
+    effective_tax_rate = (estimated_tax / taper_income) if taper_income > 0 else 0.0
+    poa_each = payments_on_account_each(estimated_income_tax, estimated_class4_nic, sl_repay)
     summary_by_category = [
-        TaxSummaryItem(category=cat, total_amount=round(amount, 2), taxable_amount=round(amount, 2)) # Simplified
+        TaxSummaryItem(category=cat, total_amount=round(amount, 2), taxable_amount=round(amount, 2))
         for cat, amount in summary_map.items()
     ]
-
     mtd_obligation = _build_mtd_obligation(
         period_start=request.start_date,
         period_end=request.end_date,
         total_income=total_income,
         today=datetime.date.today(),
+    )
+    if mtd_obligation.get("reporting_required"):
+        mtd_obligation.setdefault("notes", []).append(
+            "End of Period Statement (EOPS): required per income source when within MTD ITSA quarterly obligations."
+        )
+    if request.is_non_uk_resident:
+        breakdown.setdefault("warnings", []).append(
+            "Non-UK resident reporting is not modelled here; figures assume UK residency rules."
+        )
+    lf_applied = min(losses_bf, max(0.0, profit_after_relief))
+    disclaimers = build_estimate_disclaimers(
+        regulatory_source=regulatory_source,
+        region=request.region,
+        gift_aid_net_gbp=request.gift_aid_net_donations_gbp,
+        savings_interest_gross_gbp=request.savings_interest_gross_gbp,
+        dividend_income_gross_gbp=request.dividend_income_gross_gbp,
+        chargeable_gains_gbp=request.chargeable_gains_gbp,
+        is_non_uk_resident=request.is_non_uk_resident,
+    )
+    breakdown.update(
+        {
+            "trading_allowance_elected": request.use_trading_allowance,
+            "use_of_home_flat_rate_gbp": round(use_home_amt, 2),
+            "mileage_allowance_claim_gbp": round(mileage_amt, 2),
+            "annual_investment_allowance_applied_gbp": round(aia_used, 2),
+            "losses_brought_forward_applied_gbp": round(lf_applied, 2),
+            "trading_net_before_partnership_gbp": round(trading_core, 2),
+            "sa103_box_hints": build_sa103_box_hints([s.model_dump() for s in summary_by_category]),
+            "tax_year": tax_year,
+            "regulatory_rules_source": regulatory_source,
+            "estimate_disclaimers": disclaimers,
+        }
     )
     TAX_CALCULATIONS_TOTAL.labels(result="success").inc()
     return TaxCalculationResult(
@@ -605,7 +896,7 @@ async def calculate_tax(
         end_date=request.end_date,
         total_income=round(total_income, 2),
         total_expenses=round(total_expenses, 2),
-        taxable_profit=round(taxable_profit, 2),
+        taxable_profit=round(se_basis, 2),
         personal_allowance_used=round(personal_allowance_used, 2),
         pa_taper_reduction=round(pa_taper, 2),
         taxable_amount_after_allowance=round(taxable_amount_after_allowance, 2),
@@ -617,10 +908,23 @@ async def calculate_tax(
         estimated_class4_nic_due=round(estimated_class4_nic, 2),
         estimated_effective_tax_rate=round(effective_tax_rate, 4),
         estimated_tax_due=round(estimated_tax, 2),
-        payment_on_account_jan=poa,
-        payment_on_account_jul=poa,
+        payment_on_account_jan=poa_each,
+        payment_on_account_jul=poa_each,
         mtd_obligation=mtd_obligation,
         summary_by_category=summary_by_category,
+        student_loan_repayment_gbp=round(sl_repay, 2),
+        dividend_income_tax_gbp=round(div_tax, 2),
+        capital_gains_tax_gbp=round(cgt, 2),
+        savings_income_included_gbp=round(savings, 2),
+        paye_gross_included_gbp=round(paye_gross, 2),
+        paye_tax_credit_applied_gbp=round(paye_cred, 2),
+        cis_tax_credit_applied_gbp=round(cis_cred, 2),
+        other_tax_credits_applied_gbp=round(other_cred, 2),
+        gross_tax_before_credits_gbp=round(gross_components, 2),
+        employee_ni_on_paye_estimate_gbp=round(emp_ni, 2),
+        income_tax_region=income_region,
+        effective_allowable_expenses_gbp=round(effective_expenses, 2),
+        breakdown=breakdown,
     )
 
 @app.post("/calculate-and-submit", status_code=status.HTTP_202_ACCEPTED)
@@ -956,14 +1260,42 @@ _HMRC_EXPENSE_MAP = {
     "fuel": "travelCosts",
     "transport": "travelCosts",
     "travel": "travelCosts",
+    "mileage": "travelCosts",
+    "vehicle_mileage": "travelCosts",
     "rent": "premisesRunningCosts",
     "utilities": "premisesRunningCosts",
+    "premises": "premisesRunningCosts",
     "office_supplies": "adminCosts",
+    "office_costs": "adminCosts",
+    "office": "adminCosts",
+    "stationery": "adminCosts",
     "home_office": "premisesRunningCosts",
+    "use_of_home": "premisesRunningCosts",
     "advertising": "advertisingCosts",
+    "marketing": "advertisingCosts",
     "professional_services": "professionalFees",
+    "professional_fees": "professionalFees",
+    "legal": "professionalFees",
+    "accounting": "professionalFees",
+    "staff_costs": "staffCosts",
+    "wages": "staffCosts",
+    "stock": "costOfGoods",
+    "materials": "costOfGoods",
+    "stock_materials": "costOfGoods",
+    "cost_of_goods": "costOfGoods",
     "insurance": "other",
+    "bank_charges": "other",
+    "financial_costs": "other",
+    "interest": "other",
     "subscriptions": "adminCosts",
+    "equipment": "adminCosts",
+    "training": "professionalFees",
+    "clothing": "other",
+    "uniform": "other",
+    "repairs": "premisesRunningCosts",
+    "maintenance": "premisesRunningCosts",
+    "phone": "adminCosts",
+    "internet": "adminCosts",
     "food_and_drink": "other",
     "groceries": "other",
     "health": "other",
@@ -1021,13 +1353,13 @@ async def prepare_quarterly_report(
         "periodExpenses": hmrc_expenses,
     }
 
+    rates, _ = await _rates_for_period_end(datetime.date.fromisoformat(q.period_end))
     annual_profit = max((turnover - collected.total_expenses) * 4, 0)
-    estimated_tax = 0.0
-    taxable = max(annual_profit - 12570, 0)
-    estimated_tax += min(taxable, 37700) * 0.20
-    if taxable > 37700:
-        estimated_tax += min(taxable - 37700, 87440) * 0.40
-    estimated_tax = round(estimated_tax / 4, 2)
+    pa = _personal_allowance_effective(annual_profit, rates)
+    taxable = max(annual_profit - pa, 0)
+    bands = rates.get("income_tax_bands") or _default_income_tax_bands()
+    b, h, a = _income_tax_from_bands(taxable, bands)
+    estimated_tax = round((b + h + a) / 4, 2)
 
     return PreparedQuarterlyReport(
         status="ready_for_review",
@@ -1065,29 +1397,18 @@ async def prepare_annual_report(
     total_income = max(collected.total_income, invoice_income)
     total_expenses = collected.total_expenses
 
-    personal_allowance = 12570.0
-    taxable = max(total_income - total_expenses - personal_allowance, 0)
-
-    income_tax = 0.0
-    remaining = taxable
-    basic = min(remaining, 37700)
-    income_tax += basic * 0.20
-    remaining -= basic
-    higher = min(remaining, 87440) if remaining > 0 else 0
-    income_tax += higher * 0.40
-    remaining -= higher
-    if remaining > 0:
-        income_tax += remaining * 0.45
-
+    rates, _ = await _rates_for_period_end(datetime.date.fromisoformat(end))
     profit = max(total_income - total_expenses, 0)
-    ni4 = 0.0
-    if profit > 12570:
-        ni4 += min(profit - 12570, 50270 - 12570) * 0.06
-        if profit > 50270:
-            ni4 += (profit - 50270) * 0.02
-    ni2 = 179.40 if profit > 12570 else 0
+    pa = _personal_allowance_effective(profit, rates)
+    taxable = max(profit - pa, 0)
+    bands = rates.get("income_tax_bands") or _default_income_tax_bands()
+    bt, ht, at = _income_tax_from_bands(taxable, bands)
+    income_tax = bt + ht + at
+    ni4 = _class4_nic_from_rates(profit, rates)
+    ni2 = _class2_annual_from_rates(profit, rates)
 
     total_tax = round(income_tax + ni4 + ni2, 2)
+    personal_allowance = round(pa, 2)
 
     hmrc_payload = {
         "tax_year_start": start,

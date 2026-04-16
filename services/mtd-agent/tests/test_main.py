@@ -126,6 +126,8 @@ def client():
     ):
         mock_redis = AsyncMock()
         mock_redis.aclose = AsyncMock()
+        mock_redis.set = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=None)
         mock_rf.return_value = mock_redis
 
         mock_agent = AsyncMock()
@@ -164,3 +166,52 @@ def test_question_endpoint(client):
     r = client.post("/question/user123", json={"question": "When is my deadline?"})
     assert r.status_code == 200
     assert "answer" in r.json()
+
+
+def test_hmrc_callback_persists_token_in_redis(client):
+    import app.main as mtd_main
+
+    with patch.object(
+        mtd_main.hmrc_client,
+        "exchange_authorization_code",
+        new_callable=AsyncMock,
+    ) as ex:
+        ex.return_value = ("hmrc-access-token", 3600)
+        r = client.get("/hmrc/callback?code=auth-code-1&state=user-xyz")
+    assert r.status_code == 200
+    assert r.json().get("status") == "authorised"
+    mtd_main.redis_client.set.assert_awaited_once()
+    ca = mtd_main.redis_client.set.await_args
+    assert ca.args[1] == "hmrc-access-token"
+    assert ca.kwargs.get("ex") is not None
+
+
+def test_submit_uses_token_from_redis(client):
+    import app.main as mtd_main
+
+    mtd_main.redis_client.get = AsyncMock(return_value="redis-stored-token")
+    body = {
+        "nino": "AB123456C",
+        "tax_year": "2026-27",
+        "period_start": "2026-04-06",
+        "period_end": "2026-07-05",
+        "income": 1000.0,
+        "expenses": 100.0,
+    }
+    with patch.object(
+        mtd_main.hmrc_client,
+        "submit_period_summary",
+        new_callable=AsyncMock,
+    ) as sub:
+        sub.return_value = {"transactionReference": "ref-1"}
+        r = client.post("/submit/user-xyz", json=body)
+    assert r.status_code == 200
+    sub.assert_awaited_once()
+    call_kw = sub.await_args.kwargs
+    assert call_kw.get("access_token") == "redis-stored-token"
+
+
+def test_health_returns_x_request_id(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    assert r.headers.get("X-Request-Id")

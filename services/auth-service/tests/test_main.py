@@ -9,7 +9,6 @@ from app.main import (
     get_user_record,
     reset_auth_db_for_tests,
     set_user_admin_for_tests,
-    _login_attempts,
     get_subscription,
     create_subscription,
     _expire_trial,
@@ -29,7 +28,6 @@ STRONG_PASSWORD_2 = "N3wSecure!Pass"
 
 def setup_function():
     reset_auth_db_for_tests()
-    _login_attempts.clear()
 
 
 def _register_and_login(email, password=STRONG_PASSWORD):

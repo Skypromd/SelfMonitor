@@ -1,9 +1,15 @@
 import datetime
 import os
 import sys
+import tempfile
 
 from fastapi.testclient import TestClient
 
+os.environ.setdefault("AUTH_SECRET_KEY", "test-secret")
+os.environ.setdefault(
+    "ANALYTICS_DB_PATH",
+    os.path.join(tempfile.gettempdir(), "analytics_mobile_product_ops_test.db"),
+)
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from app import main
@@ -144,11 +150,11 @@ def test_mobile_analytics_export_supports_csv_and_json():
     client.post("/mobile/analytics/events", json=_event_payload("mobile.onboarding.impression", variant="velocity"))
     client.post("/mobile/analytics/events", json=_event_payload("mobile.onboarding.completed", variant="velocity"))
 
-    json_export = client.get("/mobile/analytics/funnel/export?days=14&format=json")
+    json_export = client.get("/mobile/analytics/funnel/export?days=14&export_format=json")
     assert json_export.status_code == 200
     assert json_export.json()["total_events"] == 3
 
-    csv_export = client.get("/mobile/analytics/funnel/export?days=14&format=csv")
+    csv_export = client.get("/mobile/analytics/funnel/export?days=14&export_format=csv")
     assert csv_export.status_code == 200
     assert csv_export.headers["content-type"].startswith("text/csv")
     text = csv_export.text

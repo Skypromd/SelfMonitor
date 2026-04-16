@@ -42,7 +42,13 @@ class TransactionImportResponse(BaseModel):
 
 
 class TransactionUpdateRequest(BaseModel):
-    category: str
+    category: Optional[str] = None
+    tax_category: Optional[str] = None
+    business_use_percent: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=100.0,
+    )
 
 
 class ReceiptDraftCreateRequest(BaseModel):

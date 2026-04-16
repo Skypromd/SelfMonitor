@@ -4,7 +4,6 @@ from typing import Callable
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
 
-DEFAULT_SECRET_KEY = "a_very_secret_key_that_should_be_in_an_env_var"
 DEFAULT_ALGORITHM = "HS256"
 
 
@@ -14,7 +13,9 @@ def build_jwt_auth_dependencies(
 ) -> tuple[Callable[..., str], Callable[..., str]]:
     """Create FastAPI dependencies for bearer token extraction and JWT subject decoding."""
 
-    secret_key = os.getenv(secret_key_env_var, DEFAULT_SECRET_KEY)
+    secret_key = os.environ[secret_key_env_var].strip()
+    if not secret_key:
+        raise RuntimeError(f"{secret_key_env_var} must be non-empty")
 
     def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -39,6 +40,11 @@ def build_jwt_auth_dependencies(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid authentication token",
             )
+        if payload.get("internal_call") is True:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid authentication token",
+            )
         return user_id
 
     return get_bearer_token, get_current_user_id
@@ -50,7 +56,9 @@ def build_admin_require_dependency(
     required_permission: str | None = None,
 ) -> Callable[..., dict]:
     """SEC.3 — Return a FastAPI dependency that enforces admin/permission check."""
-    secret_key = os.getenv(secret_key_env_var, DEFAULT_SECRET_KEY)
+    secret_key = os.environ[secret_key_env_var].strip()
+    if not secret_key:
+        raise RuntimeError(f"{secret_key_env_var} must be non-empty")
 
     def _check(authorization: str | None = Header(default=None)) -> dict:
         if not authorization or not authorization.startswith("Bearer "):

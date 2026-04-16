@@ -4,6 +4,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
+os.environ["INTERNAL_SERVICE_SECRET"] = "test-internal-secret"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -198,3 +199,18 @@ def test_get_document_not_found(mock_crud):
         assert "not found" in response.json()["detail"].lower()
     finally:
         app.dependency_overrides.clear()
+
+
+def test_list_documents_requires_authentication():
+    client = TestClient(app)
+    response = client.get("/documents")
+    assert response.status_code == 401
+
+
+def test_upload_requires_authentication():
+    client = TestClient(app)
+    response = client.post(
+        "/documents/upload",
+        files={"file": ("receipt.pdf", b"x", "application/pdf")},
+    )
+    assert response.status_code == 401
