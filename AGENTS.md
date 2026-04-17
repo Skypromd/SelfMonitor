@@ -21,6 +21,8 @@
 - `MONETIZATION_PLAN.md` — providers, 7 revenue streams, unit economics to £1M MRR
 - `BANK_SYNC_ECONOMICS.md` — sync model: button-only, no auto-sync, 92%+ margin
 
+**HMRC ↔ product:** End users never call HMRC APIs directly. Web and mobile talk to the gateway; **live MTD traffic is sent from `integrations-service`** (OAuth, retries, fraud-prevention headers). `Gov-Client-Connection-Method` must reflect the real initiator: **`WEB_APP_VIA_SERVER`** (Next.js) and **`MOBILE_APP_VIA_SERVER`** (Expo/RN), per [HMRC fraud prevention](https://developer.service.hmrc.gov.uk/guides/fraud-prevention/). Clients supply `hmrc_fraud_client_context` → tax-engine → integrations `client_context`. **Pro/Business** (`hmrc_direct_submission` in JWT): when `HMRC_DIRECT_SUBMISSION_ENABLED` is on, **full** `client_context` is **required** before live submit. **Starter/Growth**: guided MTD remains available; strict fraud-context validation does not block them (see `strict_hmrc_fraud_client_context_required` in `libs/shared_auth/plan_limits.py`). **VAT returns (prepare/submit)** are **Pro+** only (`vat_returns` claim). **CIS refund tracker** is on all paid tiers. API: `GET /cis/refund-tracker` (aggregates by UK tax month × contractor); reminders: `GET /cis/reminders/notification-eligible`, `POST /cis/reminders/{task_id}/mark-sent` (72h / 2-per-7d throttle); statement vs bank: `cis_records.reconciliation_status` + `bank_net_observed_gbp`.
+
 **Business rules (never violate):**
 - Bank sync: ONLY on button press by user. No background/automatic sync. Ever.
 - HMRC submission: ONLY after explicit user confirmation. Never auto-submit. (Naming: do **not** describe `mtd-agent` as “auto-submission” in user-facing or marketing copy — use “guided MTD workflow” / “prepare then confirm”.)
@@ -91,7 +93,7 @@ The app targets Expo SDK 51 / React Native 0.74.5. It connects to the backend at
 | Service | Port | Description |
 |---|---|---|
 | `services/finops-monitor` | 8021 | Financial ops monitor with MTD/ITSA compliance tracking |
-| `services/mtd-agent` | 8022 | HMRC MTD workflow agent (orchestrates prepare/submit; **submit only after explicit user confirmation** — same rule as `integrations-service`) |
+| `services/mtd-agent` | 8022 | HMRC MTD workflow agent; **POST /mtd/prepare** proxies **tax-engine** for transaction-backed figures + shared MTD JSON; **submit only after explicit user confirmation** (same rule as `integrations-service`) |
 | `services/voice-gateway` | 8023 | Voice gateway (STT/TTS, WebSocket streaming) |
 | `services/ai-agent-service` | 80 | SelfMate AI agent — memory, tools, multi-language |
 

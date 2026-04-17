@@ -197,10 +197,10 @@ GET  /api/categorization/categories
 | Tier | Price | Bank Sync | Key Features |
 |---|---|---|---|
 | Free | £0 | No sync | Manual entry, dashboard, tax calculator |
-| Starter | £9/mo | 1×/day | MTD quarterly, 1 bank, invoices |
-| Growth | £12/mo | 2×/day | + AI advisor, receipt OCR, all banks |
-| Pro | £15/mo | 3×/day | + voice input, auto-submission, CSV export |
-| Business | £25/mo | 3×/day | + multi-business, accountant access, API |
+| Starter | £12/mo | 1×/day | CIS tracker, guided MTD, 1 bank |
+| Growth | £15/mo | 3×/day | 2 banks, 12 mo history, guided MTD |
+| Pro | £18/mo | 10×/day | 5 banks, direct+fraud MTD, VAT, 24 mo history |
+| Business | £28/mo | 25×/day | 10 banks, 36 mo history, higher limits |
 
 Bank sync is **button-only** — no automatic background sync. Push notifications remind users to sync.
 
