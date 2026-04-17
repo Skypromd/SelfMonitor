@@ -326,6 +326,7 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
 from libs.shared_http.retry import get_json_with_retry, post_json_with_retry
 from libs.shared_mtd import build_mtd_self_employment_period_summary
 
@@ -422,6 +423,8 @@ class TaxCalculationResult(BaseModel):
     income_tax_region: str = "england_wales"
     effective_allowable_expenses_gbp: float = 0.0
     breakdown: dict[str, Any] = Field(default_factory=dict)
+    coverage_status: str = "complete"
+    coverage: dict[str, Any] = Field(default_factory=dict)
 
 
 class MTDPrepareResponse(BaseModel):
@@ -713,6 +716,63 @@ def _build_mtd_quarterly_submission_payload(
 
 
 # --- Endpoints ---
+def _add_calendar_months(d: datetime.date, delta: int) -> datetime.date:
+    import calendar
+
+    m = d.month - 1 + delta
+    y = d.year + m // 12
+    m = m % 12 + 1
+    last = calendar.monthrange(y, m)[1]
+    return datetime.date(y, m, min(d.day, last))
+
+
+def _retention_cutoff(transaction_history_months: int, today: datetime.date) -> datetime.date:
+    if transaction_history_months <= 0:
+        return datetime.date(1970, 1, 1)
+    return _add_calendar_months(today, -transaction_history_months)
+
+
+def _coverage_for_period(
+    requested_start: datetime.date,
+    requested_end: datetime.date,
+    retention_months: int,
+    today: datetime.date | None = None,
+) -> tuple[datetime.date, dict[str, Any], str]:
+    today = today or datetime.date.today()
+    cutoff = _retention_cutoff(retention_months, today)
+    effective_start = max(requested_start, cutoff)
+    status = "complete" if requested_start >= cutoff else "partial"
+    meta: dict[str, Any] = {
+        "status": status,
+        "retention_months": retention_months,
+        "retention_cutoff_date": cutoff.isoformat(),
+        "requested_period_start": requested_start.isoformat(),
+        "requested_period_end": requested_end.isoformat(),
+        "effective_period_start": effective_start.isoformat(),
+    }
+    return effective_start, meta, status
+
+
+def _txn_dict_min_date(transactions: list[dict], min_d: datetime.date) -> list[dict]:
+    out: list[dict] = []
+    for t in transactions:
+        raw = t.get("date")
+        if raw is None:
+            continue
+        if isinstance(raw, str):
+            try:
+                td = datetime.date.fromisoformat(raw[:10])
+            except ValueError:
+                continue
+        elif isinstance(raw, datetime.date):
+            td = raw
+        else:
+            continue
+        if td >= min_d:
+            out.append(t)
+    return out
+
+
 @app.get("/metrics")
 async def metrics() -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
@@ -723,6 +783,7 @@ async def calculate_tax(
     request: TaxCalculationRequest,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
+    limits: PlanLimits = Depends(get_plan_limits),
 ):
     if request.start_date > request.end_date:
         TAX_CALCULATIONS_TOTAL.labels(result="validation_error").inc()
@@ -750,13 +811,19 @@ async def calculate_tax(
             detail=f"Could not connect to transactions-service: {exc}",
         ) from exc
 
+    effective_start, coverage_meta, coverage_status = _coverage_for_period(
+        request.start_date,
+        request.end_date,
+        limits.transaction_history_months,
+    )
+
     # 2. Filter transactions by date and calculate totals
     total_income = 0.0
     total_expenses = 0.0
     summary_map = {}
 
     for t in transactions:
-        if request.start_date <= t.date <= request.end_date:
+        if effective_start <= t.date <= request.end_date:
             if t.amount > 0:
                 total_income += t.amount
             elif (t.category or "") in deductible:
@@ -812,7 +879,12 @@ async def calculate_tax(
             bands = sb
         else:
             scotland_fallback = True
-    breakdown: dict[str, Any] = {}
+    breakdown: dict[str, Any] = {"coverage": coverage_meta}
+    if coverage_status == "partial":
+        breakdown.setdefault("warnings", []).append(
+            f"Partial data coverage: subscription retention is {limits.transaction_history_months} months; "
+            f"transactions before {coverage_meta['retention_cutoff_date']} are excluded from this estimate."
+        )
     if scotland_fallback:
         breakdown.setdefault("warnings", []).append(
             "Scottish income tax bands were unavailable; rUK bands were used for this estimate."
@@ -987,8 +1059,9 @@ async def mtd_prepare(
     request: TaxCalculationRequest,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
+    limits: PlanLimits = Depends(get_plan_limits),
 ):
-    calculation_result = await calculate_tax(request, user_id, bearer_token)
+    calculation_result = await calculate_tax(request, user_id, bearer_token, limits)
     mtd_obligation = (
         calculation_result.mtd_obligation
         if isinstance(calculation_result.mtd_obligation, dict)
@@ -1038,10 +1111,11 @@ async def calculate_and_submit_tax(
     request: TaxCalculationRequest,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
+    limits: PlanLimits = Depends(get_plan_limits),
 ):
     # This re-uses the logic from the calculate endpoint.
     # In a real app, this logic would be in a shared function.
-    calculation_result = await calculate_tax(request, user_id, bearer_token)
+    calculation_result = await calculate_tax(request, user_id, bearer_token, limits)
 
     # 5. Submit the calculated tax to the integrations service.
     # For compliant MTD quarterly windows we use a dedicated direct HMRC endpoint.
@@ -1270,6 +1344,8 @@ class PreparedQuarterlyReport(BaseModel):
     hmrc_periodic_update: dict
     estimated_tax: float
     message: str
+    coverage_status: str = "complete"
+    coverage: dict[str, Any] = Field(default_factory=dict)
 
 
 class PreparedAnnualReport(BaseModel):
@@ -1287,6 +1363,8 @@ class PreparedAnnualReport(BaseModel):
     total_tax_due: float
     hmrc_final_declaration: dict
     message: str
+    coverage_status: str = "complete"
+    coverage: dict[str, Any] = Field(default_factory=dict)
 
 
 def _quarter_dates(tax_year_start_year: int) -> list[QuarterDates]:
@@ -1424,6 +1502,7 @@ async def prepare_quarterly_report(
     quarter: str = "Q1",
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
+    limits: PlanLimits = Depends(get_plan_limits),
 ):
     """
     Auto-collect data from transactions + invoices and prepare a quarterly HMRC report.
@@ -1434,7 +1513,13 @@ async def prepare_quarterly_report(
     if not q:
         raise HTTPException(status_code=400, detail=f"Invalid quarter: {quarter}. Use Q1, Q2, Q3, or Q4")
 
+    ps = datetime.date.fromisoformat(q.period_start)
+    pe = datetime.date.fromisoformat(q.period_end)
+    effective_start, cov_meta, cov_status = _coverage_for_period(
+        ps, pe, limits.transaction_history_months
+    )
     transactions = await _fetch_transactions(bearer_token, q.period_start, q.period_end)
+    transactions = _txn_dict_min_date(transactions, effective_start)
     collected = _categorize_transactions(transactions)
     collected.period_start = q.period_start
     collected.period_end = q.period_end
@@ -1476,6 +1561,12 @@ async def prepare_quarterly_report(
     b, h, a = _income_tax_from_bands(taxable, bands)
     estimated_tax = round((b + h + a) / 4, 2)
 
+    msg_tail = ""
+    if cov_status == "partial":
+        msg_tail = (
+            f" Coverage: partial — data before {cov_meta['retention_cutoff_date']} excluded per plan retention."
+        )
+
     return PreparedQuarterlyReport(
         status="ready_for_review",
         quarter=quarter,
@@ -1486,7 +1577,9 @@ async def prepare_quarterly_report(
         message=f"Quarterly report for {quarter} ({q.period_start} to {q.period_end}) prepared. "
                 f"Income: \u00a3{turnover:.2f}, Expenses: \u00a3{collected.total_expenses:.2f}, "
                 f"Estimated quarterly tax: \u00a3{estimated_tax:.2f}. "
-                f"Review and confirm to submit to HMRC.",
+                f"Review and confirm to submit to HMRC.{msg_tail}",
+        coverage_status=cov_status,
+        coverage=cov_meta,
     )
 
 
@@ -1495,6 +1588,7 @@ async def prepare_annual_report(
     tax_year: int = 2025,
     user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
+    limits: PlanLimits = Depends(get_plan_limits),
 ):
     """
     Auto-collect full year data and prepare final declaration for HMRC.
@@ -1503,7 +1597,13 @@ async def prepare_annual_report(
     start = f"{tax_year}-04-06"
     end = f"{tax_year + 1}-04-05"
 
+    ps = datetime.date.fromisoformat(start)
+    pe = datetime.date.fromisoformat(end)
+    effective_start, cov_meta, cov_status = _coverage_for_period(
+        ps, pe, limits.transaction_history_months
+    )
     transactions = await _fetch_transactions(bearer_token, start, end)
+    transactions = _txn_dict_min_date(transactions, effective_start)
     collected = _categorize_transactions(transactions)
 
     invoice_data = await _fetch_invoice_income(bearer_token, start, end)
@@ -1548,6 +1648,12 @@ async def prepare_annual_report(
             "profit": round(q_income - q_expenses, 2),
         })
 
+    msg_tail = ""
+    if cov_status == "partial":
+        msg_tail = (
+            f" Coverage: partial — data before {cov_meta['retention_cutoff_date']} excluded per plan retention."
+        )
+
     return PreparedAnnualReport(
         status="ready_for_review",
         tax_year=f"{tax_year}/{tax_year + 1}",
@@ -1565,5 +1671,7 @@ async def prepare_annual_report(
         message=f"Annual report for {tax_year}/{tax_year + 1} prepared. "
                 f"Total income: \u00a3{total_income:.2f}, Expenses: \u00a3{total_expenses:.2f}, "
                 f"Tax due: \u00a3{total_tax:.2f} (Income Tax: \u00a3{income_tax:.2f} + NI: \u00a3{ni4 + ni2:.2f}). "
-                f"Review and confirm to submit to HMRC as Final Declaration.",
+                f"Review and confirm to submit to HMRC as Final Declaration.{msg_tail}",
+        coverage_status=cov_status,
+        coverage=cov_meta,
     )

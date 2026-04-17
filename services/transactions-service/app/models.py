@@ -52,6 +52,20 @@ class CISRecord(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
+class CISObligation(Base):
+    __tablename__ = "cis_obligations"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    cis_tax_month_label = Column(String(32), nullable=False)
+    contractor_key = Column(String(80), nullable=False)
+    status = Column(String(32), nullable=False, default="MISSING")
+    snooze_until = Column(Date, nullable=True)
+    last_reminded_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class CISReviewTask(Base):
     __tablename__ = "cis_review_tasks"
 

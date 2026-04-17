@@ -71,7 +71,11 @@ def sync_used_today(user_id: str) -> int:
 
 
 def consume_sync_slot_or_raise(
-    user_id: str, daily_limit: int, *, plan: str = "unknown"
+    user_id: str,
+    daily_limit: int,
+    *,
+    plan: str = "unknown",
+    compliance_bearer_token: str | None = None,
 ) -> None:
     """Atomically consume one manual sync for today (UTC) or raise 403."""
     if daily_limit <= 0:
@@ -83,6 +87,7 @@ def consume_sync_slot_or_raise(
             current=0,
             limit_value=0,
             request_id=get_request_id(),
+            compliance_bearer_token=compliance_bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -103,6 +108,7 @@ def consume_sync_slot_or_raise(
                 current=used,
                 limit_value=daily_limit,
                 request_id=get_request_id(),
+                compliance_bearer_token=compliance_bearer_token,
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

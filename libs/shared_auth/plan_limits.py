@@ -148,6 +148,15 @@ def _bool_claim(payload: dict[str, Any], key: str, default: bool) -> bool:
     return bool(raw)
 
 
+def _evidence_tier(raw: Any, fallback: str) -> str:
+    if raw is None or raw == "":
+        return fallback
+    s = str(raw).strip().lower()
+    if s in {"none", "basic", "full"}:
+        return s
+    return fallback
+
+
 def plan_limits_from_payload(payload: dict[str, Any]) -> PlanLimits:
     plan = str(payload.get("plan") or _DEFAULT_FREE["plan"])
     inferred = _PLAN_FEATURE_DEFAULTS.get(plan, _PLAN_FEATURE_DEFAULTS["free"])

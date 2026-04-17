@@ -74,6 +74,7 @@ async def import_transactions(
             current=existing_month + incoming,
             limit_value=limits.transactions_per_month_limit,
             request_id=get_request_id(),
+            compliance_bearer_token=bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -528,6 +529,14 @@ async def cis_create_suspect_task(
     return task
 
 
+@app.get("/cis/obligations", response_model=List[schemas.CISObligationOut])
+async def cis_list_obligations(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await crud_cis.list_cis_obligations(db, user_id=user_id)
+
+
 @app.get("/cis/tasks", response_model=List[schemas.CISReviewTaskOut])
 async def cis_list_tasks(
     user_id: str = Depends(get_current_user_id),
@@ -630,6 +639,7 @@ async def cis_snooze_reminder(
 @app.get("/cis/evidence-pack/manifest", response_model=schemas.EvidencePackManifestOut)
 async def cis_evidence_manifest(
     user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
     limits: PlanLimits = Depends(get_plan_limits),
     db: AsyncSession = Depends(get_db),
 ):
@@ -641,18 +651,22 @@ async def cis_evidence_manifest(
             reason="evidence_tier_none",
             request_id=get_request_id(),
             extra={"tier": limits.evidence_pack_tier},
+            compliance_bearer_token=bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CIS evidence pack is not included in your plan. Upgrade to Growth or higher.",
         )
-    manifest = await crud_cis.build_evidence_manifest(db, user_id=user_id)
+    manifest = await crud_cis.build_evidence_manifest(
+        db, user_id=user_id, tier=limits.evidence_pack_tier
+    )
     return schemas.EvidencePackManifestOut(manifest=manifest)
 
 
 @app.get("/cis/evidence-pack/zip")
 async def cis_evidence_zip(
     user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
     limits: PlanLimits = Depends(get_plan_limits),
     db: AsyncSession = Depends(get_db),
 ):
@@ -664,12 +678,15 @@ async def cis_evidence_zip(
             reason="evidence_tier_none",
             request_id=get_request_id(),
             extra={"tier": limits.evidence_pack_tier},
+            compliance_bearer_token=bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="CIS evidence pack export is not included in your plan. Upgrade to Growth or higher.",
         )
-    manifest = await crud_cis.build_evidence_manifest(db, user_id=user_id)
+    manifest = await crud_cis.build_evidence_manifest(
+        db, user_id=user_id, tier=limits.evidence_pack_tier
+    )
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(

@@ -171,6 +171,20 @@ class CISRecordOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CISObligationOut(BaseModel):
+    id: uuid.UUID
+    user_id: str
+    cis_tax_month_label: str
+    contractor_key: str
+    status: str
+    snooze_until: Optional[datetime.date] = None
+    last_reminded_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class CISReviewTaskOut(BaseModel):
     id: uuid.UUID
     user_id: str

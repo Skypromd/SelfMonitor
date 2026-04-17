@@ -660,7 +660,7 @@ def test_cis_tasks_scan_idempotent_when_task_open(db_session):
 
 
 def test_cis_evidence_pack_zip(db_session):
-    r = client.get("/cis/evidence-pack/zip", headers=get_auth_headers())
+    r = client.get("/cis/evidence-pack/zip", headers=get_auth_headers(plan="growth"))
     assert r.status_code == 200
     assert "zip" in (r.headers.get("content-type") or "").lower() or r.headers.get("content-type") == "application/zip"
     assert r.content[:2] == b"PK"
@@ -790,6 +790,7 @@ def test_cis_evidence_pack_manifest(db_session):
     assert r.status_code == 200
     manifest = r.json()["manifest"]
     assert manifest.get("schema_version") == "selfmonitor-evidence-pack-v1"
+    assert manifest.get("pack_tier") == "basic"
     assert "watermark_unverified_cis" in manifest
 
 

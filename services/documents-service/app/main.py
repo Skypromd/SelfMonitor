@@ -159,6 +159,7 @@ async def metrics() -> Response:
 async def upload_document(
     file: UploadFile = File(...),
     user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
     limits: PlanLimits = Depends(get_plan_limits),
     db: AsyncSession = Depends(get_db),
 ):
@@ -208,6 +209,7 @@ async def upload_document(
             current=used_bytes + file_len,
             limit_value=limit_bytes,
             request_id=get_request_id(),
+            compliance_bearer_token=bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -227,6 +229,7 @@ async def upload_document(
             current=doc_count,
             limit_value=limits.documents_max_count,
             request_id=get_request_id(),
+            compliance_bearer_token=bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

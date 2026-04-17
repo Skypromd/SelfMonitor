@@ -143,6 +143,7 @@ async def health_check():
 async def initiate_connection(
     request: InitiateConnectionRequest,
     user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
     limits: PlanLimits = Depends(get_plan_limits),
 ):
     current = get_connection_count(user_id)
@@ -155,6 +156,7 @@ async def initiate_connection(
             current=current,
             limit_value=limits.bank_connections_limit,
             request_id=get_request_id(),
+            compliance_bearer_token=bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -300,6 +302,7 @@ async def handle_provider_callback(
             current=current,
             limit_value=limits.bank_connections_limit,
             request_id=get_request_id(),
+            compliance_bearer_token=bearer_token,
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -514,7 +517,12 @@ async def sync_connection(
     else:
         transactions = _sandbox_demo_transactions()
 
-    consume_sync_slot_or_raise(user_id, limits.bank_sync_daily_limit, plan=limits.plan)
+    consume_sync_slot_or_raise(
+        user_id,
+        limits.bank_sync_daily_limit,
+        plan=limits.plan,
+        compliance_bearer_token=bearer_token,
+    )
 
     task_id = "dev-no-celery"
     if _celery_available and import_transactions_task is not None:
