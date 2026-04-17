@@ -475,7 +475,7 @@ export default function AdminConsole({ token, user, section }: AdminPageProps) {
     };
 
     loadPartners();
-  }, [token]);
+  }, [token, pushToast]);
 
   useEffect(() => {
     if (!pricingPartnerId && partners.length > 0) {

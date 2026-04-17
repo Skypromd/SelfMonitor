@@ -109,6 +109,21 @@
     "category_breakdown": "Категории SA103",
     "pro_note": "Отправка в HMRC доступна в Pro."
   },
+  "cis": {
+    "tracker_title": "CIS refund tracker",
+    "tracker_subtitle": "UK tax months: verified vs unverified withholding.",
+    "verified_withheld": "Verified withheld",
+    "unverified_withheld": "Unverified withheld",
+    "missing_buckets": "Missing periods",
+    "open_tasks": "Open tasks",
+    "no_data": "No CIS data yet. Review CIS tasks on Transactions after sync.",
+    "disclaimer": "Estimates only — not a guarantee of refund.",
+    "contractor": "Contractor",
+    "withheld": "Withheld",
+    "review": "Review",
+    "load_error": "Could not load CIS tracker.",
+    "open_txn_hint": "Resolve CIS tasks under Transactions."
+  },
   "upgrade": {
     "title": "Апгрейд на Pro",
     "subtitle": "Авто‑налоги, отчеты и HMRC.",

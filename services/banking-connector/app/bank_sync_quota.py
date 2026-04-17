@@ -4,11 +4,22 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException, status
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "libs").exists():
+        _root = str(_parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        break
+
+from libs.shared_auth.plan_enforcement_log import log_plan_enforcement_denial
+from libs.shared_http.request_id import get_request_id
 
 _LOCK = threading.Lock()
 
@@ -59,9 +70,20 @@ def sync_used_today(user_id: str) -> int:
         return int(data.get(user_id, {}).get(_today_utc(), 0))
 
 
-def consume_sync_slot_or_raise(user_id: str, daily_limit: int) -> None:
+def consume_sync_slot_or_raise(
+    user_id: str, daily_limit: int, *, plan: str = "unknown"
+) -> None:
     """Atomically consume one manual sync for today (UTC) or raise 403."""
     if daily_limit <= 0:
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=plan,
+            feature="bank_sync_daily",
+            reason="sync_not_in_plan",
+            current=0,
+            limit_value=0,
+            request_id=get_request_id(),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Bank sync is not included in your plan. Upgrade to use manual sync.",
@@ -73,6 +95,15 @@ def consume_sync_slot_or_raise(user_id: str, daily_limit: int) -> None:
             data[user_id] = {}
         used = int(data[user_id].get(day, 0))
         if used >= daily_limit:
+            log_plan_enforcement_denial(
+                user_id=user_id,
+                plan=plan,
+                feature="bank_sync_daily",
+                reason="daily_cap_exceeded",
+                current=used,
+                limit_value=daily_limit,
+                request_id=get_request_id(),
+            )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(

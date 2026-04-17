@@ -91,7 +91,9 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_enforcement_log import log_plan_enforcement_denial
 from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
+from libs.shared_http.request_id import get_request_id
 
 from .bank_sync_quota import consume_sync_slot_or_raise, sync_status
 from .connection_store import get_connection_count, increment_connection_count
@@ -145,6 +147,15 @@ async def initiate_connection(
 ):
     current = get_connection_count(user_id)
     if current >= limits.bank_connections_limit:
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="bank_connections",
+            reason="connection_cap_exceeded",
+            current=current,
+            limit_value=limits.bank_connections_limit,
+            request_id=get_request_id(),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -281,6 +292,15 @@ async def handle_provider_callback(
 ):
     current = get_connection_count(user_id)
     if current >= limits.bank_connections_limit:
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="bank_connections",
+            reason="connection_cap_exceeded",
+            current=current,
+            limit_value=limits.bank_connections_limit,
+            request_id=get_request_id(),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -494,7 +514,7 @@ async def sync_connection(
     else:
         transactions = _sandbox_demo_transactions()
 
-    consume_sync_slot_or_raise(user_id, limits.bank_sync_daily_limit)
+    consume_sync_slot_or_raise(user_id, limits.bank_sync_daily_limit, plan=limits.plan)
 
     task_id = "dev-no-celery"
     if _celery_available and import_transactions_task is not None:

@@ -1,5 +1,5 @@
 import { Bot, Send, User } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import styles from '../styles/Home.module.css';
 
@@ -45,10 +45,13 @@ export default function AssistantPage({ token }: AssistantPageProps) {
   const [agentStatus, setAgentStatus] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
+  const headers = useMemo(
+    () => ({
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    }),
+    [token],
+  );
 
   // Check agent status on mount
   useEffect(() => {
@@ -56,7 +59,7 @@ export default function AssistantPage({ token }: AssistantPageProps) {
       .then((r) => r.json())
       .then((d) => setAgentStatus(d?.status || 'online'))
       .catch(() => setAgentStatus(null));
-  }, []);
+  }, [headers]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });

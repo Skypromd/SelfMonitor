@@ -327,6 +327,7 @@ for parent in Path(__file__).resolve().parents:
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 from libs.shared_http.retry import get_json_with_retry, post_json_with_retry
+from libs.shared_mtd import build_mtd_self_employment_period_summary
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -362,6 +363,13 @@ class TaxCalculationRequest(BaseModel):
     paye_gross_salary_in_period_gbp: float = 0.0
     paye_tax_paid_in_period_gbp: float = 0.0
     cis_suffered_in_period_gbp: float = 0.0
+    cis_tax_credit_verified_gbp: float = 0.0
+    cis_tax_credit_self_attested_gbp: float = 0.0
+    unverified_cis_submit_acknowledged: bool = False
+    hmrc_fraud_client_context: dict[str, Any] | None = Field(
+        default=None,
+        description="Forwarded to integrations-service as client_context for HMRC fraud prevention (web vs mobile).",
+    )
     other_tax_credits_gbp: float = 0.0
     gift_aid_net_donations_gbp: float = 0.0
     dividend_income_gross_gbp: float = 0.0
@@ -405,12 +413,22 @@ class TaxCalculationResult(BaseModel):
     paye_gross_included_gbp: float = 0.0
     paye_tax_credit_applied_gbp: float = 0.0
     cis_tax_credit_applied_gbp: float = 0.0
+    cis_tax_credit_verified_gbp: float = 0.0
+    cis_tax_credit_self_attested_gbp: float = 0.0
+    cis_hmrc_submit_requires_unverified_ack: bool = False
     other_tax_credits_applied_gbp: float = 0.0
     gross_tax_before_credits_gbp: float = 0.0
     employee_ni_on_paye_estimate_gbp: float = 0.0
     income_tax_region: str = "england_wales"
     effective_allowable_expenses_gbp: float = 0.0
     breakdown: dict[str, Any] = Field(default_factory=dict)
+
+
+class MTDPrepareResponse(BaseModel):
+    calculation: TaxCalculationResult
+    hmrc_period_summary_json: dict[str, Any]
+    integrations_quarterly_payload: dict[str, Any] | None = None
+    prepare_notes: List[str] = Field(default_factory=list)
 
 
 def _parse_iso_date(value: Any) -> datetime.date | None:
@@ -649,7 +667,7 @@ def _build_mtd_quarterly_submission_payload(
     category_summary = [
         item.model_dump() for item in calculation_result.summary_by_category
     ]
-    return {
+    payload: dict[str, Any] = {
         "submission_channel": "api",
         "correlation_id": f"tax-engine-{user_id}-{request.start_date.isoformat()}-{request.end_date.isoformat()}",
         "report": {
@@ -679,8 +697,19 @@ def _build_mtd_quarterly_submission_payload(
             },
             "category_summary": category_summary,
             "declaration": "true_and_complete",
+            "cis_disclosure": {
+                "credit_verified_gbp": round(calculation_result.cis_tax_credit_verified_gbp, 2),
+                "credit_self_attested_unverified_gbp": round(
+                    calculation_result.cis_tax_credit_self_attested_gbp, 2
+                ),
+            },
         },
     }
+    if calculation_result.cis_tax_credit_self_attested_gbp > 0.01:
+        payload["unverified_cis_submit_acknowledged"] = bool(request.unverified_cis_submit_acknowledged)
+    if request.hmrc_fraud_client_context:
+        payload["client_context"] = request.hmrc_fraud_client_context
+    return payload
 
 
 # --- Endpoints ---
@@ -832,7 +861,18 @@ async def calculate_tax(
     if request.director_paye_gross_annual_gbp > 0:
         emp_ni = rough_employee_class1_annual(request.director_paye_gross_annual_gbp)
     paye_cred = max(0.0, request.paye_tax_paid_in_period_gbp)
-    cis_cred = max(0.0, request.cis_suffered_in_period_gbp)
+    cis_v = max(0.0, request.cis_tax_credit_verified_gbp)
+    cis_s = max(0.0, request.cis_tax_credit_self_attested_gbp)
+    cis_leg = max(0.0, request.cis_suffered_in_period_gbp)
+    legacy_cis_to_unverified = False
+    legacy_cis_ignored = False
+    if cis_v == 0.0 and cis_s == 0.0 and cis_leg > 0.0:
+        cis_s = cis_leg
+        legacy_cis_to_unverified = True
+    elif cis_leg > 0.0:
+        legacy_cis_ignored = True
+    cis_cred = cis_v + cis_s
+    cis_submit_ack_required = cis_s > 0.01
     other_cred = max(0.0, request.other_tax_credits_gbp)
     credits = paye_cred + cis_cred + other_cred
     gross_components = (
@@ -875,6 +915,9 @@ async def calculate_tax(
         chargeable_gains_gbp=request.chargeable_gains_gbp,
         is_non_uk_resident=request.is_non_uk_resident,
     )
+    cis_labels: list[str] = []
+    if cis_s > 0.01:
+        cis_labels.append("UNVERIFIED")
     breakdown.update(
         {
             "trading_allowance_elected": request.use_trading_allowance,
@@ -887,6 +930,14 @@ async def calculate_tax(
             "tax_year": tax_year,
             "regulatory_rules_source": regulatory_source,
             "estimate_disclaimers": disclaimers,
+            "cis_credits_breakdown": {
+                "verified_gbp": round(cis_v, 2),
+                "unverified_self_attested_gbp": round(cis_s, 2),
+                "labels": cis_labels,
+                "hmrc_submit_extra_confirm_required": cis_submit_ack_required,
+                "legacy_cis_field_routed_to_unverified": legacy_cis_to_unverified,
+                "legacy_cis_field_ignored_use_split_inputs": legacy_cis_ignored,
+            },
         }
     )
     TAX_CALCULATIONS_TOTAL.labels(result="success").inc()
@@ -919,6 +970,9 @@ async def calculate_tax(
         paye_gross_included_gbp=round(paye_gross, 2),
         paye_tax_credit_applied_gbp=round(paye_cred, 2),
         cis_tax_credit_applied_gbp=round(cis_cred, 2),
+        cis_tax_credit_verified_gbp=round(cis_v, 2),
+        cis_tax_credit_self_attested_gbp=round(cis_s, 2),
+        cis_hmrc_submit_requires_unverified_ack=cis_submit_ack_required,
         other_tax_credits_applied_gbp=round(other_cred, 2),
         gross_tax_before_credits_gbp=round(gross_components, 2),
         employee_ni_on_paye_estimate_gbp=round(emp_ni, 2),
@@ -926,6 +980,58 @@ async def calculate_tax(
         effective_allowable_expenses_gbp=round(effective_expenses, 2),
         breakdown=breakdown,
     )
+
+
+@app.post("/mtd/prepare", response_model=MTDPrepareResponse)
+async def mtd_prepare(
+    request: TaxCalculationRequest,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    calculation_result = await calculate_tax(request, user_id, bearer_token)
+    mtd_obligation = (
+        calculation_result.mtd_obligation
+        if isinstance(calculation_result.mtd_obligation, dict)
+        else {}
+    )
+    hmrc_period_summary_json = build_mtd_self_employment_period_summary(
+        period_start_iso=request.start_date.isoformat(),
+        period_end_iso=request.end_date.isoformat(),
+        turnover=calculation_result.total_income,
+        allowable_expenses=calculation_result.total_expenses,
+    )
+    integrations_quarterly_payload: dict[str, Any] | None = None
+    prepare_notes: list[str] = []
+    if bool(mtd_obligation.get("reporting_required")):
+        quarter_window = _resolve_matching_mtd_quarter(
+            period_start=request.start_date,
+            period_end=request.end_date,
+            mtd_obligation=mtd_obligation,
+        )
+        if quarter_window is not None:
+            integrations_quarterly_payload = _build_mtd_quarterly_submission_payload(
+                user_id=user_id,
+                request=request,
+                calculation_result=calculation_result,
+                mtd_obligation=mtd_obligation,
+                quarter_window=quarter_window,
+            )
+        elif not _is_full_mtd_tax_year_submission(
+            period_start=request.start_date,
+            period_end=request.end_date,
+            mtd_obligation=mtd_obligation,
+        ):
+            prepare_notes.append(
+                "MTD quarterly reporting is required, but the selected dates do not match "
+                "a quarterly window or full tax year; adjust the period before submit."
+            )
+    return MTDPrepareResponse(
+        calculation=calculation_result,
+        hmrc_period_summary_json=hmrc_period_summary_json,
+        integrations_quarterly_payload=integrations_quarterly_payload,
+        prepare_notes=prepare_notes,
+    )
+
 
 @app.post("/calculate-and-submit", status_code=status.HTTP_202_ACCEPTED)
 async def calculate_and_submit_tax(
@@ -956,6 +1062,15 @@ async def calculate_and_submit_tax(
             mtd_obligation=mtd_obligation,
         )
         if is_mtd_reporting and quarter_window is not None:
+            if calculation_result.cis_tax_credit_self_attested_gbp > 0.01 and not request.unverified_cis_submit_acknowledged:
+                TAX_SUBMISSIONS_TOTAL.labels(result="validation_error").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        "UNVERIFIED CIS credits are included. Set unverified_cis_submit_acknowledged=true "
+                        "only after the user explicitly accepts responsibility (variant B gate), or use verified CIS only."
+                    ),
+                )
             submission_payload = _build_mtd_quarterly_submission_payload(
                 user_id=user_id,
                 request=request,

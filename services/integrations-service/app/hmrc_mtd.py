@@ -9,6 +9,10 @@ from typing import Dict, Literal
 import httpx
 from pydantic import BaseModel, Field
 
+from libs.shared_mtd.cis_disclosure import MTDQuarterlyCISDisclosure
+
+from .hmrc_client_context import HMRCFraudClientContext
+
 logger = logging.getLogger(__name__)
 
 # HMRC may return 429 / transient 5xx — safe to retry. Do not retry 4xx validation errors.
@@ -76,15 +80,27 @@ class HMRCMTDQuarterlyReport(BaseModel):
     financials: HMRCMTDFinancials
     category_summary: list[HMRCCategorySummaryItem]
     declaration: Literal["true_and_complete"] = "true_and_complete"
+    cis_disclosure: MTDQuarterlyCISDisclosure | None = Field(
+        default=None,
+        description="Optional CIS credit split for audit and submit gating (variant B).",
+    )
 
 
 class HMRCMTDQuarterlySubmissionRequest(BaseModel):
     report: HMRCMTDQuarterlyReport
     submission_channel: Literal["api", "agent_copilot", "manual"] = "api"
     correlation_id: str | None = None
+    client_context: HMRCFraudClientContext | None = Field(
+        default=None,
+        description="Originating client (web/mobile) for HMRC fraud prevention headers; required for direct HMRC submit.",
+    )
     confirmation_token: str | None = Field(
         default=None,
         description="From POST .../quarterly-update/confirm when HMRC_REQUIRE_EXPLICIT_CONFIRM is enabled.",
+    )
+    unverified_cis_submit_acknowledged: bool = Field(
+        default=False,
+        description="Must be true when report.cis_disclosure includes self-attested UNVERIFIED credits.",
     )
 
 
@@ -166,6 +182,8 @@ def build_quarterly_report_spec() -> HMRCMTDQuarterlyReportSpec:
         notes=[
             "This spec is versioned to support future HMRC schema updates without breaking existing payloads.",
             "Tax engine should submit quarterly periods to this endpoint for direct HMRC transmission.",
+            "Optional report.cis_disclosure splits CIS credits into verified (statement) vs self-attested UNVERIFIED.",
+            "When credit_self_attested_unverified_gbp > 0, submit requires unverified_cis_submit_acknowledged=true.",
         ],
     )
 
@@ -279,13 +297,14 @@ async def _post_hmrc_quarterly_update(
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
         "Content-Type": "application/json",
-        "Gov-Client-Connection-Method": "DESKTOP_APP_DIRECT",
     }
     if fraud_headers:
         base_headers.update(fraud_headers)
+    else:
+        base_headers["Gov-Client-Connection-Method"] = "WEB_APP_VIA_SERVER"
     if correlation_id:
         base_headers["CorrelationId"] = correlation_id
-    body = report_payload.model_dump(mode="json")
+    body = report_payload.model_dump(mode="json", exclude={"cis_disclosure"})
 
     for attempt in range(1, max(1, max_retries) + 1):
         try:

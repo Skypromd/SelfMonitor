@@ -4,6 +4,7 @@ type BadgeVariant =
   | 'active' | 'inactive' | 'trialing' | 'cancelled' | 'pending'
   | 'success' | 'error' | 'warning' | 'info'
   | 'final' | 'draft' | 'high' | 'medium' | 'low'
+  | 'unverified'
   | 'default';
 
 interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
@@ -27,6 +28,7 @@ const VARIANT_STYLES: Record<BadgeVariant, { bg: string; color: string }> = {
   error:     { bg: 'rgba(248,113,113,0.12)', color: '#f87171' },
   high:      { bg: 'rgba(248,113,113,0.12)', color: '#f87171' },
   info:      { bg: 'rgba(99,102,241,0.12)',  color: '#818cf8' },
+  unverified: { bg: 'rgba(251,191,36,0.18)', color: '#fbbf24' },
 };
 
 export function Badge({ variant = 'default', size = 'sm', children, style, ...rest }: BadgeProps) {

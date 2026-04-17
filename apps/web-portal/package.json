@@ -8,7 +8,8 @@
     "dev:hint": "node -e \"console.log('Сначала поднимите API: из корня репозитория scripts/start_backend_v1.ps1 (или .sh), затем npm run dev')\"",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "lint:eslint": "cross-env ESLINT_USE_FLAT_CONFIG=true eslint ."
   },
   "dependencies": {
     "@nivo/bar": "^0.99.0",
@@ -24,9 +25,11 @@
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "3.2.0",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "cross-env": "7.0.3",
     "eslint": "^8",
     "eslint-config-next": "13.5.6",
     "typescript": "^5"

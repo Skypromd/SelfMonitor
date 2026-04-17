@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View, ViewStyle } from 'react-native';
 import { BlurView } from 'expo-blur';
 
-import { colors, radius, shadow, spacing } from '../theme';
+import { radius, shadow, spacing } from '../theme';
 
 type GlassCardProps = {
   children: React.ReactNode;

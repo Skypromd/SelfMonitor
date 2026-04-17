@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { CisComplianceBanner } from '../components/CisComplianceBanner';
 import styles from '../styles/Home.module.css';
 
 const TAX_SERVICE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
@@ -24,6 +25,15 @@ type Txn = {
   provider_transaction_id: string;
 };
 
+type CisCreditsBreakdown = {
+  verified_gbp: number;
+  unverified_self_attested_gbp: number;
+  labels: string[];
+  hmrc_submit_extra_confirm_required: boolean;
+  legacy_cis_field_routed_to_unverified?: boolean;
+  legacy_cis_field_ignored_use_split_inputs?: boolean;
+};
+
 type TaxCalc = {
   total_income: number;
   total_expenses: number;
@@ -40,12 +50,19 @@ type TaxCalc = {
   estimated_tax_due: number;
   payment_on_account_jan: number;
   payment_on_account_jul: number;
+  cis_tax_credit_verified_gbp?: number;
+  cis_tax_credit_self_attested_gbp?: number;
+  cis_hmrc_submit_requires_unverified_ack?: boolean;
   summary_by_category: { category: string; total_amount: number; taxable_amount: number }[];
   mtd_obligation: {
     reporting_required: boolean;
     qualifying_income_estimate: number;
     next_deadline: string | null;
     quarterly_updates: { quarter: string; due_date: string; status: string }[];
+  };
+  breakdown?: {
+    cis_credits_breakdown?: CisCreditsBreakdown;
+    estimate_disclaimers?: string[];
   };
 };
 
@@ -229,7 +246,9 @@ export default function TaxPreparationPage({ token }: Props) {
           Tax Return Preparation
         </h1>
         <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-          Review your income, expenses, and tax liability before submitting to HMRC
+          Review your income, expenses, and tax liability before submitting to HMRC. CIS deductions without a
+          statement are shown as <strong>UNVERIFIED</strong> until you upload evidence. For high-stakes filings,
+          consider an accountant review (delegated access — see product roadmap).
         </p>
       </div>
 
@@ -289,6 +308,8 @@ export default function TaxPreparationPage({ token }: Props) {
                 {warnings.map((w, i) => <WarningBox key={i}>{w}</WarningBox>)}
               </div>
             )}
+
+            <CisComplianceBanner breakdown={calc.breakdown?.cis_credits_breakdown} />
 
             {/* Income Summary */}
             <SectionCard title="Income">
@@ -365,6 +386,21 @@ export default function TaxPreparationPage({ token }: Props) {
               <div style={{ height: 8 }} />
               <Row label="Class 2 NI (£3.45/wk)" value={fmt(calc.estimated_class2_nic_due)} />
               <Row label="Class 4 NI (6%/2%)" value={fmt(calc.estimated_class4_nic_due)} />
+              {(calc.cis_tax_credit_verified_gbp ?? 0) + (calc.cis_tax_credit_self_attested_gbp ?? 0) > 0 && (
+                <>
+                  <div style={{ height: 8 }} />
+                  <Row
+                    label="CIS credit (verified)"
+                    value={`- ${fmt(calc.cis_tax_credit_verified_gbp ?? 0)}`}
+                    accent="var(--income, #34d399)"
+                  />
+                  <Row
+                    label="CIS credit (UNVERIFIED self-attested)"
+                    value={`- ${fmt(calc.cis_tax_credit_self_attested_gbp ?? 0)}`}
+                    accent={(calc.cis_tax_credit_self_attested_gbp ?? 0) > 0 ? 'var(--warning, #fbbf24)' : undefined}
+                  />
+                </>
+              )}
             </SectionCard>
 
             {/* MTD Obligations */}

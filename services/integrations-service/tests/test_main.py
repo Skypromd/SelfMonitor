@@ -18,9 +18,35 @@ AUTH_ALGORITHM = "HS256"
 TEST_USER_ID = "integration-user@example.com"
 
 
-def _headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
-    token = jwt.encode({"sub": user_id}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+def _headers(
+    user_id: str = TEST_USER_ID,
+    *,
+    plan: str | None = None,
+    hmrc_direct_submission: bool | None = None,
+) -> dict[str, str]:
+    claims: dict[str, object] = {"sub": user_id}
+    if plan is not None:
+        claims["plan"] = plan
+    if hmrc_direct_submission is not None:
+        claims["hmrc_direct_submission"] = hmrc_direct_submission
+    token = jwt.encode(claims, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
     return {"Authorization": f"Bearer {token}"}
+
+
+def _web_fraud_client_context() -> dict[str, object]:
+    return {
+        "client_type": "web",
+        "user_agent": "Mozilla/5.0 (compatible; pytest-integration)",
+        "session_id": "pytest-web-session",
+    }
+
+
+def _mobile_fraud_client_context() -> dict[str, object]:
+    return {
+        "client_type": "mobile",
+        "user_agent": "SelfMonitorMobile/1.0.0 (pytest)",
+        "device_id": "aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee",
+    }
 
 
 def _valid_quarterly_payload() -> dict[str, object]:
@@ -195,8 +221,41 @@ def test_submit_hmrc_mtd_quarterly_update_accepts_valid_payload(monkeypatch):
     assert payload["status"] == "pending"
     assert payload["submission_type"] == "mtd_quarterly_update"
     assert payload["hmrc_receipt_reference"].startswith("HMRC-MTD-")
-    assert payload["hmrc_endpoint"].endswith("/itsa/quarterly-updates")
-    assert payload["transmission_mode"] == "simulated"
+
+
+def test_submit_hmrc_mtd_quarterly_rejects_unverified_cis_without_ack(monkeypatch):
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    body = _valid_quarterly_payload()
+    body["report"]["cis_disclosure"] = {
+        "credit_verified_gbp": 0.0,
+        "credit_self_attested_unverified_gbp": 100.0,
+    }
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=body,
+    )
+    assert response.status_code == 400
+    assert "UNVERIFIED CIS" in response.json()["detail"]
+
+
+def test_submit_hmrc_mtd_quarterly_accepts_unverified_cis_with_ack(monkeypatch):
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    body = _valid_quarterly_payload()
+    body["report"]["cis_disclosure"] = {
+        "credit_verified_gbp": 0.0,
+        "credit_self_attested_unverified_gbp": 100.0,
+    }
+    body["unverified_cis_submit_acknowledged"] = True
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=body,
+    )
+    assert response.status_code == 202
+    out = response.json()
+    assert out["status"] == "pending"
+    assert out["transmission_mode"] == "simulated"
 
 
 def test_submit_hmrc_mtd_quarterly_update_rejects_invalid_period_alignment():
@@ -213,10 +272,13 @@ def test_submit_hmrc_mtd_quarterly_update_rejects_invalid_period_alignment():
 
 
 def test_submit_hmrc_mtd_quarterly_update_direct_mode(monkeypatch):
+    captured: dict[str, object] = {}
+
     async def _fake_fetch_token(**_kwargs):
         return "fake-access-token"
 
-    async def _fake_post_quarterly(**_kwargs):
+    async def _fake_post_quarterly(*, fraud_headers=None, **_kwargs):
+        captured["fraud_headers"] = fraud_headers
         return httpx.Response(
             202,
             json={"submissionId": "hmrc-direct-submission-id"},
@@ -229,10 +291,12 @@ def test_submit_hmrc_mtd_quarterly_update_direct_mode(monkeypatch):
     monkeypatch.setattr("app.hmrc_mtd._fetch_hmrc_oauth_access_token", _fake_fetch_token)
     monkeypatch.setattr("app.hmrc_mtd._post_hmrc_quarterly_update", _fake_post_quarterly)
 
+    body = _valid_quarterly_payload()
+    body["client_context"] = _web_fraud_client_context()
     response = client.post(
         "/integrations/hmrc/mtd/quarterly-update",
         headers=_headers(),
-        json=_valid_quarterly_payload(),
+        json=body,
     )
 
     assert response.status_code == 202
@@ -240,6 +304,8 @@ def test_submit_hmrc_mtd_quarterly_update_direct_mode(monkeypatch):
     assert payload["transmission_mode"] == "direct"
     assert payload["hmrc_status_code"] == 202
     assert payload["hmrc_receipt_reference"] == "hmrc-direct-submission-id"
+    fh = captured.get("fraud_headers") or {}
+    assert fh.get("Gov-Client-Connection-Method") == "WEB_APP_VIA_SERVER"
 
 
 def test_submit_hmrc_mtd_quarterly_update_direct_mode_requires_credentials(monkeypatch):
@@ -247,10 +313,12 @@ def test_submit_hmrc_mtd_quarterly_update_direct_mode_requires_credentials(monke
     monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "")
     monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "")
 
+    body = _valid_quarterly_payload()
+    body["client_context"] = _web_fraud_client_context()
     response = client.post(
         "/integrations/hmrc/mtd/quarterly-update",
         headers=_headers(),
-        json=_valid_quarterly_payload(),
+        json=body,
     )
 
     assert response.status_code == 400
@@ -264,10 +332,12 @@ def test_submit_hmrc_mtd_quarterly_update_uses_fallback_when_enabled(monkeypatch
     monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "")
     monkeypatch.setattr("app.main.HMRC_SUBMISSION_EVENTS", deque(maxlen=200))
 
+    body = _valid_quarterly_payload()
+    body["client_context"] = _web_fraud_client_context()
     response = client.post(
         "/integrations/hmrc/mtd/quarterly-update",
         headers=_headers(),
-        json=_valid_quarterly_payload(),
+        json=body,
     )
 
     assert response.status_code == 202
@@ -337,3 +407,170 @@ def test_hmrc_mtd_operational_readiness_endpoint(monkeypatch):
     assert payload["http_max_retries"] >= 1
     assert payload["http_retry_backoff_seconds"] >= 0.0
     assert payload["readiness_band"] in {"ready", "degraded", "not_ready"}
+
+
+def test_quarterly_report_fingerprint_includes_cis_disclosure():
+    from app.hmrc_mtd import HMRCMTDQuarterlyReport, compute_quarterly_report_fingerprint
+
+    base_report = dict(_valid_quarterly_payload()["report"])
+    r0 = HMRCMTDQuarterlyReport.model_validate({**base_report, "cis_disclosure": None})
+    r1 = HMRCMTDQuarterlyReport.model_validate(
+        {
+            **base_report,
+            "cis_disclosure": {
+                "credit_verified_gbp": 10.0,
+                "credit_self_attested_unverified_gbp": 0.0,
+            },
+        }
+    )
+    r2 = HMRCMTDQuarterlyReport.model_validate(
+        {
+            **base_report,
+            "cis_disclosure": {
+                "credit_verified_gbp": 10.0,
+                "credit_self_attested_unverified_gbp": 5.0,
+            },
+        }
+    )
+    h0 = compute_quarterly_report_fingerprint(r0)
+    h1 = compute_quarterly_report_fingerprint(r1)
+    h2 = compute_quarterly_report_fingerprint(r2)
+    assert h0 != h1
+    assert h1 != h2
+
+
+def test_hmrc_mtd_submit_rejects_cis_disclosure_changed_after_confirm(monkeypatch, tmp_path):
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_REQUIRE_EXPLICIT_CONFIRM", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    report = dict(_valid_quarterly_payload()["report"])
+    report["cis_disclosure"] = {
+        "credit_verified_gbp": 100.0,
+        "credit_self_attested_unverified_gbp": 0.0,
+    }
+    r_draft = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/draft",
+        headers=_headers(),
+        json={"report": report},
+    )
+    assert r_draft.status_code == 201
+    draft_id = r_draft.json()["draft_id"]
+    r_conf = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/confirm",
+        headers=_headers(),
+        json={"draft_id": draft_id},
+    )
+    assert r_conf.status_code == 200
+    token = r_conf.json()["confirmation_token"]
+    payload = _valid_quarterly_payload()
+    payload["confirmation_token"] = token
+    payload["report"] = {
+        **report,
+        "cis_disclosure": {
+            "credit_verified_gbp": 0.0,
+            "credit_self_attested_unverified_gbp": 200.0,
+        },
+    }
+    payload["unverified_cis_submit_acknowledged"] = True
+    r_submit = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=payload,
+    )
+    assert r_submit.status_code == 400
+    assert "hash mismatch" in r_submit.json()["detail"].lower()
+
+
+def test_quarterly_direct_requires_client_context_for_pro(monkeypatch):
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", True)
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "client-id")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "client-secret")
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(plan="pro", hmrc_direct_submission=True),
+        json=_valid_quarterly_payload(),
+    )
+    assert response.status_code == 400
+    assert "client_context" in response.json()["detail"].lower()
+
+
+def test_quarterly_starter_allows_missing_client_context_when_live_hmrc(monkeypatch):
+    async def _fake_fetch_token(**_kwargs):
+        return "fake-access-token"
+
+    async def _fake_post_quarterly(*, fraud_headers=None, **_kwargs):
+        return httpx.Response(
+            202,
+            json={"submissionId": "hmrc-starter-id"},
+            request=httpx.Request("POST", "https://test-api.service.hmrc.gov.uk/itsa/quarterly-updates"),
+        )
+
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", True)
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "client-id")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr("app.hmrc_mtd._fetch_hmrc_oauth_access_token", _fake_fetch_token)
+    monkeypatch.setattr("app.hmrc_mtd._post_hmrc_quarterly_update", _fake_post_quarterly)
+
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(plan="starter", hmrc_direct_submission=False),
+        json=_valid_quarterly_payload(),
+    )
+    assert response.status_code == 202
+    assert response.json()["transmission_mode"] == "direct"
+
+
+def test_quarterly_direct_mobile_uses_mobile_via_server(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def _fake_fetch_token(**_kwargs):
+        return "fake-access-token"
+
+    async def _fake_post_quarterly(*, fraud_headers=None, **_kwargs):
+        captured["fraud_headers"] = fraud_headers
+        return httpx.Response(
+            202,
+            json={"submissionId": "hmrc-mob-id"},
+            request=httpx.Request("POST", "https://test-api.service.hmrc.gov.uk/itsa/quarterly-updates"),
+        )
+
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", True)
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_ID", "client-id")
+    monkeypatch.setattr("app.main.HMRC_OAUTH_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr("app.hmrc_mtd._fetch_hmrc_oauth_access_token", _fake_fetch_token)
+    monkeypatch.setattr("app.hmrc_mtd._post_hmrc_quarterly_update", _fake_post_quarterly)
+
+    body = _valid_quarterly_payload()
+    body["client_context"] = _mobile_fraud_client_context()
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=body,
+    )
+    assert response.status_code == 202
+    fh = captured.get("fraud_headers") or {}
+    assert fh.get("Gov-Client-Connection-Method") == "MOBILE_APP_VIA_SERVER"
+
+
+def test_unverified_cis_ack_posts_compliance_audit(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    monkeypatch.setattr("app.main.COMPLIANCE_SERVICE_URL", "http://compliance:80")
+    audit = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.main.post_audit_event", audit)
+    body = _valid_quarterly_payload()
+    body["report"]["cis_disclosure"] = {
+        "credit_verified_gbp": 0.0,
+        "credit_self_attested_unverified_gbp": 100.0,
+    }
+    body["unverified_cis_submit_acknowledged"] = True
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=body,
+    )
+    assert response.status_code == 202
+    audit.assert_awaited()
+    assert audit.await_args.kwargs["action"] == "cis_unverified_submit_confirmed"
+    assert audit.await_args.kwargs["compliance_base_url"] == "http://compliance:80"

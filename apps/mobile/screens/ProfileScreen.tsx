@@ -10,10 +10,12 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, fontSize } from '../theme';
 import { apiCall } from '../api';
 
 export default function ProfileScreen() {
+  const navigation = useNavigation();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
@@ -79,6 +81,16 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.scroll}>
         <Text style={styles.title}>Profile</Text>
 
+        <TouchableOpacity
+          style={styles.linkCard}
+          onPress={() => navigation.navigate('CisRefundTracker' as never)}
+          accessibilityRole="button"
+          accessibilityLabel="Open CIS refund tracker"
+        >
+          <Text style={styles.linkTitle}>CIS refund tracker</Text>
+          <Text style={styles.linkSub}>Verified vs unverified withholding by UK tax month</Text>
+        </TouchableOpacity>
+
         <View style={styles.card}>
           <Text style={styles.label}>First Name</Text>
           <TextInput
@@ -136,7 +148,25 @@ const styles = StyleSheet.create({
     fontSize: fontSize.xl,
     fontWeight: '700',
     color: colors.text,
+    marginBottom: spacing.md,
+  },
+  linkCard: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: 12,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
     marginBottom: spacing.lg,
+  },
+  linkTitle: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.accentTeal,
+  },
+  linkSub: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    marginTop: 4,
   },
   card: {
     backgroundColor: colors.bgElevated,

@@ -1,4 +1,5 @@
 import datetime
+import json
 import logging
 import math
 import os
@@ -13,11 +14,17 @@ from typing import Any, Dict, List, Literal, Optional, cast
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from .companies_house import search_companies, get_company_profile, CompanySearchResult, CompanyProfile
-from .fraud_prevention import FraudPreventionHeaders
+from .hmrc_client_context import (
+    HMRCFraudClientContext,
+    build_fraud_prevention_headers,
+    fraud_headers_fingerprint,
+    observed_inbound_client_metadata,
+    validate_client_context_for_direct,
+)
 from .hmrc_apis import (
     BusinessDetail, get_business_details_simulated,
     Obligation, get_obligations_simulated,
@@ -46,6 +53,9 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_limits import strict_hmrc_fraud_client_context_required
+from libs.shared_cis.audit_actions import CISAuditAction
+from libs.shared_compliance.audit_client import post_audit_event
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -146,10 +156,11 @@ INTEGRATIONS_DB_PATH = os.getenv(
     "INTEGRATIONS_DB_PATH",
     "/tmp/integrations.db",
 )
+COMPLIANCE_SERVICE_URL = (os.getenv("COMPLIANCE_SERVICE_URL") or "").strip()
 INTEGRATIONS_PROCESSING_DELAY_SECONDS = _parse_non_negative_float_env(
     "INTEGRATIONS_PROCESSING_DELAY_SECONDS", 2.0
 )
-db_lock = threading.Lock()
+db_lock = threading.RLock()
 
 # --- Models ---
 
@@ -168,6 +179,7 @@ class SubmissionStatus(BaseModel):
 
 class MTDQuarterlyDraftRequest(BaseModel):
     report: HMRCMTDQuarterlyReport
+    client_context: HMRCFraudClientContext | None = None
 
 
 class MTDQuarterlyDraftResponse(BaseModel):
@@ -179,6 +191,7 @@ class MTDQuarterlyDraftResponse(BaseModel):
 
 class MTDQuarterlyConfirmRequest(BaseModel):
     draft_id: uuid.UUID
+    client_context: HMRCFraudClientContext | None = None
 
 
 class MTDQuarterlyConfirmResponse(BaseModel):
@@ -197,11 +210,71 @@ def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
 
+def _log_mtd_fraud_audit(
+    *,
+    user_id: str,
+    stage: str,
+    connection_method: str,
+    fraud_headers: dict[str, str],
+    client_context: HMRCFraudClientContext | None,
+    report_hash: str | None,
+    forwarded_observed: str,
+    unverified_cis_ack: bool | None = None,
+) -> None:
+    ctx_json = (
+        client_context.model_dump_json(exclude_none=True) if client_context else None
+    )
+    fh_hash = fraud_headers_fingerprint(fraud_headers)
+    masked = {k: ("<redacted>" if "IP" in k or "Agent" in k or "Device" in k else v) for k, v in fraud_headers.items()}
+    logger.info(
+        "mtd_fraud_audit stage=%s user_id=%s connection_method=%s report_hash=%s headers_hash=%s headers_masked=%s cis_ack=%s observed=%s",
+        stage,
+        user_id,
+        connection_method,
+        report_hash,
+        fh_hash,
+        masked,
+        unverified_cis_ack,
+        forwarded_observed[:500],
+    )
+    now = _utc_now().isoformat()
+    try:
+        with db_lock:
+            conn = _connect()
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO mtd_fraud_audit (
+                        user_id, stage, connection_method, report_hash, fraud_headers_hash,
+                        client_context_json, forwarded_observed, unverified_cis_ack, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        stage,
+                        connection_method,
+                        report_hash,
+                        fh_hash,
+                        ctx_json,
+                        forwarded_observed[:2048],
+                        1
+                        if unverified_cis_ack is True
+                        else (0 if unverified_cis_ack is False else None),
+                        now,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+    except sqlite3.OperationalError as exc:
+        logger.warning("mtd_fraud_audit persist skipped (sqlite): %s", exc)
+
+
 def _require_and_consume_mtd_confirmation(
-    request: HMRCMTDQuarterlySubmissionRequest,
+    mtd_submission: HMRCMTDQuarterlySubmissionRequest,
     user_id: str,
 ) -> None:
-    token = (request.confirmation_token or "").strip()
+    token = (mtd_submission.confirmation_token or "").strip()
     if not token:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -211,7 +284,7 @@ def _require_and_consume_mtd_confirmation(
                 "then submit with the same report and confirmation_token."
             ),
         )
-    report_hash = compute_quarterly_report_fingerprint(request.report)
+    report_hash = compute_quarterly_report_fingerprint(mtd_submission.report)
     now = _utc_now()
     with db_lock:
         conn = _connect()
@@ -301,6 +374,22 @@ def init_integrations_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mtd_fraud_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                stage TEXT NOT NULL,
+                connection_method TEXT NOT NULL,
+                report_hash TEXT,
+                fraud_headers_hash TEXT NOT NULL,
+                client_context_json TEXT,
+                forwarded_observed TEXT,
+                unverified_cis_ack INTEGER,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
         conn.commit()
         conn.close()
 
@@ -308,6 +397,7 @@ def init_integrations_db() -> None:
 def reset_integrations_db_for_tests() -> None:
     with db_lock:
         conn = _connect()
+        conn.execute("DELETE FROM mtd_fraud_audit")
         conn.execute("DELETE FROM mtd_quarterly_confirmation_tokens")
         conn.execute("DELETE FROM mtd_quarterly_drafts")
         conn.execute("DELETE FROM hmrc_submissions")
@@ -637,6 +727,7 @@ async def get_hmrc_mtd_quarterly_report_spec(
 )
 async def create_hmrc_mtd_quarterly_draft(
     body: MTDQuarterlyDraftRequest,
+    http_request: Request,
     user_id: str = Depends(get_current_user_id),
 ):
     errors = validate_quarterly_report(body.report)
@@ -646,6 +737,20 @@ async def create_hmrc_mtd_quarterly_draft(
             detail=f"Invalid HMRC MTD quarterly report format: {'; '.join(errors)}",
         )
     report_hash = compute_quarterly_report_fingerprint(body.report)
+    fraud_headers, conn_method = build_fraud_prevention_headers(
+        user_id=user_id,
+        client_context=body.client_context,
+        inbound=http_request,
+    )
+    _log_mtd_fraud_audit(
+        user_id=user_id,
+        stage="draft",
+        connection_method=conn_method,
+        fraud_headers=fraud_headers,
+        client_context=body.client_context,
+        report_hash=report_hash,
+        forwarded_observed=json.dumps(observed_inbound_client_metadata(http_request), default=str),
+    )
     report_json = body.report.model_dump_json()
     now = _utc_now()
     expires = now + datetime.timedelta(hours=HMRC_MTD_DRAFT_TTL_HOURS)
@@ -687,6 +792,7 @@ async def create_hmrc_mtd_quarterly_draft(
 )
 async def confirm_hmrc_mtd_quarterly_draft(
     body: MTDQuarterlyConfirmRequest,
+    http_request: Request,
     user_id: str = Depends(get_current_user_id),
 ):
     now = _utc_now()
@@ -713,6 +819,20 @@ async def confirm_hmrc_mtd_quarterly_draft(
             draft_exp = datetime.datetime.fromisoformat(row["expires_at"])
             if draft_exp < now:
                 raise HTTPException(status.HTTP_410_GONE, detail="Draft expired.")
+            fraud_headers, conn_method = build_fraud_prevention_headers(
+                user_id=user_id,
+                client_context=body.client_context,
+                inbound=http_request,
+            )
+            _log_mtd_fraud_audit(
+                user_id=user_id,
+                stage="confirm",
+                connection_method=conn_method,
+                fraud_headers=fraud_headers,
+                client_context=body.client_context,
+                report_hash=row["report_hash"],
+                forwarded_observed=json.dumps(observed_inbound_client_metadata(http_request), default=str),
+            )
             token = str(uuid.uuid4())
             confirm_exp = now + datetime.timedelta(minutes=HMRC_MTD_CONFIRM_TTL_MINUTES)
             conn.execute(
@@ -747,17 +867,74 @@ async def confirm_hmrc_mtd_quarterly_draft(
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def submit_hmrc_mtd_quarterly_update(
-    request: HMRCMTDQuarterlySubmissionRequest,
+    body: HMRCMTDQuarterlySubmissionRequest,
+    http_request: Request,
     user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
+    validate_client_context_for_direct(
+        client_context=body.client_context,
+        hmrc_direct_submission_enabled=(
+            HMRC_DIRECT_SUBMISSION_ENABLED
+            and strict_hmrc_fraud_client_context_required(bearer_token)
+        ),
+    )
     if HMRC_REQUIRE_EXPLICIT_CONFIRM:
-        _require_and_consume_mtd_confirmation(request, user_id)
+        _require_and_consume_mtd_confirmation(body, user_id)
+    cis_disc = body.report.cis_disclosure
+    unverified_cis = (
+        cis_disc is not None and cis_disc.credit_self_attested_unverified_gbp > 0.01
+    )
+    if unverified_cis and not body.unverified_cis_submit_acknowledged:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "UNVERIFIED CIS: report includes self-attested CIS credits without statements. "
+                "Set unverified_cis_submit_acknowledged=true only after explicit user acceptance of responsibility."
+            ),
+        )
+    if unverified_cis and body.unverified_cis_submit_acknowledged:
+        logger.info(
+            "cis_unverified_submit_confirmed user_id=%s verified_gbp=%s self_attested_gbp=%s",
+            user_id,
+            cis_disc.credit_verified_gbp if cis_disc else 0.0,
+            cis_disc.credit_self_attested_unverified_gbp if cis_disc else 0.0,
+        )
+        if COMPLIANCE_SERVICE_URL:
+            await post_audit_event(
+                compliance_base_url=COMPLIANCE_SERVICE_URL,
+                bearer_token=bearer_token,
+                user_id=user_id,
+                action=CISAuditAction.CIS_UNVERIFIED_SUBMIT_CONFIRMED,
+                details={
+                    "verified_gbp": cis_disc.credit_verified_gbp if cis_disc else 0.0,
+                    "self_attested_gbp": (
+                        cis_disc.credit_self_attested_unverified_gbp if cis_disc else 0.0
+                    ),
+                    "correlation_id": body.correlation_id,
+                },
+            )
+    report_hash = compute_quarterly_report_fingerprint(body.report)
+    fraud_headers, conn_method = build_fraud_prevention_headers(
+        user_id=user_id,
+        client_context=body.client_context,
+        inbound=http_request,
+    )
+    _log_mtd_fraud_audit(
+        user_id=user_id,
+        stage="submit",
+        connection_method=conn_method,
+        fraud_headers=fraud_headers,
+        client_context=body.client_context,
+        report_hash=report_hash,
+        forwarded_observed=json.dumps(observed_inbound_client_metadata(http_request), default=str),
+        unverified_cis_ack=bool(body.unverified_cis_submit_acknowledged) if unverified_cis else None,
+    )
     started_at = datetime.datetime.now(datetime.UTC)
     used_fallback = False
-    fraud_headers = FraudPreventionHeaders().generate(user_id=user_id)
     try:
         result = await submit_quarterly_update_to_hmrc(
-            request=request,
+            request=body,
             user_id=user_id,
             hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
             hmrc_direct_submission_enabled=HMRC_DIRECT_SUBMISSION_ENABLED,
@@ -780,7 +957,7 @@ async def submit_hmrc_mtd_quarterly_update(
         if HMRC_DIRECT_SUBMISSION_ENABLED and HMRC_DIRECT_FALLBACK_TO_SIMULATION and is_direct_config_error:
             used_fallback = True
             result = await submit_quarterly_update_to_hmrc(
-                request=request,
+                request=body,
                 user_id=user_id,
                 hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
                 hmrc_direct_submission_enabled=False,
@@ -813,7 +990,7 @@ async def submit_hmrc_mtd_quarterly_update(
         if HMRC_DIRECT_SUBMISSION_ENABLED and HMRC_DIRECT_FALLBACK_TO_SIMULATION:
             used_fallback = True
             result = await submit_quarterly_update_to_hmrc(
-                request=request,
+                request=body,
                 user_id=user_id,
                 hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
                 hmrc_direct_submission_enabled=False,
@@ -846,7 +1023,7 @@ async def submit_hmrc_mtd_quarterly_update(
         if HMRC_DIRECT_SUBMISSION_ENABLED and HMRC_DIRECT_FALLBACK_TO_SIMULATION:
             used_fallback = True
             result = await submit_quarterly_update_to_hmrc(
-                request=request,
+                request=body,
                 user_id=user_id,
                 hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
                 hmrc_direct_submission_enabled=False,

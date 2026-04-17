@@ -24,6 +24,7 @@ export default function MoreScreen() {
           <ListItem title={t('upgrade.title')} icon="star-outline" onPress={() => navigation.navigate('Upgrade' as never)} />
           <ListItem title={t('sync.center_title')} icon="sync-outline" onPress={() => navigation.navigate('SyncCenter' as never)} />
           <ListItem title={t('tax.title')} icon="calculator-outline" onPress={() => navigation.navigate('TaxSummary' as never)} />
+          <ListItem title={t('cis.tracker_title')} icon="cash-outline" onPress={() => navigation.navigate('CisRefundTracker' as never)} />
           <ListItem title={t('mileage.title')} icon="car-outline" onPress={() => navigation.navigate('MileageLog' as never)} />
           <ListItem title={t('invoices.title')} icon="document-text-outline" onPress={() => navigation.navigate('Invoices' as never)} />
           <ListItem title={t('deadlines.title')} icon="calendar-outline" onPress={() => navigation.navigate('Deadlines' as never)} />

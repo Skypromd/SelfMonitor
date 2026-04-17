@@ -16,6 +16,7 @@ import AccountantShareScreen from '../screens/AccountantShareScreen';
 import AssistantScreen from '../screens/AssistantScreen';
 import UpgradeScreen from '../screens/UpgradeScreen';
 import RulesScreen from '../screens/RulesScreen';
+import CisRefundTrackerScreen from '../screens/CisRefundTrackerScreen';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors } from '../theme';
 
@@ -35,6 +36,7 @@ export type MoreStackParamList = {
   Assistant: undefined;
   Upgrade: undefined;
   Rules: undefined;
+  CisRefundTracker: undefined;
 };
 
 const Stack = createNativeStackNavigator<MoreStackParamList>();
@@ -58,6 +60,7 @@ export default function MoreStack() {
       <Stack.Screen name="Support" component={SupportScreen} options={{ title: t('support.title') }} />
       <Stack.Screen name="SyncCenter" component={SyncCenterScreen} options={{ title: t('sync.center_title') }} />
       <Stack.Screen name="TaxSummary" component={TaxSummaryScreen} options={{ title: t('tax.title') }} />
+      <Stack.Screen name="CisRefundTracker" component={CisRefundTrackerScreen} options={{ title: t('cis.tracker_title') }} />
       <Stack.Screen name="MileageLog" component={MileageLogScreen} options={{ title: t('mileage.title') }} />
       <Stack.Screen name="Invoices" component={InvoicesScreen} options={{ title: t('invoices.title') }} />
       <Stack.Screen name="Deadlines" component={DeadlinesScreen} options={{ title: t('deadlines.title') }} />

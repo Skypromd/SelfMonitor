@@ -1,7 +1,10 @@
-from sqlalchemy import Column, Date, DateTime, Float, JSON, String, Uuid
-from sqlalchemy.sql import func
 import uuid
+
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, JSON, String, Uuid
+from sqlalchemy.sql import func
+
 from .database import Base
+
 
 class Transaction(Base):
     __tablename__ = "transactions"
@@ -23,3 +26,56 @@ class Transaction(Base):
     ignored_candidate_ids = Column(JSON, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class CISRecord(Base):
+    __tablename__ = "cis_records"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    contractor_name = Column(String(300), nullable=False)
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    gross_total = Column(Float, nullable=False)
+    materials_total = Column(Float, nullable=False, default=0.0)
+    cis_deducted_total = Column(Float, nullable=False)
+    net_paid_total = Column(Float, nullable=False)
+    evidence_status = Column(String(64), nullable=False)
+    document_id = Column(String(128), nullable=True)
+    source = Column(String(64), nullable=False)
+    matched_bank_transaction_ids = Column(JSON, nullable=True)
+    attestation_json = Column(JSON, nullable=True)
+    report_status = Column(String(64), nullable=False, default="draft")
+    reconciliation_status = Column(String(32), nullable=True)
+    bank_net_observed_gbp = Column(Float, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class CISReviewTask(Base):
+    __tablename__ = "cis_review_tasks"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    status = Column(String(64), nullable=False, default="open")
+    suspected_transaction_id = Column(Uuid(as_uuid=True), nullable=True)
+    cis_record_id = Column(Uuid(as_uuid=True), nullable=True)
+    payer_label = Column(String(300), nullable=True)
+    suspect_reason = Column(String(500), nullable=True)
+    next_reminder_at = Column(Date, nullable=True)
+    reminder_meta = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class AccountantDelegation(Base):
+    __tablename__ = "accountant_delegations"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_user_id = Column(String, nullable=False, index=True)
+    accountant_user_id = Column(String, nullable=False)
+    scopes = Column(JSON, nullable=False)
+    can_submit_hmrc = Column(Boolean, nullable=False, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    revoked_at = Column(DateTime(timezone=True), nullable=True)

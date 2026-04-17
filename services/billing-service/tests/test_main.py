@@ -44,8 +44,8 @@ def test_list_plans():
     assert "growth" in data
     assert "pro" in data
     assert "business" in data
-    assert data["starter"]["amount"] == 1500
-    assert data["pro"]["amount"] == 2100
+    assert data["starter"]["amount"] == 1200
+    assert data["pro"]["amount"] == 1800
 
 
 def test_checkout_free_plan():

@@ -155,7 +155,7 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [token, statusFilter, debouncedSearch, sortField, sortOrder, page, headers]);
+  }, [statusFilter, debouncedSearch, sortField, sortOrder, page, headers]);
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
 

@@ -113,7 +113,9 @@ app.add_middleware(
 from libs.shared_auth.jwt_fastapi import (  # noqa: E402,I001,I002,C0411
     build_jwt_auth_dependencies,
 )
+from libs.shared_auth.plan_enforcement_log import log_plan_enforcement_denial  # noqa: E402
 from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits  # noqa: E402
+from libs.shared_http.request_id import get_request_id  # noqa: E402
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 OCR_REVIEW_COMPLETION_SECONDS = Histogram(
@@ -198,11 +200,39 @@ async def upload_document(
     limit_bytes = limits.storage_limit_gb * (1024**3)
     used_bytes = await crud.total_file_size_bytes_for_user(db, user_id=user_id)
     if used_bytes + file_len > limit_bytes:
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="storage_bytes",
+            reason="storage_quota_exceeded",
+            current=used_bytes + file_len,
+            limit_value=limit_bytes,
+            request_id=get_request_id(),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
                 f"Storage quota exceeded for plan '{limits.plan}' "
                 f"({limits.storage_limit_gb} GB). Remove documents or upgrade."
+            ),
+        )
+
+    doc_count = await crud.count_documents_for_user(db, user_id=user_id)
+    if limits.documents_max_count > 0 and doc_count >= limits.documents_max_count:
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="documents_count",
+            reason="document_cap_exceeded",
+            current=doc_count,
+            limit_value=limits.documents_max_count,
+            request_id=get_request_id(),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Document count limit reached for plan '{limits.plan}' "
+                f"({limits.documents_max_count}). Remove documents or upgrade."
             ),
         )
 

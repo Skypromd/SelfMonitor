@@ -4,14 +4,15 @@ MTD Agent Service — FastAPI on port 8022
 Endpoints:
   GET  /health
   GET  /status/{user_id}          – current quarter + GPT-4 explanation
+  POST /mtd/prepare               – proxy to tax-engine (canonical figures for MTD)
   POST /question/{user_id}        – answer free-form MTD question
   POST /submit/{user_id}          – direct HMRC test-api period summary (OAuth token)
   GET  /hmrc/callback             – HMRC OAuth2 callback handler
 
 Production MTD filing with draft/confirm and transactions-backed figures should use
-**tax-engine** + **integrations-service** (see AGENTS.md). This service keeps direct
-submit for sandbox demos; period JSON is built via **libs.shared_mtd** to match
-that shape.
+**tax-engine** + **integrations-service** (see AGENTS.md). **POST /mtd/prepare** proxies
+to tax-engine so figures match /calculate. Direct **POST /submit** remains for sandbox
+demos; period JSON uses **libs.shared_mtd** for alignment.
 """
 
 from __future__ import annotations
@@ -23,8 +24,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+import httpx
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.hmrc_client import HMRCClient
@@ -44,6 +47,7 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
+TAX_ENGINE_URL = os.getenv("TAX_ENGINE_URL", "http://tax-engine:80").rstrip("/")
 
 redis_client: object = None
 mtd_agent: MTDAgent  = None  # type: ignore
@@ -97,6 +101,37 @@ async def mtd_status(user_id: str, language: str = "en"):
 class QuestionPayload(BaseModel):
     question: str
     language: str = "en"
+
+
+@app.post("/mtd/prepare")
+async def mtd_prepare_via_tax_engine(request: Request):
+    """Return tax-engine /mtd/prepare (transactions-backed figures + shared MTD JSON)."""
+    auth = request.headers.get("Authorization")
+    if not auth:
+        raise HTTPException(401, "Authorization header required")
+    body = await request.body()
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{TAX_ENGINE_URL}/mtd/prepare",
+                content=body,
+                headers={
+                    "Authorization": auth,
+                    "Content-Type": request.headers.get("content-type") or "application/json",
+                },
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, f"tax-engine unreachable: {exc}") from exc
+    ct = resp.headers.get("content-type", "")
+    if "application/json" in ct:
+        try:
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        except Exception:
+            pass
+    return JSONResponse(
+        status_code=resp.status_code,
+        content={"detail": resp.text[:2000]},
+    )
 
 
 @app.post("/question/{user_id}")

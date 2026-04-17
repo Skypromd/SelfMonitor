@@ -62,10 +62,10 @@ DB_PATH = os.getenv(
 # ── Plan definitions ──────────────────────────────────────────────────────────
 PLANS: dict[str, dict] = {
     "free":         {"name": "Free",         "amount": 0,    "currency": "gbp", "interval": None,    "price_id": os.getenv("STRIPE_PRICE_FREE", "")},
-    "starter":      {"name": "Starter",      "amount": 1500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_STARTER", "")},
-    "growth":       {"name": "Growth",       "amount": 1800, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_GROWTH", "")},
-    "pro":          {"name": "Pro",          "amount": 2100, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_PRO", "")},
-    "business":     {"name": "Business",     "amount": 3000, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_BUSINESS", "")},
+    "starter":      {"name": "Starter",      "amount": 1200, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_STARTER", "")},
+    "growth":       {"name": "Growth",       "amount": 1500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_GROWTH", "")},
+    "pro":          {"name": "Pro",          "amount": 1800, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_PRO", "")},
+    "business":     {"name": "Business",     "amount": 2800, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_BUSINESS", "")},
 }
 PLAN_AMOUNT_GBP = {k: v["amount"] / 100 for k, v in PLANS.items()}
 

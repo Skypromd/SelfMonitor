@@ -1,15 +1,19 @@
 import datetime
+import io
+import json
 import logging
 import os
 import sys
 import uuid
+import zipfile
 from pathlib import Path
 from typing import List
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import crud, models, schemas
+from . import cis_refund_tracker, crud, crud_cis, models, schemas
 from .database import get_db
 from .telemetry import setup_telemetry
 
@@ -22,8 +26,9 @@ for parent in Path(__file__).resolve().parents:
 
 from libs.shared_auth.internal_jwt import build_receipt_draft_create_user_id_dependency
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_enforcement_log import log_plan_enforcement_denial
 from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
-from libs.shared_http.request_id import RequestIdMiddleware
+from libs.shared_http.request_id import RequestIdMiddleware, get_request_id
 
 app = FastAPI(
     title="Transactions Service",
@@ -53,6 +58,7 @@ get_user_id_for_receipt_draft_create = build_receipt_draft_create_user_id_depend
 async def import_transactions(
     request: schemas.TransactionImportRequest,
     user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
     limits: PlanLimits = Depends(get_plan_limits),
     db: AsyncSession = Depends(get_db),
 ):
@@ -60,6 +66,15 @@ async def import_transactions(
     existing_month = await crud.count_transactions_in_calendar_month(db, user_id=user_id)
     incoming = len(request.transactions)
     if existing_month + incoming > limits.transactions_per_month_limit:
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="transactions_per_month",
+            reason="monthly_cap_exceeded",
+            current=existing_month + incoming,
+            limit_value=limits.transactions_per_month_limit,
+            request_id=get_request_id(),
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -73,6 +88,14 @@ async def import_transactions(
         account_id=request.account_id,
         transactions=request.transactions,
     )
+    if import_result.get("created_count", 0) > 0:
+        try:
+            n = await crud_cis.scan_user_for_cis_suspects(
+                db, user_id=user_id, bearer_token=bearer_token
+            )
+            logger.info("cis_suspect_scan after import: %s new task(s)", n)
+        except Exception as exc:
+            logger.warning("cis_suspect_scan failed: %s", exc)
     return schemas.TransactionImportResponse(
         message="Import request accepted",
         imported_count=import_result["imported_count"],
@@ -405,3 +428,313 @@ async def manual_reconcile_receipt_draft(
         reconciled_transaction=reconciled,
         removed_transaction_id=removed_id,
     )
+
+
+# --- CIS (variant B), evidence manifest, accountant delegation ---
+
+
+@app.post(
+    "/cis/records",
+    response_model=schemas.CISRecordOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def cis_create_record(
+    body: schemas.CISRecordCreate,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+    db: AsyncSession = Depends(get_db),
+):
+    att_json = None
+    if body.attestation:
+        att = body.attestation
+        att_json = {
+            "attested_at": datetime.datetime.now(datetime.UTC).isoformat(),
+            "attestation_version": att.attestation_version,
+            "attestation_text": att.attestation_text,
+            "attested_by_user_id": user_id,
+            "client_context": att.client_context,
+        }
+    payload = body.model_dump(exclude={"attestation"})
+    payload["attestation_json"] = att_json
+    rec = await crud_cis.create_cis_record(
+        db, user_id=user_id, bearer_token=bearer_token, payload=payload
+    )
+    return rec
+
+
+@app.get("/cis/records", response_model=List[schemas.CISRecordOut])
+async def cis_list_records(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await crud_cis.list_cis_records(db, user_id=user_id)
+
+
+@app.get("/cis/records/{record_id}", response_model=schemas.CISRecordOut)
+async def cis_get_record(
+    record_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    rec = await crud_cis.get_cis_record(db, user_id=user_id, record_id=record_id)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_record_not_found")
+    return rec
+
+
+@app.patch("/cis/records/{record_id}", response_model=schemas.CISRecordOut)
+async def cis_patch_record(
+    record_id: uuid.UUID,
+    body: schemas.CISRecordPatch,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+    db: AsyncSession = Depends(get_db),
+):
+    updates = {k: v for k, v in body.model_dump(exclude_none=True).items()}
+    rec = await crud_cis.patch_cis_record(
+        db,
+        user_id=user_id,
+        bearer_token=bearer_token,
+        record_id=record_id,
+        updates=updates,
+    )
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_record_not_found")
+    return rec
+
+
+@app.post("/cis/tasks/suspect", response_model=schemas.CISReviewTaskOut, status_code=status.HTTP_201_CREATED)
+async def cis_create_suspect_task(
+    body: schemas.CISSuspectTaskCreate,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        task = await crud_cis.create_suspect_task(
+            db,
+            user_id=user_id,
+            bearer_token=bearer_token,
+            transaction_id=body.transaction_id,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        code = str(exc)
+        if code == "transaction_not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=code) from exc
+        if code == "open_task_already_exists":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=code) from exc
+        raise
+    return task
+
+
+@app.get("/cis/tasks", response_model=List[schemas.CISReviewTaskOut])
+async def cis_list_tasks(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+    status_filter: str | None = Query(default=None, alias="status"),
+):
+    return await crud_cis.list_cis_tasks(db, user_id=user_id, status=status_filter)
+
+
+@app.patch("/cis/tasks/{task_id}", response_model=schemas.CISReviewTaskOut)
+async def cis_patch_task(
+    task_id: uuid.UUID,
+    body: schemas.CISReviewTaskPatch,
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+    db: AsyncSession = Depends(get_db),
+):
+    task = await crud_cis.update_cis_task(
+        db,
+        user_id=user_id,
+        bearer_token=bearer_token,
+        task_id=task_id,
+        status=body.status,
+        cis_record_id=body.cis_record_id,
+        payer_label=body.payer_label,
+    )
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_task_not_found")
+    return task
+
+
+@app.post("/cis/tasks/scan", response_model=dict)
+async def cis_scan_now(
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+    db: AsyncSession = Depends(get_db),
+    lookback_days: int = Query(default=120, ge=7, le=366),
+):
+    n = await crud_cis.scan_user_for_cis_suspects(
+        db, user_id=user_id, bearer_token=bearer_token, lookback_days=lookback_days
+    )
+    return {"new_tasks": n}
+
+
+@app.get("/cis/reminders/due", response_model=List[schemas.CISReviewTaskOut])
+async def cis_reminders_due(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await crud_cis.tasks_due_reminder(db, user_id=user_id)
+
+
+@app.get("/cis/reminders/notification-eligible", response_model=List[schemas.CISReviewTaskOut])
+async def cis_reminders_notification_eligible(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Tasks due by date that also pass 72h hard + 2-in-7d soft throttle (for email/push worker)."""
+    return await crud_cis.list_notification_eligible_tasks(db, user_id=user_id)
+
+
+@app.post("/cis/reminders/{task_id}/mark-sent", response_model=schemas.CISReviewTaskOut)
+async def cis_reminders_mark_sent(
+    task_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    task = await crud_cis.mark_task_reminder_sent(db, user_id=user_id, task_id=task_id)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_task_not_found")
+    return task
+
+
+@app.get("/cis/refund-tracker", response_model=dict)
+async def cis_refund_tracker_endpoint(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await cis_refund_tracker.build_refund_tracker_snapshot(db, user_id=user_id)
+
+
+@app.post("/cis/tasks/{task_id}/snooze-reminder", response_model=schemas.CISReviewTaskOut)
+async def cis_snooze_reminder(
+    task_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+    days: int = Query(default=7, ge=1, le=365),
+):
+    if days not in (7, 14, 30):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="snooze days must be 7, 14, or 30",
+        )
+    task = await crud_cis.bump_task_reminder(db, user_id=user_id, task_id=task_id, days=days)
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_task_not_found")
+    return task
+
+
+@app.get("/cis/evidence-pack/manifest", response_model=schemas.EvidencePackManifestOut)
+async def cis_evidence_manifest(
+    user_id: str = Depends(get_current_user_id),
+    limits: PlanLimits = Depends(get_plan_limits),
+    db: AsyncSession = Depends(get_db),
+):
+    if limits.evidence_pack_tier == "none":
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="cis_evidence_pack",
+            reason="evidence_tier_none",
+            request_id=get_request_id(),
+            extra={"tier": limits.evidence_pack_tier},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CIS evidence pack is not included in your plan. Upgrade to Growth or higher.",
+        )
+    manifest = await crud_cis.build_evidence_manifest(db, user_id=user_id)
+    return schemas.EvidencePackManifestOut(manifest=manifest)
+
+
+@app.get("/cis/evidence-pack/zip")
+async def cis_evidence_zip(
+    user_id: str = Depends(get_current_user_id),
+    limits: PlanLimits = Depends(get_plan_limits),
+    db: AsyncSession = Depends(get_db),
+):
+    if limits.evidence_pack_tier == "none":
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="cis_evidence_pack_zip",
+            reason="evidence_tier_none",
+            request_id=get_request_id(),
+            extra={"tier": limits.evidence_pack_tier},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CIS evidence pack export is not included in your plan. Upgrade to Growth or higher.",
+        )
+    manifest = await crud_cis.build_evidence_manifest(db, user_id=user_id)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(
+            "cis-evidence-manifest.json",
+            json.dumps(manifest, indent=2, default=str).encode("utf-8"),
+        )
+        notice = (
+            (manifest.get("watermark_unverified_cis") or "")
+            + "\n\n"
+            + (manifest.get("export_legal_notice") or "")
+        )
+        zf.writestr("NOTICE.txt", notice.encode("utf-8"))
+    buf.seek(0)
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="selfmonitor-cis-evidence-pack.zip"'
+        },
+    )
+
+
+@app.post(
+    "/accountant/delegations",
+    response_model=schemas.AccountantDelegationOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def accountant_create_delegation(
+    body: schemas.AccountantDelegationCreate,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    if body.can_submit_hmrc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="can_submit_hmrc must remain false until product policy allows accountant HMRC submit",
+        )
+    row = await crud_cis.create_delegation(
+        db,
+        client_user_id=user_id,
+        accountant_user_id=body.accountant_user_id,
+        scopes=body.scopes or ["read_reports", "read_transactions", "read_documents", "comment"],
+        can_submit_hmrc=False,
+        expires_at=body.expires_at,
+    )
+    return row
+
+
+@app.get("/accountant/delegations", response_model=List[schemas.AccountantDelegationOut])
+async def accountant_list_delegations(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await crud_cis.list_delegations_for_client(db, client_user_id=user_id)
+
+
+@app.delete("/accountant/delegations/{delegation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def accountant_revoke_delegation(
+    delegation_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    ok = await crud_cis.revoke_delegation(
+        db, client_user_id=user_id, delegation_id=delegation_id
+    )
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="delegation_not_found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

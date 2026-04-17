@@ -32,13 +32,18 @@ Webhook events handled:
 - `customer.subscription.deleted`
 - `checkout.session.completed` (fallback)
 
-## Pro gating
-The following endpoints require a Pro subscription:
+## Plan gating (align with `auth-service` `PLAN_FEATURES`)
+- **HMRC MTD guided submit** (draft → confirm): paid tiers Starter+ (`hmrc_submission`).
+- **Live HMRC with strict fraud `client_context`**: **Pro+** only (`hmrc_direct_submission` in JWT; see `integrations-service`).
+- **VAT returns (prepare/submit)**: **Pro+** (`vat_returns`).
+- **Mortgage / advanced analytics / API**: largely **Pro+** — see `docs/PLAN_FEATURES_TABLE.md`.
+
+Legacy **Pro-only** report routes (enforce in `transactions-service` / web as needed):
 - `GET /reports/quarterly-summary`
 - `GET /reports/profit-loss`
 - `GET /reports/tax-year-summary`
 - `GET /reports/mortgage-readiness`
-- `POST /calculate-and-submit` (HMRC submission)
+- `POST /calculate-and-submit` (checks plan via gateway/auth)
 
 ## Notes
 This MVP uses Stripe Payment Links + webhook syncing to update subscription status.

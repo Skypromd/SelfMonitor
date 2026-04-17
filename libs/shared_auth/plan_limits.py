@@ -27,18 +27,69 @@ _DEFAULT_FREE = {
     "bank_sync_daily_limit": 0,
     "transactions_per_month_limit": 200,
     "storage_limit_gb": 1,
+    "transaction_history_months": 3,
+    "hmrc_direct_submission": False,
+    "vat_returns": False,
     "mortgage_reports": False,
     "advanced_analytics": False,
     "cash_flow_forecast": False,
 }
 
-# Fallback when JWT predates bank_sync_daily_limit claim (align with BANK_SYNC_ECONOMICS.md).
+# Fallback when JWT predates bank_sync_daily_limit claim (align with auth-service PLAN_FEATURES).
 _BANK_SYNC_DAILY_BY_PLAN: dict[str, int] = {
     "free": 0,
     "starter": 1,
-    "growth": 2,
-    "pro": 3,
-    "business": 3,
+    "growth": 3,
+    "pro": 10,
+    "business": 25,
+}
+
+_TRANSACTION_HISTORY_MONTHS_BY_PLAN: dict[str, int] = {
+    "free": 3,
+    "starter": 3,
+    "growth": 12,
+    "pro": 24,
+    "business": 36,
+}
+
+_HMRC_DIRECT_BY_PLAN: dict[str, bool] = {
+    "free": False,
+    "starter": False,
+    "growth": False,
+    "pro": True,
+    "business": True,
+}
+
+_VAT_RETURNS_BY_PLAN: dict[str, bool] = {
+    "free": False,
+    "starter": False,
+    "growth": False,
+    "pro": True,
+    "business": True,
+}
+
+_DOCUMENTS_MAX_BY_PLAN: dict[str, int] = {
+    "free": 20,
+    "starter": 100,
+    "growth": 500,
+    "pro": 5000,
+    "business": 50000,
+}
+
+_EVIDENCE_PACK_TIER_BY_PLAN: dict[str, str] = {
+    "free": "none",
+    "starter": "none",
+    "growth": "basic",
+    "pro": "full",
+    "business": "full",
+}
+
+_ACCOUNTANT_REVIEW_CREDITS_BY_PLAN: dict[str, int] = {
+    "free": 0,
+    "starter": 0,
+    "growth": 0,
+    "pro": 1,
+    "business": 4,
 }
 
 # When JWT omits feature booleans (older tokens), infer from plan — keep in sync with auth-service PLAN_FEATURES.
@@ -58,9 +109,15 @@ class PlanLimits:
     bank_sync_daily_limit: int
     transactions_per_month_limit: int
     storage_limit_gb: int
+    transaction_history_months: int = 3
+    hmrc_direct_submission: bool = False
+    vat_returns: bool = False
     mortgage_reports: bool = False
     advanced_analytics: bool = False
     cash_flow_forecast: bool = False
+    documents_max_count: int = 20
+    evidence_pack_tier: str = "none"
+    accountant_review_credits_per_month: int = 0
 
 
 def _secret_and_algo() -> tuple[str, str]:
@@ -101,6 +158,14 @@ def plan_limits_from_payload(payload: dict[str, Any]) -> PlanLimits:
         return inferred[key]
 
     sync_fallback = _BANK_SYNC_DAILY_BY_PLAN.get(plan, _DEFAULT_FREE["bank_sync_daily_limit"])
+    hist_fallback = _TRANSACTION_HISTORY_MONTHS_BY_PLAN.get(plan, _DEFAULT_FREE["transaction_history_months"])
+    hmrc_dir_fallback = _HMRC_DIRECT_BY_PLAN.get(plan, _DEFAULT_FREE["hmrc_direct_submission"])
+    vat_fallback = _VAT_RETURNS_BY_PLAN.get(plan, _DEFAULT_FREE["vat_returns"])
+    hmrc_direct = _bool_claim(payload, "hmrc_direct_submission", hmrc_dir_fallback)
+    vat_ret = _bool_claim(payload, "vat_returns", vat_fallback)
+    doc_cap_fallback = _DOCUMENTS_MAX_BY_PLAN.get(plan, _DOCUMENTS_MAX_BY_PLAN["free"])
+    tier_fallback = _EVIDENCE_PACK_TIER_BY_PLAN.get(plan, "none")
+    credits_fallback = _ACCOUNTANT_REVIEW_CREDITS_BY_PLAN.get(plan, 0)
     return PlanLimits(
         plan=plan,
         bank_connections_limit=_int_claim(payload, "bank_connections_limit", _DEFAULT_FREE["bank_connections_limit"]),
@@ -111,10 +176,40 @@ def plan_limits_from_payload(payload: dict[str, Any]) -> PlanLimits:
             _DEFAULT_FREE["transactions_per_month_limit"],
         ),
         storage_limit_gb=_int_claim(payload, "storage_limit_gb", _DEFAULT_FREE["storage_limit_gb"]),
+        transaction_history_months=_int_claim(payload, "transaction_history_months", hist_fallback),
+        hmrc_direct_submission=hmrc_direct,
+        vat_returns=vat_ret,
         mortgage_reports=_feature_bool("mortgage_reports"),
         advanced_analytics=_feature_bool("advanced_analytics"),
         cash_flow_forecast=_feature_bool("cash_flow_forecast"),
+        documents_max_count=max(0, _int_claim(payload, "documents_max_count", doc_cap_fallback)),
+        evidence_pack_tier=_evidence_tier(payload.get("evidence_pack_tier"), tier_fallback),
+        accountant_review_credits_per_month=max(
+            0, _int_claim(payload, "accountant_review_credits_per_month", credits_fallback)
+        ),
     )
+
+
+def strict_hmrc_fraud_client_context_required_from_payload(payload: dict[str, Any]) -> bool:
+    """
+    Pro/Business (hmrc_direct_submission) must supply full hmrc_fraud client_context when using live HMRC.
+    Starter/Growth omit the claim or set hmrc_direct_submission=false — validation stays lenient.
+    """
+    if payload.get("type") == "refresh":
+        return False
+    if "hmrc_direct_submission" in payload:
+        return payload.get("hmrc_direct_submission") is True
+    plan = str(payload.get("plan") or "free")
+    return _HMRC_DIRECT_BY_PLAN.get(plan, False)
+
+
+def strict_hmrc_fraud_client_context_required(token: str) -> bool:
+    secret, algorithm = _secret_and_algo()
+    try:
+        payload: dict[str, Any] = jwt.decode(token, secret, algorithms=[algorithm])
+    except JWTError:
+        return False
+    return strict_hmrc_fraud_client_context_required_from_payload(payload)
 
 
 def try_plan_limits_from_token(token: str) -> PlanLimits | None:

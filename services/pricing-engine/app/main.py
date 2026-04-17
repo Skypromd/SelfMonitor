@@ -100,7 +100,7 @@ async def health_check():
 
 @app.get("/pricing-plans", response_model=List[PricingPlan])
 async def get_pricing_plans():
-    """Get all available pricing plans with smart value positioning"""
+    """Public-style tiers (demo). Authoritative limits/prices: auth-service ``PLAN_FEATURES`` + billing ``PLANS``."""
 
     plants = [
         PricingPlan(
@@ -131,35 +131,35 @@ async def get_pricing_plans():
         PricingPlan(
             tier=PricingTier.STARTER,
             name="Starter",
-            monthly_price_gbp=9,
-            annual_price_gbp=89,  # 17% discount
+            monthly_price_gbp=12,
+            annual_price_gbp=120,  # ~17% vs 12×12
             annual_discount_percent=17,
             limits={
-                UsageMetric.BANK_CONNECTIONS: 3,
-                UsageMetric.TRANSACTIONS_PROCESSED: 1000,
+                UsageMetric.BANK_CONNECTIONS: 1,
+                UsageMetric.TRANSACTIONS_PROCESSED: 500,
                 UsageMetric.DOCUMENTS_UPLOADED: 50,
                 UsageMetric.TAX_CALCULATIONS: 12,
                 UsageMetric.API_CALLS: 100,
                 UsageMetric.TEAM_MEMBERS: 1
             },
             features=[
-                "3 bank connections",
-                "1,000 transactions/month",
-                "AI categorization",
-                "Monthly HMRC submission",
+                "1 bank connection (tiered daily sync)",
+                "500 transactions/month",
+                "CIS refund tracker & statements",
+                "HMRC MTD guided workflow (confirm before submit)",
                 "Receipt OCR",
                 "Cash flow forecasting",
                 "Priority support"
             ],
-            target_customer="Active freelancers, small side-hustles",
-            value_proposition="Save 3+ hours/month, £9 pays for itself in 1 saved hour"
+            target_customer="CIS subcontractors, sole traders starting out",
+            value_proposition="Evidence-first CIS + guided MTD without premium complexity"
         ),
 
         PricingPlan(
             tier=PricingTier.PRO,
             name="Pro",
-            monthly_price_gbp=19,
-            annual_price_gbp=189,  # 17% discount
+            monthly_price_gbp=18,
+            annual_price_gbp=179,  # 17% discount
             annual_discount_percent=17,
             limits={
                 UsageMetric.BANK_CONNECTIONS: -1,  # Unlimited
@@ -171,10 +171,10 @@ async def get_pricing_plans():
                 UsageMetric.ADVANCED_REPORTS: 10
             },
             features=[
-                "Unlimited bank connections",
+                "Higher bank connection limits",
                 "5,000 transactions/month",
                 "Advanced ML categorization",
-                "Automatic HMRC submission",
+                "HMRC MTD with full fraud client context; VAT (Pro+)",
                 "Unlimited documents + smart search",
                 "Mortgage readiness reports",
                 "Advanced analytics & forecasting",
@@ -188,8 +188,8 @@ async def get_pricing_plans():
         PricingPlan(
             tier=PricingTier.BUSINESS,
             name="Business",
-            monthly_price_gbp=39,
-            annual_price_gbp=389,  # 17% discount
+            monthly_price_gbp=28,
+            annual_price_gbp=279,  # 17% discount
             annual_discount_percent=17,
             limits={
                 UsageMetric.BANK_CONNECTIONS: -1,

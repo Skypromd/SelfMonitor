@@ -102,13 +102,17 @@
 
 ### 3.1 Тарифные планы
 
-| Тариф | Цена | Что включено | Целевая доля |
-|---|---|---|---|
-| **Free** | £0 | 20 транзакций/мес, 1 банк, дашборд, tax калькулятор | 40% |
-| **Starter** | £9/мес | Unlimited транзакции, MTD quarterly, 3 банка, инвойсы (5/мес) | 30% |
-| **Growth** | £12/мес | + invoice payments, AI advisor, receipt OCR, all банки | 15% |
-| **Pro** | £15/мес | + voice input, auto-submission, priority support, CSV/Excel export | 10% |
-| **Business** | £25/мес | + multi-business, accountant access, API, white-label инвойсы | 5% |
+Цены ниже — **без VAT** на кассе (UK VAT применяется в checkout при необходимости). Фокус продукта: **CIS subcontractors** (statements, verified vs self-attested, refund narrative) + MTD ITSA. Лимиты и флаги в коде: `auth-service` → `PLAN_FEATURES`, JWT, `libs/shared_auth/plan_limits.py`.
+
+| Тариф | Цена | Лимиты (кратко) | MTD / VAT / CIS | Целевая доля |
+|---|---|---|---|---|
+| **Free** | £0 | 1 банк, 0 sync/день, 200 tx/мес | Калькулятор; без HMRC submit | 40% |
+| **Starter** | **£12**/мес | 1 банк, **1** sync/день, 500 tx, **~90 дней** истории | **Guided** MTD submit; **CIS refund tracker**; без direct+fraud strict; без VAT | 30% |
+| **Growth** | **£15**/мес | 2 банка, **3** sync/день, 2k tx, **12 мес** истории | Guided MTD; CIS; evidence basic (продукт); без VAT | 15% |
+| **Pro** | **£18**/мес | **5** банков, **10** sync/день, 5k tx, **24 мес** | **Direct-style** submit + полный **client_context**; **VAT** returns; 1 accountant review credit/мес | 10% |
+| **Business** | **£28**/мес | **10** банков, **25** sync/день, высокий объём, **36 мес** | Как Pro + **4** review credits/мес; white-label | 5% |
+
+Позиционирование: refund и обязательства CIS — **оценки (estimate)**, не гарантия; подача в HMRC — **подготовка и submit после явного подтверждения**, без фоновой авто-подачи.
 
 ### 3.2 Дополнительные потоки revenue
 

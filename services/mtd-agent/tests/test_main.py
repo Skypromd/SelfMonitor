@@ -4,6 +4,7 @@ import os
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-mtd-agent")
@@ -155,6 +156,50 @@ def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["service"] == "mtd-agent"
+
+
+def test_mtd_prepare_requires_authorization(client):
+    r = client.post(
+        "/mtd/prepare",
+        json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"},
+    )
+    assert r.status_code == 401
+
+
+def test_mtd_prepare_proxies_tax_engine(client):
+    import app.main as mtd_main
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, **kwargs):
+            assert str(url).endswith("/mtd/prepare")
+            assert kwargs.get("headers", {}).get("Authorization") == "Bearer t"
+            return httpx.Response(
+                200,
+                json={
+                    "calculation": {"total_income": 123.0},
+                    "hmrc_period_summary_json": {"periodDates": {}},
+                    "prepare_notes": [],
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    with patch.object(mtd_main.httpx, "AsyncClient", FakeAsyncClient):
+        r = client.post(
+            "/mtd/prepare",
+            json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"},
+            headers={"Authorization": "Bearer t"},
+        )
+    assert r.status_code == 200
+    assert r.json()["calculation"]["total_income"] == 123.0
 
 
 def test_status_endpoint(client):

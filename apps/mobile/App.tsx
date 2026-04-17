@@ -18,6 +18,7 @@ import MoneyScreen from './screens/MoneyScreen';
 import ReceiptScanScreen from './screens/ReceiptScanScreen';
 import TaxScreen from './screens/TaxScreen';
 import ProfileScreen from './screens/ProfileScreen';
+import CisRefundTrackerScreen from './screens/CisRefundTrackerScreen';
 import MortgageScreen from './screens/MortgageScreen';
 import AIAssistantScreen from './screens/AIAssistantScreen';
 import ReferralsScreen from './screens/ReferralsScreen';
@@ -69,6 +70,7 @@ function MeNavigator() {
       }}
     >
       <MeStack.Screen name="Profile" component={ProfileScreen} />
+      <MeStack.Screen name="CisRefundTracker" component={CisRefundTrackerScreen} options={{ title: 'CIS refund tracker' }} />
       <MeStack.Screen name="Mortgage" component={MortgageScreen} options={{ title: 'Mortgage' }} />
       <MeStack.Screen name="AIAssistant" component={AIAssistantScreen} options={{ title: 'AI Assistant' }} />
       <MeStack.Screen name="Referrals" component={ReferralsScreen} />

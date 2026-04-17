@@ -1,5 +1,5 @@
 import {
-  Activity, BarChart2, Bot, CalendarDays, ClipboardCheck, CreditCard, ExternalLink,
+  Activity, Banknote, BarChart2, Bot, CalendarDays, ClipboardCheck, CreditCard, ExternalLink,
   FileText, Gift, Globe, Headphones, Home, LayoutDashboard, Lock, LogOut, Menu,
   Receipt, Send, Settings, ShoppingBag, User, Wallet, X,
 } from 'lucide-react';
@@ -89,6 +89,7 @@ export default function ClientLayout({
     { href: '/dashboard',       label: t('nav.dashboard'),    icon: <LayoutDashboard size={17} /> },
     { href: '/activity',        label: t('nav.activity'),     icon: <Activity size={17} /> },
     { href: '/transactions',    label: t('nav.transactions'), icon: <Wallet size={17} /> },
+    { href: '/cis-refund-tracker', label: 'CIS refund',       icon: <Banknote size={17} /> },
     { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
     { href: '/tax-preparation',  label: 'Tax Return',            icon: <ClipboardCheck size={17} /> },
     { href: '/reports',          label: t('nav.reports'),        icon: <BarChart2 size={17} /> },

@@ -32,6 +32,13 @@ async def total_file_size_bytes_for_user(db: AsyncSession, user_id: str) -> int:
     return int(result.scalar_one() or 0)
 
 
+async def count_documents_for_user(db: AsyncSession, user_id: str) -> int:
+    result = await db.execute(
+        select(func.count()).select_from(models.Document).where(models.Document.user_id == user_id)
+    )
+    return int(result.scalar_one() or 0)
+
+
 async def create_document(
     db: AsyncSession,
     user_id: str,

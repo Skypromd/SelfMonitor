@@ -17,7 +17,7 @@
 - [ ] **Stripe**: зарегистрироваться на https://dashboard.stripe.com/test/apikeys
   - [ ] Скопировать `STRIPE_SECRET_KEY` (sk_test_...)
   - [ ] Скопировать `STRIPE_WEBHOOK_SECRET` (whsec_...)
-  - [ ] Создать 4 продукта: Starter £9, Growth £12, Pro £15, Business £25
+  - [ ] Создать 4 продукта в Stripe: Starter £12, Growth £15, Pro £18, Business £28 (ex VAT)
   - [ ] Скопировать Price ID для каждого
   - [ ] Прописать всё в `.env`
 
@@ -49,12 +49,18 @@
 
 ## Фаза 1: "Работает лучше всех" (4-6 недель)
 
+### 1.0 CIS Refund & obligations (MVP value, UK)
+- [x] Модель обязательств: агрегация по UK tax month × contractor (ключ `contractor_key`) → статусы **MISSING / VERIFIED / UNVERIFIED / NOT_CIS** в API `GET /cis/refund-tracker` (+ существующие `cis_review_tasks` / `cis_records`)
+- [x] Напоминания: `next_reminder_at` при скане; throttle **72h hard + 2/7d soft** — `GET /cis/reminders/notification-eligible`, `POST /cis/reminders/{id}/mark-sent`; snooze **7 / 14 / 30** дней
+- [x] UI «CIS Refund Tracker»: страница `/cis-refund-tracker`, навигация + дашборд
+- [x] Сверка statement ↔ bank: поля `reconciliation_status`, `bank_net_observed_gbp` на `cis_records`; **needs_review** при расхождении с `net_paid_total`
+
 ### 1.1 Open Banking — автоимпорт транзакций из банков
 - [ ] Зарегистрироваться на TrueLayer (https://truelayer.com) — бесплатный sandbox
 - [ ] Заменить mock в banking-connector на TrueLayer API
 - [ ] Реализовать OAuth2 flow: юзер авторизует банк → получаем access_token
 - [ ] Автоимпорт транзакций за последние 90 дней
-- [ ] Периодический sync каждые 4 часа (Celery task)
+- [ ] **Prod:** только sync по кнопке пользователя (см. `AGENTS.md`); фоновый авто-sync не включать
 - [ ] UI: страница "Connect your bank" с логотипами банков
 - [ ] Тестирование: sandbox → staging → production
 
@@ -173,12 +179,11 @@
 - [ ] Интеграция с voice-gateway (STT уже есть)
 - [ ] Мобильное приложение: кнопка микрофона на главном экране
 
-### 2.3 Zero-click MTD
-- [ ] Cron job: за 3 дня до MTD дедлайна → автосбор данных из transactions
-- [ ] Автогенерация quarterly report
-- [ ] Уведомление юзеру: "Ваш квартальный отчёт готов. Подтвердите или отредактируйте"
-- [ ] Если юзер не ответил за 24 часа → авто-подача (с настройкой в профиле)
-- [ ] Audit log каждого действия
+### 2.3 MTD prep reminders (no auto-submit)
+- [ ] Cron: за 3 дня до MTD дедлайна → автосбор данных из transactions и **черновик** quarterly report
+- [ ] Уведомление: отчёт готов к review — пользователь **обязан** пройти draft → confirm → submit (как в `integrations-service`)
+- [ ] **Не делать** фоновую/авто-подачу в HMRC (политика продукта: только после явного подтверждения)
+- [ ] Audit: подготовка черновика, открытие self-check, confirm, submit
 
 ### 2.4 Real-time profit dashboard
 - [ ] WebSocket endpoint: новая транзакция → push на дашборд
@@ -313,5 +318,62 @@ Break-even: ~30-45 платящих юзеров на Starter (£9/мес)
 
 ---
 
-*Последнее обновление: 2026-03-30*
+## CIS variant B (self-attested) — compliance, UI, security, accountant
+
+**Принцип:** verified CIS (есть statement) vs **UNVERIFIED** self-attested; гейты на submit/export; жёсткий audit trail; консультация бухгалтера как страховочный слой.
+
+### Сделано в коде (фундамент)
+
+- [x] **libs/shared_mtd** — `MTDQuarterlyCISDisclosure` в quarterly report (fingerprint/hash).
+- [x] **libs/shared_cis** — `CISEvidenceStatus`, `CISRecordBase`, `CISAttestationRecord`, enum **`CISAuditAction`** (имена событий для compliance-service).
+- [x] **tax-engine** — поля `cis_tax_credit_verified_gbp`, `cis_tax_credit_self_attested_gbp`, `unverified_cis_submit_acknowledged`; legacy `cis_suffered_in_period_gbp` → весь объём считается **unverified**; при split-полях legacy игнорируется с флагом в breakdown; `breakdown.cis_credits_breakdown`; гейт на `/calculate-and-submit` при unverified без ack; MTD payload включает `cis_disclosure` + `unverified_cis_submit_acknowledged`.
+- [x] **integrations-service** — гейт на quarterly submit если `credit_self_attested_unverified_gbp > 0` без ack; лог `cis_unverified_submit_confirmed`; в тело к HMRC **`cis_disclosure` не уходит** (только внутренний отчёт/хэш).
+- [x] **web-portal** — `Badge` variant `unverified`, `CisComplianceBanner`, страница **tax-preparation**: секция CIS, копирайт про UNVERIFIED и accountant review.
+
+### P0 Security & audit (продолжить)
+
+- [ ] Fail-fast **AUTH_SECRET_KEY** везде (нет дефолтов); preflight длина/энтропия секрета при старте в prod-профиле.
+- [ ] Append-only audit + hash-chain по `user_id` (расширение **compliance-service** или отдельное хранилище).
+- [x] **`CISAuditAction`** → `POST .../audit-events` из **transactions-service** (`crud_cis`, shared `post_audit_event`) при ключевых шагах.
+- [x] Событие **`cis_unverified_submit_confirmed`** в compliance при ack на quarterly submit — **integrations-service** (если задан `COMPLIANCE_SERVICE_URL`).
+- [ ] Писать audit из **documents-service** / **tax-engine** там, где UX ещё не прокинут.
+
+### CIS UX & данные (продолжить)
+
+- [x] Сущность **CISRecord** + **CISReviewTask** + **accountant_delegations** в **transactions-service** (Alembic + API).
+- [x] **Модалка Confirm CIS** на странице **transactions** (Not CIS / verified with statement / self-attested + чекбоксы; привязка к txn).
+- [x] **Tasks:** открытые CIS tasks на **транзакциях** (бейдж + Review); API `GET /cis/tasks`, scan, snooze.
+- [x] **Напоминания:** поле `next_reminder_at` + `GET /cis/reminders/due`, snooze (push/cron — отдельно).
+- [x] **Evidence pack:** `GET /cis/evidence-pack/manifest` (JSON + watermark text); **PDF/ZIP** — позже.
+
+### HMRC submit / export
+
+- [x] Двойной контур: tax-engine + integrations **unverified_cis_submit_acknowledged** (согласуйте тексты UX с юристом).
+- [x] UI на **submission**: предупреждение + чекбокс перед submit, тело **`unverified_cis_submit_acknowledged`** на `/calculate-and-submit` при `cis_hmrc_submit_requires_unverified_ack`.
+- [x] Привязка **confirmation_token** к **canonical hash** отчёта: `compute_quarterly_report_fingerprint` хэширует полный `HMRCMTDQuarterlyReport` (включая **`cis_disclosure`**). Тесты: `test_quarterly_report_fingerprint_includes_cis_disclosure`, `test_hmrc_mtd_submit_rejects_cis_disclosure_changed_after_confirm`.
+
+### Accountant consult (максимальный план)
+
+- [x] API **delegation** в transactions-service (`POST/GET /accountant/delegations`; **`can_submit_hmrc`** пока жёстко запрещён).
+- [ ] Статусы отчёта: draft → ready_for_accountant_review → accountant_reviewed → ready_for_user_confirm → submitted (UI + enforcement).
+- [ ] MVP: кнопка **Request accountant review** + шаринг evidence pack (signed URLs, audit на скачивание).
+- [ ] Billing: опционально консультация / SLA через **billing-service**.
+
+### Чеклист доводки CIS variant B
+
+- [ ] Юридически вычитать тексты (шаблоны: `apps/web-portal/pages/submission.tsx`, `transactions.tsx`; при необходимости — tax-preparation).
+- [x] Контракт / E2E-слой: при `COMPLIANCE_SERVICE_URL` вызывается `post_audit_event` — тесты с моком: `test_cis_dismiss_sends_audit_when_compliance_configured` (transactions-service), `test_unverified_cis_ack_posts_compliance_audit` (integrations-service). Полный приём в **compliance-service** — см. его pytest.
+- [x] Тесты pytest: маршруты `/cis/*`, `/accountant/*` в **transactions-service** (`tests/test_transactions_service_main.py`).
+- [x] Виджет **To review — CIS** на **dashboard** (`pages/dashboard.tsx`) + деталь на **transactions**.
+- [x] Выгрузка **ZIP** evidence pack: `GET /cis/evidence-pack/zip` (manifest JSON + NOTICE); кнопка на transactions. **PDF** с watermark — при необходимости отдельно.
+
+### Уточнения продукта (зафиксировать в PRD)
+
+- [ ] Submit в HMRC в v1: direct или только prepare + export?
+- [ ] Бухгалтер: только read+comments или правки категорий без submit?
+- [ ] Self-attested: отдельное подтверждение **каждый** final submit или одна master-attestation на tax year?
+
+---
+
+*Последнее обновление: 2026-04-17*
 *Автор: SelfMonitor Development Team*

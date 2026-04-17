@@ -207,6 +207,120 @@ function TrialBanner({ token }: { token: string }) {
   );
 }
 
+type CisTaskRow = {
+  id: string;
+  status: string;
+  suspect_reason: string | null;
+  suspected_transaction_id: string | null;
+};
+
+function CisTasksStrip({ token }: { token: string }) {
+  const [openCount, setOpenCount] = useState<number | null>(null);
+  const [dueReminders, setDueReminders] = useState<number | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [tasksRes, dueRes] = await Promise.all([
+          fetch(`${API_GATEWAY_URL}/transactions/cis/tasks?status=open`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_GATEWAY_URL}/transactions/cis/reminders/due`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
+        if (cancelled) return;
+        if (tasksRes.ok) {
+          const rows = (await tasksRes.json()) as CisTaskRow[];
+          setOpenCount(rows.length);
+        } else {
+          setError(true);
+        }
+        if (dueRes.ok) {
+          const rows = (await dueRes.json()) as CisTaskRow[];
+          setDueReminders(rows.length);
+        }
+      } catch {
+        if (!cancelled) setError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  if (error || openCount === null || dueReminders === null) {
+    return null;
+  }
+  if (openCount === 0 && dueReminders === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className={styles.subContainer}
+      style={{
+        border: '1px solid rgba(245,158,11,0.35)',
+        background: 'rgba(245,158,11,0.07)',
+        marginBottom: '1.25rem',
+      }}
+    >
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+        <div>
+          <h2 style={{ margin: '0 0 0.35rem', fontSize: '1rem' }}>To review — CIS</h2>
+          <p style={{ margin: 0, color: 'var(--lp-muted)', fontSize: '0.88rem', lineHeight: 1.5 }}>
+            {openCount > 0 && (
+              <span>
+                <strong>{openCount}</strong> open task{openCount !== 1 ? 's' : ''} on transactions
+                {dueReminders > 0 ? '; ' : '.'}
+              </span>
+            )}
+            {dueReminders > 0 && (
+              <span>
+                <strong>{dueReminders}</strong> reminder{dueReminders !== 1 ? 's' : ''} due.
+              </span>
+            )}
+          </p>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          <Link
+            href="/cis-refund-tracker"
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: 10,
+              border: '1px solid rgba(245,158,11,0.5)',
+              color: 'var(--lp-accent-teal)',
+              fontWeight: 700,
+              fontSize: '0.88rem',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            CIS refund tracker
+          </Link>
+          <Link
+            href="/transactions"
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: 10,
+              background: 'var(--lp-accent-teal)',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: '0.88rem',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Open Transactions
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ActionCenter({ token }: { token: string }) {
   const [advice, setAdvice] = useState<AdviceItem | null>(null);
   const router = useRouter();
@@ -260,6 +374,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <TrialBanner token={token} />
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
+      <CisTasksStrip token={token} />
       <ActionCenter token={token} />
       <CashFlowChart token={token} />
       <TaxCalculator token={token} />

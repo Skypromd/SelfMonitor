@@ -27,6 +27,9 @@ type TaxCalcResult = {
   estimated_effective_tax_rate: number;
   payment_on_account_jan: number;
   payment_on_account_jul: number;
+  cis_hmrc_submit_requires_unverified_ack?: boolean;
+  cis_tax_credit_self_attested_gbp?: number;
+  cis_tax_credit_verified_gbp?: number;
   mtd_obligation: {
     reporting_required: boolean;
     tax_year_start: string;
@@ -89,8 +92,11 @@ export default function SubmissionPage({ token }: Props) {
   const [error, setError] = useState('');
   const [calc, setCalc] = useState<TaxCalcResult | null>(null);
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
+  const [unverifiedCisSubmitAck, setUnverifiedCisSubmitAck] = useState(false);
 
   const year = TAX_YEARS[yearIdx];
+
+  const requiresUnverifiedCisAck = Boolean(calc?.cis_hmrc_submit_requires_unverified_ack);
 
   const handleCalculate = async (e: FormEvent) => {
     e.preventDefault();
@@ -105,6 +111,7 @@ export default function SubmissionPage({ token }: Props) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Calculation failed');
       setCalc(data);
+      setUnverifiedCisSubmitAck(false);
       setStep('review');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
@@ -115,13 +122,45 @@ export default function SubmissionPage({ token }: Props) {
 
   const handleSubmit = async () => {
     if (!calc) return;
+    if (requiresUnverifiedCisAck && !unverifiedCisSubmitAck) {
+      setError(
+        'Self-attested CIS credits without matching statements are included. Confirm the declaration below or upload CIS evidence before submitting.',
+      );
+      return;
+    }
     setLoading(true);
     setError('');
     try {
+      let sessionId: string | undefined;
+      if (typeof window !== 'undefined' && typeof sessionStorage !== 'undefined') {
+        const k = 'hmrc_fraud_session_v1';
+        sessionId = sessionStorage.getItem(k) ?? undefined;
+        if (!sessionId && typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+          sessionId = crypto.randomUUID();
+          sessionStorage.setItem(k, sessionId);
+        }
+      }
+      const hmrcFraudClientContext =
+        typeof window !== 'undefined'
+          ? {
+              client_type: 'web' as const,
+              user_agent: navigator.userAgent,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              locale: navigator.language,
+              request_timestamp_utc: new Date().toISOString(),
+              session_id: sessionId,
+            }
+          : undefined;
       const res = await fetch(`${TAX_ENGINE_URL}/calculate-and-submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ start_date: year.start, end_date: year.end, jurisdiction: 'UK' }),
+        body: JSON.stringify({
+          start_date: year.start,
+          end_date: year.end,
+          jurisdiction: 'UK',
+          unverified_cis_submit_acknowledged: requiresUnverifiedCisAck ? unverifiedCisSubmitAck : false,
+          hmrc_fraud_client_context: hmrcFraudClientContext,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || 'Submission failed');
@@ -391,12 +430,45 @@ export default function SubmissionPage({ token }: Props) {
               <strong>Declaration:</strong> I declare that the information I have given on this return is correct and complete to the best of my knowledge and belief. I understand that I may face financial penalties and/or prosecution if I give false information.
             </div>
 
+            {requiresUnverifiedCisAck && (
+              <div
+                style={{
+                  background: 'rgba(245,158,11,0.1)',
+                  border: '1px solid rgba(245,158,11,0.45)',
+                  borderRadius: 10,
+                  padding: '1rem',
+                  marginBottom: '1.25rem',
+                  fontSize: '0.85rem',
+                  lineHeight: 1.55,
+                }}
+              >
+                <strong>CIS credits (unverified):</strong> This return includes self-attested Construction Industry Scheme
+                deductions that are not backed by CIS statements in SelfMonitor. HMRC may challenge these figures. You may
+                upload statements later and adjust figures before any submission. If you continue, you accept responsibility
+                for these amounts as entered.
+                <div style={{ marginTop: '0.75rem' }}>
+                  <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', cursor: 'pointer' }}>
+                    <input
+                      checked={unverifiedCisSubmitAck}
+                      onChange={(e) => setUnverifiedCisSubmitAck(e.target.checked)}
+                      type="checkbox"
+                      style={{ marginTop: 3 }}
+                    />
+                    <span>
+                      I understand and accept responsibility for including unverified self-attested CIS credits in this
+                      submission.
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
+
             {error && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.875rem' }}>{error}</p>}
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button
                 onClick={handleSubmit}
-                disabled={loading}
+                disabled={loading || (requiresUnverifiedCisAck && !unverifiedCisSubmitAck)}
                 style={{ flex: 1, padding: '0.9rem', background: '#0d9488', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: '1rem', cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1 }}
               >
                 {loading ? 'Submitting to HMRC…' : 'Confirm & Submit to HMRC'}

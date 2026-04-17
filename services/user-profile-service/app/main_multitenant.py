@@ -73,10 +73,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:3000,http://localhost:3001",
+    ).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В production указать конкретные домены
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

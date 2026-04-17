@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
@@ -54,6 +54,40 @@ type UnmatchedReceiptDraftsResponse = {
   items: UnmatchedReceiptDraftItem[];
   total: number;
 };
+
+type CISReviewTask = {
+  id: string;
+  user_id: string;
+  status: string;
+  suspected_transaction_id: string | null;
+  cis_record_id: string | null;
+  payer_label: string | null;
+  suspect_reason: string | null;
+  next_reminder_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const CIS_API = `${API_GATEWAY_URL}/transactions/cis`;
+
+function monthBoundsFromDate(isoDate: string): { period_start: string; period_end: string } {
+  const [yStr, mStr] = isoDate.split('-');
+  const y = Number(yStr);
+  const m = Number(mStr) - 1;
+  if (!y || m < 0 || m > 11) {
+    const t = new Date();
+    const yy = t.getFullYear();
+    const mm = t.getMonth();
+    const start = `${yy}-${String(mm + 1).padStart(2, '0')}-01`;
+    const last = new Date(yy, mm + 1, 0).getDate();
+    const end = `${yy}-${String(mm + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+    return { period_start: start, period_end: end };
+  }
+  const last = new Date(y, m + 1, 0).getDate();
+  const period_start = `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  const period_end = `${y}-${String(m + 1).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
+  return { period_start, period_end };
+}
 
 type SyncQuota = { daily_limit: number; used_today: number; remaining: number };
 
@@ -146,12 +180,258 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [cisTasks, setCisTasks] = useState<CISReviewTask[]>([]);
+  const [cisBusy, setCisBusy] = useState(false);
+  const [modalTask, setModalTask] = useState<CISReviewTask | null>(null);
+  const [cisModalError, setCisModalError] = useState('');
+  const [cisResolveBusy, setCisResolveBusy] = useState(false);
+  const [flaggingTxn, setFlaggingTxn] = useState('');
+  const [cisZipBusy, setCisZipBusy] = useState(false);
+  const [cisForm, setCisForm] = useState({
+    mode: 'self_attest' as 'verified' | 'self_attest',
+    contractorName: '',
+    cisDeducted: '',
+    documentId: '',
+    ackUnderstand: false,
+    ackAccuracy: false,
+  });
 
   const availableCategories = [
   'groceries', 'transport', 'income', 'food_and_drink', 'subscriptions',
   'office_supplies', 'utilities', 'rent', 'insurance', 'professional_services',
   'advertising', 'entertainment', 'travel', 'equipment', 'software', 'other',
 ];
+
+  const reloadCisTasks = useCallback(async () => {
+    try {
+      const res = await fetch(`${CIS_API}/tasks?status=open`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) setCisTasks((await res.json()) as CISReviewTask[]);
+    } catch { /* ignore */ }
+  }, [token]);
+
+  useEffect(() => {
+    void reloadCisTasks();
+  }, [reloadCisTasks]);
+
+  const openTaskByTxnId = useMemo(() => {
+    const m = new Map<string, CISReviewTask>();
+    for (const t of cisTasks) {
+      if (t.status === 'open' && t.suspected_transaction_id) m.set(t.suspected_transaction_id, t);
+    }
+    return m;
+  }, [cisTasks]);
+
+  const modalTxn = useMemo(() => {
+    if (!modalTask?.suspected_transaction_id) return null;
+    return transactions.find((x) => x.id === modalTask.suspected_transaction_id) ?? null;
+  }, [modalTask, transactions]);
+
+  const cisFormInitKeyRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!modalTask || !modalTxn) {
+      cisFormInitKeyRef.current = null;
+      return;
+    }
+    const key = `${modalTask.id}:${modalTxn.id}`;
+    if (cisFormInitKeyRef.current === key) return;
+    cisFormInitKeyRef.current = key;
+    setCisModalError('');
+    setCisForm({
+      mode: 'self_attest',
+      contractorName: modalTask.payer_label || modalTxn.description.slice(0, 120),
+      cisDeducted: '',
+      documentId: '',
+      ackUnderstand: false,
+      ackAccuracy: false,
+    });
+  }, [modalTask, modalTxn]);
+
+  const handleCisScan = async () => {
+    setCisBusy(true);
+    try {
+      await fetch(`${CIS_API}/tasks/scan`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      await reloadCisTasks();
+    } finally {
+      setCisBusy(false);
+    }
+  };
+
+  const handleCisEvidenceZip = async () => {
+    setCisZipBusy(true);
+    try {
+      const res = await fetch(`${CIS_API}/evidence-pack/zip`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return;
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'selfmonitor-cis-evidence-pack.zip';
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setCisZipBusy(false);
+    }
+  };
+
+  const flagCisSuspect = async (transactionId: string) => {
+    setFlaggingTxn(transactionId);
+    try {
+      const res = await fetch(`${CIS_API}/tasks/suspect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ transaction_id: transactionId, reason: 'user_flagged' }),
+      });
+      if (res.ok) await reloadCisTasks();
+    } catch { /* ignore */ } finally {
+      setFlaggingTxn('');
+    }
+  };
+
+  const closeCisModal = () => {
+    setModalTask(null);
+    setCisModalError('');
+  };
+
+  const resolveNotCis = async () => {
+    if (!modalTask) return;
+    setCisResolveBusy(true);
+    setCisModalError('');
+    try {
+      const res = await fetch(`${CIS_API}/tasks/${modalTask.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: 'dismissed_not_cis' }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error((j as { detail?: string }).detail || 'Could not update task');
+      }
+      await reloadCisTasks();
+      closeCisModal();
+    } catch (e) {
+      setCisModalError(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setCisResolveBusy(false);
+    }
+  };
+
+  const snoozeCisTask = async () => {
+    if (!modalTask) return;
+    setCisResolveBusy(true);
+    setCisModalError('');
+    try {
+      const res = await fetch(`${CIS_API}/tasks/${modalTask.id}/snooze-reminder?days=30`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Snooze failed');
+      await reloadCisTasks();
+      closeCisModal();
+    } catch (e) {
+      setCisModalError(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setCisResolveBusy(false);
+    }
+  };
+
+  const submitCisResolution = async () => {
+    if (!modalTask || !modalTxn) return;
+    const name = cisForm.contractorName.trim();
+    if (!name) {
+      setCisModalError('Enter contractor / payer name.');
+      return;
+    }
+    const cisDed = parseFloat(cisForm.cisDeducted) || 0;
+    if (cisDed < 0) {
+      setCisModalError('CIS deducted cannot be negative.');
+      return;
+    }
+    const netPaid = modalTxn.amount;
+    const gross = Math.max(0, netPaid + cisDed);
+    const { period_start, period_end } = monthBoundsFromDate(modalTxn.date);
+
+    if (cisForm.mode === 'self_attest') {
+      if (!cisForm.ackUnderstand || !cisForm.ackAccuracy) {
+        setCisModalError('Confirm both declarations to save a self-attested CIS record.');
+        return;
+      }
+    }
+
+    setCisResolveBusy(true);
+    setCisModalError('');
+    try {
+      const evidenceStatus =
+        cisForm.mode === 'verified' ? 'verified_with_statement' : 'self_attested_no_statement';
+      const docId = cisForm.documentId.trim() || undefined;
+      if (cisForm.mode === 'verified' && !docId) {
+        setCisModalError('Enter a document ID for verified CIS, or choose self-attested.');
+        setCisResolveBusy(false);
+        return;
+      }
+
+      const attestation =
+        cisForm.mode === 'self_attest'
+          ? {
+              attestation_version: 'selfmonitor_cis_v1',
+              attestation_text: [
+                'User confirmed:',
+                `understands_unverified_cis_risk=${cisForm.ackUnderstand}`,
+                `figures_accurate_best_knowledge=${cisForm.ackAccuracy}`,
+                `bank_transaction_id=${modalTxn.id}`,
+              ].join('\n'),
+              client_context: { task_id: modalTask.id },
+            }
+          : undefined;
+
+      const recordBody: Record<string, unknown> = {
+        contractor_name: name,
+        period_start,
+        period_end,
+        gross_total: gross,
+        materials_total: 0,
+        cis_deducted_total: cisDed,
+        net_paid_total: netPaid,
+        evidence_status: evidenceStatus,
+        document_id: docId ?? null,
+        source: 'manual_attested',
+        matched_bank_transaction_ids: [modalTxn.id],
+        report_status: 'draft',
+      };
+      if (attestation) recordBody.attestation = attestation;
+
+      const recRes = await fetch(`${CIS_API}/records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(recordBody),
+      });
+      const recJson = await recRes.json().catch(() => ({}));
+      if (!recRes.ok) {
+        throw new Error((recJson as { detail?: string }).detail || 'Could not create CIS record');
+      }
+      const recordId = (recJson as { id: string }).id;
+      const patchStatus = cisForm.mode === 'verified' ? 'resolved_verified' : 'resolved_unverified';
+      const patchRes = await fetch(`${CIS_API}/tasks/${modalTask.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: patchStatus, cis_record_id: recordId, payer_label: name }),
+      });
+      if (!patchRes.ok) {
+        const pj = await patchRes.json().catch(() => ({}));
+        throw new Error((pj as { detail?: string }).detail || 'Could not close CIS task');
+      }
+      await reloadCisTasks();
+      closeCisModal();
+    } catch (e) {
+      setCisModalError(e instanceof Error ? e.message : 'Failed');
+    } finally {
+      setCisResolveBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!accountId) return;
@@ -200,7 +480,6 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
           return { id: t.id, category: null };
         })
       );
-      // Apply suggestions back to state
       setTransactions((prev) =>
         prev.map((t) => {
           const hit = results.find((r) => r.id === t.id);
@@ -226,11 +505,236 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     }
   };
 
-  if (!accountId) return null;
+  const cisBanner = (
+    <div
+      style={{
+        marginBottom: '1rem',
+        padding: '0.75rem 1rem',
+        borderRadius: 10,
+        border: '1px solid rgba(245,158,11,0.35)',
+        background: 'rgba(245,158,11,0.08)',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '0.5rem',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+    >
+      <span style={{ fontSize: '0.88rem' }}>
+        <strong>CIS reviews:</strong>{' '}
+        {cisTasks.length === 0
+          ? 'No open CIS tasks. Scan imports for possible CIS income.'
+          : `${cisTasks.length} open — use Review on the row or resolve below.`}
+      </span>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <button
+          type="button"
+          disabled={cisBusy}
+          onClick={() => void handleCisScan()}
+          style={{
+            padding: '0.35rem 0.85rem',
+            borderRadius: 8,
+            border: '1px solid var(--lp-accent-teal)',
+            background: 'rgba(13,148,136,0.12)',
+            color: 'var(--lp-accent-teal)',
+            fontWeight: 600,
+            fontSize: '0.82rem',
+            cursor: cisBusy ? 'wait' : 'pointer',
+          }}
+        >
+          {cisBusy ? 'Scanning…' : 'Scan for CIS suspects'}
+        </button>
+        <button
+          type="button"
+          disabled={cisZipBusy}
+          onClick={() => void handleCisEvidenceZip()}
+          style={{
+            padding: '0.35rem 0.85rem',
+            borderRadius: 8,
+            border: '1px solid var(--lp-border)',
+            background: 'transparent',
+            color: 'var(--lp-muted)',
+            fontWeight: 600,
+            fontSize: '0.82rem',
+            cursor: cisZipBusy ? 'wait' : 'pointer',
+          }}
+        >
+          {cisZipBusy ? 'ZIP…' : 'Download evidence ZIP'}
+        </button>
+      </div>
+    </div>
+  );
+
+  const cisModal = modalTask && modalTxn && (
+    <div
+      role="dialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(15,23,42,0.55)',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+      }}
+      onClick={cisResolveBusy ? undefined : closeCisModal}
+    >
+      <div
+        style={{
+          background: 'var(--lp-bg-elevated)',
+          borderRadius: 16,
+          maxWidth: 520,
+          width: '100%',
+          padding: '1.5rem',
+          border: '1px solid var(--lp-border)',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.35)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 style={{ marginTop: 0 }}>Confirm CIS</h3>
+        <p style={{ color: 'var(--lp-muted)', fontSize: '0.88rem', lineHeight: 1.5 }}>
+          {modalTxn.date} · {modalTxn.description} ·{' '}
+          <strong>{modalTxn.amount.toFixed(2)} {modalTxn.currency}</strong>
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setCisForm((f) => ({ ...f, mode: 'verified' }))}
+            style={{
+              padding: '0.4rem 0.75rem',
+              borderRadius: 8,
+              border: cisForm.mode === 'verified' ? '2px solid var(--lp-accent-teal)' : '1px solid var(--lp-border)',
+              background: cisForm.mode === 'verified' ? 'rgba(13,148,136,0.15)' : 'transparent',
+              cursor: 'pointer',
+              fontSize: '0.82rem',
+            }}
+          >
+            Statement on file
+          </button>
+          <button
+            type="button"
+            onClick={() => setCisForm((f) => ({ ...f, mode: 'self_attest' }))}
+            style={{
+              padding: '0.4rem 0.75rem',
+              borderRadius: 8,
+              border: cisForm.mode === 'self_attest' ? '2px solid var(--lp-accent-teal)' : '1px solid var(--lp-border)',
+              background: cisForm.mode === 'self_attest' ? 'rgba(13,148,136,0.15)' : 'transparent',
+              cursor: 'pointer',
+              fontSize: '0.82rem',
+            }}
+          >
+            Self-attested (no statement)
+          </button>
+        </div>
+        <label style={{ display: 'block', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+          Contractor / payer name
+          <input
+            className={styles.input}
+            style={{ width: '100%', marginTop: 6 }}
+            value={cisForm.contractorName}
+            onChange={(e) => setCisForm((f) => ({ ...f, contractorName: e.target.value }))}
+          />
+        </label>
+        <label style={{ display: 'block', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+          CIS tax deducted (optional, GBP)
+          <input
+            className={styles.input}
+            type="number"
+            step="0.01"
+            style={{ width: '100%', marginTop: 6 }}
+            value={cisForm.cisDeducted}
+            onChange={(e) => setCisForm((f) => ({ ...f, cisDeducted: e.target.value }))}
+          />
+        </label>
+        {cisForm.mode === 'verified' && (
+          <label style={{ display: 'block', marginBottom: '0.75rem', fontSize: '0.85rem' }}>
+            Document ID (CIS statement already uploaded)
+            <input
+              className={styles.input}
+              style={{ width: '100%', marginTop: 6 }}
+              value={cisForm.documentId}
+              onChange={(e) => setCisForm((f) => ({ ...f, documentId: e.target.value }))}
+              placeholder="UUID from Documents"
+            />
+          </label>
+        )}
+        {cisForm.mode === 'self_attest' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem', fontSize: '0.84rem' }}>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={cisForm.ackUnderstand}
+                onChange={(e) => setCisForm((f) => ({ ...f, ackUnderstand: e.target.checked }))}
+              />
+              <span>I understand HMRC may disallow CIS credits without matching statements.</span>
+            </label>
+            <label style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={cisForm.ackAccuracy}
+                onChange={(e) => setCisForm((f) => ({ ...f, ackAccuracy: e.target.checked }))}
+              />
+              <span>The amounts I enter match my records to the best of my knowledge.</span>
+            </label>
+          </div>
+        )}
+        {cisModalError && <p className={styles.error}>{cisModalError}</p>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={cisResolveBusy}
+            onClick={() => void resolveNotCis()}
+          >
+            Not CIS
+          </button>
+          <button
+            type="button"
+            className={styles.secondaryButton}
+            disabled={cisResolveBusy}
+            onClick={() => void snoozeCisTask()}
+          >
+            Remind in 30 days
+          </button>
+          <button
+            type="button"
+            disabled={cisResolveBusy}
+            onClick={() => void submitCisResolution()}
+            style={{
+              marginLeft: 'auto',
+              padding: '0.5rem 1rem',
+              borderRadius: 8,
+              border: 'none',
+              background: 'var(--lp-accent-teal)',
+              color: '#fff',
+              fontWeight: 700,
+              cursor: cisResolveBusy ? 'wait' : 'pointer',
+            }}
+          >
+            {cisResolveBusy ? 'Saving…' : 'Save & resolve'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (!accountId) {
+    return (
+      <div className={styles.subContainer}>
+        <h2 style={{ marginTop: 0 }}>Recent Transactions</h2>
+        {cisBanner}
+        <p className={styles.emptyState}>Connect a bank account to load transactions for this view.</p>
+        {cisModal}
+      </div>
+    );
+  }
   if (isLoading) {
     return (
       <div className={styles.subContainer}>
         <h2>Recent Transactions</h2>
+        {cisBanner}
         <div className={styles.skeletonTable}>
           {Array.from({ length: 6 }).map((_, index) => (
             <div className={styles.skeletonRow} key={index}>
@@ -240,21 +744,35 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
             </div>
           ))}
         </div>
+        {cisModal}
       </div>
     );
   }
-  if (error) return <p className={styles.error}>{error}</p>;
+  if (error) {
+    return (
+      <div className={styles.subContainer}>
+        <h2>Recent Transactions</h2>
+        {cisBanner}
+        <p className={styles.error}>{error}</p>
+        {cisModal}
+      </div>
+    );
+  }
   if (!transactions.length) {
     return (
       <div className={styles.subContainer}>
         <h2>Recent Transactions</h2>
+        {cisBanner}
         <p className={styles.emptyState}>No transactions available for this connection yet.</p>
+        {cisModal}
       </div>
     );
   }
 
   return (
     <div className={styles.subContainer}>
+      {cisModal}
+      {cisBanner}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
         <h2 style={{ margin: 0 }}>Recent Transactions</h2>
         {transactions.some((t) => !t.category) && (
@@ -272,10 +790,10 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
         )}
       </div>
       <table className={styles.table}>
-        <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th></tr></thead>
+        <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>CIS</th></tr></thead>
         <tbody>
           {transactions.map(t => (
-            <tr key={t.id}>
+            <tr key={t.id} style={openTaskByTxnId.has(t.id) ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
               <td>{t.date}</td>
               <td>{t.description}</td>
               <td className={t.amount > 0 ? styles.positive : styles.negative}>{t.amount.toFixed(2)} {t.currency}</td>
@@ -284,6 +802,44 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
                   <option value="" disabled>Select...</option>
                   {availableCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                 </select>
+              </td>
+              <td>
+                {openTaskByTxnId.has(t.id) ? (
+                  <button
+                    type="button"
+                    onClick={() => setModalTask(openTaskByTxnId.get(t.id)!)}
+                    style={{
+                      padding: '0.25rem 0.6rem',
+                      borderRadius: 8,
+                      border: '1px solid rgba(245,158,11,0.5)',
+                      background: 'rgba(245,158,11,0.12)',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Review
+                  </button>
+                ) : t.amount > 0 ? (
+                  <button
+                    type="button"
+                    disabled={flaggingTxn === t.id}
+                    onClick={() => void flagCisSuspect(t.id)}
+                    style={{
+                      padding: '0.25rem 0.5rem',
+                      borderRadius: 8,
+                      border: '1px solid var(--lp-border)',
+                      background: 'transparent',
+                      fontSize: '0.75rem',
+                      cursor: flaggingTxn === t.id ? 'wait' : 'pointer',
+                      color: 'var(--lp-muted)',
+                    }}
+                  >
+                    {flaggingTxn === t.id ? '…' : 'Flag'}
+                  </button>
+                ) : (
+                  '—'
+                )}
               </td>
             </tr>
           ))}

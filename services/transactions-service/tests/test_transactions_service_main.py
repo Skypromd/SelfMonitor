@@ -1,4 +1,7 @@
 import asyncio
+from datetime import date
+from unittest.mock import AsyncMock
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -27,11 +30,11 @@ AUTH_ALGORITHM = "HS256"
 TEST_USER_ID = "test-user@example.com"
 
 
-def get_auth_headers(user_id: str = TEST_USER_ID) -> dict[str, str]:
+def get_auth_headers(user_id: str = TEST_USER_ID, plan: str = "starter") -> dict[str, str]:
     token = jwt.encode(
         {
             "sub": user_id,
-            "plan": "starter",
+            "plan": plan,
             "bank_connections_limit": 1,
             "transactions_per_month_limit": 500,
             "storage_limit_gb": 2,
@@ -521,3 +524,300 @@ def test_ignore_and_reopen_receipt_draft(db_session):
     restored = client.get("/transactions/receipt-drafts/unmatched", headers=get_auth_headers())
     assert restored.status_code == 200
     assert restored.json()["total"] == 1
+
+
+def _import_cis_suspect_income(db_session) -> tuple[str, str]:
+    account_id = str(uuid.uuid4())
+    today = date.today().isoformat()
+    import_response = client.post(
+        "/import",
+        headers=get_auth_headers(),
+        json={
+            "account_id": account_id,
+            "transactions": [
+                {
+                    "provider_transaction_id": "bank-cis-suspect-1",
+                    "date": today,
+                    "description": "CIS contractor payment gross",
+                    "amount": 2400.0,
+                    "currency": "GBP",
+                }
+            ],
+        },
+    )
+    assert import_response.status_code == 202
+    assert import_response.json()["created_count"] == 1
+    return account_id, today
+
+
+def test_cis_import_triggers_suspect_task(db_session):
+    account_id, _today = _import_cis_suspect_income(db_session)
+    tasks_response = client.get("/cis/tasks?status=open", headers=get_auth_headers())
+    assert tasks_response.status_code == 200
+    tasks = tasks_response.json()
+    assert len(tasks) == 1
+    assert tasks[0]["status"] == "open"
+    assert tasks[0]["suspect_reason"] == "heuristic_income_keyword"
+
+    rows = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers()).json()
+    assert len(rows) == 1
+    assert rows[0]["description"] == "CIS contractor payment gross"
+
+
+def test_cis_dismiss_suspect_task(db_session):
+    _import_cis_suspect_income(db_session)
+    task_id = client.get("/cis/tasks?status=open", headers=get_auth_headers()).json()[0]["id"]
+    patch = client.patch(
+        f"/cis/tasks/{task_id}",
+        headers=get_auth_headers(),
+        json={"status": "dismissed_not_cis"},
+    )
+    assert patch.status_code == 200
+    assert patch.json()["status"] == "dismissed_not_cis"
+    open_tasks = client.get("/cis/tasks?status=open", headers=get_auth_headers()).json()
+    assert open_tasks == []
+
+
+def test_cis_create_list_records(db_session):
+    doc_id = str(uuid.uuid4())
+    create = client.post(
+        "/cis/records",
+        headers=get_auth_headers(),
+        json={
+            "contractor_name": "BuildCo Ltd",
+            "period_start": "2026-04-01",
+            "period_end": "2026-04-30",
+            "gross_total": 5000.0,
+            "materials_total": 0,
+            "cis_deducted_total": 1000.0,
+            "net_paid_total": 4000.0,
+            "evidence_status": "verified_with_statement",
+            "document_id": doc_id,
+            "source": "manual_after_upload",
+            "matched_bank_transaction_ids": [],
+        },
+    )
+    assert create.status_code == 201
+    rid = create.json()["id"]
+    listed = client.get("/cis/records", headers=get_auth_headers())
+    assert listed.status_code == 200
+    assert any(r["id"] == rid for r in listed.json())
+    assert create.json()["contractor_name"] == "BuildCo Ltd"
+
+
+def test_cis_resolve_task_with_self_attested_record(db_session):
+    account_id, _today = _import_cis_suspect_income(db_session)
+    tx = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers()).json()[0]
+    task_id = client.get("/cis/tasks?status=open", headers=get_auth_headers()).json()[0]["id"]
+
+    rec = client.post(
+        "/cis/records",
+        headers=get_auth_headers(),
+        json={
+            "contractor_name": "BuildCo Ltd",
+            "period_start": "2026-04-01",
+            "period_end": "2026-04-30",
+            "gross_total": 3000.0,
+            "materials_total": 0,
+            "cis_deducted_total": 600.0,
+            "net_paid_total": 2400.0,
+            "evidence_status": "self_attested_no_statement",
+            "source": "manual_attested",
+            "matched_bank_transaction_ids": [tx["id"]],
+            "attestation": {
+                "attestation_version": "selfmonitor_cis_v1",
+                "attestation_text": "Test attestation for pytest",
+                "client_context": {"test": True},
+            },
+        },
+    )
+    assert rec.status_code == 201
+    record_id = rec.json()["id"]
+
+    patch = client.patch(
+        f"/cis/tasks/{task_id}",
+        headers=get_auth_headers(),
+        json={
+            "status": "resolved_unverified",
+            "cis_record_id": record_id,
+            "payer_label": "BuildCo Ltd",
+        },
+    )
+    assert patch.status_code == 200
+    data = patch.json()
+    assert data["status"] == "resolved_unverified"
+    assert data["cis_record_id"] == record_id
+
+
+def test_cis_tasks_scan_idempotent_when_task_open(db_session):
+    _import_cis_suspect_income(db_session)
+    first = client.post("/cis/tasks/scan", headers=get_auth_headers())
+    assert first.status_code == 200
+    assert first.json()["new_tasks"] == 0
+    second = client.post("/cis/tasks/scan", headers=get_auth_headers())
+    assert second.status_code == 200
+    assert second.json()["new_tasks"] == 0
+
+
+def test_cis_evidence_pack_zip(db_session):
+    r = client.get("/cis/evidence-pack/zip", headers=get_auth_headers())
+    assert r.status_code == 200
+    assert "zip" in (r.headers.get("content-type") or "").lower() or r.headers.get("content-type") == "application/zip"
+    assert r.content[:2] == b"PK"
+
+
+def test_cis_dismiss_sends_audit_when_compliance_configured(db_session, monkeypatch):
+    monkeypatch.setattr("app.crud_cis.COMPLIANCE_SERVICE_URL", "http://compliance:80")
+    audit = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.crud_cis.post_audit_event", audit)
+    _import_cis_suspect_income(db_session)
+    task_id = client.get("/cis/tasks?status=open", headers=get_auth_headers()).json()[0]["id"]
+    patch = client.patch(
+        f"/cis/tasks/{task_id}",
+        headers=get_auth_headers(),
+        json={"status": "dismissed_not_cis"},
+    )
+    assert patch.status_code == 200
+    audit.assert_awaited()
+    call_kw = audit.await_args.kwargs
+    assert call_kw["action"] == "cis_classified_not_cis"
+    assert call_kw["compliance_base_url"] == "http://compliance:80"
+
+
+def test_cis_refund_tracker_returns_totals(db_session):
+    _import_cis_suspect_income(db_session)
+    r = client.get("/cis/refund-tracker", headers=get_auth_headers())
+    assert r.status_code == 200
+    j = r.json()
+    assert j["schema_version"] == "selfmonitor-cis-refund-tracker-v1"
+    assert j["totals"]["open_tasks"] >= 1
+    assert "by_tax_month" in j
+
+
+def test_cis_verified_reconciliation_needs_review_on_net_mismatch(db_session):
+    account_id, _today = _import_cis_suspect_income(db_session)
+    rows = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers()).json()
+    txn_id = rows[0]["id"]
+    create = client.post(
+        "/cis/records",
+        headers=get_auth_headers(),
+        json={
+            "contractor_name": "BuildCo Ltd",
+            "period_start": "2026-04-01",
+            "period_end": "2026-04-30",
+            "gross_total": 3000.0,
+            "materials_total": 0,
+            "cis_deducted_total": 600.0,
+            "net_paid_total": 80.0,
+            "evidence_status": "verified_with_statement",
+            "document_id": "stmt-1",
+            "source": "manual_attested",
+            "matched_bank_transaction_ids": [txn_id],
+        },
+    )
+    assert create.status_code == 201
+    assert create.json()["reconciliation_status"] == "needs_review"
+
+
+def test_cis_verified_reconciliation_ok_when_net_matches(db_session):
+    account_id, _today = _import_cis_suspect_income(db_session)
+    rows = client.get(f"/accounts/{account_id}/transactions", headers=get_auth_headers()).json()
+    txn_id = rows[0]["id"]
+    create = client.post(
+        "/cis/records",
+        headers=get_auth_headers(),
+        json={
+            "contractor_name": "BuildCo Ltd",
+            "period_start": "2026-04-01",
+            "period_end": "2026-04-30",
+            "gross_total": 3000.0,
+            "materials_total": 0,
+            "cis_deducted_total": 600.0,
+            "net_paid_total": 2400.0,
+            "evidence_status": "verified_with_statement",
+            "document_id": "stmt-1",
+            "source": "manual_attested",
+            "matched_bank_transaction_ids": [txn_id],
+        },
+    )
+    assert create.status_code == 201
+    assert create.json()["reconciliation_status"] == "ok"
+
+
+def test_cis_notification_eligible_throttled_after_mark_sent(db_session):
+    _import_cis_suspect_income(db_session)
+    due = client.get("/cis/reminders/due", headers=get_auth_headers()).json()
+    assert len(due) >= 1
+    tid = due[0]["id"]
+    el1 = client.get("/cis/reminders/notification-eligible", headers=get_auth_headers()).json()
+    assert any(t["id"] == tid for t in el1)
+    m = client.post(f"/cis/reminders/{tid}/mark-sent", headers=get_auth_headers())
+    assert m.status_code == 200
+    el2 = client.get("/cis/reminders/notification-eligible", headers=get_auth_headers()).json()
+    assert not any(t["id"] == tid for t in el2)
+
+
+def test_cis_snooze_rejects_invalid_days(db_session):
+    _import_cis_suspect_income(db_session)
+    tid = client.get("/cis/tasks?status=open", headers=get_auth_headers()).json()[0]["id"]
+    r = client.post(f"/cis/tasks/{tid}/snooze-reminder?days=5", headers=get_auth_headers())
+    assert r.status_code == 400
+
+
+def test_cis_evidence_pack_manifest(db_session):
+    client.post(
+        "/cis/records",
+        headers=get_auth_headers(),
+        json={
+            "contractor_name": "Solo Ltd",
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "gross_total": 100.0,
+            "materials_total": 0,
+            "cis_deducted_total": 20.0,
+            "net_paid_total": 80.0,
+            "evidence_status": "self_attested_no_statement",
+            "source": "manual_attested",
+            "matched_bank_transaction_ids": [],
+            "attestation": {
+                "attestation_version": "v1",
+                "attestation_text": "ack",
+                "client_context": {},
+            },
+        },
+    )
+    r = client.get("/cis/evidence-pack/manifest", headers=get_auth_headers(plan="growth"))
+    assert r.status_code == 200
+    manifest = r.json()["manifest"]
+    assert manifest.get("schema_version") == "selfmonitor-evidence-pack-v1"
+    assert "watermark_unverified_cis" in manifest
+
+
+def test_accountant_delegation_rejects_hmrc_submit(db_session):
+    r = client.post(
+        "/accountant/delegations",
+        headers=get_auth_headers(),
+        json={"accountant_user_id": "accountant@example.com", "can_submit_hmrc": True},
+    )
+    assert r.status_code == 400
+
+
+def test_accountant_delegation_create_list_revoke(db_session):
+    create = client.post(
+        "/accountant/delegations",
+        headers=get_auth_headers(),
+        json={"accountant_user_id": "accountant@example.com", "scopes": ["read_transactions"]},
+    )
+    assert create.status_code == 201
+    did = create.json()["id"]
+    listed = client.get("/accountant/delegations", headers=get_auth_headers())
+    assert listed.status_code == 200
+    assert len(listed.json()) == 1
+    assert listed.json()[0]["can_submit_hmrc"] is False
+
+    delete = client.delete(f"/accountant/delegations/{did}", headers=get_auth_headers())
+    assert delete.status_code == 204
+    assert delete.content == b""
+
+    empty = client.get("/accountant/delegations", headers=get_auth_headers()).json()
+    assert empty == []

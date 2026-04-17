@@ -3,6 +3,7 @@ Simple API Gateway proxy — replaces nginx for local development without Docker
 Listens on port 8000 and routes /api/<service>/ to the correct local port.
 """
 
+import os
 import sys
 
 import httpx
@@ -12,9 +13,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Dev API Gateway", docs_url=None, redoc_url=None)
 
+_cors_raw = os.getenv("PROXY_GATEWAY_CORS_ORIGINS", "").strip()
+if _cors_raw:
+    _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+else:
+    _cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -34,6 +41,7 @@ ROUTES = {
     "/api/billing/": "http://localhost:8016",
     "/api/transactions/": "http://localhost:8003",
     "/api/tax/": "http://localhost:8007",
+    "/api/mtd/": "http://localhost:8022",
     "/api/qna/": "http://localhost:8011",
     "/api/calendar/": "http://localhost:8018",
     "/api/agent/": "http://localhost:8019",

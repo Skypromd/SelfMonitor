@@ -113,7 +113,7 @@
 - [x] Env и двухфазный submit: **`docs/runbooks/HMRC_INTEGRATIONS_ENV.md`**, **`HMRC_REQUIRE_EXPLICIT_CONFIRM`**, draft/confirm в **integrations-service**.
 - [x] Идемпотентность токена подтверждения (повторное использование →403); audit полей policy version в SQLite.
 - [x] **libs/shared_mtd:** единая форма тела period summary для **mtd-agent** (согласована с полями turnover / allowable expenses); в **mtd-agent** зафиксировано, что прод-поток — **tax-engine + integrations-service**.
-- [ ] **tax-engine** + **mtd-agent:** один сквозной API-сценарий подготовки сумм (без расхождения логики расчёта между сервисами) — доработка кода.
+- [x] **tax-engine** + **mtd-agent:** подготовка сумм без дублирования расчёта — `POST /mtd/prepare` в **tax-engine** (те же данные, что `/calculate`, плюс `hmrc_period_summary_json` и при необходимости `integrations_quarterly_payload`); **mtd-agent** проксирует с тем же JWT (`TAX_ENGINE_URL` / `TAX_ENGINE_SERVICE_URL` в compose). Осталось: задействовать в UI и E2E.
 - [ ] E2E против **HMRC test-api** в CI с секретами.
 
 ---

@@ -1,5 +1,5 @@
 import { Copy, Gift, TrendingUp, Users } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const REFERRAL_SERVICE_URL =
@@ -46,7 +46,10 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
   const [validateMsg, setValidateMsg] = useState('');
   const [validating, setValidating] = useState(false);
 
-  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const headers = useMemo(
+    () => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }),
+    [token],
+  );
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -66,7 +69,7 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [headers]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

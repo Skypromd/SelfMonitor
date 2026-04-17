@@ -1,5 +1,6 @@
 """
-HMRC Fraud Prevention Headers — mandatory for all MTD API calls.
+Legacy stub — prefer ``hmrc_client_context.build_fraud_prevention_headers`` (web vs mobile connection methods).
+
 Spec: https://developer.service.hmrc.gov.uk/guides/fraud-prevention/
 """
 import datetime

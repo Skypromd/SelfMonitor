@@ -14,6 +14,7 @@ import Badge from '../components/Badge';
 import FadeInView from '../components/FadeInView';
 import { apiRequest } from '../services/api';
 import { toCsv } from '../utils/csv';
+import { buildMobileHmrcFraudClientContext } from '../utils/hmrcFraudContext';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
 import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
@@ -119,6 +120,7 @@ export default function TaxSummaryScreen() {
     setError('');
     setIsSubmitting(true);
     try {
+      const hmrcFraudClientContext = await buildMobileHmrcFraudClientContext();
       const response = await apiRequest('/tax/calculate-and-submit', {
         method: 'POST',
         token,
@@ -126,6 +128,7 @@ export default function TaxSummaryScreen() {
           start_date: startDate,
           end_date: endDate,
           jurisdiction: 'UK',
+          hmrc_fraud_client_context: hmrcFraudClientContext,
         }),
       });
       if (response.status === 402) {

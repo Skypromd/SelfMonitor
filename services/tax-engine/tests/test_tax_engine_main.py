@@ -139,6 +139,70 @@ def test_calculate_tax_with_mocked_transactions():
     assert isinstance(data["breakdown"]["estimate_disclaimers"], list)
 
 
+def test_cis_legacy_single_field_treated_as_unverified():
+    mock_transactions = [
+        {"date": "2023-05-10", "amount": 3000.0, "category": "income"},
+    ]
+    body = {
+        "start_date": "2023-01-01",
+        "end_date": "2023-12-31",
+        "jurisdiction": "UK",
+        "cis_suffered_in_period_gbp": 500.0,
+    }
+    with _httpx_get_router(transactions=mock_transactions, regulatory={}):
+        response = client.post("/calculate", headers=get_auth_headers(), json=body)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cis_tax_credit_self_attested_gbp"] == 500.0
+    assert data["cis_tax_credit_verified_gbp"] == 0.0
+    assert data["cis_hmrc_submit_requires_unverified_ack"] is True
+    assert data["breakdown"]["cis_credits_breakdown"]["labels"] == ["UNVERIFIED"]
+
+
+def test_cis_split_respects_verified_and_self_attested():
+    mock_transactions = [
+        {"date": "2023-05-10", "amount": 10000.0, "category": "income"},
+    ]
+    body = {
+        "start_date": "2023-01-01",
+        "end_date": "2023-12-31",
+        "jurisdiction": "UK",
+        "cis_tax_credit_verified_gbp": 100.0,
+        "cis_tax_credit_self_attested_gbp": 200.0,
+        "cis_suffered_in_period_gbp": 999.0,
+    }
+    with _httpx_get_router(transactions=mock_transactions, regulatory={}):
+        response = client.post("/calculate", headers=get_auth_headers(), json=body)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["cis_tax_credit_verified_gbp"] == 100.0
+    assert data["cis_tax_credit_self_attested_gbp"] == 200.0
+    assert data["cis_tax_credit_applied_gbp"] == 300.0
+    assert data["breakdown"]["cis_credits_breakdown"]["legacy_cis_field_ignored_use_split_inputs"] is True
+
+
+def test_mtd_prepare_aligns_with_calculate_and_includes_hmrc_shape():
+    mock_transactions = [
+        {"date": "2023-05-10", "amount": 3000.0, "category": "income"},
+        {"date": "2023-06-15", "amount": -150.0, "category": "transport"},
+        {"date": "2023-07-20", "amount": -80.0, "category": "groceries"},
+        {"date": "2023-08-01", "amount": -50.0, "category": "office_supplies"},
+    ]
+    body = {"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"}
+    with _httpx_get_router(transactions=mock_transactions, regulatory={}):
+        calc = client.post("/calculate", headers=get_auth_headers(), json=body)
+        prep = client.post("/mtd/prepare", headers=get_auth_headers(), json=body)
+    assert calc.status_code == 200
+    assert prep.status_code == 200
+    cj, pj = calc.json(), prep.json()
+    assert pj["calculation"]["total_income"] == cj["total_income"]
+    assert pj["calculation"]["estimated_tax_due"] == cj["estimated_tax_due"]
+    hmj = pj["hmrc_period_summary_json"]
+    assert hmj["periodIncome"]["turnover"] == cj["total_income"]
+    assert hmj["periodExpenses"]["allowableExpenses"] == cj["total_expenses"]
+    assert pj["integrations_quarterly_payload"] is None
+
+
 def test_calculate_tax_includes_class4_nic_for_higher_profit():
     mock_transactions = [
         {"date": "2023-05-10", "amount": 70000.0, "category": "income"},
