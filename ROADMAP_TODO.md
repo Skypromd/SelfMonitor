@@ -129,9 +129,9 @@
   - [x] Halifax-style: 2 года, retained profit note
   - [x] Nationwide-style: 2 года, 4.5×
   - [x] NatWest-style: 2 года, 4×, contractors note
-  - [ ] Specialist: Kensington, Pepper Money, Together (adverse credit)
-- [ ] Автоматический matching: профиль юзера → подходящие банки с % вероятности одобрения
-- [ ] Фильтры: deposit %, income type, credit history, property type
+  - [x] Specialist (illustrative): Kensington, Pepper Money, Together — в `POST /mortgage/affordability`
+- [x] Иллюстративный **matching**: `credit_band` (clean / minor / adverse), `years_trading`, авто **deposit %** → `illustrative_fit_score` + причины, сортировка сценариев (не % одобрения)
+- [ ] Фильтры: property type, детальный credit file / CCJ (расширение)
 - [ ] Обновление данных кредиторов каждый квартал
 
 ### 1.5.4 Document Auto-fill

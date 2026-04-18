@@ -1449,6 +1449,13 @@ class MortgageAffordabilityRequest(BaseModel):
     term_years: int = Field(default=30, ge=5, le=40)
     first_time_buyer: bool = False
     additional_property: bool = False
+    credit_band: Literal["clean", "minor", "adverse"] = "clean"
+    years_trading: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=40,
+        description="Full years of self-employment / accounts (for illustrative lender fit only).",
+    )
 
 
 class MortgageLenderScenarioOut(BaseModel):
@@ -1457,12 +1464,18 @@ class MortgageLenderScenarioOut(BaseModel):
     min_accounts_years: int
     income_multiple: float
     min_deposit_pct: int
+    segment: str = "mainstream"
     notes: str
     max_loan_from_income_gbp: float
+    illustrative_fit_score: float
+    illustrative_fit_reasons: list[str]
 
 
 class MortgageAffordabilityResponse(BaseModel):
     employment: str
+    credit_band: str
+    years_trading: Optional[int] = None
+    deposit_pct_computed: Optional[float] = None
     baseline_income_multiple: float
     employed_planning_multiple: float
     self_employed_planning_multiple_range: list[float]
@@ -1810,6 +1823,8 @@ async def mortgage_affordability_calculator(
             term_years=request.term_years,
             first_time_buyer=request.first_time_buyer,
             additional_property=request.additional_property,
+            credit_band=request.credit_band,
+            years_trading=request.years_trading,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc

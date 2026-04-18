@@ -3,6 +3,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import pytest
+
 from app.mortgage_affordability import (
     build_affordability_result,
     monthly_repayment_gbp,
@@ -33,7 +35,40 @@ def test_affordability_max_loan_and_stress():
     assert r["loan_amount_for_payment_gbp"] == 270_000
     assert r["monthly_payment_if_rates_up_3pp_gbp"] > r["monthly_payment_gbp"]
     assert r["stamp_duty_england_gbp"] is not None
-    assert len(r["lender_scenarios"]) >= 3
+    assert len(r["lender_scenarios"]) >= 8
+    assert "illustrative_fit_score" in r["lender_scenarios"][0]
+
+
+def test_adverse_credit_prefers_specialist_fit_over_mainstream():
+    r = build_affordability_result(
+        annual_income_gbp=45_000,
+        employment="self_employed",
+        property_price_gbp=220_000,
+        deposit_gbp=44_000,
+        annual_interest_rate_pct=5.5,
+        term_years=30,
+        first_time_buyer=False,
+        additional_property=False,
+        credit_band="adverse",
+        years_trading=3,
+    )
+    by_id = {x["id"]: x for x in r["lender_scenarios"]}
+    assert by_id["pepper_money"]["illustrative_fit_score"] > by_id["barclays"]["illustrative_fit_score"]
+
+
+def test_years_trading_validation():
+    with pytest.raises(ValueError, match="years_trading"):
+        build_affordability_result(
+            annual_income_gbp=40_000,
+            employment="employed",
+            property_price_gbp=None,
+            deposit_gbp=None,
+            annual_interest_rate_pct=5.0,
+            term_years=25,
+            first_time_buyer=False,
+            additional_property=False,
+            years_trading=50,
+        )
 
 
 def test_additional_property_surcharge():

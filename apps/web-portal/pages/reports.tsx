@@ -148,18 +148,23 @@ type MortgageAffordabilityResponse = {
   additional_property_surcharge_applied: boolean;
   annual_interest_rate_pct: number;
   baseline_income_multiple: number;
+  credit_band: string;
+  deposit_pct_computed: number | null;
   disclaimer: string;
   employed_planning_multiple: number;
   employment: string;
   first_time_buyer: boolean;
   lender_scenarios: Array<{
     id: string;
+    illustrative_fit_reasons: string[];
+    illustrative_fit_score: number;
     income_multiple: number;
     label: string;
     max_loan_from_income_gbp: number;
     min_accounts_years: number;
     min_deposit_pct: number;
     notes: string;
+    segment: string;
   }>;
   loan_amount_for_payment_gbp: number | null;
   ltv_pct: number | null;
@@ -172,6 +177,7 @@ type MortgageAffordabilityResponse = {
   stress_rate_add_pct_points: number;
   stressed_annual_interest_rate_pct: number;
   term_years: number;
+  years_trading: number | null;
 };
 
 const EMPLOYMENT_PROFILE_OPTIONS = [
@@ -215,6 +221,8 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [affordEmployment, setAffordEmployment] = useState<'employed' | 'self_employed'>('self_employed');
   const [affordFtb, setAffordFtb] = useState(false);
   const [affordAdditional, setAffordAdditional] = useState(false);
+  const [affordCredit, setAffordCredit] = useState<'clean' | 'minor' | 'adverse'>('clean');
+  const [affordYearsTrading, setAffordYearsTrading] = useState('');
   const [affordResult, setAffordResult] = useState<MortgageAffordabilityResponse | null>(null);
   const [affordLoading, setAffordLoading] = useState(false);
   const [affordError, setAffordError] = useState('');
@@ -295,6 +303,8 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     const depRaw = affordDeposit.trim() ? parseFloat(affordDeposit.replace(/,/g, '')) : NaN;
     const rate = parseFloat(affordRate) || 5;
     const term = parseInt(affordTerm, 10) || 30;
+    const ytRaw = affordYearsTrading.trim() ? parseInt(affordYearsTrading, 10) : NaN;
+    const yearsTrading = !Number.isNaN(ytRaw) && ytRaw >= 0 ? ytRaw : null;
     setAffordLoading(true);
     try {
       const res = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/affordability`, {
@@ -309,6 +319,8 @@ export default function ReportsPage({ token }: ReportsPageProps) {
           term_years: term,
           first_time_buyer: affordFtb,
           additional_property: affordAdditional,
+          credit_band: affordCredit,
+          years_trading: yearsTrading,
         }),
       });
       const payload = (await res.json()) as MortgageAffordabilityResponse | { detail?: string };
@@ -636,6 +648,29 @@ export default function ReportsPage({ token }: ReportsPageProps) {
             />
           </label>
           <label className={styles.filterField}>
+            <span>Credit (illustrative fit)</span>
+            <select
+              className={styles.categorySelect}
+              value={affordCredit}
+              onChange={(e) => setAffordCredit(e.target.value as 'clean' | 'minor' | 'adverse')}
+            >
+              <option value="clean">Clean</option>
+              <option value="minor">Minor issues</option>
+              <option value="adverse">Adverse / complex</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Years trading (optional)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="numeric"
+              value={affordYearsTrading}
+              onChange={(e) => setAffordYearsTrading(e.target.value)}
+              placeholder="e.g. 2"
+            />
+          </label>
+          <label className={styles.filterField}>
             <span>SDLT / buyer</span>
             <label className={styles.checkboxPill}>
               <input checked={affordFtb} onChange={(e) => setAffordFtb(e.target.checked)} type="checkbox" />
@@ -687,24 +722,35 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                 <li>Stamp duty (England, illustrative): £{formatNumber(affordResult.stamp_duty_england_gbp)}</li>
               )}
             </ul>
-            <h4>Named lender scenarios (illustrative caps from income)</h4>
+            <h4>Lender scenarios (sorted by illustrative fit — not approval %)</h4>
             <div style={{ overflowX: 'auto' }}>
               <table className={styles.table}>
                 <thead>
                   <tr>
+                    <th>Fit</th>
                     <th>Lender</th>
+                    <th>Segment</th>
                     <th>× income</th>
                     <th>Max loan</th>
-                    <th>Notes</th>
+                    <th>Why</th>
                   </tr>
                 </thead>
                 <tbody>
                   {affordResult.lender_scenarios.map((row) => (
                     <tr key={row.id}>
+                      <td>{row.illustrative_fit_score}</td>
                       <td>{row.label}</td>
+                      <td style={{ fontSize: '0.82rem' }}>{row.segment}</td>
                       <td>{row.income_multiple}</td>
                       <td>£{formatNumber(row.max_loan_from_income_gbp)}</td>
-                      <td style={{ fontSize: '0.82rem' }}>{row.notes}</td>
+                      <td style={{ fontSize: '0.8rem' }}>
+                        {row.notes}
+                        {row.illustrative_fit_reasons?.length ? (
+                          <div style={{ marginTop: 4, color: 'var(--lp-text-muted)' }}>
+                            {row.illustrative_fit_reasons.join(' ')}
+                          </div>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
