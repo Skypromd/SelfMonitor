@@ -67,8 +67,8 @@ export default function ResetPasswordPage() {
   return (
     <>
       <Head>
-        <title>Reset Password — SelfMonitor</title>
-        <meta name="description" content="Set a new password for your SelfMonitor account" />
+        <title>Reset Password — MyNetTax</title>
+        <meta name="description" content="Set a new password for your MyNetTax account" />
       </Head>
       <div className={styles.container}>
         <main className={styles.main} style={{ maxWidth: 440 }}>
@@ -81,7 +81,7 @@ export default function ResetPasswordPage() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '0.75rem', fontWeight: 800, color: '#fff',
             }}>SM</span>
-            <span style={{ fontWeight: 700, fontSize: '1.15rem', color: '#f1f5f9' }}>SelfMonitor</span>
+            <span style={{ fontWeight: 700, fontSize: '1.15rem', color: '#f1f5f9' }}>MyNetTax</span>
           </div>
 
           {step === 'invalid' && (

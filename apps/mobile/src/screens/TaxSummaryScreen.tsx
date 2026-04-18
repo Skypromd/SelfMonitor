@@ -40,6 +40,11 @@ type TaxResult = {
   class4_nic: number;
   estimated_tax_due: number;
   summary_by_category: TaxSummaryItem[];
+  mtd_obligation?: {
+    reporting_required: boolean;
+    next_deadline?: string | null;
+    quarterly_updates?: { quarter: string; due_date: string; status: string }[];
+  };
 };
 
 const formatDate = (date: Date) => date.toISOString().slice(0, 10);
@@ -237,6 +242,39 @@ export default function TaxSummaryScreen() {
           </Card>
         </FadeInView>
       ) : null}
+
+      {result?.mtd_obligation?.reporting_required && result.mtd_obligation.quarterly_updates?.length ? (
+        <FadeInView delay={200}>
+          <Card>
+            <Text style={styles.cardTitle}>{t('tax.mtd_section_title')}</Text>
+            {result.mtd_obligation.next_deadline ? (
+              <InfoRow
+                label={t('tax.mtd_next_label')}
+                value={new Date(`${result.mtd_obligation.next_deadline}T12:00:00`).toLocaleDateString('en-GB', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                })}
+              />
+            ) : null}
+            {result.mtd_obligation.quarterly_updates.map((q) => (
+              <View key={q.quarter} style={styles.mtdQuarterRow}>
+                <View style={styles.mtdQuarterText}>
+                  <Text style={styles.mtdQuarterLabel}>{q.quarter}</Text>
+                  <Text style={styles.mtdQuarterDue}>
+                    {t('tax.mtd_quarter_due')} {q.due_date}
+                  </Text>
+                </View>
+                <Badge
+                  label={q.status.replace('_', ' ')}
+                  tone={q.status === 'overdue' ? 'danger' : q.status === 'due_now' ? 'warning' : 'info'}
+                />
+              </View>
+            ))}
+            <Text style={styles.mtdFooter}>{t('tax.mtd_footer')}</Text>
+          </Card>
+        </FadeInView>
+      ) : null}
     </Screen>
   );
 }
@@ -277,5 +315,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+  },
+  mtdQuarterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  mtdQuarterText: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  mtdQuarterLabel: {
+    fontWeight: '700',
+    color: colors.textPrimary,
+    fontSize: 14,
+  },
+  mtdQuarterDue: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  mtdFooter: {
+    marginTop: spacing.md,
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 18,
   },
 });

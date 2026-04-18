@@ -282,7 +282,11 @@ export default function TransactionsScreen() {
       prev.map((txn) => txn.id === selectedTransaction.id ? { ...txn, category: newCategory } : txn)
     );
     if (isOffline) {
-      const count = await enqueueCategoryUpdate(selectedTransaction.id, newCategory);
+      const count = await enqueueCategoryUpdate(
+        selectedTransaction.id,
+        newCategory,
+        selectedTransaction.description
+      );
       setQueuedCount(count);
       setCategoryModalOpen(false);
       return;
@@ -294,9 +298,21 @@ export default function TransactionsScreen() {
         body: JSON.stringify({ category: newCategory }),
       });
       if (!response.ok) throw new Error();
+      void apiRequest('/categorization/learn', {
+        method: 'POST',
+        token,
+        body: JSON.stringify({
+          description: selectedTransaction.description,
+          category: newCategory,
+        }),
+      });
       setCategoryModalOpen(false);
     } catch {
-      const count = await enqueueCategoryUpdate(selectedTransaction.id, newCategory);
+      const count = await enqueueCategoryUpdate(
+        selectedTransaction.id,
+        newCategory,
+        selectedTransaction.description
+      );
       setQueuedCount(count);
       setCategoryModalOpen(false);
     }

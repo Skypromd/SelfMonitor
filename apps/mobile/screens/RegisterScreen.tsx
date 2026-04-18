@@ -112,7 +112,7 @@ export default function RegisterScreen() {
             <View style={styles.logoCircle}>
               <Text style={styles.logoEmoji}>💎</Text>
             </View>
-            <Text style={styles.brandName}>SelfMonitor</Text>
+            <Text style={styles.brandName}>MT</Text>
             <Text style={styles.headline}>Start your free trial</Text>
             <Text style={styles.tagline}>
               Financial tools built for the self-employed

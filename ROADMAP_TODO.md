@@ -1,4 +1,4 @@
-# SelfMonitor — Roadmap & Checklist
+# MyNetTax — Roadmap & Checklist
 
 ## Текущий статус проекта
 
@@ -56,39 +56,40 @@
 - [x] Сверка statement ↔ bank: поля `reconciliation_status`, `bank_net_observed_gbp` на `cis_records`; **needs_review** при расхождении с `net_paid_total`
 
 ### 1.1 Open Banking — автоимпорт транзакций из банков
-- [ ] Зарегистрироваться на TrueLayer (https://truelayer.com) — бесплатный sandbox
-- [ ] Заменить mock в banking-connector на TrueLayer API
-- [ ] Реализовать OAuth2 flow: юзер авторизует банк → получаем access_token
-- [ ] Автоимпорт транзакций за последние 90 дней
-- [ ] **Prod:** только sync по кнопке пользователя (см. `AGENTS.md`); фоновый авто-sync не включать
-- [ ] UI: страница "Connect your bank" с логотипами банков
-- [ ] Тестирование: sandbox → staging → production
+- [x] **Провайдер:** Salt Edge — основной (`BANKING_OPEN_BANKING_PROVIDER=saltedge`, `POST /connections/initiate`, Connect session → callback с `connection_id`)
+- [x] OAuth / consent: Salt Edge Connect (выбор банка на стороне Salt Edge); TrueLayer — запасной путь в коде для демо без ключей Salt Edge
+- [x] Импорт транзакций при callback + окно до **90 дней** где применимо (`banking-connector`)
+- [x] **Prod:** только sync по кнопке (`AGENTS.md`); фоновый авто-sync не включать
+- [x] UI: `/connect-bank` — провайдеры с `logo_url`, бейдж Recommended для Salt Edge, сетка UK-банков с иконками; мобилка — чипы провайдеров из API
+- [ ] Регистрация и ключи Salt Edge в вашем `.env` / прод; fake bank → staging → production
+- [ ] Опционально: TrueLayer sandbox только для нагрузочного теста API (не обязательно для продукта)
 
 ### 1.2 Smart Auto-categorization
-- [ ] Создать таблицу правил: merchant name → категория (Tesco → Groceries, Shell → Fuel)
-- [ ] Добавить 200+ правил для UK (супермаркеты, заправки, Amazon, Uber)
-- [ ] Fallback на categorization-service если правило не найдено
-- [ ] UI: юзер может изменить категорию → система запоминает на будущее
+- [ ] Создать таблицу правил: merchant name → категория (Tesco → Groceries, Shell → Fuel) — сейчас словарь в `categorization-service` + пер-user JSON learn
+- [x] 200+ строк merchant-паттернов UK + расширяемый список; Amazon/eBay → `cost_of_goods`, банки → `bank_charges`, доставка еды и т.д.
+- [x] Fallback: `categorization-service` (`/categorize`, LLM при наличии ключа)
+- [x] UI: смена категории → `POST /categorization/learn` (web + mobile; mobile также после flush офлайн-очереди)
 - [ ] Подготовить данные для ML модели (фаза 2)
 
 ### 1.3 Receipt OCR
-- [ ] Заменить LocalStack Textract mock на реальный AWS Textract
-- [ ] Парсить: дата, сумма, merchant name, VAT amount
-- [ ] Автосоздание транзакции из распознанного чека
-- [ ] UI: кнопка "Scan receipt" → камера → результат
-- [ ] Мобильное приложение: нативная камера через Expo
+- [x] Заменить LocalStack Textract mock на реальный AWS Textract — конфиг в `.env.example` (без endpoint URL + ключи/роль; `DOCUMENTS_OCR_TEXTRACT_API=expense`)
+- [x] Парсить: дата, сумма, merchant name, VAT amount (web review + Textract detect/expense; prod — `DOCUMENTS_OCR_TEXTRACT_API=expense`)
+- [x] Автосоздание транзакции из распознанного чека — Celery после OCR + создание черновика при подтверждении/исправлении ревью, если не было `receipt_draft_transaction_id`; VAT в описании черновика
+- [x] UI: кнопка "Scan receipt" → камера → результат — `documents.tsx` (`capture="environment"`, загрузка как раньше)
+- [x] Мобильное приложение: нативная камера через Expo — `ReceiptScanScreen` (`expo-image-picker`, задняя камера, VAT в сохранении)
 
 ### 1.4 Push-уведомления о дедлайнах
-- [ ] Email-уведомления: за 14, 7, 3, 1 день до MTD дедлайна
-- [ ] Push (Expo Push Notifications) для мобильного приложения
-- [ ] In-app banner на дашборде: "Quarterly submission due in 5 days"
-- [ ] Auto-reminder если квартальная подача не сделана за 24 часа до дедлайна
+- [x] Email-уведомления: за 14, 7, 3, 1 день до MTD дедлайна — `finops-monitor` APScheduler 08:05 UTC, SMTP + `GET /internal/reminder-recipients` в auth-service
+- [x] Push (Expo Push Notifications) для мобильного приложения — регистрация `POST /finops/mtd/me/expo-push-token` (Redis), те же окна что и email; `syncMtdPush` после логина; production: EAS `projectId` в `app.json` / `extra.eas.projectId`
+- [x] In-app карточка MTD на дашборде (web + mobile) + дедлайны кварталов в Deadlines / Tax summary
+- [x] Auto-reminder если квартальная подача не сделана за 24 часа до дедлайна — письмо «urgent-pending» при `days_left <= 1` и статусе квартала ≠ `submitted` (дедуп Redis)
 
 ### 1.5 Экспорт CSV/Excel
-- [ ] Transactions → CSV/Excel с фильтрами (даты, категории)
-- [ ] Invoices → CSV (список) + PDF (каждый инвойс)
-- [ ] Tax report → PDF summary для бухгалтера
-- [ ] HMRC-compatible format для Self Assessment
+- [x] Transactions → CSV с фильтрами (даты, категории) — web `transactions.tsx`
+- [x] Invoices → CSV списка (пагинация) — web; PDF по каждому инвойсу — по-прежнему отдельно
+- [x] Tax report → **PDF summary для бухгалтера** — `tax-preparation.tsx` и `submission.tsx` (jsPDF + таблицы категорий / MTD)
+- [x] **Bookkeeping CSV** — колонки Income_gbp / Expense_gbp для Excel (не файл отправки в HMRC)
+- [ ] Строго «HMRC-compatible» выгрузка под конкретный продукт отправки — отдельный формат при необходимости
 
 ### 1.6 Мобильное приложение в App Store / Google Play
 - [ ] Apple Developer Account ($99/год)
@@ -119,7 +120,7 @@
 - [ ] Monthly payment calculator: variable vs fixed, разные сроки (25/30/35 лет)
 - [ ] Stress test: "Если ставка вырастет на 3%, ваш платёж будет £X" (HMRC требование)
 - [ ] Stamp Duty calculator: first-time buyer relief, standard rates, surcharges
-- [ ] Input: доход автоматически из данных SelfMonitor (не вбивать руками)
+- [ ] Input: доход автоматически из данных MyNetTax (не вбивать руками)
 
 ### 1.5.3 Lender Comparison (реальные банки)
 - [ ] База кредиторов с условиями для self-employed:
@@ -257,7 +258,7 @@
 
 ### 4.2 Business bank account
 - [ ] Партнёрство с Tide или Starling
-- [ ] Embedded banking: открыть счёт прямо из SelfMonitor
+- [ ] Embedded banking: открыть счёт прямо из MyNetTax
 - [ ] Автоматический sync без Open Banking OAuth
 - [ ] Revenue: £2-5/мес revenue share
 
@@ -376,4 +377,4 @@ Break-even: ~30-45 платящих юзеров на Starter (£9/мес)
 ---
 
 *Последнее обновление: 2026-04-17*
-*Автор: SelfMonitor Development Team*
+*Автор: MyNetTax Development Team*

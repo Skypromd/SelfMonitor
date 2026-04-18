@@ -22,6 +22,7 @@ type ReceiptResult = {
   documentId?: string;
   filename?: string;
   category?: string;
+  vatAmount?: number;
 };
 
 function AnimatedPressable({
@@ -95,6 +96,7 @@ export default function ReceiptScanScreen() {
     const picked = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.8,
+      cameraType: ImagePicker.CameraType.back,
     });
     if (!picked.canceled && picked.assets[0]) {
       setImageUri(picked.assets[0].uri);
@@ -149,6 +151,9 @@ export default function ReceiptScanScreen() {
         }
       }
 
+      const vatRaw = extracted?.vat_amount_gbp;
+      const vatAmount =
+        typeof vatRaw === 'number' && vatRaw > 0 ? vatRaw : undefined;
       setResult({
         amount: extracted?.total_amount ?? 0,
         merchant: extracted?.vendor_name ?? '',
@@ -156,6 +161,7 @@ export default function ReceiptScanScreen() {
         documentId: docId,
         filename,
         category: extracted?.suggested_category ?? 'office_supplies',
+        vatAmount,
       });
     } catch (err: any) {
       Alert.alert('Error', err?.message ?? 'Failed to process receipt');
@@ -176,17 +182,21 @@ export default function ReceiptScanScreen() {
     }
     setSaving(true);
     try {
+      const body: Record<string, unknown> = {
+        document_id: result.documentId,
+        filename: result.filename ?? 'receipt.jpg',
+        transaction_date: result.date,
+        total_amount: result.amount,
+        currency: 'GBP',
+        vendor_name: result.merchant || undefined,
+        suggested_category: result.category || 'office_supplies',
+      };
+      if (result.vatAmount != null && result.vatAmount > 0) {
+        body.vat_amount_gbp = result.vatAmount;
+      }
       const res = await apiCall('/transactions/receipt-drafts', {
         method: 'POST',
-        body: JSON.stringify({
-          document_id: result.documentId,
-          filename: result.filename ?? 'receipt.jpg',
-          transaction_date: result.date,
-          total_amount: result.amount,
-          currency: 'GBP',
-          vendor_name: result.merchant || undefined,
-          suggested_category: result.category || 'office_supplies',
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -277,6 +287,12 @@ export default function ReceiptScanScreen() {
                 <Text style={styles.resultLabel}>Merchant</Text>
                 <Text style={styles.resultValue}>{result.merchant}</Text>
               </View>
+              {result.vatAmount != null && result.vatAmount > 0 ? (
+                <View style={styles.resultRow}>
+                  <Text style={styles.resultLabel}>VAT</Text>
+                  <Text style={styles.resultValue}>£{result.vatAmount.toFixed(2)}</Text>
+                </View>
+              ) : null}
               <View style={[styles.resultRow, { borderBottomWidth: 0 }]}>
                 <Text style={styles.resultLabel}>Date</Text>
                 <Text style={styles.resultValue}>{result.date}</Text>

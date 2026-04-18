@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from 'react';
+import { downloadAccountantTaxSummaryPdf, type AccountantPdfCalc } from '../lib/taxAccountantPdf';
 import styles from '../styles/Home.module.css';
 
 const TAX_ENGINE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
+const TXN_SERVICE_URL = process.env.NEXT_PUBLIC_TRANSACTIONS_SERVICE_URL || '/api/transactions';
 
 type Props = { token: string };
 
@@ -36,6 +38,7 @@ type TaxCalcResult = {
     tax_year_end: string;
     next_deadline: string | null;
     policy_code: string;
+    qualifying_income_estimate?: number;
     quarterly_updates: { quarter: string; due_date: string; status: string }[];
   };
   summary_by_category: { category: string; total_amount: number; taxable_amount: number }[];
@@ -61,6 +64,124 @@ const fmt = (n: number) =>
     : `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
+
+function escapeSubmissionCsvField(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function downloadSubmissionCsv(filename: string, lines: string[]): void {
+  const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildSubmissionSummaryLines(yearLabel: string, calc: TaxCalcResult): string[] {
+  const mtd = calc.mtd_obligation;
+  const lines: string[] = [
+    'field,value',
+    `tax_year,${escapeSubmissionCsvField(yearLabel)}`,
+    `period_start,${escapeSubmissionCsvField(calc.start_date)}`,
+    `period_end,${escapeSubmissionCsvField(calc.end_date)}`,
+    `disclaimer,${escapeSubmissionCsvField('SelfMonitor export for accountant review. Not an HMRC submission file.')}`,
+    `total_income,${calc.total_income}`,
+    `total_expenses,${calc.total_expenses}`,
+    `taxable_profit,${calc.taxable_profit}`,
+    `personal_allowance_used,${calc.personal_allowance_used}`,
+    `pa_taper_reduction,${calc.pa_taper_reduction}`,
+    `taxable_amount_after_allowance,${calc.taxable_amount_after_allowance}`,
+    `basic_rate_tax,${calc.basic_rate_tax}`,
+    `higher_rate_tax,${calc.higher_rate_tax}`,
+    `additional_rate_tax,${calc.additional_rate_tax}`,
+    `estimated_income_tax_due,${calc.estimated_income_tax_due}`,
+    `estimated_class2_nic_due,${calc.estimated_class2_nic_due}`,
+    `estimated_class4_nic_due,${calc.estimated_class4_nic_due}`,
+    `estimated_tax_due,${calc.estimated_tax_due}`,
+    `payment_on_account_jan,${calc.payment_on_account_jan}`,
+    `payment_on_account_jul,${calc.payment_on_account_jul}`,
+    `cis_tax_credit_verified_gbp,${calc.cis_tax_credit_verified_gbp ?? 0}`,
+    `cis_tax_credit_self_attested_gbp,${calc.cis_tax_credit_self_attested_gbp ?? 0}`,
+    `mtd_reporting_required,${mtd.reporting_required}`,
+    `mtd_qualifying_income_estimate,${mtd.qualifying_income_estimate ?? ''}`,
+    `mtd_next_deadline,${escapeSubmissionCsvField(mtd.next_deadline ?? '')}`,
+  ];
+  lines.push('');
+  lines.push('category,total_amount,taxable_amount');
+  for (const row of calc.summary_by_category) {
+    lines.push(
+      [escapeSubmissionCsvField(row.category), String(row.total_amount), String(row.taxable_amount)].join(','),
+    );
+  }
+  if (mtd.quarterly_updates?.length) {
+    lines.push('');
+    lines.push('mtd_quarter,due_date,status');
+    for (const q of mtd.quarterly_updates) {
+      lines.push(
+        [escapeSubmissionCsvField(q.quarter), escapeSubmissionCsvField(q.due_date), escapeSubmissionCsvField(q.status)].join(
+          ',',
+        ),
+      );
+    }
+  }
+  return lines;
+}
+
+type SubmissionTxnRow = {
+  id: string;
+  date: string;
+  description: string;
+  amount: number;
+  category?: string | null;
+  reconciliation_status?: string | null;
+  provider_transaction_id: string;
+};
+
+function buildSubmissionTransactionLines(rows: SubmissionTxnRow[]): string[] {
+  const header =
+    'date,amount_gbp,flow,description,category,reconciliation_status,transaction_id,provider_transaction_id';
+  const lines = [header];
+  for (const t of rows) {
+    const flow = t.amount >= 0 ? 'INCOME' : 'EXPENSE';
+    lines.push(
+      [
+        escapeSubmissionCsvField(t.date),
+        String(t.amount),
+        flow,
+        escapeSubmissionCsvField(t.description),
+        escapeSubmissionCsvField(t.category ?? ''),
+        escapeSubmissionCsvField(t.reconciliation_status ?? ''),
+        escapeSubmissionCsvField(t.id),
+        escapeSubmissionCsvField(t.provider_transaction_id ?? ''),
+      ].join(','),
+    );
+  }
+  return lines;
+}
+
+function buildSubmissionBookkeepingLines(rows: SubmissionTxnRow[]): string[] {
+  const header = 'Date,Description,Income_gbp,Expense_gbp,Category';
+  const lines = [header];
+  for (const t of rows) {
+    const income = t.amount > 0 ? String(t.amount) : '';
+    const expense = t.amount < 0 ? String(Math.abs(t.amount)) : '';
+    lines.push(
+      [
+        escapeSubmissionCsvField(t.date),
+        escapeSubmissionCsvField(t.description),
+        income,
+        expense,
+        escapeSubmissionCsvField(t.category ?? ''),
+      ].join(','),
+    );
+  }
+  return lines;
+}
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
@@ -93,6 +214,8 @@ export default function SubmissionPage({ token }: Props) {
   const [calc, setCalc] = useState<TaxCalcResult | null>(null);
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
   const [unverifiedCisSubmitAck, setUnverifiedCisSubmitAck] = useState(false);
+  const [txExportBusy, setTxExportBusy] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const year = TAX_YEARS[yearIdx];
 
@@ -117,6 +240,84 @@ export default function SubmissionPage({ token }: Props) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const exportSummaryCsv = () => {
+    if (!calc) return;
+    downloadSubmissionCsv(
+      `submission-tax-summary-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+      buildSubmissionSummaryLines(year.label, calc),
+    );
+  };
+
+  const exportTransactionsCsv = async () => {
+    if (!calc) return;
+    setTxExportBusy(true);
+    try {
+      const res = await fetch(`${TXN_SERVICE_URL}/transactions/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Could not load transactions');
+      const all = (await res.json()) as SubmissionTxnRow[];
+      const start = new Date(year.start);
+      const end = new Date(year.end);
+      const filtered = all.filter((t) => {
+        const d = new Date(t.date);
+        return d >= start && d <= end;
+      });
+      downloadSubmissionCsv(
+        `submission-transactions-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+        buildSubmissionTransactionLines(filtered),
+      );
+    } catch {
+      setError('Could not export transactions CSV.');
+    } finally {
+      setTxExportBusy(false);
+    }
+  };
+
+  const exportBookkeepingCsv = async () => {
+    if (!calc) return;
+    setTxExportBusy(true);
+    try {
+      const res = await fetch(`${TXN_SERVICE_URL}/transactions/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Could not load transactions');
+      const all = (await res.json()) as SubmissionTxnRow[];
+      const start = new Date(year.start);
+      const end = new Date(year.end);
+      const filtered = all.filter((t) => {
+        const d = new Date(t.date);
+        return d >= start && d <= end;
+      });
+      downloadSubmissionCsv(
+        `submission-bookkeeping-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+        buildSubmissionBookkeepingLines(filtered),
+      );
+    } catch {
+      setError('Could not export bookkeeping CSV.');
+    } finally {
+      setTxExportBusy(false);
+    }
+  };
+
+  const exportSummaryPdf = async () => {
+    if (!calc) return;
+    setPdfBusy(true);
+    try {
+      await downloadAccountantTaxSummaryPdf({
+        yearLabel: year.label,
+        periodStart: calc.start_date,
+        periodEnd: calc.end_date,
+        calc: calc as AccountantPdfCalc,
+        filename: `submission-tax-summary-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`,
+      });
+    } catch {
+      setError('Could not generate PDF.');
+    } finally {
+      setPdfBusy(false);
     }
   };
 
@@ -394,6 +595,82 @@ export default function SubmissionPage({ token }: Props) {
               <p style={{ color: 'var(--lp-muted)', fontSize: '0.75rem', marginTop: '0.5rem', marginBottom: 0 }}>Each = 50% of prior year tax</p>
             </div>
 
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+              <button
+                type="button"
+                onClick={exportSummaryCsv}
+                disabled={txExportBusy || pdfBusy}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem',
+                  background: 'var(--lp-bg-elevated)',
+                  color: 'var(--lp-muted)',
+                  border: '1px solid var(--lp-border)',
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: txExportBusy || pdfBusy ? 'wait' : 'pointer',
+                }}
+              >
+                Export summary CSV
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportSummaryPdf()}
+                disabled={txExportBusy || pdfBusy}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem',
+                  background: 'rgba(13,148,136,0.12)',
+                  color: 'var(--lp-accent-teal)',
+                  border: '1px solid var(--lp-accent-teal)',
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: txExportBusy || pdfBusy ? 'wait' : 'pointer',
+                }}
+              >
+                {pdfBusy ? 'Preparing PDF…' : 'Export summary PDF'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportTransactionsCsv()}
+                disabled={txExportBusy || pdfBusy}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem',
+                  background: 'var(--lp-bg-elevated)',
+                  color: 'var(--lp-muted)',
+                  border: '1px solid var(--lp-border)',
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: txExportBusy || pdfBusy ? 'wait' : 'pointer',
+                }}
+              >
+                {txExportBusy ? 'Preparing…' : 'Export transactions CSV'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportBookkeepingCsv()}
+                disabled={txExportBusy || pdfBusy}
+                style={{
+                  width: '100%',
+                  padding: '0.65rem',
+                  background: 'var(--lp-bg-elevated)',
+                  color: 'var(--lp-muted)',
+                  border: '1px solid var(--lp-border)',
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  fontSize: '0.88rem',
+                  cursor: txExportBusy || pdfBusy ? 'wait' : 'pointer',
+                }}
+                title="Income and expense in separate columns. Not an HMRC submission file."
+              >
+                Bookkeeping CSV
+              </button>
+            </div>
+
             <button
               onClick={() => setStep('confirm')}
               style={{ width: '100%', padding: '0.9rem', background: 'var(--lp-accent-teal)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}
@@ -443,7 +720,7 @@ export default function SubmissionPage({ token }: Props) {
                 }}
               >
                 <strong>CIS credits (unverified):</strong> This return includes self-attested Construction Industry Scheme
-                deductions that are not backed by CIS statements in SelfMonitor. HMRC may challenge these figures. You may
+                deductions that are not backed by CIS statements in MyNetTax. HMRC may challenge these figures. You may
                 upload statements later and adjust figures before any submission. If you continue, you accept responsibility
                 for these amounts as entered.
                 <div style={{ marginTop: '0.75rem' }}>

@@ -51,7 +51,7 @@ export default function ReferralsScreen() {
   const shareCode = async () => {
     try {
       await Share.share({
-        message: `Join SelfMonitor with my referral code ${code} and we both get £25! https://selfmonitor.app/refer/${code}`,
+        message: `Join MyNetTax with my referral code ${code} and we both get £25! https://mynettax.app/refer/${code}`,
       });
     } catch {
       Alert.alert('Error', 'Could not share referral code');

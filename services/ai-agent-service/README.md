@@ -7,7 +7,7 @@ Enterprise-grade AI financial advisor with autonomous capabilities. SelfMate is 
 ### Core Capabilities
 - **Autonomous Advisory**: GPT-4 powered financial recommendations
 - **Proactive Monitoring**: Real-time financial health tracking
-- **Cross-Service Integration**: Seamless integration with all SelfMonitor services
+- **Cross-Service Integration**: Seamless integration with all MyNetTax services
 - **Advanced Memory**: Persistent conversation history and user preferences
 - **Dynamic Tools**: Real-time access to financial data and services
 - **Conversation Management**: Sophisticated dialogue flow and context management
@@ -377,7 +377,7 @@ spec:
               key: api-key
 ```
 
-## 🔄 Integration with SelfMonitor
+## 🔄 Integration with MyNetTax
 
 ### Service Dependencies
 - **Auth Service**: User authentication and authorization
@@ -447,7 +447,7 @@ spec:
 ## 📞 Support
 
 ### Development Team
-- **Lead**: SelfMonitor AI Team
+- **Lead**: MyNetTax AI Team
 - **Email**: ai@selfmonitor.app
 - **Slack**: #ai-agent-development
 
@@ -461,4 +461,4 @@ spec:
 
 **SelfMate AI Agent** - Autonomous Financial Intelligence for the Next Generation of FinTech.
 
-*Built with ❤️ by the SelfMonitor team.*
+*Built with ❤️ by the MyNetTax team.*

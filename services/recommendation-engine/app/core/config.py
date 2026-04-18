@@ -1,5 +1,5 @@
 """
-Configuration management for SelfMonitor Recommendation Engine
+Configuration management for MyNetTax Recommendation Engine
 """
 
 from typing import List, Optional, Any
@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     """Application settings with environment variable support."""
 
     # Application settings
-    APP_NAME: str = "SelfMonitor Recommendation Engine"
+    APP_NAME: str = "MyNetTax Recommendation Engine"
     VERSION: str = "1.0.0"
     DEBUG: bool = Field(default=False)
     HOST: str = Field(default="0.0.0.0")
@@ -20,10 +20,10 @@ class Settings(BaseSettings):
 
     # Security settings
     ALLOWED_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000", "https://app.selfmonitor.ai"]
+        default=["http://localhost:3000", "https://app.mynettax.com"]
     )
     ALLOWED_HOSTS: List[str] = Field(
-        default=["localhost", "127.0.0.1", "*.selfmonitor.ai"]
+        default=["localhost", "127.0.0.1", "*.mynettax.com"]
     )
     SECRET_KEY: str = Field()
 

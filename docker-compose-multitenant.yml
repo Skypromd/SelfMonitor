@@ -1,4 +1,4 @@
-# Multi-Tenant SelfMonitor FinTech Platform
+# Multi-Tenant MyNetTax FinTech Platform
 # Полная изоляция данных на уровне БД для 500,000 клиентов
 
 version: "3.8"
@@ -375,7 +375,7 @@ services:
     image: dpage/pgadmin4:7.4
     container_name: pgadmin_multitenant
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@selfmonitor.com
+      PGADMIN_DEFAULT_EMAIL: admin@mynettax.com
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:

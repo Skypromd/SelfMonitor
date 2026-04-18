@@ -43,6 +43,7 @@ jobs:
           - banking-connector
           - billing-service
           - compliance-service
+          - categorization-service
           - consent-service
           - documents-service
           - integrations-service
@@ -100,6 +101,7 @@ jobs:
           - banking-connector
           - billing-service
           - compliance-service
+          - categorization-service
           - consent-service
           - documents-service
           - integrations-service

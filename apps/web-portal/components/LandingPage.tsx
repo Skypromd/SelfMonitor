@@ -63,6 +63,7 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Head from 'next/head';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import homeStyles from '../styles/Home.module.css';
@@ -374,7 +375,7 @@ const SERVICE_CATEGORIES: ServiceCategory[] = [
       },
       {
         title: 'Subscription billing',
-        desc: 'Plan tiers, upgrades, and checkout flows that map to your SelfMonitor subscription.',
+        desc: 'Plan tiers, upgrades, and checkout flows that map to your MyNetTax subscription.',
         tags: ['Stripe'],
         Icon: CreditCard,
       },
@@ -545,7 +546,7 @@ const testimonials = [
     name: 'Sarah K.',
     role: 'Freelance Developer, London',
     initials: 'SK',
-    quote: 'SelfMonitor saved me 6 hours every week. My tax return was filed in 3 clicks. I wish I had found this 5 years ago.',
+    quote: 'MyNetTax saved me 6 hours every week. My tax return was filed in 3 clicks. I wish I had found this 5 years ago.',
     stars: 5,
   },
   {
@@ -568,10 +569,10 @@ export default function LandingPage() {
   return (
     <>
       <Head>
-        <title>SelfMonitor — Financial Freedom for the Self-Employed</title>
+        <title>MyNetTax — Financial Freedom for the Self-Employed</title>
         <meta
           name="description"
-          content="SelfMonitor — MTD tax, invoicing, mortgage readiness, bank sync, AI assistant, and 30+ services behind one UK self-employed platform. Web and mobile."
+          content="MyNetTax — MTD tax, invoicing, mortgage readiness, bank sync, AI assistant, and 30+ services behind one UK self-employed platform. Web and mobile."
         />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
@@ -579,11 +580,16 @@ export default function LandingPage() {
       {/* ====== NAVBAR ====== */}
       <nav className={styles.navbar}>
         <div className={styles.navInner}>
-          <Link href="/" className={styles.navBrandRow} aria-label="SelfMonitor home">
-            <span className={styles.navMark} aria-hidden>
-              SM
-            </span>
-            <span className={styles.navWordmark}>SelfMonitor</span>
+          <Link href="/" className={styles.navBrandRow} aria-label="MyNetTax home">
+            <Image
+              src="/branding/mynettax-icon.svg"
+              alt=""
+              width={34}
+              height={38}
+              className={styles.navBrandIcon}
+              priority
+            />
+            <span className={styles.navWordmark}>MyNetTax</span>
           </Link>
           <div className={styles.navLinks}>
             <a href="#services">Platform</a>
@@ -765,7 +771,7 @@ export default function LandingPage() {
             transition={{ duration: 0.5 }}
             style={{ justifyContent: 'center' }}
           >
-            <a href="https://apps.apple.com/app/selfmonitor" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
+            <a href="https://mynettax.app/ios" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
               <span className={`${styles.storeIconWrap} ${ACCENT.teal}`} aria-hidden>
                 <Smartphone size={22} strokeWidth={2} />
               </span>
@@ -971,7 +977,7 @@ export default function LandingPage() {
                 </ul>
 
                 <div className={styles.storeButtonsLeft}>
-                  <a href="https://apps.apple.com/app/selfmonitor" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
+                  <a href="https://mynettax.app/ios" className={styles.storeButton} target="_blank" rel="noopener noreferrer">
                     <span className={`${styles.storeIconWrap} ${ACCENT.teal}`} aria-hidden>
                       <Smartphone size={22} strokeWidth={2} />
                     </span>
@@ -1003,7 +1009,13 @@ export default function LandingPage() {
                   <div className={styles.phoneNotch}></div>
                   <div className={styles.phoneScreen}>
                     <div className={styles.phoneHeader}>
-                      <span className={styles.phoneLogo}>SelfMonitor</span>
+                      <Image
+                        src="/branding/mynettax-icon.svg"
+                        alt=""
+                        width={32}
+                        height={36}
+                        className={styles.phoneBrandMark}
+                      />
                     </div>
                     <div className={styles.phoneCard}>
                       <p className={styles.phoneCardLabel}>Cash Flow</p>
@@ -1114,12 +1126,12 @@ export default function LandingPage() {
           <div className={styles.container}>
             <motion.div {...fadeUp}>
               <h2 className={styles.sectionHeading}>See How Much You Save</h2>
-              <p className={styles.sectionSub}>The numbers speak for themselves — SelfMonitor pays for itself in weeks.</p>
+              <p className={styles.sectionSub}>The numbers speak for themselves — MyNetTax pays for itself in weeks.</p>
             </motion.div>
 
             <motion.div className={styles.roiSection} {...fadeUp}>
               <div className={`${styles.roiColumn} ${styles.roiColumnBad}`}>
-                <p className={`${styles.roiColumnTitle} ${styles.roiColumnTitleBad}`}>Without SelfMonitor</p>
+                <p className={`${styles.roiColumnTitle} ${styles.roiColumnTitleBad}`}>Without MyNetTax</p>
                 <div className={styles.roiItem}>
                   <span className={styles.roiItemLabel}>Weekly admin</span>
                   <span className={styles.roiItemValueBad}>5 hrs/week</span>
@@ -1139,7 +1151,7 @@ export default function LandingPage() {
               </div>
 
               <div className={`${styles.roiColumn} ${styles.roiColumnGood}`}>
-                <p className={`${styles.roiColumnTitle} ${styles.roiColumnTitleGood}`}>With SelfMonitor</p>
+                <p className={`${styles.roiColumnTitle} ${styles.roiColumnTitleGood}`}>With MyNetTax</p>
                 <div className={styles.roiItem}>
                   <span className={styles.roiItemLabel}>Weekly admin</span>
                   <span className={styles.roiItemValueGood}>30 min/week</span>
@@ -1164,7 +1176,7 @@ export default function LandingPage() {
                 <AnimatedCounter target={2448} prefix="£" />/year
               </p>
               <p className={styles.roiTotalLabel}>
-                That&rsquo;s how much you save with SelfMonitor
+                That&rsquo;s how much you save with MyNetTax
               </p>
             </motion.div>
           </div>
@@ -1276,7 +1288,7 @@ export default function LandingPage() {
                   <span className={styles.footerMark} aria-hidden>
                     SM
                   </span>
-                  <p className={styles.footerLogo}>SelfMonitor</p>
+                  <p className={styles.footerLogo}>MyNetTax</p>
                 </div>
                 <p className={styles.footerTagline}>AI-powered financial tools for the self-employed.</p>
               </div>
@@ -1286,7 +1298,7 @@ export default function LandingPage() {
                 <ul className={styles.footerLinks}>
                   <li><a href="#services">Platform</a></li>
                   <li><a href="#pricing">Pricing</a></li>
-                  <li><a href="https://apps.apple.com/app/selfmonitor" target="_blank" rel="noopener noreferrer">iOS App</a></li>
+                  <li><a href="https://mynettax.app/ios" target="_blank" rel="noopener noreferrer">iOS App</a></li>
                   <li><a href="https://play.google.com/store/apps/details?id=com.selfmonitor.app" target="_blank" rel="noopener noreferrer">Android App</a></li>
                   <li><a href="#services">API</a></li>
                 </ul>
@@ -1314,7 +1326,7 @@ export default function LandingPage() {
             </div>
 
             <div className={styles.footerBottom}>
-              © 2026 SelfMonitor Ltd. Registered in England &amp; Wales.
+              © 2026 MyNetTax Ltd. Registered in England &amp; Wales.
             </div>
           </div>
         </footer>

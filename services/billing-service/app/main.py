@@ -1,5 +1,5 @@
 """
-Billing Service — Internal accounting + Stripe integration for SelfMonitor
+Billing Service — Internal accounting + Stripe integration for MyNetTax
 Handles checkout sessions, webhooks, subscription management, invoice generation,
 automatic invoice dispatch (SMTP), payment tracking, and revenue analytics.
 
@@ -387,14 +387,14 @@ def _send_invoice_email(to_email: str, inv_num: str, plan: str, amount: float, p
 
     amount_str = f"£{amount:.2f}"
     msg = email.mime.multipart.MIMEMultipart("alternative")
-    msg["Subject"] = f"SelfMonitor Invoice {inv_num} — {amount_str}"
+    msg["Subject"] = f"MyNetTax Invoice {inv_num} — {amount_str}"
     msg["From"] = SMTP_FROM or SMTP_USER
     msg["To"] = to_email
 
     html = f"""
     <html><body style="font-family:Arial,sans-serif;background:#0f172a;color:#e2e8f0;padding:32px">
     <div style="max-width:520px;margin:0 auto;background:#1e293b;border-radius:12px;padding:32px">
-      <h1 style="color:#14b8a6;margin:0 0 4px">SelfMonitor</h1>
+      <h1 style="color:#14b8a6;margin:0 0 4px">MyNetTax</h1>
       <p style="color:#64748b;margin:0 0 24px;font-size:14px">Monthly Invoice</p>
       <hr style="border:none;border-top:1px solid #334155;margin-bottom:24px">
       <table style="width:100%;font-size:15px">
@@ -407,7 +407,7 @@ def _send_invoice_email(to_email: str, inv_num: str, plan: str, amount: float, p
             <td style="text-align:right;font-size:22px;font-weight:700;color:#14b8a6">{amount_str}</td></tr>
       </table>
       <p style="margin-top:28px;font-size:13px;color:#64748b">
-        Thank you for using SelfMonitor. Log in at
+        Thank you for using MyNetTax. Log in at
         <a href="http://localhost:3000" style="color:#14b8a6">localhost:3000</a>
         to view your billing history.
       </p>
@@ -533,7 +533,7 @@ async def create_checkout_session(body: CheckoutRequest) -> CheckoutResponse:
         if plan.get("price_id"):
             params["line_items"] = [{"price": plan["price_id"], "quantity": 1}]
         else:
-            params["line_items"] = [{"price_data": {"currency": plan["currency"], "unit_amount": plan["amount"], "recurring": {"interval": plan["interval"]}, "product_data": {"name": f"SelfMonitor {plan['name']}"}}, "quantity": 1}]
+            params["line_items"] = [{"price_data": {"currency": plan["currency"], "unit_amount": plan["amount"], "recurring": {"interval": plan["interval"]}, "product_data": {"name": f"MyNetTax {plan['name']}"}}, "quantity": 1}]
         if body.email:
             params["customer_email"] = body.email
         session = stripe.checkout.Session.create(**params)

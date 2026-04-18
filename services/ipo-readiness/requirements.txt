@@ -1,4 +1,4 @@
-# SelfMonitor IPO Readiness Infrastructure Dependencies
+# MyNetTax IPO Readiness Infrastructure Dependencies
 # Enterprise governance and public company infrastructure for unicorn achievement
 
 # Core Framework

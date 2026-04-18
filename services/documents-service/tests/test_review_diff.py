@@ -66,3 +66,11 @@ def test_build_review_changes_includes_auto_derived_fields():
     assert changes["expense_article"]["before"] == "travel_costs"
     assert changes["expense_article"]["after"] == "staff_entertainment"
     assert changes["is_potentially_deductible"] == {"before": True, "after": False}
+
+
+def test_build_review_changes_tracks_vat_amount():
+    before_data = {"vat_amount_gbp": 2.4, "total_amount": 14.4}
+    after_data = {"vat_amount_gbp": 2.5, "total_amount": 14.4}
+    changes = _build_review_changes(before_data=before_data, after_data=after_data)
+    assert changes["vat_amount_gbp"] == {"before": 2.4, "after": 2.5}
+    assert "total_amount" not in changes

@@ -1,6 +1,6 @@
 # Advanced Security Hardening Service
 
-Enterprise-grade security management and monitoring service for SelfMonitor FinTech platform.
+Enterprise-grade security management and monitoring service for MyNetTax FinTech platform.
 
 ## 🛡️ Security Service Overview
 
@@ -146,11 +146,11 @@ SECURITY_REDIS_URL=redis://redis:6379/3
 # SIEM Configuration
 SIEM_ENDPOINT=https://elk.company.com/api
 SIEM_API_KEY=your_siem_api_key
-SIEM_INDEX_PREFIX=selfmonitor-security
+SIEM_INDEX_PREFIX=mynettax-security
 
 # Authentication Configuration
 JWT_SECRET_KEY=your-super-secret-jwt-key
-MFA_ISSUER=SelfMonitor
+MFA_ISSUER=MyNetTax
 OAUTH_CLIENT_ID=your_oauth_client_id
 OAUTH_CLIENT_SECRET=your_oauth_client_secret
 
@@ -162,7 +162,7 @@ RISK_SCORING_THRESHOLD=75
 # Compliance Configuration
 SOC2_COMPLIANCE_ENDPOINT=https://compliance.company.com/api
 AUDIT_LOG_RETENTION_DAYS=2555  # 7 years
-GDPR_DPO_EMAIL=dpo@selfmonitor.com
+GDPR_DPO_EMAIL=dpo@mynettax.co.uk
 ```
 
 ### Security Policies
@@ -192,7 +192,7 @@ api_security:
     per_user: 100/minute
     per_ip: 500/minute
   require_api_key: true
-  allowed_origins: ["https://app.selfmonitor.com"]
+  allowed_origins: ["https://app.mynettax.com"]
 
 compliance:
   data_retention:

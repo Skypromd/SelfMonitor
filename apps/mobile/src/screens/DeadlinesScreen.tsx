@@ -22,9 +22,36 @@ type DeadlineItem = {
   title: string;
   date: Date;
   notes: string;
+  source?: 'mtd' | 'static';
+  mtdStatus?: string;
 };
 
+type MtdQuarterApi = { quarter: string; due_date: string; status: string };
+
 const PREF_KEY = 'deadlines.reminders.enabled';
+
+const formatDeadlineIso = (d: Date) => d.toISOString().slice(0, 10);
+
+const getTaxYearRangeForDeadlines = (today: Date) => {
+  const year = today.getFullYear();
+  const startThisYear = new Date(year, 3, 6);
+  if (today >= startThisYear) {
+    return {
+      start: formatDeadlineIso(new Date(year, 3, 6)),
+      end: formatDeadlineIso(new Date(year + 1, 3, 5)),
+    };
+  }
+  return {
+    start: formatDeadlineIso(new Date(year - 1, 3, 6)),
+    end: formatDeadlineIso(new Date(year, 3, 5)),
+  };
+};
+
+function parseLocalDeadlineDate(isoDate: string): Date {
+  const parts = isoDate.split('-').map((x) => parseInt(x, 10));
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return new Date(isoDate);
+  return new Date(parts[0], parts[1] - 1, parts[2]);
+}
 
 const buildDeadlines = (t: (key: string) => string) => {
   const today = new Date();
@@ -75,8 +102,60 @@ export default function DeadlinesScreen() {
   const [remindersEnabled, setRemindersEnabled] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [mtdDeadlineRows, setMtdDeadlineRows] = useState<DeadlineItem[]>([]);
 
-  const deadlines = useMemo(() => buildDeadlines(t as (key: string) => string), [t]);
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) {
+      setMtdDeadlineRows([]);
+      return () => {
+        cancelled = true;
+      };
+    }
+    void (async () => {
+      try {
+        const { start, end } = getTaxYearRangeForDeadlines(new Date());
+        const res = await apiRequest('/tax/calculate', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({ start_date: start, end_date: end, jurisdiction: 'UK' }),
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const mtd = data.mtd_obligation as { reporting_required?: boolean; quarterly_updates?: MtdQuarterApi[] } | undefined;
+        if (!mtd?.reporting_required || !Array.isArray(mtd.quarterly_updates)) {
+          if (!cancelled) setMtdDeadlineRows([]);
+          return;
+        }
+        const items: DeadlineItem[] = mtd.quarterly_updates.map((q) => ({
+          id: `mtd-${q.quarter}-${q.due_date}`,
+          title: `${q.quarter} MTD update`,
+          date: parseLocalDeadlineDate(q.due_date),
+          notes: t('deadlines.mtd_quarter_note'),
+          source: 'mtd',
+          mtdStatus: q.status,
+        }));
+        if (!cancelled) setMtdDeadlineRows(items);
+      } catch {
+        if (!cancelled) setMtdDeadlineRows([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, t]);
+
+  const deadlines = useMemo(() => {
+    const staticItems = buildDeadlines(t as (key: string) => string).map((item) => ({
+      ...item,
+      source: 'static' as const,
+    }));
+    const merged = [...mtdDeadlineRows, ...staticItems]
+      .filter((item) => item.date.getTime() >= Date.now() - 86400000)
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+      .slice(0, 14);
+    return merged;
+  }, [t, mtdDeadlineRows]);
 
   useEffect(() => {
     const loadPrefs = async () => {
@@ -159,7 +238,22 @@ export default function DeadlinesScreen() {
               title={`${item.title} · ${item.date.toLocaleDateString()}`}
               subtitle={item.notes}
               icon="calendar-outline"
-              badge={<Badge label={t('deadlines.deadline_badge')} tone="warning" />}
+              badge={
+                item.source === 'mtd' ? (
+                  <Badge
+                    label={t('deadlines.mtd_badge')}
+                    tone={
+                      item.mtdStatus === 'overdue'
+                        ? 'danger'
+                        : item.mtdStatus === 'due_now'
+                          ? 'warning'
+                          : 'info'
+                    }
+                  />
+                ) : (
+                  <Badge label={t('deadlines.deadline_badge')} tone="warning" />
+                )
+              }
               onPress={() => createCalendarEvent(item)}
             />
           ))}

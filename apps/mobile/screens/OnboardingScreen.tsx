@@ -115,7 +115,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
   const renderStep0 = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.welcomeTitle}>Welcome to SelfMonitor</Text>
+      <Text style={styles.welcomeTitle}>Welcome to MT</Text>
       <Text style={styles.welcomeSubtitle}>What do you do?</Text>
       <View style={styles.cardsGrid}>
         {BUSINESS_TYPES.map((bt) => (

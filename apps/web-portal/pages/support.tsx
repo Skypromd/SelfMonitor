@@ -25,7 +25,7 @@ const FAQ_ITEMS = [
   },
   {
     q: 'How does HMRC auto-submission work?',
-    a: 'On the Pro and Business plans, SelfMonitor can submit your Self Assessment tax return directly to HMRC via the MTD API. You review and approve before anything is sent.',
+    a: 'On the Pro and Business plans, MyNetTax can submit your Self Assessment tax return directly to HMRC via the MTD API. You review and approve before anything is sent.',
   },
   {
     q: 'Can I export my data?',
@@ -96,7 +96,7 @@ export default function SupportPage({ token }: SupportPageProps) {
   return (
     <>
       <Head>
-        <title>Support &amp; Feedback — SelfMonitor</title>
+        <title>Support &amp; Feedback — MyNetTax</title>
       </Head>
       <div className={styles.pageContainer}>
         <div className={styles.pageHeader}>
@@ -156,8 +156,8 @@ export default function SupportPage({ token }: SupportPageProps) {
             <div>
               <strong className={styles.supportContactTitle}>Email</strong>
               <p className={styles.supportContactSub}>
-                <a href="mailto:support@selfmonitor.app" className={styles.supportLink}>
-                  support@selfmonitor.app
+                <a href="mailto:support@mynettax.app" className={styles.supportLink}>
+                  support@mynettax.app
                 </a>
               </p>
             </div>
@@ -167,8 +167,8 @@ export default function SupportPage({ token }: SupportPageProps) {
             <div>
               <strong className={styles.supportContactTitle}>Help Docs</strong>
               <p className={styles.supportContactSub}>
-                <a href="https://selfmonitor.app/help" target="_blank" rel="noreferrer" className={styles.supportLink}>
-                  selfmonitor.app/help
+                <a href="https://mynettax.app/help" target="_blank" rel="noreferrer" className={styles.supportLink}>
+                  mynettax.app/help
                 </a>
               </p>
             </div>
@@ -368,7 +368,7 @@ export default function SupportPage({ token }: SupportPageProps) {
           <span>·</span>
           <span>Uptime this month: 99.94%</span>
           <span>·</span>
-          <a href="https://status.selfmonitor.app" target="_blank" rel="noreferrer" className={styles.supportLink}>
+          <a href="https://status.mynettax.app" target="_blank" rel="noreferrer" className={styles.supportLink}>
             Status page →
           </a>
         </div>

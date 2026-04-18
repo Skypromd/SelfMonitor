@@ -703,11 +703,13 @@ async def submit_tax_return(
         status_value="pending",
         message="Submission received and queued for HMRC processing.",
     )
-    return _row_to_submission(
-        _connect().execute(
-            "SELECT * FROM submissions WHERE submission_id = ?", (str(submission_id),)
-        ).fetchone()
-    )
+    row = get_submission(submission_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to read HMRC submission after insert.",
+        )
+    return _row_to_submission(row)
 
 
 @app.get(

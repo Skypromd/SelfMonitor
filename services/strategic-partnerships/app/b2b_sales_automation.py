@@ -1,5 +1,5 @@
 """
-SelfMonitor B2B Sales Automation & Enterprise Customer Acquisition Module
+MyNetTax B2B Sales Automation & Enterprise Customer Acquisition Module
 Advanced enterprise sales automation for accelerated B2B growth and strategic partnerships
 
 Features:

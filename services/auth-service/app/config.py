@@ -19,6 +19,7 @@ if not _ALLOW_WEAK_JWT and len(_raw_auth_secret) < 32:
     )
 SECRET_KEY = _raw_auth_secret
 ALGORITHM = "HS256"
+INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 AUTH_DB_PATH = os.getenv(
     "AUTH_DB_PATH",

@@ -15,7 +15,7 @@ class SaltedgeProvider(BankingProvider):
         self.base_url = os.getenv("SALTEDGE_BASE_URL", "https://www.saltedge.com/api/v5")
         self.app_id = os.getenv("SALTEDGE_APP_ID")
         self.secret = os.getenv("SALTEDGE_SECRET")
-        self.customer_prefix = os.getenv("SALTEDGE_CUSTOMER_PREFIX", "selfmonitor")
+        self.customer_prefix = os.getenv("SALTEDGE_CUSTOMER_PREFIX", "mynettax")
         scopes_env = os.getenv("SALTEDGE_SCOPES", "accounts,transactions")
         self.scopes = [scope.strip() for scope in scopes_env.split(",") if scope.strip()]
 

@@ -1,5 +1,5 @@
 """
-SelfMonitor Security Operations Center (SOC)
+MyNetTax Security Operations Center (SOC)
 Enterprise-grade security hardening, threat detection, and compliance automation
 
 Advanced capabilities:
@@ -30,7 +30,7 @@ from cryptography.fernet import Fernet
 
 # --- Configuration ---
 app = FastAPI(
-    title="SelfMonitor Security Operations Center",
+    title="MyNetTax Security Operations Center",
     description="Enterprise-grade security hardening, threat detection, and compliance automation",
     version="3.0.0",
     docs_url="/security/docs",

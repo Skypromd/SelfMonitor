@@ -143,7 +143,7 @@ async def build_refund_tracker_snapshot(db: AsyncSession, *, user_id: str) -> di
         )
 
     return {
-        "schema_version": "selfmonitor-cis-refund-tracker-v1",
+        "schema_version": "mynettax-cis-refund-tracker-v1",
         "generated_at": datetime.datetime.now(datetime.UTC).isoformat().replace("+00:00", "Z"),
         "totals": {
             "verified_cis_withheld_gbp": round(verified_total, 2),

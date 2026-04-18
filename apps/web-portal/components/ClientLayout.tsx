@@ -1,8 +1,9 @@
 import {
   Activity, Banknote, BarChart2, Bot, CalendarDays, ClipboardCheck, CreditCard, ExternalLink,
-  FileText, Gift, Globe, Headphones, Home, LayoutDashboard, Lock, LogOut, Menu,
+  FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
   Receipt, Send, Settings, ShoppingBag, User, Wallet, X,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ReactNode, useEffect, useRef, useState } from 'react';
@@ -89,6 +90,7 @@ export default function ClientLayout({
     { href: '/dashboard',       label: t('nav.dashboard'),    icon: <LayoutDashboard size={17} /> },
     { href: '/activity',        label: t('nav.activity'),     icon: <Activity size={17} /> },
     { href: '/transactions',    label: t('nav.transactions'), icon: <Wallet size={17} /> },
+    { href: '/connect-bank',    label: 'Connect bank',       icon: <Landmark size={17} /> },
     { href: '/cis-refund-tracker', label: 'CIS refund',       icon: <Banknote size={17} /> },
     { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
     { href: '/tax-preparation',  label: 'Tax Return',            icon: <ClipboardCheck size={17} /> },
@@ -132,7 +134,9 @@ export default function ClientLayout({
         aria-label="Navigation"
       >
         <h1 className={styles.logo}>
-          SelfMonitor
+          <span className={styles.logoRow}>
+            <Image src="/branding/mynettax-icon.svg" alt="MyNetTax" width={28} height={32} priority />
+          </span>
           {opsHost && (
             <span style={{ display: 'block', fontSize: '0.62rem', fontWeight: 500, color: 'var(--text-tertiary)', marginTop: 3 }}>
               Operations
@@ -295,7 +299,9 @@ export default function ClientLayout({
         >
           <Menu size={22} />
         </button>
-        <span className={styles.topBarBrand}>SelfMonitor</span>
+        <span className={styles.topBarBrand}>
+          <Image src="/branding/mynettax-icon.svg" alt="MyNetTax" width={22} height={25} priority />
+        </span>
         <div className={styles.topBarRight}>
           {onToggleTheme && (
             <button

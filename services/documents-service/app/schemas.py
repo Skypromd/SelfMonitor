@@ -13,8 +13,10 @@ class ExtractedData(BaseModel):
     total_amount: Optional[float] = None
     vendor_name: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
+    vat_amount_gbp: Optional[float] = Field(default=None, description="VAT/sales tax from receipt (AnalyzeExpense or parsed text)")
     suggested_category: Optional[str] = None
     expense_article: Optional[str] = None
+    hmrc_allowable_expense_code: Optional[str] = None
     is_potentially_deductible: Optional[bool] = None
     ocr_provider: Optional[str] = None
     raw_text_excerpt: Optional[str] = None
@@ -52,8 +54,10 @@ class DocumentReviewUpdateRequest(BaseModel):
     total_amount: Optional[float] = Field(default=None, gt=0)
     vendor_name: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
+    vat_amount_gbp: Optional[float] = Field(default=None, ge=0)
     suggested_category: Optional[str] = None
     expense_article: Optional[str] = None
+    hmrc_allowable_expense_code: Optional[str] = None
     is_potentially_deductible: Optional[bool] = None
     review_status: Literal["confirmed", "corrected", "ignored"] = "confirmed"
     review_notes: Optional[str] = None

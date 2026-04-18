@@ -35,6 +35,7 @@ type DocumentRecord = {
     total_amount?: number | null;
     transaction_date?: string | null;
     vendor_name?: string | null;
+    vat_amount_gbp?: number | null;
   } | null;
   filename: string;
   id: string;
@@ -58,6 +59,7 @@ type ReviewDraft = {
   total_amount: string;
   transaction_date: string;
   vendor_name: string;
+  vat_amount_gbp: string;
 };
 
 const REVIEW_FIELD_LABELS: Record<string, string> = {
@@ -67,11 +69,13 @@ const REVIEW_FIELD_LABELS: Record<string, string> = {
   total_amount: 'Amount',
   transaction_date: 'Date',
   vendor_name: 'Vendor',
+  vat_amount_gbp: 'VAT',
 };
 
 const REVIEW_FIELD_ORDER = [
   'vendor_name',
   'total_amount',
+  'vat_amount_gbp',
   'transaction_date',
   'suggested_category',
   'expense_article',
@@ -94,6 +98,8 @@ function toReviewDraft(document: DocumentRecord): ReviewDraft {
           ? 'false'
           : 'unknown',
     review_notes: extracted?.review_notes ?? '',
+    vat_amount_gbp:
+      typeof extracted?.vat_amount_gbp === 'number' ? extracted.vat_amount_gbp.toFixed(2) : '',
   };
 }
 
@@ -101,7 +107,7 @@ function formatReviewValue(field: string, value: ReviewChangeValue): string {
   if (value === null || value === undefined || value === '') {
     return '—';
   }
-  if (field === 'total_amount' && typeof value === 'number') {
+  if ((field === 'total_amount' || field === 'vat_amount_gbp') && typeof value === 'number') {
     return `£${value.toFixed(2)}`;
   }
   if (field === 'is_potentially_deductible' && typeof value === 'boolean') {
@@ -211,6 +217,7 @@ function SemanticSearch({ token }: { token: string }) {
 export default function DocumentsPage({ token }: DocumentsPageProps) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [reviewQueue, setReviewQueue] = useState<DocumentRecord[]>([]);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, ReviewDraft>>({});
@@ -284,7 +291,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
     if (!shouldOpenCapture) {
       return;
     }
-    fileInputRef.current?.click();
+    cameraInputRef.current?.click();
     void router.replace('/documents', undefined, { shallow: true });
   }, [router]);
 
@@ -294,38 +301,50 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
     }
   };
 
+  const uploadDocumentFile = useCallback(
+    async (file: File) => {
+      setError('');
+      setMessage('');
+      setIsUploading(true);
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents/upload`, {
+          body: formData,
+          headers: { Authorization: `Bearer ${token}` },
+          method: 'POST',
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.detail || 'Failed to upload file');
+        }
+        setMessage(`File '${data.filename}' uploaded successfully!`);
+        setSelectedFile(null);
+        await Promise.all([fetchDocuments(), fetchReviewQueue()]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unexpected error');
+      } finally {
+        setIsUploading(false);
+      }
+    },
+    [token, fetchDocuments, fetchReviewQueue]
+  );
+
+  const handleScanReceiptCapture = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (file) {
+      void uploadDocumentFile(file);
+    }
+  };
+
   const handleUpload = async (event: FormEvent) => {
     event.preventDefault();
-    setError('');
-    setMessage('');
     if (!selectedFile) {
       setError(t('documents.select_file_error'));
       return;
     }
-
-    setIsUploading(true);
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-
-    try {
-      const response = await fetch(`${DOCUMENTS_SERVICE_URL}/documents/upload`, {
-        body: formData,
-        headers: { Authorization: `Bearer ${token}` },
-        method: 'POST',
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || 'Failed to upload file');
-      }
-
-      setMessage(`File '${data.filename}' uploaded successfully!`);
-      setSelectedFile(null);
-      await Promise.all([fetchDocuments(), fetchReviewQueue()]);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
-    } finally {
-      setIsUploading(false);
-    }
+    await uploadDocumentFile(selectedFile);
   };
 
   const handleReviewDraftChange = useCallback(
@@ -341,6 +360,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
             total_amount: '',
             transaction_date: '',
             vendor_name: '',
+            vat_amount_gbp: '',
           }),
           [field]: value,
         },
@@ -386,6 +406,14 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
               throw new Error('Amount must be a positive number.');
             }
             payload.total_amount = parsedAmount;
+          }
+          const vatStr = draft.vat_amount_gbp.trim();
+          if (vatStr) {
+            const parsedVat = Number(vatStr);
+            if (!Number.isFinite(parsedVat) || parsedVat < 0) {
+              throw new Error('VAT must be a non-negative number.');
+            }
+            payload.vat_amount_gbp = parsedVat;
           }
           if (draft.is_potentially_deductible === 'true' || draft.is_potentially_deductible === 'false') {
             payload.is_potentially_deductible = draft.is_potentially_deductible === 'true';
@@ -441,7 +469,23 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         <h2>{t('documents.upload_title')}</h2>
         <form onSubmit={handleUpload}>
           <div className={styles.fileInputContainer}>
+            <input
+              accept="image/*"
+              capture="environment"
+              onChange={handleScanReceiptCapture}
+              ref={cameraInputRef}
+              style={{ display: 'none' }}
+              type="file"
+            />
             <input onChange={handleFileSelect} ref={fileInputRef} type="file" />
+            <button
+              className={styles.button}
+              disabled={isUploading}
+              onClick={() => cameraInputRef.current?.click()}
+              type="button"
+            >
+              {isUploading ? 'Uploading...' : 'Scan receipt'}
+            </button>
             <button className={styles.button} disabled={!selectedFile || isUploading} type="submit">
               {isUploading ? 'Uploading...' : t('documents.upload_button')}
             </button>
@@ -469,6 +513,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                   <th>Reason</th>
                   <th>Vendor</th>
                   <th>Amount</th>
+                  <th>VAT</th>
                   <th>Date</th>
                   <th>Action</th>
                 </tr>
@@ -488,6 +533,11 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                         <td>
                           {typeof document.extracted_data?.total_amount === 'number'
                             ? formatCurrency(document.extracted_data.total_amount)
+                            : '—'}
+                        </td>
+                        <td>
+                          {typeof document.extracted_data?.vat_amount_gbp === 'number'
+                            ? formatCurrency(document.extracted_data.vat_amount_gbp)
                             : '—'}
                         </td>
                         <td>{document.extracted_data?.transaction_date || '—'}</td>
@@ -513,7 +563,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                         </td>
                       </tr>
                       <tr className={styles.reviewEditorRow}>
-                        <td className={styles.reviewEditorCell} colSpan={7}>
+                        <td className={styles.reviewEditorCell} colSpan={8}>
                           <div className={styles.reviewEditorGrid}>
                             <label className={styles.reviewField}>
                               <span>Vendor</span>
@@ -533,6 +583,19 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                                 step="0.01"
                                 type="number"
                                 value={draft.total_amount}
+                              />
+                            </label>
+                            <label className={styles.reviewField}>
+                              <span>VAT (£)</span>
+                              <input
+                                className={`${styles.input} ${styles.reviewInput}`}
+                                min="0"
+                                onChange={(event) =>
+                                  handleReviewDraftChange(document.id, 'vat_amount_gbp', event.target.value)
+                                }
+                                step="0.01"
+                                type="number"
+                                value={draft.vat_amount_gbp}
                               />
                             </label>
                             <label className={styles.reviewField}>
@@ -639,6 +702,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                 <th>{t('documents.col_status')}</th>
                 <th>{t('documents.col_vendor')}</th>
                 <th>{t('documents.col_amount')}</th>
+                <th>VAT</th>
                 <th>{t('documents.col_category')}</th>
                 <th>{t('documents.col_expense_article')}</th>
                 <th>{t('documents.col_deductible')}</th>
@@ -664,6 +728,11 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                           ? formatCurrency(document.extracted_data.total_amount)
                           : '—'}
                       </td>
+                      <td>
+                        {typeof document.extracted_data?.vat_amount_gbp === 'number'
+                          ? formatCurrency(document.extracted_data.vat_amount_gbp)
+                          : '—'}
+                      </td>
                       <td>{document.extracted_data?.suggested_category || '—'}</td>
                       <td>{document.extracted_data?.expense_article || '—'}</td>
                       <td>
@@ -680,7 +749,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
                     </tr>
                     {reviewChangeEntries.length > 0 ? (
                       <tr className={styles.reviewDiffRow}>
-                        <td className={styles.reviewDiffCell} colSpan={11}>
+                        <td className={styles.reviewDiffCell} colSpan={12}>
                           <div className={styles.reviewDiffHeader}>Manual review changes</div>
                           <div className={styles.reviewDiffList}>
                             {reviewChangeEntries.map(([field, change]) => (

@@ -18,7 +18,7 @@ from .reporting_service import InvoiceReportingService
 from .sync_service import InvoiceTransactionSync
 
 app = FastAPI(
-    title="SelfMonitor Invoice Service",
+    title="MyNetTax Invoice Service",
     description="Enterprise invoice generation, management and reporting for FinTech platform",
     version="1.0.0",
     tags_metadata=[
@@ -601,7 +601,7 @@ async def create_payment_link(
     if invoice.status == "paid":
         raise HTTPException(status_code=400, detail="Invoice already paid")
 
-    payment_link = f"https://pay.selfmonitor.app/invoice/{invoice_id}"
+    payment_link = f"https://pay.mynettax.app/invoice/{invoice_id}"
 
     return {
         "invoice_id": invoice_id,

@@ -54,7 +54,7 @@ export default function MySubscriptionPage({ token, user }: Props) {
   return (
     <>
       <Head>
-        <title>My subscription — SelfMonitor</title>
+        <title>My subscription — MyNetTax</title>
       </Head>
       <div className={styles.pageContainer}>
         <div className={styles.pageHeader}>

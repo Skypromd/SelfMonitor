@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: SelfMonitor Strategic Partnerships & B2B Platform
+  title: MyNetTax Strategic Partnerships & B2B Platform
   description: |
     Enterprise alliance management and B2B revenue acceleration platform for unicorn trajectory growth.
     
@@ -29,7 +29,7 @@ info:
     - OEM/White-label Partners
   version: 1.0.0
   contact:
-    name: SelfMonitor Partnership Team
+    name: MyNetTax Partnership Team
     email: partnerships@selfmonitor.uk
   license:
     name: Proprietary

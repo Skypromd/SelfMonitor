@@ -16,7 +16,7 @@ async def security_config():
         "session_timeout_minutes": 60,
         "max_login_attempts": 5,
         "allowed_origins": os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(","),
-        "mfa_issuer": os.getenv("MFA_ISSUER", "SelfMonitor"),
+        "mfa_issuer": os.getenv("MFA_ISSUER", "MyNetTax"),
     }
 
 

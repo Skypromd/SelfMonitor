@@ -79,7 +79,7 @@ def setup_function() -> None:
     main.AUTH_RUNTIME_STATE_SNAPSHOT_ENABLED = False
     main.AUTH_RUNTIME_STATE_BACKEND = "file"
     main.AUTH_RUNTIME_STATE_REDIS_URL = ""
-    main.AUTH_RUNTIME_STATE_REDIS_KEY = "selfmonitor:auth:runtime_state"
+    main.AUTH_RUNTIME_STATE_REDIS_KEY = "mynettax:auth:runtime_state"
     main.AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS = 0.5
     main.AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED = True
     main.AUTH_RUNTIME_RETENTION_EVENTS_DAYS = 30
@@ -225,8 +225,8 @@ def test_risk_alert_webhook_dispatch_can_be_signed() -> None:
     assert len(captured_calls) == 1
     _, payload, headers = captured_calls[0]
     assert headers
-    timestamp = headers["X-SelfMonitor-Signature-Timestamp"]
-    signature = headers["X-SelfMonitor-Signature"]
+    timestamp = headers["X-MyNetTax-Signature-Timestamp"]
+    signature = headers["X-MyNetTax-Signature"]
     canonical_payload = json.dumps(payload, separators=(",", ":"), sort_keys=True)
     expected = hmac.new(
         main.AUTH_SECURITY_ALERT_WEBHOOK_SIGNING_SECRET.encode("utf-8"),
@@ -358,8 +358,8 @@ def test_security_alert_delivery_receipt_endpoint_updates_delivery_status() -> N
         data=raw_body,
         headers={
             "Content-Type": "application/json",
-            "X-SelfMonitor-Signature-Timestamp": timestamp,
-            "X-SelfMonitor-Signature": signature,
+            "X-MyNetTax-Signature-Timestamp": timestamp,
+            "X-MyNetTax-Signature": signature,
         },
     )
     assert receipt_response.status_code == 200
@@ -681,8 +681,8 @@ def test_mobile_attestation_session_gates_mobile_sensitive_endpoints() -> None:
 
     mobile_headers = {
         "Authorization": f"Bearer {login_payload['access_token']}",
-        "X-SelfMonitor-Mobile-Attestation": attestation_payload["attestation_token"],
-        "X-SelfMonitor-Mobile-Installation-Id": installation_id,
+        "X-MyNetTax-Mobile-Attestation": attestation_payload["attestation_token"],
+        "X-MyNetTax-Mobile-Installation-Id": installation_id,
     }
     register_response = client.post(
         "/mobile/security/push-tokens",
@@ -693,7 +693,7 @@ def test_mobile_attestation_session_gates_mobile_sensitive_endpoints() -> None:
     assert register_response.json()["total_active_tokens"] == 1
 
     wrong_installation_headers = dict(mobile_headers)
-    wrong_installation_headers["X-SelfMonitor-Mobile-Installation-Id"] = "other-installation"
+    wrong_installation_headers["X-MyNetTax-Mobile-Installation-Id"] = "other-installation"
     denied_response = client.post(
         "/mobile/security/push-tokens",
         headers=wrong_installation_headers,

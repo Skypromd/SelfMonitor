@@ -57,9 +57,20 @@ class OCRPipelineError(RuntimeError):
 
 
 @dataclass
+class TextractStructuredHints:
+    """Optional fields from Textract AnalyzeExpense (real AWS)."""
+
+    total_amount: Optional[float] = None
+    vendor_name: Optional[str] = None
+    transaction_date: Optional[datetime.date] = None
+    vat_amount: Optional[float] = None
+
+
+@dataclass
 class OCRTextResult:
     provider: str
     text: str
+    structured_hints: Optional[TextractStructuredHints] = None
 
 
 @dataclass
@@ -195,6 +206,7 @@ def estimate_ocr_confidence(
     total_amount: Optional[float],
     transaction_date: Optional[datetime.date],
     vendor_name: Optional[str],
+    vat_amount: Optional[float] = None,
 ) -> float:
     score = 0.0
     if text.strip():
@@ -205,6 +217,8 @@ def estimate_ocr_confidence(
         score += 0.25
     if vendor_name:
         score += 0.2
+    if vat_amount is not None and vat_amount > 0:
+        score += 0.05
     return round(min(score, 1.0), 3)
 
 
@@ -214,6 +228,7 @@ def evaluate_ocr_quality(
     total_amount: Optional[float],
     transaction_date: Optional[datetime.date],
     vendor_name: Optional[str],
+    vat_amount: Optional[float] = None,
     threshold: float = 0.75,
 ) -> OCRQualityResult:
     confidence = estimate_ocr_confidence(
@@ -221,6 +236,7 @@ def evaluate_ocr_quality(
         total_amount=total_amount,
         transaction_date=transaction_date,
         vendor_name=vendor_name,
+        vat_amount=vat_amount,
     )
     missing_fields: list[str] = []
     if total_amount is None:
@@ -257,6 +273,11 @@ def _textract_client():
     )
 
 
+def _lines_from_blocks(blocks: list) -> str:
+    lines = [str(block.get("Text", "")).strip() for block in blocks if block.get("BlockType") == "LINE"]
+    return "\n".join([line for line in lines if line])
+
+
 def _extract_text_textract(document_bytes: bytes) -> str:
     try:
         client = _textract_client()
@@ -265,13 +286,107 @@ def _extract_text_textract(document_bytes: bytes) -> str:
     except Exception as exc:  # noqa: BLE001 - provider errors are surfaced as OCRPipelineError
         raise OCRPipelineError(f"textract_failed: {exc}") from exc
 
-    lines = [str(block.get("Text", "")).strip() for block in blocks if block.get("BlockType") == "LINE"]
-    return "\n".join([line for line in lines if line])
+    return _lines_from_blocks(blocks)
+
+
+def _summary_field_type_and_value(field: dict) -> tuple[str, str]:
+    typ = field.get("Type") or {}
+    type_text = str(typ.get("Text", "")).strip() if isinstance(typ, dict) else str(typ).strip()
+    vd = field.get("ValueDetection") or {}
+    val = str(vd.get("Text", "")).strip() if isinstance(vd, dict) else ""
+    return type_text, val
+
+
+def _parse_money_value(raw: str) -> Optional[float]:
+    if not raw:
+        return None
+    cleaned = raw.replace("£", "").replace("€", "").replace("$", "").strip()
+    cleaned = cleaned.replace(",", "")
+    try:
+        amount = float(cleaned)
+    except ValueError:
+        return None
+    if amount <= 0:
+        return None
+    return round(amount, 2)
+
+
+def parse_analyze_expense_response(response: dict) -> tuple[str, TextractStructuredHints]:
+    """Turn AnalyzeExpense API JSON into plain text (LINE blocks) + structured hints."""
+    blocks = response.get("Blocks", [])
+    text = _lines_from_blocks(blocks)
+    hints = TextractStructuredHints()
+    grand_total: Optional[float] = None
+    other_total: Optional[float] = None
+    for doc in response.get("ExpenseDocuments", []) or []:
+        for field in doc.get("SummaryFields", []) or []:
+            ftype, fval = _summary_field_type_and_value(field)
+            if not ftype or not fval:
+                continue
+            upper = ftype.upper()
+            if upper == "VENDOR_NAME":
+                if not hints.vendor_name and len(fval) <= 128:
+                    hints.vendor_name = fval
+            elif upper in ("INVOICE_RECEIPT_DATE", "ORDER_DATE", "DELIVERY_DATE"):
+                parsed = extract_transaction_date(fval)
+                if parsed and hints.transaction_date is None:
+                    hints.transaction_date = parsed
+            elif upper in ("RECEIPT_GRAND_TOTAL",):
+                m = _parse_money_value(fval)
+                if m is not None:
+                    grand_total = m
+            elif upper in ("TOTAL", "AMOUNT_DUE", "SUBTOTAL", "AMOUNT_PAID", "TOTAL_AMOUNT"):
+                m = _parse_money_value(fval)
+                if m is not None:
+                    other_total = m if other_total is None else max(other_total, m)
+            elif upper in ("TAX", "SALES_TAX", "VAT", "GST"):
+                m = _parse_money_value(fval)
+                if m is not None:
+                    hints.vat_amount = m
+    if grand_total is not None:
+        hints.total_amount = grand_total
+    elif other_total is not None:
+        hints.total_amount = other_total
+    return text, hints
+
+
+def _extract_with_analyze_expense(document_bytes: bytes) -> OCRTextResult:
+    try:
+        client = _textract_client()
+        response = client.analyze_expense(Document={"Bytes": document_bytes})
+    except Exception as exc:  # noqa: BLE001
+        raise OCRPipelineError(f"textract_analyze_expense_failed: {exc}") from exc
+    text, hints = parse_analyze_expense_response(response)
+    if not text.strip() and hints.total_amount is None and not hints.vendor_name:
+        raise OCRPipelineError("ocr_empty_text")
+    return OCRTextResult(provider="textract-expense", text=text, structured_hints=hints)
+
+
+def extract_vat_from_text(text: str) -> Optional[float]:
+    """Heuristic VAT line when not using AnalyzeExpense."""
+    if not text.strip():
+        return None
+    for raw_line in text.splitlines():
+        line = _normalize_whitespace(raw_line)
+        lower = line.lower()
+        if "vat" not in lower and "sales tax" not in lower:
+            continue
+        if any(x in lower for x in ("subtotal", "net", "excl", "excluding")):
+            continue
+        matches = _CURRENCY_AMOUNT_RE.findall(line)
+        for token in matches:
+            amt = _parse_amount_token(token)
+            if amt is not None:
+                return amt
+    return None
 
 
 def extract_document_text(document_bytes: bytes) -> OCRTextResult:
     provider = os.getenv("OCR_PROVIDER", "textract").strip().lower()
-    if provider == "textract":
-        text = _extract_text_textract(document_bytes=document_bytes)
-        return OCRTextResult(provider="textract", text=text)
-    raise OCRPipelineError(f"unsupported_ocr_provider: {provider}")
+    if provider != "textract":
+        raise OCRPipelineError(f"unsupported_ocr_provider: {provider}")
+    api = os.getenv("OCR_TEXTRACT_API", "detect").strip().lower()
+    if api == "expense":
+        return _extract_with_analyze_expense(document_bytes=document_bytes)
+    text = _extract_text_textract(document_bytes=document_bytes)
+    return OCRTextResult(provider="textract", text=text, structured_hints=None)

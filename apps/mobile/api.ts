@@ -21,6 +21,34 @@ export function getAuthServiceOrigin(): string {
   return stripTrailingSlashes(API_URL);
 }
 
+/**
+ * REST base for voice-gateway behind nginx (`/api/voice/...`).
+ * Set `EXPO_PUBLIC_VOICE_HTTP_URL` (e.g. `http://10.0.2.2:8000/api/voice`) or it is derived from `API_URL`.
+ */
+export function getVoiceHttpBase(): string {
+  const explicit = process.env.EXPO_PUBLIC_VOICE_HTTP_URL?.trim();
+  if (explicit) return stripTrailingSlashes(explicit);
+  if (API_URL.endsWith('/api')) return stripTrailingSlashes(`${API_URL}/voice`);
+  return stripTrailingSlashes(`${API_URL}/api/voice`);
+}
+
+/**
+ * WebSocket URL for `/ws/voice` (nginx: `/api/voice/ws/voice`).
+ * Set `EXPO_PUBLIC_VOICE_WS_URL` to the prefix `ws://host:port/api/voice/ws` (no trailing slash).
+ */
+export function getVoiceWebSocketUrl(): string {
+  const explicit = process.env.EXPO_PUBLIC_VOICE_WS_URL?.trim();
+  const prefix = explicit
+    ? stripTrailingSlashes(explicit)
+    : (() => {
+        const origin = getAuthServiceOrigin();
+        const wsScheme = origin.startsWith('https') ? 'wss' : 'ws';
+        const hostAndPath = origin.replace(/^https?:\/\//i, '');
+        return `${wsScheme}://${hostAndPath}/api/voice/ws`;
+      })();
+  return `${prefix}/voice`;
+}
+
 export async function getToken(): Promise<string | null> {
   return await SecureStore.getItemAsync('authToken');
 }

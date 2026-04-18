@@ -269,6 +269,26 @@ def test_create_receipt_draft_transaction_and_deduplicate(db_session):
     assert second_data["transaction"]["id"] == first_tx["id"]
 
 
+def test_create_receipt_draft_includes_vat_in_description(db_session):
+    payload = {
+        "document_id": str(uuid.uuid4()),
+        "filename": "cafe_receipt.pdf",
+        "transaction_date": "2026-02-12",
+        "total_amount": 14.4,
+        "currency": "GBP",
+        "vendor_name": "Cafe",
+        "vat_amount_gbp": 2.4,
+    }
+    response = client.post(
+        "/transactions/receipt-drafts",
+        headers=get_auth_headers(),
+        json=payload,
+    )
+    assert response.status_code == 200
+    desc = response.json()["transaction"]["description"]
+    assert "VAT £2.40" in desc
+
+
 def test_import_reconciles_matching_receipt_draft(db_session):
     account_id = str(uuid.uuid4())
     draft_payload = {
@@ -625,7 +645,7 @@ def test_cis_resolve_task_with_self_attested_record(db_session):
             "source": "manual_attested",
             "matched_bank_transaction_ids": [tx["id"]],
             "attestation": {
-                "attestation_version": "selfmonitor_cis_v1",
+                "attestation_version": "mynettax_cis_v1",
                 "attestation_text": "Test attestation for pytest",
                 "client_context": {"test": True},
             },
@@ -689,7 +709,7 @@ def test_cis_refund_tracker_returns_totals(db_session):
     r = client.get("/cis/refund-tracker", headers=get_auth_headers())
     assert r.status_code == 200
     j = r.json()
-    assert j["schema_version"] == "selfmonitor-cis-refund-tracker-v1"
+    assert j["schema_version"] == "mynettax-cis-refund-tracker-v1"
     assert j["totals"]["open_tasks"] >= 1
     assert "by_tax_month" in j
 
@@ -789,7 +809,7 @@ def test_cis_evidence_pack_manifest(db_session):
     r = client.get("/cis/evidence-pack/manifest", headers=get_auth_headers(plan="growth"))
     assert r.status_code == 200
     manifest = r.json()["manifest"]
-    assert manifest.get("schema_version") == "selfmonitor-evidence-pack-v1"
+    assert manifest.get("schema_version") == "mynettax-evidence-pack-v1"
     assert manifest.get("pack_tier") == "basic"
     assert "watermark_unverified_cis" in manifest
 

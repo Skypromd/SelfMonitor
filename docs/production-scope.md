@@ -1,4 +1,4 @@
-# Production scope (v1 MVP) — SelfMonitor
+# Production scope (v1 MVP) — MyNetTax
 
 Цель: **зафиксировать**, что входит в первый продакшен‑релиз, чтобы не тащить в него все 30+ сервисов сразу.
 

@@ -1,7 +1,7 @@
 {
   "name": "security-service",
   "version": "1.0.0",
-  "description": "Enterprise-grade security management and monitoring service for SelfMonitor",
+  "description": "Enterprise-grade security management and monitoring service for MyNetTax",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -34,7 +34,7 @@
     "fintech",
     "enterprise"
   ],
-  "author": "SelfMonitor Security Team",
+  "author": "MyNetTax Security Team",
   "license": "PROPRIETARY",
   "dependencies": {
     "@fastify/helmet": "^11.1.1",

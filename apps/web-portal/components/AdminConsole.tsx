@@ -1089,7 +1089,7 @@ export default function AdminConsole({ token, user, section }: AdminPageProps) {
       <div className={styles.pageHeader}>
         <p className={styles.pageEyebrow}>Operations Console</p>
         <h1 className={styles.pageTitle}>{t('nav.admin')}</h1>
-        <p className={styles.pageLead}>Full visibility and control over your SelfMonitor business — revenue, users, partners, and AI automation.</p>
+        <p className={styles.pageLead}>Full visibility and control over your MyNetTax business — revenue, users, partners, and AI automation.</p>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════

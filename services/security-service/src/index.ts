@@ -53,7 +53,7 @@ if (process.env.ELASTICSEARCH_URL) {
     new ElasticsearchTransport({
       level: 'info',
       clientOpts: { node: process.env.ELASTICSEARCH_URL },
-      index: 'selfmonitor-security-logs',
+      index: 'mynettax-security-logs',
       typeName: 'security_event',
     }),
   );
@@ -76,7 +76,7 @@ const SECURITY_CONFIG = {
     expiresIn: '15m', // Short-lived for security
   },
   mfa: {
-    issuer: process.env.MFA_ISSUER || 'SelfMonitor',
+    issuer: process.env.MFA_ISSUER || 'MyNetTax',
     window: 2, // Allow 2 time windows for TOTP
   },
   session: {
@@ -183,7 +183,7 @@ class SecurityService {
     // CORS configuration
     await this.app.register(cors, {
       origin: (origin, callback) => {
-        const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://app.selfmonitor.com').split(',');
+        const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://app.mynettax.com').split(',');
         if (!origin || allowedOrigins.includes(origin)) {
           callback(null, true);
         } else {

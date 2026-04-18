@@ -25,7 +25,7 @@ export async function buildMobileHmrcFraudClientContext(): Promise<Record<string
     typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
   return {
     client_type: 'mobile',
-    user_agent: `SelfMonitorMobile/${ver} (${Platform.OS} ${Platform.Version})`,
+    user_agent: `MyNetTaxMobile/${ver} (${Platform.OS} ${Platform.Version})`,
     app_version: ver,
     device_id: deviceId,
     os_name_version: `${Platform.OS} ${String(Platform.Version)}`,

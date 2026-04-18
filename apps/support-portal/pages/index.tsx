@@ -169,7 +169,7 @@ export default function SupportPortal() {
   return (
     <>
       <Head>
-        <title>SelfMonitor Support</title>
+        <title>MT Support — MyNetTax</title>
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
@@ -178,7 +178,7 @@ export default function SupportPortal() {
         <header style={s.header}>
           <div style={s.headerBrand}>
             <span style={s.logo}>SM</span>
-            <span style={s.brandText}>SelfMonitor <span style={{ color: 'var(--muted)', fontWeight: 400 }}>Support</span></span>
+            <span style={s.brandText}>MT <span style={{ color: 'var(--muted)', fontWeight: 400 }}>Support</span></span>
           </div>
           <div style={s.headerRight}>
             <span style={{ ...s.dot, background: wsState === 'open' ? 'var(--success)' : wsState === 'connecting' ? 'var(--warn)' : 'var(--danger)' }} />
@@ -351,7 +351,7 @@ export default function SupportPortal() {
 
                 {ticketState === 'error' && (
                   <p style={{ color: 'var(--danger)', fontSize: '.9rem' }}>
-                    Something went wrong. Please try again or email support@selfmonitor.app.
+                    Something went wrong. Please try again or email support@mynettax.app.
                   </p>
                 )}
 
@@ -367,7 +367,7 @@ export default function SupportPortal() {
         {tab === 'status' && (
           <div style={s.panel}>
             <h2 style={s.panelTitle}>System Status</h2>
-            <p style={s.panelSub}>Current status of all SelfMonitor services.</p>
+            <p style={s.panelSub}>Current status of all MyNetTax services.</p>
             <div style={s.statusGrid}>
               {SERVICES.map(svc => (
                 <div key={svc.name} style={s.statusRow}>
@@ -393,7 +393,7 @@ export default function SupportPortal() {
         )}
 
         <footer style={s.footer}>
-          © 2026 SelfMonitor Ltd · <a href="mailto:support@selfmonitor.app">support@selfmonitor.app</a> · <a href="http://localhost:3000">Main App</a>
+          © 2026 MyNetTax Ltd · <a href="mailto:support@mynettax.app">support@mynettax.app</a> · <a href="http://localhost:3000">Main App</a>
         </footer>
       </div>
     </>

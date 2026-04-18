@@ -1,7 +1,7 @@
 {
   "name": "@selfmonitor/graphql-gateway",
   "version": "1.0.0",
-  "description": "Apollo Federation Gateway for SelfMonitor microservices",
+  "description": "Apollo Federation Gateway for MyNetTax microservices",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

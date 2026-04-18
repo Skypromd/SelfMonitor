@@ -7,20 +7,20 @@ export default function PrivacyPage() {
       <main className={styles.main} style={{ maxWidth: 800 }}>
         <h1 className={styles.title}>Privacy Policy</h1>
         <p className={styles.description}>
-          How SelfMonitor collects, uses, stores, and protects your personal data.
+          How MyNetTax collects, uses, stores, and protects your personal data.
         </p>
 
         <section className={styles.subContainer}>
           <h2>1. Who We Are</h2>
           <p>
-            SelfMonitor Ltd (&quot;SelfMonitor&quot;, &quot;we&quot;, &quot;us&quot;, or
+            MyNetTax Ltd (&quot;MyNetTax&quot;, &quot;we&quot;, &quot;us&quot;, or
             &quot;our&quot;) is a company registered in England and Wales. We are the data
-            controller responsible for your personal data processed through the SelfMonitor
+            controller responsible for your personal data processed through the MyNetTax
             platform, including our web portal, mobile applications, and APIs.
           </p>
           <p>
             Our Data Protection Officer (DPO) can be contacted at:{' '}
-            <strong>dpo@selfmonitor.co.uk</strong>
+            <strong>dpo@mynettax.co.uk</strong>
           </p>
           <p>
             We are committed to protecting your personal data in compliance with the UK General
@@ -31,7 +31,7 @@ export default function PrivacyPage() {
           <h2>2. What Data We Collect</h2>
 
           <h3>2.1. Account Data</h3>
-          <p>When you register and use SelfMonitor, we collect:</p>
+          <p>When you register and use MyNetTax, we collect:</p>
           <ul>
             <li>Full name</li>
             <li>Email address</li>
@@ -82,7 +82,7 @@ export default function PrivacyPage() {
           <p>
             As required by HMRC&apos;s fraud prevention policy for third-party software, we
             collect the following device data when you interact with HMRC services through
-            SelfMonitor:
+            MyNetTax:
           </p>
           <ul>
             <li>IP address</li>
@@ -114,7 +114,7 @@ export default function PrivacyPage() {
 
           <h3>3.1. Contract Performance (Article 6(1)(b))</h3>
           <p>
-            Processing necessary to perform the contract between you and SelfMonitor, including
+            Processing necessary to perform the contract between you and MyNetTax, including
             providing the core Service features: account management, invoicing, tax calculations,
             bank synchronisation, HMRC submissions, and financial reporting.
           </p>
@@ -162,7 +162,7 @@ export default function PrivacyPage() {
           <h2>4. How We Use Your Data</h2>
           <p>We use your personal data to:</p>
           <ul>
-            <li>Provide, maintain, and improve the SelfMonitor platform;</li>
+            <li>Provide, maintain, and improve the MyNetTax platform;</li>
             <li>Process and display your financial data, transactions, and reports;</li>
             <li>Prepare and submit tax returns and MTD updates to HMRC on your behalf;</li>
             <li>Synchronise bank transactions when you initiate a sync;</li>
@@ -192,7 +192,7 @@ export default function PrivacyPage() {
           <p>
             If you connect your bank account, SaltEdge acts as our authorised Account Information
             Service Provider (AISP) under FCA regulation. SaltEdge accesses your bank data on a
-            read-only basis to relay transaction information to SelfMonitor. SaltEdge is bound by
+            read-only basis to relay transaction information to MyNetTax. SaltEdge is bound by
             its own data protection obligations and FCA requirements.
           </p>
 
@@ -302,7 +302,7 @@ export default function PrivacyPage() {
           </ul>
           <p>
             To exercise any of these rights, please contact our Data Protection Officer at{' '}
-            <strong>dpo@selfmonitor.co.uk</strong>. We will respond to your request within one
+            <strong>dpo@mynettax.co.uk</strong>. We will respond to your request within one
             calendar month, as required by the UK GDPR. In complex cases, we may extend this
             period by a further two months, and we will inform you of any such extension.
           </p>
@@ -325,16 +325,16 @@ export default function PrivacyPage() {
 
           <h2>11. Children</h2>
           <p>
-            The SelfMonitor Service is not intended for individuals under the age of 18. We do
+            The MyNetTax Service is not intended for individuals under the age of 18. We do
             not knowingly collect personal data from children. If we become aware that we have
             collected data from a person under 18, we will take steps to delete that data promptly.
             If you believe a child has provided us with personal data, please contact us at{' '}
-            <strong>dpo@selfmonitor.co.uk</strong>.
+            <strong>dpo@mynettax.co.uk</strong>.
           </p>
 
           <h2>12. Automated Decision-Making</h2>
           <p>
-            SelfMonitor uses automated processing for tax calculations, expense categorisation,
+            MyNetTax uses automated processing for tax calculations, expense categorisation,
             and financial analysis. These automated processes assist with data presentation but
             do not make legally binding decisions on your behalf. All submissions to HMRC require
             your explicit manual confirmation. You have the right to request human review of any
@@ -366,7 +366,7 @@ export default function PrivacyPage() {
           </ul>
           <p>
             We would appreciate the opportunity to address your concerns before you contact the
-            ICO. Please reach out to us first at <strong>dpo@selfmonitor.co.uk</strong>.
+            ICO. Please reach out to us first at <strong>dpo@mynettax.co.uk</strong>.
           </p>
 
           <h2>15. Contact Us</h2>
@@ -375,9 +375,9 @@ export default function PrivacyPage() {
             contact us:
           </p>
           <ul>
-            <li><strong>Data Protection Officer:</strong> dpo@selfmonitor.co.uk</li>
-            <li><strong>General Support:</strong> support@selfmonitor.co.uk</li>
-            <li><strong>Address:</strong> SelfMonitor Ltd, London, England</li>
+            <li><strong>Data Protection Officer:</strong> dpo@mynettax.co.uk</li>
+            <li><strong>General Support:</strong> support@mynettax.co.uk</li>
+            <li><strong>Address:</strong> MyNetTax Ltd, London, England</li>
           </ul>
 
           <p style={{ marginTop: '2rem', fontSize: '0.85rem', color: 'var(--lp-text-muted)' }}>

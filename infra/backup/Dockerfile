@@ -9,7 +9,8 @@ RUN apk add --no-cache \
     gzip \
     tar \
     dcron \
-    docker-cli
+    docker-cli \
+    gnupg
 
 # Create backup user
 RUN adduser -D -s /bin/bash backup
@@ -22,13 +23,15 @@ COPY backup.sh /scripts/backup.sh
 COPY restore.sh /scripts/restore.sh
 COPY entrypoint.sh /scripts/entrypoint.sh
 
+# Windows CRLF breaks shebang ("no such file or directory" on exec)
+RUN sed -i 's/\r$//' /scripts/*.sh
+
 # Make scripts executable
 RUN chmod +x /scripts/*.sh
 
-# Set up cron job
+# Cron must run as root; /backups volume must be writable for pg_dump output
 RUN echo "0 2 * * * /scripts/backup.sh" | crontab -
 
-USER backup
 WORKDIR /backups
 
-CMD ["/scripts/entrypoint.sh"]
+CMD ["/bin/sh", "/scripts/entrypoint.sh"]

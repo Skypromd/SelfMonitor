@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   # Federation requires real GraphQL subgraphs; most REST services have no /graphql yet.
   # Start with: docker compose --profile graphql up -d graphql-gateway
@@ -305,7 +303,7 @@ services:
       MINIO_ENDPOINT: "minio:9000"
       MINIO_ACCESS_KEY: "${MINIO_ROOT_USER}"
       MINIO_SECRET_KEY: "${MINIO_ROOT_PASSWORD}"
-      S3_BUCKET_NAME: "selfmonitor-ml-artifacts"
+      S3_BUCKET_NAME: "mynettax-ml-artifacts"
 
       # Database Configuration
       DB_HOST: "postgres-master"
@@ -355,7 +353,7 @@ services:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       AUTH_RUNTIME_STATE_BACKEND: "${AUTH_RUNTIME_STATE_BACKEND:-redis}"
       AUTH_RUNTIME_STATE_REDIS_URL: "${AUTH_RUNTIME_STATE_REDIS_URL:-redis://redis:6379/1}"
-      AUTH_RUNTIME_STATE_REDIS_KEY: "${AUTH_RUNTIME_STATE_REDIS_KEY:-selfmonitor:auth:runtime_state}"
+      AUTH_RUNTIME_STATE_REDIS_KEY: "${AUTH_RUNTIME_STATE_REDIS_KEY:-mynettax:auth:runtime_state}"
       AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS: "${AUTH_RUNTIME_STATE_REDIS_TIMEOUT_SECONDS:-0.5}"
       AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED: "${AUTH_RUNTIME_REDIS_SEGMENTED_ENABLED:-true}"
       AUTH_RUNTIME_RETENTION_EVENTS_DAYS: "${AUTH_RUNTIME_RETENTION_EVENTS_DAYS:-30}"
@@ -373,6 +371,7 @@ services:
       AUTH_REQUIRE_ADMIN_2FA: "${AUTH_REQUIRE_ADMIN_2FA:-true}"
       APP_BASE_URL: "${APP_BASE_URL:-http://localhost:3000}"
       AUTH_CORS_EXTRA_ORIGINS: "${AUTH_CORS_EXTRA_ORIGINS:-http://practolog.localhost:3000}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
     volumes:
       - auth_service_data:/data
     # ports are no longer exposed directly
@@ -403,7 +402,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -435,12 +440,14 @@ services:
       - compliance-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
-      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
       INTERNAL_ALLOWED_ISSUERS: "${INTERNAL_ALLOWED_ISSUERS:-documents-service}"
-      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-selfmonitor-internal}"
+      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-mynettax-internal}"
       DATABASE_URL: "${TRANSACTIONS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_transactions}"
       CATEGORIZATION_SERVICE_URL: "${CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       COMPLIANCE_SERVICE_URL: "${TRANSACTIONS_COMPLIANCE_SERVICE_URL:-http://compliance-service:80}"
+      # Kafka producer not wired on app; keep off unless emit_event + broker are implemented
+      KAFKA_ENABLED: "${KAFKA_ENABLED:-false}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
@@ -496,7 +503,7 @@ services:
       SALTEDGE_BASE_URL: "${SALTEDGE_BASE_URL:-https://www.saltedge.com/api/v5}"
       SALTEDGE_APP_ID: "${SALTEDGE_APP_ID:-}"
       SALTEDGE_SECRET: "${SALTEDGE_SECRET:-}"
-      SALTEDGE_CUSTOMER_PREFIX: "${SALTEDGE_CUSTOMER_PREFIX:-selfmonitor}"
+      SALTEDGE_CUSTOMER_PREFIX: "${SALTEDGE_CUSTOMER_PREFIX:-mynettax}"
       SALTEDGE_SCOPES: "${SALTEDGE_SCOPES:-accounts,transactions}"
     volumes:
       - banking_connections_data:/data
@@ -541,9 +548,9 @@ services:
       CELERY_BROKER_URL: "${CELERY_BROKER_URL:-redis://redis:6379/0}"
       CELERY_RESULT_BACKEND: "${CELERY_RESULT_BACKEND:-redis://redis:6379/0}"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
-      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
       INTERNAL_SERVICE_ISSUER: "${INTERNAL_SERVICE_ISSUER:-documents-service}"
-      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-selfmonitor-internal}"
+      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-mynettax-internal}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://minio:9000}"
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-minioadmin}"
       AWS_SECRET_ACCESS_KEY: "${DOCUMENTS_AWS_SECRET_ACCESS_KEY:-minioadmin}"
@@ -554,6 +561,7 @@ services:
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
       OCR_PROVIDER: "${DOCUMENTS_OCR_PROVIDER:-textract}"
+      OCR_TEXTRACT_API: "${DOCUMENTS_OCR_TEXTRACT_API:-detect}"
       OCR_REVIEW_CONFIDENCE_THRESHOLD: "${DOCUMENTS_OCR_REVIEW_CONFIDENCE_THRESHOLD:-0.75}"
     networks:
       - default_network
@@ -602,9 +610,9 @@ services:
       - minio
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
-      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
       INTERNAL_SERVICE_ISSUER: "${INTERNAL_SERVICE_ISSUER:-documents-service}"
-      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-selfmonitor-internal}"
+      INTERNAL_JWT_AUDIENCE: "${INTERNAL_JWT_AUDIENCE:-mynettax-internal}"
       DATABASE_URL: "${DOCUMENTS_DATABASE_URL:-postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master/db_documents}"
       AWS_ENDPOINT_URL: "${DOCUMENTS_AWS_ENDPOINT_URL:-http://minio:9000}"
       AWS_ACCESS_KEY_ID: "${DOCUMENTS_AWS_ACCESS_KEY_ID:-minioadmin}"
@@ -615,6 +623,7 @@ services:
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
       OCR_PROVIDER: "${DOCUMENTS_OCR_PROVIDER:-textract}"
+      OCR_TEXTRACT_API: "${DOCUMENTS_OCR_TEXTRACT_API:-detect}"
       OCR_REVIEW_CONFIDENCE_THRESHOLD: "${DOCUMENTS_OCR_REVIEW_CONFIDENCE_THRESHOLD:-0.75}"
     # No longer need local volume for uploads
     # volumes:
@@ -676,8 +685,8 @@ services:
       BILLING_REPORT_ALLOWED_ROLES: "${PARTNER_BILLING_REPORT_ALLOWED_ROLES:-admin,billing_admin}"
       BILLING_INVOICE_DUE_DAYS: "${PARTNER_BILLING_INVOICE_DUE_DAYS:-14}"
       SELF_EMPLOYED_INVOICE_DUE_DAYS: "${PARTNER_SELF_EMPLOYED_INVOICE_DUE_DAYS:-14}"
-      SELF_EMPLOYED_PAYMENT_LINK_BASE_URL: "${PARTNER_SELF_EMPLOYED_PAYMENT_LINK_BASE_URL:-https://pay.selfmonitor.app/invoices}"
-      SELF_EMPLOYED_PAYMENT_LINK_PROVIDER: "${PARTNER_SELF_EMPLOYED_PAYMENT_LINK_PROVIDER:-selfmonitor_payment_link}"
+      SELF_EMPLOYED_PAYMENT_LINK_BASE_URL: "${PARTNER_SELF_EMPLOYED_PAYMENT_LINK_BASE_URL:-https://pay.mynettax.app/invoices}"
+      SELF_EMPLOYED_PAYMENT_LINK_PROVIDER: "${PARTNER_SELF_EMPLOYED_PAYMENT_LINK_PROVIDER:-mynettax_payment_link}"
       SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS: "${PARTNER_SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS:-3}"
       SELF_EMPLOYED_REMINDER_EMAIL_ENABLED: "${PARTNER_SELF_EMPLOYED_REMINDER_EMAIL_ENABLED:-false}"
       SELF_EMPLOYED_REMINDER_SMS_ENABLED: "${PARTNER_SELF_EMPLOYED_REMINDER_SMS_ENABLED:-false}"
@@ -685,8 +694,8 @@ services:
       SELF_EMPLOYED_REMINDER_SMS_PROVIDER: "${PARTNER_SELF_EMPLOYED_REMINDER_SMS_PROVIDER:-webhook}"
       SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL: "${PARTNER_SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL:-}"
       SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL: "${PARTNER_SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL:-}"
-      SELF_EMPLOYED_REMINDER_EMAIL_FROM: "${PARTNER_SELF_EMPLOYED_REMINDER_EMAIL_FROM:-noreply@selfmonitor.app}"
-      SELF_EMPLOYED_REMINDER_SMS_FROM: "${PARTNER_SELF_EMPLOYED_REMINDER_SMS_FROM:-SelfMonitor}"
+      SELF_EMPLOYED_REMINDER_EMAIL_FROM: "${PARTNER_SELF_EMPLOYED_REMINDER_EMAIL_FROM:-noreply@mynettax.app}"
+      SELF_EMPLOYED_REMINDER_SMS_FROM: "${PARTNER_SELF_EMPLOYED_REMINDER_SMS_FROM:-MyNetTax}"
       SELF_EMPLOYED_SENDGRID_API_URL: "${PARTNER_SELF_EMPLOYED_SENDGRID_API_URL:-https://api.sendgrid.com/v3/mail/send}"
       SELF_EMPLOYED_SENDGRID_API_KEY: "${PARTNER_SELF_EMPLOYED_SENDGRID_API_KEY:-}"
       SELF_EMPLOYED_TWILIO_API_BASE_URL: "${PARTNER_SELF_EMPLOYED_TWILIO_API_BASE_URL:-https://api.twilio.com}"
@@ -800,6 +809,9 @@ services:
     container_name: categorization-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      CATEGORIZATION_LEARNED_RULES_PATH: "/data/learned_rules.json"
+    volumes:
+      - categorization_learned_data:/data
     networks:
       - default_network
 
@@ -939,7 +951,7 @@ services:
       SECURITY_REDIS_URL: "redis://redis:6379/3"
       JWT_SECRET_KEY: "${SECURITY_JWT_SECRET_KEY:-${AUTH_SECRET_KEY}}"
       SESSION_SECRET: "${SECURITY_SESSION_SECRET:-${AUTH_SECRET_KEY}}"
-      MFA_ISSUER: "SelfMonitor"
+      MFA_ISSUER: "MyNetTax"
       ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:3001"
       JAEGER_ENDPOINT: "http://jaeger:14268/api/traces"
       PROMETHEUS_ENABLED: "true"
@@ -950,7 +962,13 @@ services:
       - default_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8018/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8018/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1020,7 +1038,7 @@ services:
       BACKUP_SCHEDULE: "0 2 * * *" # Daily at 2 AM
       BACKUP_RETENTION_DAYS: 30
       BACKUP_ENCRYPTION_KEY: "${BACKUP_ENCRYPTION_KEY}"
-      S3_BUCKET: "${S3_BUCKET:-selfmonitor-backups}"
+      S3_BUCKET: "${S3_BUCKET:-mynettax-backups}"
       S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
       S3_SECRET_KEY: "${S3_SECRET_KEY}"
       BACKUP_WEBHOOK_URL: "${BACKUP_WEBHOOK_URL}"
@@ -1034,10 +1052,19 @@ services:
     restart: unless-stopped
 
   finops-monitor:
-    build: ./services/finops-monitor
+    build:
+      context: .
+      dockerfile: services/finops-monitor/Dockerfile
     container_name: finops-monitor
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
+      AUTH_SERVICE_INTERNAL_URL: "${FINOPS_AUTH_SERVICE_INTERNAL_URL:-http://auth-service:80}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
       REDIS_URL: "${FINOPS_REDIS_URL:-redis://redis-master:6379/0}"
       FRAUD_SERVICE_URL: "http://fraud-detection:80"
       TRANSACTIONS_SERVICE_URL: "http://transactions-service:80"
@@ -1051,7 +1078,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8021/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8021/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1080,7 +1113,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8022/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8022/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1093,6 +1132,7 @@ services:
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      VOICE_GATEWAY_ENFORCE_JWT: "${VOICE_GATEWAY_ENFORCE_JWT:-0}"
       AGENT_SERVICE_URL: "http://ai-agent-service:80"
       MTD_AGENT_URL: "http://mtd-agent:8022"
       WHISPER_MODEL: "whisper-1"
@@ -1106,7 +1146,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8023/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8023/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1134,7 +1180,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1152,7 +1204,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1167,7 +1225,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1199,7 +1263,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1218,7 +1288,13 @@ services:
     networks:
       - default_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8025/health"]
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8025/health')",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1245,6 +1321,7 @@ volumes:
   security_logs:
   support_data:
   auth_service_data:
+  categorization_learned_data:
 
 networks:
   default_network:

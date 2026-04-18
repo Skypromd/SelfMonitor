@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**SelfMonitor** — all-in-one tax & finance platform for UK self-employed individuals.
+**MyNetTax** — all-in-one tax & finance platform for UK self-employed individuals.
 
 **Core capabilities:**
 - HMRC MTD tax filing (quarterly + final declaration) — sandbox tested, 13 endpoints

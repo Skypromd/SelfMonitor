@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { CisComplianceBanner } from '../components/CisComplianceBanner';
+import { downloadAccountantTaxSummaryPdf } from '../lib/taxAccountantPdf';
 import styles from '../styles/Home.module.css';
 
 const TAX_SERVICE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
@@ -88,6 +89,116 @@ const fmt = (n: number) =>
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
 
+function escapeTaxCsvField(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function downloadTaxCsv(filename: string, lines: string[]): void {
+  const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildAccountantSummaryLines(yearLabel: string, periodStart: string, periodEnd: string, calc: TaxCalc): string[] {
+  const lines: string[] = [
+    'field,value',
+    `tax_year,${escapeTaxCsvField(yearLabel)}`,
+    `period_start,${escapeTaxCsvField(periodStart)}`,
+    `period_end,${escapeTaxCsvField(periodEnd)}`,
+    `disclaimer,${escapeTaxCsvField('MyNetTax export for accountant review. Not an HMRC submission file.')}`,
+    `total_income,${calc.total_income}`,
+    `total_expenses,${calc.total_expenses}`,
+    `taxable_profit,${calc.taxable_profit}`,
+    `personal_allowance_used,${calc.personal_allowance_used}`,
+    `pa_taper_reduction,${calc.pa_taper_reduction}`,
+    `taxable_amount_after_allowance,${calc.taxable_amount_after_allowance}`,
+    `basic_rate_tax,${calc.basic_rate_tax}`,
+    `higher_rate_tax,${calc.higher_rate_tax}`,
+    `additional_rate_tax,${calc.additional_rate_tax}`,
+    `estimated_income_tax_due,${calc.estimated_income_tax_due}`,
+    `estimated_class2_nic_due,${calc.estimated_class2_nic_due}`,
+    `estimated_class4_nic_due,${calc.estimated_class4_nic_due}`,
+    `estimated_tax_due,${calc.estimated_tax_due}`,
+    `payment_on_account_jan,${calc.payment_on_account_jan}`,
+    `payment_on_account_jul,${calc.payment_on_account_jul}`,
+    `cis_tax_credit_verified_gbp,${calc.cis_tax_credit_verified_gbp ?? 0}`,
+    `cis_tax_credit_self_attested_gbp,${calc.cis_tax_credit_self_attested_gbp ?? 0}`,
+    `mtd_reporting_required,${calc.mtd_obligation.reporting_required}`,
+    `mtd_qualifying_income_estimate,${calc.mtd_obligation.qualifying_income_estimate}`,
+    `mtd_next_deadline,${escapeTaxCsvField(calc.mtd_obligation.next_deadline ?? '')}`,
+  ];
+  lines.push('');
+  lines.push('category,total_amount,taxable_amount');
+  for (const row of calc.summary_by_category) {
+    lines.push(
+      [
+        escapeTaxCsvField(row.category),
+        String(row.total_amount),
+        String(row.taxable_amount),
+      ].join(','),
+    );
+  }
+  if (calc.mtd_obligation.quarterly_updates?.length) {
+    lines.push('');
+    lines.push('mtd_quarter,due_date,status');
+    for (const q of calc.mtd_obligation.quarterly_updates) {
+      lines.push(
+        [escapeTaxCsvField(q.quarter), escapeTaxCsvField(q.due_date), escapeTaxCsvField(q.status)].join(','),
+      );
+    }
+  }
+  return lines;
+}
+
+function buildTransactionListingLines(txns: Txn[]): string[] {
+  const header =
+    'date,amount_gbp,flow,description,category,reconciliation_status,transaction_id,provider_transaction_id';
+  const lines = [header];
+  for (const t of txns) {
+    const flow = t.amount >= 0 ? 'INCOME' : 'EXPENSE';
+    lines.push(
+      [
+        escapeTaxCsvField(t.date),
+        String(t.amount),
+        flow,
+        escapeTaxCsvField(t.description),
+        escapeTaxCsvField(t.category ?? ''),
+        escapeTaxCsvField(t.reconciliation_status ?? ''),
+        escapeTaxCsvField(t.id),
+        escapeTaxCsvField(t.provider_transaction_id),
+      ].join(','),
+    );
+  }
+  return lines;
+}
+
+/** Bookkeeping-style columns (income vs expenses) for spreadsheets / accountant handoff — not an HMRC file format. */
+function buildBookkeepingSplitLines(txns: Txn[]): string[] {
+  const header = 'Date,Description,Income_gbp,Expense_gbp,Category';
+  const lines = [header];
+  for (const t of txns) {
+    const income = t.amount > 0 ? String(t.amount) : '';
+    const expense = t.amount < 0 ? String(Math.abs(t.amount)) : '';
+    lines.push(
+      [
+        escapeTaxCsvField(t.date),
+        escapeTaxCsvField(t.description),
+        income,
+        expense,
+        escapeTaxCsvField(t.category ?? ''),
+      ].join(','),
+    );
+  }
+  return lines;
+}
+
 function Pill({ label, color }: { label: string; color: string }) {
   return (
     <span style={{
@@ -145,6 +256,7 @@ export default function TaxPreparationPage({ token }: Props) {
   const [unmatchedCount, setUnmatchedCount] = useState(0);
   const [calc, setCalc] = useState<TaxCalc | null>(null);
   const [ready, setReady] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const year = TAX_YEARS[yearIdx];
 
@@ -248,7 +360,10 @@ export default function TaxPreparationPage({ token }: Props) {
         <p style={{ margin: '6px 0 0', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
           Review your income, expenses, and tax liability before submitting to HMRC. CIS deductions without a
           statement are shown as <strong>UNVERIFIED</strong> until you upload evidence. For high-stakes filings,
-          consider an accountant review (delegated access — see product roadmap).
+          consider an accountant review (delegated access — see product roadmap).{' '}
+          Alternate route:{' '}
+          <Link href="/tax-return-preview" style={{ color: 'var(--accent)' }}>/tax-return-preview</Link>
+          (identical view).
         </p>
       </div>
 
@@ -270,6 +385,107 @@ export default function TaxPreparationPage({ token }: Props) {
             {y.label}
           </button>
         ))}
+        {ready && calc && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <button
+              type="button"
+              onClick={() =>
+                downloadTaxCsv(
+                  `tax-summary-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+                  buildAccountantSummaryLines(year.label, year.start, year.end, calc),
+                )
+              }
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--card-bg)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Export summary CSV
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadTaxCsv(
+                  `tax-transactions-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+                  buildTransactionListingLines(txns),
+                )
+              }
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--card-bg)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Export transactions CSV
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadTaxCsv(
+                  `tax-bookkeeping-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+                  buildBookkeepingSplitLines(txns),
+                )
+              }
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--card-bg)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Income and expense in separate columns for spreadsheets. Not an HMRC submission format."
+            >
+              Bookkeeping CSV
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                void (async () => {
+                  if (!calc) return;
+                  setPdfBusy(true);
+                  try {
+                    await downloadAccountantTaxSummaryPdf({
+                      yearLabel: year.label,
+                      periodStart: year.start,
+                      periodEnd: year.end,
+                      calc,
+                      filename: `tax-summary-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.pdf`,
+                    });
+                  } finally {
+                    setPdfBusy(false);
+                  }
+                })();
+              }}
+              disabled={pdfBusy}
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--accent)',
+                background: 'rgba(59,130,246,0.12)',
+                color: 'var(--accent)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: pdfBusy ? 'wait' : 'pointer',
+              }}
+            >
+              {pdfBusy ? 'PDF…' : 'Export summary PDF'}
+            </button>
+          </div>
+        )}
         <span style={{ marginLeft: 'auto', fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>
           SA100 deadline: <strong style={{ color: 'var(--text-secondary)' }}>{TAX_YEARS[yearIdx].deadline}</strong>
         </span>
@@ -298,7 +514,15 @@ export default function TaxPreparationPage({ token }: Props) {
       )}
 
       {!loading && ready && calc && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 24, alignItems: 'start' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(260px, 340px)',
+            gap: 24,
+            alignItems: 'start',
+          }}
+          className="tax-prep-grid"
+        >
 
           {/* LEFT COLUMN */}
           <div>

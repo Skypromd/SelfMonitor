@@ -2,6 +2,7 @@ import {
   BarChart2, Bot, CreditCard, ExternalLink, Globe, Headphones,
   LayoutDashboard, LogOut, Menu, Receipt, Send, ShieldCheck, Stethoscope, Users, User,
 } from 'lucide-react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ReactNode, useEffect, useRef, useState } from 'react';
@@ -114,7 +115,9 @@ export default function AdminLayout({ children, onLogout, user }: AdminLayoutPro
         aria-label="Admin navigation"
       >
         <h1 className={styles.logo}>
-          SelfMonitor
+          <span className={styles.logoRow}>
+            <Image src="/branding/mynettax-icon.svg" alt="MyNetTax" width={28} height={32} priority />
+          </span>
           <span style={{ display: 'block', fontSize: '0.62rem', fontWeight: 600, color: 'var(--accent-hover)', marginTop: 3, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
             Ops Console
           </span>

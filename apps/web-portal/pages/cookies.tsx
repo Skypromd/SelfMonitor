@@ -7,7 +7,7 @@ export default function CookiesPage() {
       <main className={styles.main} style={{ maxWidth: 800 }}>
         <h1 className={styles.title}>Cookie Policy</h1>
         <p className={styles.description}>
-          How SelfMonitor uses cookies and similar technologies.
+          How MyNetTax uses cookies and similar technologies.
         </p>
 
         <section className={styles.subContainer}>
@@ -23,7 +23,7 @@ export default function CookiesPage() {
             period or until you delete them).
           </p>
           <p>
-            This Cookie Policy explains what cookies we use on the SelfMonitor platform, why we
+            This Cookie Policy explains what cookies we use on the MyNetTax platform, why we
             use them, and how you can manage your preferences. This policy should be read
             alongside our <Link className={styles.link} href="/privacy">Privacy Policy</Link>.
           </p>
@@ -32,7 +32,7 @@ export default function CookiesPage() {
 
           <h3>2.1. Essential Cookies (Required)</h3>
           <p>
-            These cookies are strictly necessary for the operation of the SelfMonitor platform.
+            These cookies are strictly necessary for the operation of the MyNetTax platform.
             Without them, the Service cannot function properly. They cannot be disabled.
           </p>
           <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '1rem' }}>
@@ -69,7 +69,7 @@ export default function CookiesPage() {
 
           <h3>2.2. Analytics Cookies (Optional)</h3>
           <p>
-            These cookies help us understand how visitors interact with the SelfMonitor platform
+            These cookies help us understand how visitors interact with the MyNetTax platform
             by collecting information about page views, feature usage, and navigation patterns.
             All analytics data is aggregated and anonymised where possible.
           </p>
@@ -156,7 +156,7 @@ export default function CookiesPage() {
 
           <h3>4.1. Cookie Consent Banner</h3>
           <p>
-            When you first visit SelfMonitor, you will see a cookie consent banner allowing you
+            When you first visit MyNetTax, you will see a cookie consent banner allowing you
             to accept or reject optional cookies. You can change your preferences at any time
             through your account settings.
           </p>
@@ -173,7 +173,7 @@ export default function CookiesPage() {
             <li>Set your browser to notify you when a cookie is being set.</li>
           </ul>
           <p>
-            Please note that blocking essential cookies will prevent the SelfMonitor platform from
+            Please note that blocking essential cookies will prevent the MyNetTax platform from
             functioning correctly. You may not be able to log in or use core features.
           </p>
 
@@ -203,7 +203,7 @@ export default function CookiesPage() {
 
           <h2>6. Do Not Track</h2>
           <p>
-            Some browsers offer a &quot;Do Not Track&quot; (DNT) signal. SelfMonitor currently
+            Some browsers offer a &quot;Do Not Track&quot; (DNT) signal. MyNetTax currently
             respects DNT signals by treating them as equivalent to opting out of analytics cookies.
           </p>
 
@@ -226,9 +226,9 @@ export default function CookiesPage() {
             If you have any questions about this Cookie Policy, please contact us:
           </p>
           <ul>
-            <li><strong>Data Protection Officer:</strong> dpo@selfmonitor.co.uk</li>
-            <li><strong>General Support:</strong> support@selfmonitor.co.uk</li>
-            <li><strong>Address:</strong> SelfMonitor Ltd, London, England</li>
+            <li><strong>Data Protection Officer:</strong> dpo@mynettax.co.uk</li>
+            <li><strong>General Support:</strong> support@mynettax.co.uk</li>
+            <li><strong>Address:</strong> MyNetTax Ltd, London, England</li>
           </ul>
           <p>
             For more information about our data practices, please refer to our{' '}

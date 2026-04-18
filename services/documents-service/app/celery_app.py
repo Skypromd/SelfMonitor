@@ -27,14 +27,20 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from . import crud, schemas
-from .expense_classifier import suggest_category_from_keywords, to_expense_article
+from .expense_classifier import (
+    canonical_hmrc_expense_code,
+    suggest_category_from_keywords,
+    to_expense_article,
+)
 from .ocr_pipeline import (
     OCRPipelineError,
+    TextractStructuredHints,
     build_text_excerpt,
     evaluate_ocr_quality,
     extract_document_text,
     extract_total_amount,
     extract_transaction_date,
+    extract_vat_from_text,
     infer_vendor_name,
 )
 
@@ -176,6 +182,11 @@ def create_receipt_draft_transaction(
         "expense_article": extracted_data.expense_article,
         "is_potentially_deductible": extracted_data.is_potentially_deductible,
     }
+    if (
+        extracted_data.vat_amount_gbp is not None
+        and extracted_data.vat_amount_gbp > 0
+    ):
+        payload["vat_amount_gbp"] = float(extracted_data.vat_amount_gbp)
 
     try:
         token = encode_receipt_draft_internal_token(
@@ -224,10 +235,22 @@ async def _build_extracted_data_from_text(
     text: str,
     provider: str,
     filename: str,
+    structured_hints: TextractStructuredHints | None = None,
 ) -> schemas.ExtractedData:
     total_amount = extract_total_amount(text)
     transaction_date = extract_transaction_date(text)
     vendor_name = infer_vendor_name(text=text, filename=filename)
+    vat_amount_gbp = extract_vat_from_text(text)
+
+    if structured_hints is not None:
+        if structured_hints.total_amount is not None:
+            total_amount = structured_hints.total_amount
+        if structured_hints.transaction_date is not None:
+            transaction_date = structured_hints.transaction_date
+        if structured_hints.vendor_name:
+            vendor_name = structured_hints.vendor_name
+        if structured_hints.vat_amount is not None:
+            vat_amount_gbp = structured_hints.vat_amount
     description = " ".join(
         part
         for part in [
@@ -266,15 +289,20 @@ async def _build_extracted_data_from_text(
         total_amount=total_amount,
         transaction_date=transaction_date,
         vendor_name=vendor_name,
+        vat_amount=vat_amount_gbp,
         threshold=OCR_REVIEW_CONFIDENCE_THRESHOLD,
     )
+
+    hmrc_code = canonical_hmrc_expense_code(suggested_category)
 
     return schemas.ExtractedData(
         total_amount=total_amount,
         vendor_name=vendor_name,
         transaction_date=transaction_date,
+        vat_amount_gbp=vat_amount_gbp,
         suggested_category=suggested_category,
         expense_article=expense_article,
+        hmrc_allowable_expense_code=hmrc_code,
         is_potentially_deductible=is_deductible,
         ocr_provider=provider,
         raw_text_excerpt=build_text_excerpt(text, limit=320),
@@ -296,12 +324,22 @@ def _create_index_text(extracted_data: schemas.ExtractedData, raw_text: str) -> 
         f"Date: {extracted_data.transaction_date}"
         if extracted_data.transaction_date
         else None,
+        (
+            f"VAT: {extracted_data.vat_amount_gbp}"
+            if extracted_data.vat_amount_gbp is not None
+            else None
+        ),
         f"Category: {extracted_data.suggested_category}"
         if extracted_data.suggested_category
         else None,
         f"Expense article: {extracted_data.expense_article}"
         if extracted_data.expense_article
         else None,
+        (
+            f"HMRC expense code: {extracted_data.hmrc_allowable_expense_code}"
+            if extracted_data.hmrc_allowable_expense_code
+            else None
+        ),
         (
             f"Potentially deductible: {extracted_data.is_potentially_deductible}"
             if extracted_data.is_potentially_deductible is not None
@@ -394,6 +432,7 @@ def ocr_processing_task(
                 text=ocr_result.text,
                 provider=ocr_result.provider,
                 filename=filename,
+                structured_hints=ocr_result.structured_hints,
             )
         )
         receipt_transaction_id, receipt_transaction_duplicated = (

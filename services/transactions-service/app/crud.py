@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import os
+import re
 import uuid
 from typing import List
 
@@ -16,6 +17,20 @@ RECEIPT_DRAFT_ACCOUNT_NAMESPACE = uuid.UUID(
     os.getenv("RECEIPT_DRAFT_ACCOUNT_NAMESPACE", "f0b6e53b-0dd0-4f65-91d2-7bb272f8ea20")
 )
 RECEIPT_DRAFT_PREFIX = "receipt-draft-"
+_RECEIPT_VAT_TAIL = re.compile(r"\s*·\s*VAT £([0-9]+(?:\.[0-9]{1,2})?)\s*$", re.IGNORECASE)
+
+
+def _split_receipt_description_vat(description: str) -> tuple[str, float | None]:
+    raw = str(description or "")
+    match = _RECEIPT_VAT_TAIL.search(raw)
+    if not match:
+        return raw, None
+    try:
+        vat = float(match.group(1))
+    except ValueError:
+        return raw, None
+    return raw[: match.start()].rstrip(), vat
+
 
 async def count_transactions_in_calendar_month(
     db: AsyncSession,
@@ -306,8 +321,12 @@ def _receipt_draft_account_id(user_id: str) -> uuid.UUID:
 def _build_receipt_draft_description(payload: schemas.ReceiptDraftCreateRequest) -> str:
     title = payload.vendor_name or payload.filename
     if payload.expense_article:
-        return f"Receipt draft: {title} ({payload.expense_article})"
-    return f"Receipt draft: {title}"
+        base = f"Receipt draft: {title} ({payload.expense_article})"
+    else:
+        base = f"Receipt draft: {title}"
+    if payload.vat_amount_gbp is not None and payload.vat_amount_gbp > 0:
+        return f"{base} · VAT £{payload.vat_amount_gbp:.2f}"
+    return base
 
 
 async def create_or_get_receipt_draft_transaction(
@@ -366,19 +385,27 @@ async def update_receipt_draft(
     draft = result.scalars().first()
     if not draft:
         return None
+    base, preserved_vat = _split_receipt_description_vat(str(draft.description or ""))
     if payload.total_amount is not None:
         draft.amount = -abs(payload.total_amount)
     if payload.transaction_date is not None:
         draft.date = payload.transaction_date
     if payload.vendor_name is not None:
-        desc = str(draft.description or "")
-        if "(" in desc and desc.endswith(")"):
-            article = desc[desc.index("(") + 1 : -1]
-            draft.description = f"Receipt draft: {payload.vendor_name} ({article})"
+        if "(" in base and base.endswith(")"):
+            article = base[base.index("(") + 1 : -1]
+            base = f"Receipt draft: {payload.vendor_name} ({article})"
         else:
-            draft.description = f"Receipt draft: {payload.vendor_name}"
+            base = f"Receipt draft: {payload.vendor_name}"
     if payload.suggested_category is not None:
         draft.category = payload.suggested_category
+    if payload.vat_amount_gbp is not None:
+        vat_out = payload.vat_amount_gbp if payload.vat_amount_gbp > 0 else None
+    else:
+        vat_out = preserved_vat
+    if vat_out is not None and vat_out > 0:
+        draft.description = f"{base} · VAT £{vat_out:.2f}"
+    else:
+        draft.description = base
     await db.commit()
     await db.refresh(draft)
     return draft

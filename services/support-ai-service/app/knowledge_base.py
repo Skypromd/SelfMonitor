@@ -23,7 +23,7 @@ FAQ: list[dict[str, Any]] = [
         "answer": (
             "Go to **Dashboard → Bank Connections**, click **Add Bank**, and follow the secure Open Banking flow. "
             "Supported banks include Barclays, HSBC, Lloyds, Monzo, Starling, and 40+ more. "
-            "The connection is read-only — SelfMonitor can never move money on your behalf."
+            "The connection is read-only — MyNetTax can never move money on your behalf."
         ),
     },
     {
@@ -74,7 +74,7 @@ FAQ: list[dict[str, Any]] = [
         ],
         "question": "How does HMRC auto-submission work?",
         "answer": (
-            "On **Pro and Business plans**, SelfMonitor submits your Self Assessment"
+            "On **Pro and Business plans**, MyNetTax submits your Self Assessment"
             " return directly to HMRC via the MTD API. "
             "You always review and **approve before anything is sent**"
             " — we never submit without your explicit confirmation."
@@ -114,7 +114,7 @@ FAQ: list[dict[str, Any]] = [
         "question": "How do invoices work?",
         "answer": (
             "Go to **Invoices → New Invoice**, fill in client details, add line items, and hit Send. "
-            "SelfMonitor generates a professional PDF and emails it automatically. "
+            "MyNetTax generates a professional PDF and emails it automatically. "
             "You can track payment status and send reminders. VAT-inclusive invoices are supported."
         ),
     },

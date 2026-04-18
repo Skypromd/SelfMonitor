@@ -77,7 +77,13 @@
     "potential_savings": "Potenzielle Ersparnis",
     "trial_title": "Testphase aktiv",
     "trial_badge": "Test",
-    "trial_subtitle": "Dein Test endet in"
+    "trial_subtitle": "Dein Test endet in",
+    "mtd_card_title": "MTD (Einkommensteuer)",
+    "mtd_open_tax": "Steuerübersicht öffnen",
+    "mtd_body_overdue": "Ein vierteljährliches MTD-Update scheint überfällig. Prüfen Sie die Zahlen in der Steuerübersicht vor jeder Einreichung.",
+    "mtd_body_due": "Ein Quartal ist beendet — prüfen Sie die Fristen in der Steuerübersicht.",
+    "mtd_body_upcoming": "Vierteljährliche MTD-Updates können gelten. Nächste Frist in der Steuerübersicht.",
+    "mtd_body_generic": "Je nach Einkommen können vierteljährliche MTD-Updates gelten. Öffnen Sie die Steuerübersicht für Termine."
   },
   "tax": {
     "title": "Steuerübersicht",
@@ -107,7 +113,11 @@
     "estimated_tax": "Geschätzte Steuer",
     "export_csv": "CSV exportieren",
     "category_breakdown": "SA103-Kategorien",
-    "pro_note": "HMRC-Einreichung nur mit Pro."
+    "pro_note": "HMRC-Einreichung nur mit Pro.",
+    "mtd_section_title": "Vierteljährliche MTD-Updates",
+    "mtd_next_label": "Nächste Abgabefrist",
+    "mtd_quarter_due": "Fällig",
+    "mtd_footer": "Erst nach Prüfung und Bestätigung einreichen — nicht automatisch."
   },
   "cis": {
     "tracker_title": "CIS refund tracker",
@@ -234,7 +244,9 @@
     "register_title": "Self Assessment registrieren",
     "register_note": "Registrierung bis 5. Oktober.",
     "paper_title": "Papierfrist",
-    "paper_note": "Papierabgabe bis 31. Oktober."
+    "paper_note": "Papierabgabe bis 31. Oktober.",
+    "mtd_badge": "MTD",
+    "mtd_quarter_note": "Vierteljährliches MTD-Update. Prüfen Sie die Zahlen in der Steuerübersicht vor jeder HMRC-Einreichung."
   },
   "accountant": {
     "title": "Export für Steuerberater",

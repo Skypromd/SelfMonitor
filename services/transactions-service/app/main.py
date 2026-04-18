@@ -704,7 +704,7 @@ async def cis_evidence_zip(
         iter([buf.getvalue()]),
         media_type="application/zip",
         headers={
-            "Content-Disposition": 'attachment; filename="selfmonitor-cis-evidence-pack.zip"'
+            "Content-Disposition": 'attachment; filename="mynettax-cis-evidence-pack.zip"'
         },
     )
 

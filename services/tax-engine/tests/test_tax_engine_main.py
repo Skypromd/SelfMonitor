@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
@@ -12,7 +13,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 for module_name in list(sys.modules):
     if module_name == "app" or module_name.startswith("app."):
         sys.modules.pop(module_name, None)
+from app import main as app_main
 from app.main import app
+
+
+@pytest.fixture(autouse=True)
+def _clear_regulatory_rules_cache():
+    """Per-test isolation: in-memory TTL cache would otherwise pin the first mocked rules per tax year."""
+    app_main._REGULATORY_RULES_CACHE.clear()
+    yield
+    app_main._REGULATORY_RULES_CACHE.clear()
 
 client = TestClient(app)
 AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
@@ -209,6 +219,142 @@ def test_mtd_prepare_aligns_with_calculate_and_includes_hmrc_shape():
     assert hmj["periodIncome"]["turnover"] == cj["total_income"]
     assert hmj["periodExpenses"]["allowableExpenses"] == cj["total_expenses"]
     assert pj["integrations_quarterly_payload"] is None
+
+
+def test_calculate_ruk_splits_income_tax_across_basic_higher_additional_bands():
+    """rUK 20% / 40% / 45% bands applied to taxable income after personal allowance (incl. taper)."""
+    mock_transactions = [
+        {"date": "2025-06-10", "amount": 150_000.0, "category": "income"},
+    ]
+    reg = _minimal_regulatory_rules()
+    with _httpx_get_router(transactions=mock_transactions, regulatory=reg):
+        response = client.post(
+            "/calculate",
+            headers=get_auth_headers(),
+            json={
+                "start_date": "2025-04-06",
+                "end_date": "2026-04-05",
+                "jurisdiction": "UK",
+                "region": "england_wales",
+            },
+        )
+    assert response.status_code == 200
+    p = response.json()
+    assert p["taxable_amount_after_allowance"] == 150_000.0
+    assert p["personal_allowance_used"] == 0.0
+    exp_basic = round(37_700 * 0.20, 2)
+    exp_higher = round((125_140 - 37_700) * 0.40, 2)
+    exp_add = round((150_000 - 125_140) * 0.45, 2)
+    assert p["basic_rate_tax"] == exp_basic
+    assert p["higher_rate_tax"] == exp_higher
+    assert p["additional_rate_tax"] == exp_add
+    assert p["estimated_income_tax_due"] == round(exp_basic + exp_higher + exp_add, 2)
+
+
+def test_calculate_class2_nic_zero_when_regulatory_mandatory_cash_is_zero():
+    mock_transactions = [{"date": "2025-08-01", "amount": 20_000.0, "category": "income"}]
+    reg = _minimal_regulatory_rules()
+    with _httpx_get_router(transactions=mock_transactions, regulatory=reg):
+        response = client.post(
+            "/calculate",
+            headers=get_auth_headers(),
+            json={"start_date": "2025-04-06", "end_date": "2026-04-05", "jurisdiction": "UK"},
+        )
+    assert response.status_code == 200
+    assert response.json()["estimated_class2_nic_due"] == 0.0
+
+
+def test_calculate_personal_allowance_taper_over_100k():
+    mock_transactions = [{"date": "2025-08-01", "amount": 110_000.0, "category": "income"}]
+    reg = _minimal_regulatory_rules()
+    with _httpx_get_router(transactions=mock_transactions, regulatory=reg):
+        response = client.post(
+            "/calculate",
+            headers=get_auth_headers(),
+            json={"start_date": "2025-04-06", "end_date": "2026-04-05", "jurisdiction": "UK"},
+        )
+    assert response.status_code == 200
+    p = response.json()
+    assert p["pa_taper_reduction"] == 5000.0
+    assert p["personal_allowance_used"] == 7570.0
+    assert p["taxable_amount_after_allowance"] == 102_430.0
+
+
+def test_calculate_postgraduate_loan_from_regulatory_rules():
+    mock_transactions = [{"date": "2025-08-01", "amount": 40_000.0, "category": "income"}]
+    reg = _minimal_regulatory_rules(
+        student_loans={"postgraduate": {"threshold": 21000, "rate": 0.06}},
+    )
+    with _httpx_get_router(transactions=mock_transactions, regulatory=reg):
+        response = client.post(
+            "/calculate",
+            headers=get_auth_headers(),
+            json={
+                "start_date": "2025-04-06",
+                "end_date": "2026-04-05",
+                "jurisdiction": "UK",
+                "student_loan_plan": "postgraduate",
+            },
+        )
+    assert response.status_code == 200
+    expected = round(max(0.0, 40_000.0 - 21_000.0) * 0.06, 2)
+    assert response.json()["student_loan_repayment_gbp"] == expected
+
+
+def test_calculate_payments_on_account_when_liability_over_threshold():
+    mock_transactions = [{"date": "2025-08-01", "amount": 85_000.0, "category": "income"}]
+    reg = _minimal_regulatory_rules(
+        student_loans={"plan_2": {"threshold": 27295, "rate": 0.09}},
+    )
+    with _httpx_get_router(transactions=mock_transactions, regulatory=reg):
+        response = client.post(
+            "/calculate",
+            headers=get_auth_headers(),
+            json={
+                "start_date": "2025-04-06",
+                "end_date": "2026-04-05",
+                "jurisdiction": "UK",
+                "student_loan_plan": "plan_2",
+            },
+        )
+    assert response.status_code == 200
+    p = response.json()
+    base = p["estimated_income_tax_due"] + p["estimated_class4_nic_due"] + p["student_loan_repayment_gbp"]
+    assert base > 1000.0
+    half = round(base * 0.5, 2)
+    assert p["payment_on_account_jan"] == half
+    assert p["payment_on_account_jul"] == half
+
+
+def test_calculate_paye_tax_credit_reduces_amount_due():
+    mock_transactions = [{"date": "2025-08-01", "amount": 60_000.0, "category": "income"}]
+    reg = _minimal_regulatory_rules()
+    with _httpx_get_router(transactions=mock_transactions, regulatory=reg):
+        r0 = client.post(
+            "/calculate",
+            headers=get_auth_headers(),
+            json={
+                "start_date": "2025-04-06",
+                "end_date": "2026-04-05",
+                "jurisdiction": "UK",
+                "paye_gross_salary_in_period_gbp": 12000.0,
+            },
+        )
+        r1 = client.post(
+            "/calculate",
+            headers=get_auth_headers(),
+            json={
+                "start_date": "2025-04-06",
+                "end_date": "2026-04-05",
+                "jurisdiction": "UK",
+                "paye_gross_salary_in_period_gbp": 12000.0,
+                "paye_tax_paid_in_period_gbp": 2500.0,
+            },
+        )
+    assert r0.status_code == r1.status_code == 200
+    p0, p1 = r0.json(), r1.json()
+    assert p1["paye_tax_credit_applied_gbp"] == 2500.0
+    assert p1["estimated_tax_due"] == round(max(0.0, p0["estimated_tax_due"] - 2500.0), 2)
 
 
 def test_calculate_tax_includes_class4_nic_for_higher_profit():

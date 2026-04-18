@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
@@ -89,6 +90,38 @@ function monthBoundsFromDate(isoDate: string): { period_start: string; period_en
   return { period_start, period_end };
 }
 
+function escapeCsvField(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function downloadTransactionsCsv(rows: TransactionRecord[]): void {
+  const header = ['id', 'date', 'description', 'amount', 'currency', 'category', 'reconciliation_status'];
+  const lines = [
+    header.join(','),
+    ...rows.map((t) =>
+      [
+        escapeCsvField(t.id),
+        escapeCsvField(t.date),
+        escapeCsvField(t.description),
+        String(t.amount),
+        escapeCsvField(t.currency),
+        escapeCsvField(t.category || ''),
+        escapeCsvField(t.reconciliation_status || ''),
+      ].join(','),
+    ),
+  ];
+  const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 type SyncQuota = { daily_limit: number; used_today: number; remaining: number };
 
 function BankConnection({ token, onConnectionComplete }: { token: string, onConnectionComplete: (accountId: string) => void }) {
@@ -134,6 +167,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
       // Store token so the callback page can use it
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('bankingToken', token);
+        sessionStorage.setItem('bankingProviderId', OPEN_BANKING_PROVIDER);
       }
       // Real OAuth redirect to TrueLayer
       window.location.href = data.consent_url;
@@ -154,7 +188,10 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
         </span>
       </div>
       <p style={{ color: 'var(--lp-muted)', fontSize: '0.9rem', marginBottom: '1.25rem' }}>
-        Connect your bank account to automatically import transactions. You control when data syncs — we never fetch automatically.
+        Connect your bank account to automatically import transactions. You control when data syncs — we never fetch automatically.{' '}
+        <Link href="/connect-bank" style={{ color: 'var(--lp-accent-teal)', fontWeight: 600 }}>
+          Browse Open Banking providers
+        </Link>
       </p>
       {syncQuota && (
         <p style={{ color: 'var(--lp-muted)', fontSize: '0.85rem', marginBottom: '1rem' }}>
@@ -230,6 +267,21 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
 
   const cisFormInitKeyRef = useRef<string | null>(null);
 
+  const [txnFilterDateFrom, setTxnFilterDateFrom] = useState('');
+  const [txnFilterDateTo, setTxnFilterDateTo] = useState('');
+  const [txnFilterCategory, setTxnFilterCategory] = useState('');
+
+  const displayedTransactions = useMemo(() => {
+    return transactions.filter((t) => {
+      if (txnFilterDateFrom && t.date < txnFilterDateFrom) return false;
+      if (txnFilterDateTo && t.date > txnFilterDateTo) return false;
+      if (txnFilterCategory === '__uncategorized__') {
+        if (t.category) return false;
+      } else if (txnFilterCategory && (t.category || '') !== txnFilterCategory) return false;
+      return true;
+    });
+  }, [transactions, txnFilterDateFrom, txnFilterDateTo, txnFilterCategory]);
+
   useEffect(() => {
     if (!modalTask || !modalTxn) {
       cisFormInitKeyRef.current = null;
@@ -270,7 +322,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'selfmonitor-cis-evidence-pack.zip';
+      a.download = 'mynettax-cis-evidence-pack.zip';
       a.click();
       URL.revokeObjectURL(url);
     } finally {
@@ -377,7 +429,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
       const attestation =
         cisForm.mode === 'self_attest'
           ? {
-              attestation_version: 'selfmonitor_cis_v1',
+              attestation_version: 'mynettax_cis_v1',
               attestation_text: [
                 'User confirmed:',
                 `understands_unverified_cis_risk=${cisForm.ackUnderstand}`,
@@ -492,6 +544,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   };
 
   const handleCategoryChange = async (transactionId: string, newCategory: string) => {
+    const row = transactions.find((t) => t.id === transactionId);
     try {
       const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/${transactionId}`, {
         method: 'PATCH',
@@ -500,6 +553,13 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
       });
       if (!response.ok) throw new Error('Failed to update category');
       setTransactions(transactions.map(t => t.id === transactionId ? { ...t, category: newCategory } : t));
+      if (row?.description) {
+        void fetch(`${CATEGORIZATION_SERVICE_URL}/learn`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ description: row.description, category: newCategory }),
+        }).catch(() => {});
+      }
     } catch (err) {
       console.error('Failed to update category:', err);
     }
@@ -769,82 +829,177 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     );
   }
 
+  const filterInputStyle = {
+    padding: '0.35rem 0.5rem',
+    borderRadius: 8,
+    border: '1px solid var(--lp-border)',
+    background: 'var(--lp-bg-elevated)',
+    color: 'var(--text-primary)',
+    fontSize: '0.82rem',
+  };
+
   return (
     <div className={styles.subContainer}>
       {cisModal}
       {cisBanner}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
         <h2 style={{ margin: 0 }}>Recent Transactions</h2>
-        {transactions.some((t) => !t.category) && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginLeft: 'auto' }}>
           <button
-            onClick={handleAutoCategorize}
-            disabled={isAutoCategorizing}
+            type="button"
+            onClick={() => downloadTransactionsCsv(displayedTransactions)}
+            disabled={displayedTransactions.length === 0}
             style={{
-              padding: '0.35rem 0.85rem', borderRadius: 8, border: '1px solid var(--lp-accent-teal)',
-              background: 'rgba(13,148,136,0.1)', color: 'var(--lp-accent-teal)',
-              cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+              padding: '0.35rem 0.85rem', borderRadius: 8, border: '1px solid var(--lp-border)',
+              background: 'var(--lp-bg-elevated)', color: 'var(--lp-muted)',
+              cursor: displayedTransactions.length === 0 ? 'not-allowed' : 'pointer', fontSize: '0.82rem', fontWeight: 600,
+              opacity: displayedTransactions.length === 0 ? 0.5 : 1,
             }}
           >
-            {isAutoCategorizing ? 'Categorizing…' : '✦ Auto-Categorize'}
+            Export CSV
+          </button>
+          {transactions.some((t) => !t.category) && (
+            <button
+              type="button"
+              onClick={handleAutoCategorize}
+              disabled={isAutoCategorizing}
+              style={{
+                padding: '0.35rem 0.85rem', borderRadius: 8, border: '1px solid var(--lp-accent-teal)',
+                background: 'rgba(13,148,136,0.1)', color: 'var(--lp-accent-teal)',
+                cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+              }}
+            >
+              {isAutoCategorizing ? 'Categorizing…' : '✦ Auto-Categorize'}
+            </button>
+          )}
+        </div>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
+          alignItems: 'center',
+          marginBottom: '0.85rem',
+        }}
+      >
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>
+          From
+          <input
+            type="date"
+            value={txnFilterDateFrom}
+            onChange={(e) => setTxnFilterDateFrom(e.target.value)}
+            style={filterInputStyle}
+          />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>
+          To
+          <input
+            type="date"
+            value={txnFilterDateTo}
+            onChange={(e) => setTxnFilterDateTo(e.target.value)}
+            style={filterInputStyle}
+          />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>
+          Category
+          <select
+            value={txnFilterCategory}
+            onChange={(e) => setTxnFilterCategory(e.target.value)}
+            style={{ ...filterInputStyle, minWidth: 140 }}
+          >
+            <option value="">All</option>
+            <option value="__uncategorized__">Uncategorized</option>
+            {availableCategories.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        </label>
+        {(txnFilterDateFrom || txnFilterDateTo || txnFilterCategory) && (
+          <button
+            type="button"
+            onClick={() => {
+              setTxnFilterDateFrom('');
+              setTxnFilterDateTo('');
+              setTxnFilterCategory('');
+            }}
+            style={{
+              padding: '0.35rem 0.65rem',
+              borderRadius: 8,
+              border: '1px solid var(--lp-border)',
+              background: 'transparent',
+              color: 'var(--lp-muted)',
+              fontSize: '0.78rem',
+              cursor: 'pointer',
+            }}
+          >
+            Clear filters
           </button>
         )}
+        <span style={{ fontSize: '0.78rem', color: 'var(--lp-muted)', marginLeft: 'auto' }}>
+          Showing {displayedTransactions.length} of {transactions.length}
+        </span>
       </div>
-      <table className={styles.table}>
-        <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>CIS</th></tr></thead>
-        <tbody>
-          {transactions.map(t => (
-            <tr key={t.id} style={openTaskByTxnId.has(t.id) ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
-              <td>{t.date}</td>
-              <td>{t.description}</td>
-              <td className={t.amount > 0 ? styles.positive : styles.negative}>{t.amount.toFixed(2)} {t.currency}</td>
-              <td>
-                <select value={t.category || ''} onChange={(e) => handleCategoryChange(t.id, e.target.value)} className={styles.categorySelect}>
-                  <option value="" disabled>Select...</option>
-                  {availableCategories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </select>
-              </td>
-              <td>
-                {openTaskByTxnId.has(t.id) ? (
-                  <button
-                    type="button"
-                    onClick={() => setModalTask(openTaskByTxnId.get(t.id)!)}
-                    style={{
-                      padding: '0.25rem 0.6rem',
-                      borderRadius: 8,
-                      border: '1px solid rgba(245,158,11,0.5)',
-                      background: 'rgba(245,158,11,0.12)',
-                      fontSize: '0.78rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Review
-                  </button>
-                ) : t.amount > 0 ? (
-                  <button
-                    type="button"
-                    disabled={flaggingTxn === t.id}
-                    onClick={() => void flagCisSuspect(t.id)}
-                    style={{
-                      padding: '0.25rem 0.5rem',
-                      borderRadius: 8,
-                      border: '1px solid var(--lp-border)',
-                      background: 'transparent',
-                      fontSize: '0.75rem',
-                      cursor: flaggingTxn === t.id ? 'wait' : 'pointer',
-                      color: 'var(--lp-muted)',
-                    }}
-                  >
-                    {flaggingTxn === t.id ? '…' : 'Flag'}
-                  </button>
-                ) : (
-                  '—'
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {!displayedTransactions.length ? (
+        <p className={styles.emptyState}>No transactions match the current filters.</p>
+      ) : (
+        <table className={styles.table}>
+          <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>CIS</th></tr></thead>
+          <tbody>
+            {displayedTransactions.map((t) => (
+              <tr key={t.id} style={openTaskByTxnId.has(t.id) ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
+                <td>{t.date}</td>
+                <td>{t.description}</td>
+                <td className={t.amount > 0 ? styles.positive : styles.negative}>{t.amount.toFixed(2)} {t.currency}</td>
+                <td>
+                  <select value={t.category || ''} onChange={(e) => handleCategoryChange(t.id, e.target.value)} className={styles.categorySelect}>
+                    <option value="" disabled>Select...</option>
+                    {availableCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </td>
+                <td>
+                  {openTaskByTxnId.has(t.id) ? (
+                    <button
+                      type="button"
+                      onClick={() => setModalTask(openTaskByTxnId.get(t.id)!)}
+                      style={{
+                        padding: '0.25rem 0.6rem',
+                        borderRadius: 8,
+                        border: '1px solid rgba(245,158,11,0.5)',
+                        background: 'rgba(245,158,11,0.12)',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Review
+                    </button>
+                  ) : t.amount > 0 ? (
+                    <button
+                      type="button"
+                      disabled={flaggingTxn === t.id}
+                      onClick={() => void flagCisSuspect(t.id)}
+                      style={{
+                        padding: '0.25rem 0.5rem',
+                        borderRadius: 8,
+                        border: '1px solid var(--lp-border)',
+                        background: 'transparent',
+                        fontSize: '0.75rem',
+                        cursor: flaggingTxn === t.id ? 'wait' : 'pointer',
+                        color: 'var(--lp-muted)',
+                      }}
+                    >
+                      {flaggingTxn === t.id ? '…' : 'Flag'}
+                    </button>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

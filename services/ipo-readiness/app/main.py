@@ -1,5 +1,5 @@
 """
-SelfMonitor IPO Readiness Infrastructure
+MyNetTax IPO Readiness Infrastructure
 Enterprise governance, investor relations, and public company infrastructure for unicorn trajectory
 
 Features:
@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, EmailStr
 
 # --- Configuration ---
 app = FastAPI(
-    title="SelfMonitor IPO Readiness Infrastructure",
+    title="MyNetTax IPO Readiness Infrastructure",
     description="Enterprise governance and public company infrastructure for unicorn achievement",
     version="1.0.0",
     docs_url="/ipo/docs",
@@ -95,7 +95,7 @@ class FilingType(str, Enum):
 class IPOReadinessScore(BaseModel):
     """Comprehensive IPO readiness assessment"""
     assessment_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    company_name: str = "SelfMonitor"
+    company_name: str = "MyNetTax"
     assessment_date: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Financial readiness (30% weight)
@@ -1300,7 +1300,7 @@ async def get_valuation_analysis(
                 "ev_ebitda": 48.5,
                 "price_sales": 16.8
             },
-            "selfmonitor_positioning": {
+            "mynettax_positioning": {
                 "growth_premium": 0.25,         # 25% growth premium
                 "profitability_premium": 0.15,  # 15% profitability premium
                 "technology_premium": 0.10      # 10% technology premium

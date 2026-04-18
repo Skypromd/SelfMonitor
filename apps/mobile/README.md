@@ -1,4 +1,4 @@
-# SelfMonitor Mobile App (Expo)
+# MyNetTax Mobile App (Expo)
 
 Native shell application for iOS/Android that reuses the existing `apps/web-portal`
 experience through `react-native-webview`.

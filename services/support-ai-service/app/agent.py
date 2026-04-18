@@ -109,7 +109,7 @@ def generate_response(
     if intent == INTENT_GREETING:
         name_part = f" {user_email.split('@')[0].capitalize()}" if user_email else ""
         return (
-            f"Hello{name_part}! 👋 I'm the SelfMonitor support assistant. "
+            f"Hello{name_part}! 👋 I'm the MyNetTax support assistant. "
             "I can help with account questions, billing, bank connections, tax submissions, and more. "
             "What can I help you with today?",
             intent,
@@ -157,7 +157,7 @@ def generate_response(
 
     # Unknown — try LLM
     system = (
-        "You are a helpful customer support assistant for SelfMonitor"
+        "You are a helpful customer support assistant for MyNetTax"
         " — a UK FinTech app for self-employed individuals. "
         "Be concise, friendly, and accurate. If you don't know the answer, "
         "say so honestly and offer to create a ticket. "

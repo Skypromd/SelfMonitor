@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: SelfMonitor Security Operations Center (SOC)
+  title: MyNetTax Security Operations Center (SOC)
   description: >-
     Enterprise-grade security hardening, threat detection, and compliance automation platform providing:
     - Real-time threat detection and response using AI/ML
@@ -14,7 +14,7 @@ info:
     - Enterprise readiness assessment for unicorn trajectory
   version: 3.0.0
   contact:
-    name: SelfMonitor Security Operations Team
+    name: MyNetTax Security Operations Team
     email: security@selfmonitor.ai
   license:
     name: Proprietary

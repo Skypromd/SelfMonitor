@@ -149,6 +149,132 @@ type TrialSubscription = {
   trial_end?: string;
 };
 
+type MtdQuarterRow = { quarter: string; due_date: string; status: string };
+
+type MtdObligationSummary = {
+  reporting_required: boolean;
+  next_deadline: string | null;
+  quarterly_updates?: MtdQuarterRow[];
+};
+
+function ukTaxYearBounds(now: Date): { start: string; end: string } {
+  const m = now.getMonth();
+  const day = now.getDate();
+  const y = m > 3 || (m === 3 && day >= 6) ? now.getFullYear() : now.getFullYear() - 1;
+  return { start: `${y}-04-06`, end: `${y + 1}-04-05` };
+}
+
+function formatShortUk(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function MtdComplianceBanner({ token }: { token: string }) {
+  const [mtd, setMtd] = useState<MtdObligationSummary | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { start, end } = ukTaxYearBounds(new Date());
+        const res = await fetch(`${API_GATEWAY_URL}/tax/calculate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ start_date: start, end_date: end, jurisdiction: 'UK' }),
+        });
+        const data = (await res.json().catch(() => null)) as { mtd_obligation?: MtdObligationSummary } | null;
+        if (!res.ok || !data?.mtd_obligation || typeof data.mtd_obligation.reporting_required !== 'boolean') {
+          return;
+        }
+        if (!cancelled) setMtd(data.mtd_obligation);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  if (!mtd?.reporting_required) return null;
+
+  const hot = mtd.quarterly_updates?.find((q) => q.status === 'overdue' || q.status === 'due_now');
+  const isCritical = hot?.status === 'overdue';
+  const isDue = hot?.status === 'due_now';
+
+  let body: string;
+  if (hot?.status === 'overdue') {
+    body = `${hot.quarter} update was due ${formatShortUk(hot.due_date)}. Prepare figures in Tax preparation, then submit only after you confirm in the MTD workflow.`;
+  } else if (hot?.status === 'due_now') {
+    body = `${hot.quarter} period has ended; filing deadline ${formatShortUk(hot.due_date)}. Review in Tax preparation before submitting.`;
+  } else if (mtd.next_deadline) {
+    const days = Math.ceil((new Date(mtd.next_deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    body = `Next quarterly filing deadline ${formatShortUk(mtd.next_deadline)}${days >= 0 ? ` (${days} day${days === 1 ? '' : 's'})` : ''}.`;
+  } else {
+    body = 'Quarterly MTD updates may apply based on your income. Review dates in Tax preparation.';
+  }
+
+  const border = isCritical ? 'rgba(239,68,68,0.45)' : isDue ? 'rgba(245,158,11,0.45)' : 'rgba(13,148,136,0.35)';
+  const bg = isCritical ? 'rgba(239,68,68,0.08)' : isDue ? 'rgba(245,158,11,0.08)' : 'rgba(13,148,136,0.1)';
+
+  return (
+    <div
+      style={{
+        width: '100%',
+        padding: '0.85rem 1.15rem',
+        borderRadius: 10,
+        background: bg,
+        border: `1px solid ${border}`,
+        marginBottom: '1.5rem',
+      }}
+    >
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
+        <div>
+          <h2 style={{ margin: '0 0 0.35rem', fontSize: '1rem', color: 'var(--text-primary)' }}>
+            Making Tax Digital (Income Tax)
+          </h2>
+          <p style={{ margin: 0, color: 'var(--lp-muted)', fontSize: '0.88rem', lineHeight: 1.55, maxWidth: 640 }}>
+            {body}
+          </p>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          <Link
+            href="/tax-preparation"
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: 10,
+              border: '1px solid rgba(13,148,136,0.45)',
+              color: 'var(--lp-accent-teal)',
+              fontWeight: 700,
+              fontSize: '0.88rem',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Tax preparation
+          </Link>
+          <Link
+            href="/submission"
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: 10,
+              background: 'var(--lp-accent-teal)',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: '0.88rem',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            MTD workflow
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TrialBanner({ token }: { token: string }) {
   const [sub, setSub] = useState<TrialSubscription | null>(null);
 
@@ -372,6 +498,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
   return (
     <div className={styles.pageContainer}>
       <TrialBanner token={token} />
+      <MtdComplianceBanner token={token} />
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
       <CisTasksStrip token={token} />

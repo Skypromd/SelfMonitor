@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: SelfMonitor IPO Readiness Infrastructure
+  title: MyNetTax IPO Readiness Infrastructure
   description: |
     Enterprise governance and public company infrastructure platform for achieving unicorn status and IPO readiness.
     
@@ -34,7 +34,7 @@ info:
     - Automated regulatory compliance and financial reporting
   version: 1.0.0
   contact:
-    name: SelfMonitor IPO Readiness Team
+    name: MyNetTax IPO Readiness Team
     email: ipo@selfmonitor.uk
   license:
     name: Proprietary
@@ -279,7 +279,7 @@ components:
           format: uuid
         company_name:
           type: string
-          example: "SelfMonitor"
+          example: "MyNetTax"
         assessment_date:
           type: string
           format: date-time

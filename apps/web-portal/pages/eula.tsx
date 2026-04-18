@@ -7,7 +7,7 @@ export default function EulaPage() {
       <main className={styles.main} style={{ maxWidth: 800 }}>
         <h1 className={styles.title}>End User License Agreement</h1>
         <p className={styles.description}>
-          License terms for web and mobile use of SelfMonitor software.
+          License terms for web and mobile use of MyNetTax software.
         </p>
 
         <section className={styles.subContainer}>
@@ -15,12 +15,12 @@ export default function EulaPage() {
           <p>
             This End User License Agreement (&quot;EULA&quot; or &quot;Agreement&quot;) is a legal
             agreement between you (&quot;User&quot;, &quot;you&quot;, or &quot;your&quot;) and
-            SelfMonitor Ltd, a company registered in England and Wales (&quot;SelfMonitor&quot;,
+            MyNetTax Ltd, a company registered in England and Wales (&quot;MyNetTax&quot;,
             &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;).
           </p>
           <p>
-            This EULA governs your use of the SelfMonitor software, including the web portal at
-            selfmonitor.co.uk, the SelfMonitor mobile application for iOS and Android (built with
+            This EULA governs your use of the MyNetTax software, including the web portal at
+            mynettax.co.uk, the MyNetTax mobile application for iOS and Android (built with
             React Native and Expo), and any associated APIs, updates, patches, or supplements
             (collectively, the &quot;Software&quot;).
           </p>
@@ -34,37 +34,37 @@ export default function EulaPage() {
 
           <h2>2. License Grant</h2>
           <p>
-            2.1. Subject to your compliance with this EULA and our Terms of Service, SelfMonitor
+            2.1. Subject to your compliance with this EULA and our Terms of Service, MyNetTax
             grants you a limited, non-exclusive, non-transferable, non-sublicensable, revocable
             licence to:
           </p>
           <ul>
             <li>
-              Access and use the SelfMonitor web portal through a standard web browser for your
+              Access and use the MyNetTax web portal through a standard web browser for your
               personal or sole-trader business purposes;
             </li>
             <li>
-              Download, install, and use the SelfMonitor mobile application on devices that you
+              Download, install, and use the MyNetTax mobile application on devices that you
               own or control, solely for your personal or sole-trader business purposes; and
             </li>
             <li>
-              Use the SelfMonitor APIs in accordance with any published API documentation and
+              Use the MyNetTax APIs in accordance with any published API documentation and
               rate limits.
             </li>
           </ul>
           <p>
-            2.2. This licence is personal to you and is linked to your SelfMonitor account. You
+            2.2. This licence is personal to you and is linked to your MyNetTax account. You
             may not share your licence or account access with any other person or entity.
           </p>
           <p>
             2.3. The licence granted herein does not constitute a sale of the Software or any
-            portion thereof. SelfMonitor retains all rights, title, and interest in and to the
+            portion thereof. MyNetTax retains all rights, title, and interest in and to the
             Software.
           </p>
 
           <h2>3. Mobile Application Terms</h2>
           <p>
-            3.1. The SelfMonitor mobile application is built using React Native and Expo (SDK 51,
+            3.1. The MyNetTax mobile application is built using React Native and Expo (SDK 51,
             React Native 0.74.5) and is distributed through the Apple App Store and Google Play
             Store.
           </p>
@@ -86,13 +86,13 @@ export default function EulaPage() {
             </li>
           </ul>
           <p>
-            3.3. You acknowledge that this EULA is between you and SelfMonitor only, not with
-            Apple Inc. or Google LLC. SelfMonitor, not Apple or Google, is solely responsible for
+            3.3. You acknowledge that this EULA is between you and MyNetTax only, not with
+            Apple Inc. or Google LLC. MyNetTax, not Apple or Google, is solely responsible for
             the Software and its content.
           </p>
           <p>
             3.4. Apple and Google have no obligation to provide any maintenance or support
-            services for the Software. SelfMonitor is solely responsible for any product
+            services for the Software. MyNetTax is solely responsible for any product
             warranties, whether express or implied by law.
           </p>
 
@@ -109,7 +109,7 @@ export default function EulaPage() {
           </ul>
           <p>
             4.2. In the event of any third-party claim that the Software infringes a third
-            party&apos;s intellectual property rights, SelfMonitor (not Apple or Google) shall
+            party&apos;s intellectual property rights, MyNetTax (not Apple or Google) shall
             be solely responsible for the investigation, defence, settlement, and discharge of
             such claim.
           </p>
@@ -127,7 +127,7 @@ export default function EulaPage() {
 
           <h2>5. Updates and Modifications</h2>
           <p>
-            5.1. SelfMonitor may release updates, patches, bug fixes, or new versions of the
+            5.1. MyNetTax may release updates, patches, bug fixes, or new versions of the
             Software from time to time. These updates may be delivered automatically through the
             relevant app store or web portal.
           </p>
@@ -137,7 +137,7 @@ export default function EulaPage() {
             versions of the Software may not be supported and may not function correctly.
           </p>
           <p>
-            5.3. SelfMonitor reserves the right to modify, enhance, or discontinue any features
+            5.3. MyNetTax reserves the right to modify, enhance, or discontinue any features
             of the Software at any time. We will provide reasonable notice for material changes
             that affect core functionality.
           </p>
@@ -194,23 +194,23 @@ export default function EulaPage() {
             6.2. Notwithstanding the above, nothing in this EULA restricts your rights under
             the Copyright, Designs and Patents Act 1988 to decompile the Software to the extent
             necessary to achieve interoperability with independently created software, provided
-            you have first requested the necessary information from SelfMonitor and we have not
+            you have first requested the necessary information from MyNetTax and we have not
             made it available within a reasonable time.
           </p>
 
           <h2>7. Intellectual Property</h2>
           <p>
             7.1. The Software and all copies thereof are the intellectual property of and are
-            owned by SelfMonitor. The structure, organisation, and code of the Software are
-            valuable trade secrets and confidential information of SelfMonitor.
+            owned by MyNetTax. The structure, organisation, and code of the Software are
+            valuable trade secrets and confidential information of MyNetTax.
           </p>
           <p>
-            7.2. The SelfMonitor name, logo, and all related product names, design marks, and
-            slogans are trademarks or service marks of SelfMonitor. You are not authorised to
+            7.2. The MyNetTax name, logo, and all related product names, design marks, and
+            slogans are trademarks or service marks of MyNetTax. You are not authorised to
             use any such marks without our prior written permission.
           </p>
           <p>
-            7.3. You retain all rights to the data you input into the Software. SelfMonitor
+            7.3. You retain all rights to the data you input into the Software. MyNetTax
             claims no intellectual property rights over your financial data, invoices, or other
             content you create using the Software.
           </p>
@@ -221,7 +221,7 @@ export default function EulaPage() {
             terminate automatically without notice if you fail to comply with any of its terms.
           </p>
           <p>
-            8.2. SelfMonitor may terminate this EULA at any time by providing written notice to
+            8.2. MyNetTax may terminate this EULA at any time by providing written notice to
             you, or immediately if you breach any provision of this EULA.
           </p>
           <p>
@@ -239,7 +239,7 @@ export default function EulaPage() {
               with your GDPR rights; and
             </li>
             <li>
-              SelfMonitor will retain data as required by law (see our{' '}
+              MyNetTax will retain data as required by law (see our{' '}
               <Link className={styles.link} href="/privacy">Privacy Policy</Link>).
             </li>
           </ul>
@@ -255,12 +255,12 @@ export default function EulaPage() {
             express, implied, statutory, or otherwise.
           </p>
           <p>
-            9.2. SelfMonitor expressly disclaims all implied warranties, including but not limited
+            9.2. MyNetTax expressly disclaims all implied warranties, including but not limited
             to implied warranties of merchantability, fitness for a particular purpose, and
             non-infringement.
           </p>
           <p>
-            9.3. Without limiting the foregoing, SelfMonitor does not warrant that:
+            9.3. Without limiting the foregoing, MyNetTax does not warrant that:
           </p>
           <ul>
             <li>The Software will be uninterrupted, timely, secure, or error-free;</li>
@@ -281,7 +281,7 @@ export default function EulaPage() {
 
           <h2>10. Limitation of Liability</h2>
           <p>
-            10.1. To the maximum extent permitted by law, in no event shall SelfMonitor, its
+            10.1. To the maximum extent permitted by law, in no event shall MyNetTax, its
             directors, officers, employees, agents, or affiliates be liable for any indirect,
             incidental, special, consequential, or punitive damages, including but not limited
             to:
@@ -301,8 +301,8 @@ export default function EulaPage() {
             </li>
           </ul>
           <p>
-            10.2. SelfMonitor&apos;s total aggregate liability for all claims arising from this
-            EULA shall not exceed the amount you have paid to SelfMonitor in the twelve (12)
+            10.2. MyNetTax&apos;s total aggregate liability for all claims arising from this
+            EULA shall not exceed the amount you have paid to MyNetTax in the twelve (12)
             months preceding the event giving rise to the claim, or one hundred pounds sterling
             (£100), whichever is greater.
           </p>
@@ -318,7 +318,7 @@ export default function EulaPage() {
 
           <h2>11. Indemnification</h2>
           <p>
-            You agree to defend, indemnify, and hold harmless SelfMonitor, its directors,
+            You agree to defend, indemnify, and hold harmless MyNetTax, its directors,
             officers, employees, and agents from and against any claims, damages, losses,
             liabilities, costs, and expenses (including reasonable legal fees) arising out of or
             relating to: (a) your use of the Software in violation of this EULA; (b) your
@@ -373,7 +373,7 @@ export default function EulaPage() {
             <Link className={styles.link} href="/terms">Terms of Service</Link>,{' '}
             <Link className={styles.link} href="/privacy">Privacy Policy</Link>, and{' '}
             <Link className={styles.link} href="/cookies">Cookie Policy</Link>, constitutes the
-            entire agreement between you and SelfMonitor regarding the Software and supersedes
+            entire agreement between you and MyNetTax regarding the Software and supersedes
             all prior and contemporaneous agreements, proposals, or representations, written or
             oral, concerning its subject matter.
           </p>
@@ -383,9 +383,9 @@ export default function EulaPage() {
             If you have any questions about this EULA, please contact us:
           </p>
           <ul>
-            <li><strong>Email:</strong> legal@selfmonitor.co.uk</li>
-            <li><strong>Support:</strong> support@selfmonitor.co.uk</li>
-            <li><strong>Address:</strong> SelfMonitor Ltd, London, England</li>
+            <li><strong>Email:</strong> legal@mynettax.co.uk</li>
+            <li><strong>Support:</strong> support@mynettax.co.uk</li>
+            <li><strong>Address:</strong> MyNetTax Ltd, London, England</li>
           </ul>
 
           <p style={{ marginTop: '2rem', fontSize: '0.85rem', color: 'var(--lp-text-muted)' }}>

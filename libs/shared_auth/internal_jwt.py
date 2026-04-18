@@ -9,7 +9,7 @@ from typing import Callable, FrozenSet
 from jose import JWTError, jwt
 
 SCOPE_RECEIPT_DRAFT_CREATE = "transactions:receipt_drafts:create"
-DEFAULT_INTERNAL_AUDIENCE = "selfmonitor-internal"
+DEFAULT_INTERNAL_AUDIENCE = "mynettax-internal"
 
 
 class InternalTokenError(Exception):

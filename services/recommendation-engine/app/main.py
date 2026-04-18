@@ -1,5 +1,5 @@
 """
-SelfMonitor Real-time Recommendation Engine
+MyNetTax Real-time Recommendation Engine
 Enterprise-grade AI-powered financial recommendation system
 
 Features:
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
-    logger.info("🚀 Starting SelfMonitor Recommendation Engine...")
+    logger.info("🚀 Starting MyNetTax Recommendation Engine...")
 
     # Initialize services
     try:
@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 # Create FastAPI application
 app = FastAPI(
-    title="SelfMonitor Recommendation Engine",
+    title="MyNetTax Recommendation Engine",
     description="Enterprise AI-powered real-time financial recommendation system",
     version="1.0.0",
     docs_url="/docs",
@@ -97,7 +97,7 @@ app.mount("/metrics", metrics_app)  # type: ignore
 async def root() -> Dict[str, Any]:
     """Root endpoint."""
     return {
-        "service": "SelfMonitor Recommendation Engine",
+        "service": "MyNetTax Recommendation Engine",
         "version": "1.0.0",
         "status": "operational",
         "features": [

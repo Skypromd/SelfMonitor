@@ -87,8 +87,8 @@ class PDFGenerator:
             "generated_at": datetime.utcnow(),
             "aging_days": aging_days,
             "is_overdue": aging_days > 0,
-            "payment_url": f"https://pay.selfmonitor.com/invoice/{invoice.id}",
-            "qr_code_url": f"https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://pay.selfmonitor.com/invoice/{invoice.id}"
+            "payment_url": f"https://pay.mynettax.app/invoice/{invoice.id}",
+            "qr_code_url": f"https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://pay.mynettax.app/invoice/{invoice.id}"
         }
 
     def _render_template(self, template_name: str, context: Dict[str, Any], custom_styling: Optional[Dict[str, Any]] = None) -> str:

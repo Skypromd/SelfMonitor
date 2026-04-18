@@ -53,7 +53,7 @@ get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 require_analytics_admin = build_admin_require_dependency(required_permission="billing:read")
 
 app = FastAPI(
-    title="SelfMonitor Advanced Analytics & ML Pipeline",
+    title="MyNetTax Advanced Analytics & ML Pipeline",
     description=(
         "Enterprise-grade analytics platform with ML pipeline, "
         "data science workbench, and real-time business intelligence."
@@ -241,7 +241,7 @@ MOBILE_ONBOARDING_ROLLBACK_TO_CONTROL = _parse_bool_env(
 MOBILE_ONBOARDING_ROLLOUT_PERCENT = _parse_percentage_int_env(
     "MOBILE_ONBOARDING_ROLLOUT_PERCENT", 100
 )
-MOBILE_SPLASH_TITLE = os.getenv("MOBILE_SPLASH_TITLE", "SelfMonitor")
+MOBILE_SPLASH_TITLE = os.getenv("MOBILE_SPLASH_TITLE", "MT")
 MOBILE_SPLASH_SUBTITLE = os.getenv(
     "MOBILE_SPLASH_SUBTITLE",
     "World-class finance copilot for UK self-employed.",

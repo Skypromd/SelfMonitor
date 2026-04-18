@@ -12,6 +12,7 @@ type CategoryUpdateAction = {
   payload: {
     transactionId: string;
     category: string;
+    description?: string;
   };
   createdAt: string;
 };
@@ -80,7 +81,11 @@ export const getQueuedReportRequests = async () => {
   return queue.filter((item) => item.type === 'report_request') as ReportRequestAction[];
 };
 
-export const enqueueCategoryUpdate = async (transactionId: string, category: string) => {
+export const enqueueCategoryUpdate = async (
+  transactionId: string,
+  category: string,
+  description?: string
+) => {
   const queue = await loadQueue();
   const filtered = queue.filter(
     (item) => !(item.type === 'update_category' && item.payload.transactionId === transactionId)
@@ -88,7 +93,7 @@ export const enqueueCategoryUpdate = async (transactionId: string, category: str
   const next: CategoryUpdateAction = {
     id: `${transactionId}-${Date.now()}`,
     type: 'update_category',
-    payload: { transactionId, category },
+    payload: { transactionId, category, ...(description ? { description } : {}) },
     createdAt: new Date().toISOString(),
   };
   filtered.push(next);
@@ -174,6 +179,16 @@ export const flushQueue = async (token: string | null) => {
       }
       flushed += 1;
       await addSyncLogEntry('category', 'synced');
+      if (item.payload.description) {
+        void apiRequest('/categorization/learn', {
+          method: 'POST',
+          token,
+          body: JSON.stringify({
+            description: item.payload.description,
+            category: item.payload.category,
+          }),
+        });
+      }
       queue = queue.filter((entry) => entry.id !== item.id);
       await saveQueue(queue);
     }

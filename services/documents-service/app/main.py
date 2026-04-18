@@ -84,7 +84,56 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 # --- S3 Configuration ---
-TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://transactions-service:80")
+TRANSACTIONS_SERVICE_URL = os.getenv(
+    "TRANSACTIONS_SERVICE_URL",
+    "http://transactions-service/transactions/receipt-drafts",
+)
+
+
+def _receipt_drafts_base_url() -> str:
+    raw = (TRANSACTIONS_SERVICE_URL or "").strip().rstrip("/")
+    if raw.endswith("/transactions/receipt-drafts"):
+        return raw
+    return f"{raw}/transactions/receipt-drafts"
+
+
+def _parse_extracted_total(raw: object) -> float | None:
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _parse_extracted_transaction_date(raw: object) -> datetime.date | None:
+    if raw is None:
+        return None
+    if isinstance(raw, datetime.datetime):
+        return raw.date()
+    if isinstance(raw, datetime.date):
+        return raw
+    text = str(raw).strip()
+    if not text:
+        return None
+    if "T" in text:
+        text = text.split("T", 1)[0]
+    try:
+        return datetime.date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
+def _parse_extracted_vat(raw: object) -> float | None:
+    if raw is None:
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
 
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME", "documents-bucket")
 # For local development with LocalStack, boto3 needs the endpoint_url.
@@ -347,8 +396,78 @@ async def review_document(
     if review_status in {"corrected", "ignored"}:
         OCR_MANUAL_OVERRIDES_TOTAL.labels(review_status=review_status).inc()
 
-    # Propagate corrected OCR fields to the receipt draft transaction
     draft_id = extracted_data.get("receipt_draft_transaction_id")
+    if review_status in {"confirmed", "corrected"} and not draft_id:
+        parsed_total = _parse_extracted_total(extracted_data.get("total_amount"))
+        parsed_date = _parse_extracted_transaction_date(
+            extracted_data.get("transaction_date")
+        )
+        if parsed_total is not None and parsed_date is not None:
+            body: dict = {
+                "document_id": str(document_id),
+                "filename": updated.filename,
+                "transaction_date": parsed_date.isoformat(),
+                "total_amount": parsed_total,
+                "currency": "GBP",
+            }
+            vendor_name = extracted_data.get("vendor_name")
+            if isinstance(vendor_name, str) and vendor_name.strip():
+                body["vendor_name"] = vendor_name.strip()
+            suggested = extracted_data.get("suggested_category")
+            if isinstance(suggested, str) and suggested.strip():
+                body["suggested_category"] = suggested.strip()
+            expense_article = extracted_data.get("expense_article")
+            if isinstance(expense_article, str) and expense_article.strip():
+                body["expense_article"] = expense_article.strip()
+            deductible = extracted_data.get("is_potentially_deductible")
+            if isinstance(deductible, bool):
+                body["is_potentially_deductible"] = deductible
+            vat_parsed = _parse_extracted_vat(extracted_data.get("vat_amount_gbp"))
+            if vat_parsed is not None and vat_parsed > 0:
+                body["vat_amount_gbp"] = vat_parsed
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    response = await client.post(
+                        _receipt_drafts_base_url(),
+                        json=body,
+                        headers={"Authorization": f"Bearer {bearer}"},
+                    )
+                    response.raise_for_status()
+                    response_payload = response.json()
+            except Exception as exc:
+                logger.warning(
+                    "receipt draft create after review failed request_id=%s doc_id=%s: %s",
+                    get_request_id(),
+                    document_id,
+                    exc,
+                    exc_info=True,
+                )
+            else:
+                if isinstance(response_payload, dict):
+                    transaction = response_payload.get("transaction")
+                    duplicated = response_payload.get("duplicated")
+                    new_tid = (
+                        transaction.get("id")
+                        if isinstance(transaction, dict)
+                        else None
+                    )
+                    if new_tid:
+                        merged = await crud.patch_document_extracted_fields(
+                            db,
+                            user_id=user_id,
+                            doc_id=document_id,
+                            fields={
+                                "receipt_draft_transaction_id": str(new_tid),
+                                "receipt_draft_duplicated": bool(duplicated)
+                                if duplicated is not None
+                                else False,
+                            },
+                        )
+                        if merged is not None:
+                            updated = merged
+                            extracted_data = dict(merged.extracted_data or {})
+                            draft_id = extracted_data.get("receipt_draft_transaction_id")
+
     if draft_id and review_status in {"corrected", "confirmed"}:
         update_body: dict = {}
         if payload.total_amount is not None:
@@ -359,11 +478,13 @@ async def review_document(
             update_body["transaction_date"] = str(payload.transaction_date)
         if payload.suggested_category is not None:
             update_body["suggested_category"] = payload.suggested_category
+        if payload.vat_amount_gbp is not None:
+            update_body["vat_amount_gbp"] = payload.vat_amount_gbp
         if update_body:
             try:
-                async with httpx.AsyncClient(timeout=3.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     await client.patch(
-                        f"{TRANSACTIONS_SERVICE_URL}/transactions/receipt-drafts/{draft_id}",
+                        f"{_receipt_drafts_base_url()}/{draft_id}",
                         json=update_body,
                         headers={"Authorization": f"Bearer {bearer}"},
                     )

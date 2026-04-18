@@ -271,7 +271,7 @@ def test_2fa_setup_json_endpoint():
     data = resp.json()
     assert "secret" in data
     assert "provisioning_uri" in data
-    assert data["issuer"] == "SelfMonitor"
+    assert data["issuer"] == "MyNetTax"
     assert email.replace("@", "%40") in data["provisioning_uri"]
 
 
@@ -571,3 +571,45 @@ def test_token_refresh_rotates_and_updates_access_claims():
     assert claims.get("plan") == "pro"
     reused = client.post("/token/refresh", json={"refresh_token": rt})
     assert reused.status_code == 401
+
+
+def test_internal_reminder_recipients():
+    import app.config as auth_cfg
+    import app.main as auth_main
+
+    prev_cfg = auth_cfg.INTERNAL_SERVICE_SECRET
+    prev_main = auth_main.INTERNAL_SERVICE_SECRET
+    auth_cfg.INTERNAL_SERVICE_SECRET = "internal-reminder-test-secret"
+    auth_main.INTERNAL_SERVICE_SECRET = "internal-reminder-test-secret"
+    try:
+        reg = client.post(
+            "/register",
+            json={"email": "mtd-remind@test.com", "password": STRONG_PASSWORD},
+        )
+        assert reg.status_code == 201
+        resp = client.get(
+            "/internal/reminder-recipients",
+            headers={"X-Internal-Token": "internal-reminder-test-secret"},
+        )
+        assert resp.status_code == 200
+        emails = resp.json().get("emails", [])
+        assert "mtd-remind@test.com" in emails
+    finally:
+        auth_cfg.INTERNAL_SERVICE_SECRET = prev_cfg
+        auth_main.INTERNAL_SERVICE_SECRET = prev_main
+
+
+def test_internal_reminder_recipients_forbidden_without_token():
+    import app.config as auth_cfg
+    import app.main as auth_main
+
+    prev_cfg = auth_cfg.INTERNAL_SERVICE_SECRET
+    prev_main = auth_main.INTERNAL_SERVICE_SECRET
+    auth_cfg.INTERNAL_SERVICE_SECRET = "internal-reminder-test-secret-b"
+    auth_main.INTERNAL_SERVICE_SECRET = "internal-reminder-test-secret-b"
+    try:
+        resp = client.get("/internal/reminder-recipients")
+        assert resp.status_code == 403
+    finally:
+        auth_cfg.INTERNAL_SERVICE_SECRET = prev_cfg
+        auth_main.INTERNAL_SERVICE_SECRET = prev_main

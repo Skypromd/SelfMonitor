@@ -34,7 +34,7 @@ export default function CheckoutSuccessPage() {
   return (
     <>
       <Head>
-        <title>Payment Successful — SelfMonitor</title>
+        <title>Payment Successful — MyNetTax</title>
       </Head>
       <div className={styles.container}>
         <main className={styles.main} style={{ maxWidth: 520, textAlign: 'center' }}>

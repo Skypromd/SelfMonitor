@@ -5,6 +5,7 @@ import {
   removeToken,
   getAuthServiceOrigin,
 } from '../api';
+import { clearMtdExpoPushToken, registerMtdExpoPushToken } from '../syncMtdPush';
 
 type User = {
   email: string;
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (stored) {
         setTokenState(stored);
         decodeUser(stored);
+        void registerMtdExpoPushToken();
       }
       setLoading(false);
     })();
@@ -83,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
+    await clearMtdExpoPushToken();
     await removeToken();
     setTokenState(null);
     setUser(null);

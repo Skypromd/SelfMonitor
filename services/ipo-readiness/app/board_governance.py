@@ -1,5 +1,5 @@
 """
-SelfMonitor Board Governance & Corporate Governance Automation
+MyNetTax Board Governance & Corporate Governance Automation
 Enterprise-grade board management and corporate governance for IPO readiness
 
 Features:

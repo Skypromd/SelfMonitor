@@ -13,12 +13,19 @@ AUTH_SECRET_KEY = "test-secret"
 AUTH_ALGORITHM = "HS256"
 
 
-def make_token(sub: str = "test-user-123") -> str:
-    return jwt.encode({"sub": sub}, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
+def make_token(sub: str = "test-user-123", *, is_admin: bool = False, role: str = "user") -> str:
+    payload: dict = {"sub": sub}
+    if is_admin:
+        payload["is_admin"] = True
+    if role != "user":
+        payload["role"] = role
+    return jwt.encode(payload, AUTH_SECRET_KEY, algorithm=AUTH_ALGORITHM)
 
 
-VALID_TOKEN = make_token()
+VALID_TOKEN = make_token(is_admin=True)
 AUTH_HEADER = {"Authorization": f"Bearer {VALID_TOKEN}"}
+NON_ADMIN_TOKEN = make_token(sub="regular-user", is_admin=False)
+NON_ADMIN_HEADER = {"Authorization": f"Bearer {NON_ADMIN_TOKEN}"}
 
 
 # --- Health check ---
@@ -34,6 +41,11 @@ def test_health_check():
 def test_cost_analysis_no_auth():
     resp = client.get("/cost-analysis")
     assert resp.status_code == 401
+
+
+def test_cost_analysis_forbidden_for_non_admin():
+    resp = client.get("/cost-analysis", headers=NON_ADMIN_HEADER)
+    assert resp.status_code == 403
 
 
 def test_implement_optimization_no_auth():

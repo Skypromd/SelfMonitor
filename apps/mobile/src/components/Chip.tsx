@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, radius, spacing } from '../theme';
 
@@ -7,9 +7,10 @@ type ChipProps = {
   label: string;
   selected?: boolean;
   onPress?: () => void;
+  logoUrl?: string;
 };
 
-export default function Chip({ label, selected, onPress }: ChipProps) {
+export default function Chip({ label, selected, onPress, logoUrl }: ChipProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -19,7 +20,12 @@ export default function Chip({ label, selected, onPress }: ChipProps) {
         pressed && styles.pressed,
       ]}
     >
-      <Text style={[styles.text, selected && styles.textSelected]}>{label}</Text>
+      <View style={styles.inner}>
+        {logoUrl ? (
+          <Image source={{ uri: logoUrl }} style={styles.logo} accessibilityIgnoresInvertColors />
+        ) : null}
+        <Text style={[styles.text, selected && styles.textSelected]}>{label}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -32,6 +38,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
     backgroundColor: colors.surface,
+  },
+  inner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  logo: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
   },
   selected: {
     borderColor: colors.primary,

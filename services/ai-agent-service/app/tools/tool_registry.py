@@ -1,7 +1,7 @@
 """
 Tool Registry for SelfMate AI Agent
 
-Dynamically discovers and integrates with all SelfMonitor microservices.
+Dynamically discovers and integrates with all MyNetTax microservices.
 Provides standardized interface for the agent to interact with platform capabilities.
 """
 
@@ -356,7 +356,7 @@ class ToolRegistry:
 
     async def discover_services(self):
         """Discover available microservices and create tools"""
-        print("🔍 Discovering SelfMonitor services...")
+        print("🔍 Discovering MyNetTax services...")
 
         # Service discovery configuration
         service_map = {

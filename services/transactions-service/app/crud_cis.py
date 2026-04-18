@@ -492,7 +492,7 @@ async def build_evidence_manifest(
         "Not a substitute for official HMRC submissions."
     )
     base: dict[str, Any] = {
-        "schema_version": "selfmonitor-evidence-pack-v1",
+        "schema_version": "mynettax-evidence-pack-v1",
         "pack_tier": tier_l,
         "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "user_id": user_id,

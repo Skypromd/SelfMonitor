@@ -103,7 +103,7 @@ except ImportError:
     redis_available = False
 
 app = FastAPI(
-    title="SelfMonitor Real-time Recommendation Engine",
+    title="MyNetTax Real-time Recommendation Engine",
     description=(
         "AI-powered real-time recommendations for financial optimization,"
         " investment strategies, and business growth."

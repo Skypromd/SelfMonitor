@@ -7,17 +7,17 @@ export default function TermsPage() {
       <main className={styles.main} style={{ maxWidth: 800 }}>
         <h1 className={styles.title}>Terms of Service</h1>
         <p className={styles.description}>
-          These terms govern your use of the SelfMonitor platform and services.
+          These terms govern your use of the MyNetTax platform and services.
         </p>
 
         <section className={styles.subContainer}>
           <h2>1. Introduction and Acceptance</h2>
           <p>
             These Terms of Service (&quot;Terms&quot;) constitute a legally binding agreement between
-            you (&quot;User&quot;, &quot;you&quot;, or &quot;your&quot;) and SelfMonitor Ltd, a company registered in
-            England and Wales (&quot;SelfMonitor&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;). By creating an
-            account, accessing, or using the SelfMonitor platform (including the web portal at
-            selfmonitor.co.uk, mobile applications, and APIs), you agree to be bound by these Terms.
+            you (&quot;User&quot;, &quot;you&quot;, or &quot;your&quot;) and MyNetTax Ltd, a company registered in
+            England and Wales (&quot;MyNetTax&quot;, &quot;we&quot;, &quot;us&quot;, or &quot;our&quot;). By creating an
+            account, accessing, or using the MyNetTax platform (including the web portal at
+            mynettax.co.uk, mobile applications, and APIs), you agree to be bound by these Terms.
           </p>
           <p>
             If you do not agree to these Terms, you must not access or use the Service.
@@ -29,7 +29,7 @@ export default function TermsPage() {
 
           <h2>2. Service Description</h2>
           <p>
-            SelfMonitor is a financial management platform designed for self-employed individuals,
+            MyNetTax is a financial management platform designed for self-employed individuals,
             freelancers, and sole traders in the United Kingdom. The Service provides the following
             features:
           </p>
@@ -66,7 +66,7 @@ export default function TermsPage() {
           </ul>
 
           <h2>3. Eligibility</h2>
-          <p>To use SelfMonitor, you must:</p>
+          <p>To use MyNetTax, you must:</p>
           <ul>
             <li>Be at least 18 years of age;</li>
             <li>Be a resident of the United Kingdom;</li>
@@ -96,17 +96,17 @@ export default function TermsPage() {
           </p>
           <p>
             4.3. You are responsible for all activities that occur under your account. You must
-            notify us immediately at security@selfmonitor.co.uk if you become aware of any
+            notify us immediately at security@mynettax.co.uk if you become aware of any
             unauthorised use of your account or any other breach of security.
           </p>
           <p>
-            4.4. SelfMonitor shall not be liable for any loss or damage arising from your failure
+            4.4. MyNetTax shall not be liable for any loss or damage arising from your failure
             to comply with these security obligations.
           </p>
 
           <h2>5. Subscription Plans and Billing</h2>
           <p>
-            5.1. SelfMonitor offers the following subscription tiers:
+            5.1. MyNetTax offers the following subscription tiers:
           </p>
           <ul>
             <li>
@@ -153,7 +153,7 @@ export default function TermsPage() {
           <h2>6. Bank Synchronisation</h2>
           <p>
             6.1. Bank synchronisation is initiated only when you explicitly press the
-            &quot;Sync&quot; button within the application. SelfMonitor does not perform automatic
+            &quot;Sync&quot; button within the application. MyNetTax does not perform automatic
             or background bank synchronisation.
           </p>
           <p>
@@ -162,7 +162,7 @@ export default function TermsPage() {
           </p>
           <p>
             6.3. Bank connections are facilitated through SaltEdge, an FCA-authorised Account
-            Information Service Provider (AISP). SelfMonitor receives read-only access to your
+            Information Service Provider (AISP). MyNetTax receives read-only access to your
             transaction data. We cannot initiate payments, transfers, or modify your bank accounts
             in any way.
           </p>
@@ -173,7 +173,7 @@ export default function TermsPage() {
 
           <h2>7. HMRC Submissions</h2>
           <p>
-            7.1. SelfMonitor can prepare and submit tax returns and MTD quarterly updates to HMRC
+            7.1. MyNetTax can prepare and submit tax returns and MTD quarterly updates to HMRC
             on your behalf, using HMRC&apos;s official APIs.
           </p>
           <p>
@@ -183,12 +183,12 @@ export default function TermsPage() {
           </p>
           <p>
             7.3. You remain solely responsible for the accuracy and completeness of all information
-            submitted to HMRC. SelfMonitor provides tools to assist with calculations and
+            submitted to HMRC. MyNetTax provides tools to assist with calculations and
             preparation, but you are the legal taxpayer and bear ultimate responsibility for your
             tax affairs.
           </p>
           <p>
-            7.4. SelfMonitor collects device information (IP address, operating system, browser
+            7.4. MyNetTax collects device information (IP address, operating system, browser
             details) as required by HMRC&apos;s fraud prevention headers. This data is transmitted
             to HMRC as part of each API request in compliance with HMRC requirements.
           </p>
@@ -196,12 +196,12 @@ export default function TermsPage() {
           <h2>8. Mortgage Readiness</h2>
           <p>
             8.1. The mortgage readiness feature provides informational reports and financial health
-            indicators based on your data within SelfMonitor.
+            indicators based on your data within MyNetTax.
           </p>
           <p>
             8.2. <strong>Mortgage readiness reports are for informational purposes only and do not
             constitute financial advice, mortgage advice, or a recommendation to apply for any
-            financial product.</strong> SelfMonitor is not authorised by the Financial Conduct
+            financial product.</strong> MyNetTax is not authorised by the Financial Conduct
             Authority (FCA) to provide regulated mortgage advice.
           </p>
           <p>
@@ -211,7 +211,7 @@ export default function TermsPage() {
 
           <h2>9. AI Assistant</h2>
           <p>
-            9.1. The SelfMonitor AI assistant provides general guidance on expense categorisation,
+            9.1. The MyNetTax AI assistant provides general guidance on expense categorisation,
             tax questions, and financial queries based on publicly available information and your
             account data.
           </p>
@@ -233,7 +233,7 @@ export default function TermsPage() {
             income figures, expense records, tax calculations, and invoices.
           </p>
           <p>
-            10.2. While SelfMonitor implements validation checks and automated calculations, these
+            10.2. While MyNetTax implements validation checks and automated calculations, these
             tools are provided as aids and do not guarantee the correctness of your data. You must
             review all outputs before relying on them or submitting them to third parties.
           </p>
@@ -257,12 +257,12 @@ export default function TermsPage() {
           <p>
             12.1. All intellectual property rights in the Service, including but not limited to
             software, designs, text, graphics, logos, icons, and trademarks, are owned by or
-            licensed to SelfMonitor and are protected by copyright, trademark, and other
+            licensed to MyNetTax and are protected by copyright, trademark, and other
             intellectual property laws of England and Wales and international treaties.
           </p>
           <p>
             12.2. You retain ownership of any data you input into the Service. By using the
-            Service, you grant SelfMonitor a limited, non-exclusive licence to process your data
+            Service, you grant MyNetTax a limited, non-exclusive licence to process your data
             solely for the purpose of providing the Service to you.
           </p>
           <p>
@@ -272,15 +272,15 @@ export default function TermsPage() {
 
           <h2>13. Limitation of Liability</h2>
           <p>
-            13.1. To the maximum extent permitted by law, SelfMonitor shall not be liable for any
+            13.1. To the maximum extent permitted by law, MyNetTax shall not be liable for any
             indirect, incidental, special, consequential, or punitive damages, including but not
             limited to loss of profits, data, business, or goodwill, arising out of or in
             connection with your use of the Service.
           </p>
           <p>
-            13.2. SelfMonitor&apos;s total aggregate liability for all claims arising out of or
+            13.2. MyNetTax&apos;s total aggregate liability for all claims arising out of or
             relating to these Terms or the Service shall not exceed the greater of (a) the amount
-            you have paid to SelfMonitor in the twelve (12) months preceding the claim, or (b) one
+            you have paid to MyNetTax in the twelve (12) months preceding the claim, or (b) one
             hundred pounds sterling (£100).
           </p>
           <p>
@@ -289,14 +289,14 @@ export default function TermsPage() {
             other liability that cannot be excluded or limited by English law.
           </p>
           <p>
-            13.4. SelfMonitor does not warrant that the Service will be uninterrupted,
+            13.4. MyNetTax does not warrant that the Service will be uninterrupted,
             error-free, or free of harmful components. The Service is provided on an
             &quot;as is&quot; and &quot;as available&quot; basis.
           </p>
 
           <h2>14. Indemnification</h2>
           <p>
-            You agree to indemnify and hold harmless SelfMonitor, its directors, officers,
+            You agree to indemnify and hold harmless MyNetTax, its directors, officers,
             employees, and agents from and against any claims, losses, damages, liabilities,
             costs, and expenses (including reasonable legal fees) arising out of or relating to
             your breach of these Terms, your use of the Service, or your violation of any
@@ -306,10 +306,10 @@ export default function TermsPage() {
           <h2>15. Termination</h2>
           <p>
             15.1. You may terminate your account at any time by contacting us at
-            support@selfmonitor.co.uk or through your account settings.
+            support@mynettax.co.uk or through your account settings.
           </p>
           <p>
-            15.2. SelfMonitor may suspend or terminate your access to the Service immediately,
+            15.2. MyNetTax may suspend or terminate your access to the Service immediately,
             without prior notice, if you breach these Terms, engage in fraudulent activity,
             violate applicable law, or if required by a legal obligation or regulatory authority.
           </p>
@@ -328,7 +328,7 @@ export default function TermsPage() {
 
           <h2>16. Modifications to the Service and Terms</h2>
           <p>
-            16.1. SelfMonitor reserves the right to modify, suspend, or discontinue any part of
+            16.1. MyNetTax reserves the right to modify, suspend, or discontinue any part of
             the Service at any time, with or without notice.
           </p>
           <p>
@@ -342,14 +342,14 @@ export default function TermsPage() {
           <p>
             The Service integrates with third-party services including HMRC, SaltEdge (Open
             Banking), and Stripe (payment processing). Your use of these third-party services is
-            subject to their respective terms and conditions. SelfMonitor is not responsible for
+            subject to their respective terms and conditions. MyNetTax is not responsible for
             the availability, accuracy, or conduct of third-party services.
           </p>
 
           <h2>18. Dispute Resolution</h2>
           <p>
             18.1. If you have a complaint or dispute, please contact us first at
-            support@selfmonitor.co.uk. We will make reasonable efforts to resolve any dispute
+            support@mynettax.co.uk. We will make reasonable efforts to resolve any dispute
             informally within 30 days.
           </p>
           <p>
@@ -382,7 +382,7 @@ export default function TermsPage() {
             <Link className={styles.link} href="/privacy">Privacy Policy</Link>,{' '}
             <Link className={styles.link} href="/cookies">Cookie Policy</Link>, and{' '}
             <Link className={styles.link} href="/eula">End User License Agreement</Link>,
-            constitute the entire agreement between you and SelfMonitor regarding your use of
+            constitute the entire agreement between you and MyNetTax regarding your use of
             the Service.
           </p>
 
@@ -391,9 +391,9 @@ export default function TermsPage() {
             If you have any questions about these Terms, please contact us:
           </p>
           <ul>
-            <li><strong>Email:</strong> legal@selfmonitor.co.uk</li>
-            <li><strong>Support:</strong> support@selfmonitor.co.uk</li>
-            <li><strong>Address:</strong> SelfMonitor Ltd, London, England</li>
+            <li><strong>Email:</strong> legal@mynettax.co.uk</li>
+            <li><strong>Support:</strong> support@mynettax.co.uk</li>
+            <li><strong>Address:</strong> MyNetTax Ltd, London, England</li>
             <li><strong>Company Registration:</strong> Registered in England and Wales</li>
           </ul>
 

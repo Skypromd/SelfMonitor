@@ -96,11 +96,11 @@ BILLING_INVOICE_DUE_DAYS = _parse_positive_int_env("BILLING_INVOICE_DUE_DAYS", 1
 SELF_EMPLOYED_INVOICE_DUE_DAYS = _parse_positive_int_env("SELF_EMPLOYED_INVOICE_DUE_DAYS", 14)
 SELF_EMPLOYED_PAYMENT_LINK_BASE_URL = os.getenv(
     "SELF_EMPLOYED_PAYMENT_LINK_BASE_URL",
-    "https://pay.selfmonitor.app/invoices",
+    "https://pay.mynettax.app/invoices",
 ).rstrip("/")
 SELF_EMPLOYED_PAYMENT_LINK_PROVIDER = os.getenv(
     "SELF_EMPLOYED_PAYMENT_LINK_PROVIDER",
-    "selfmonitor_payment_link",
+    "mynettax_payment_link",
 )
 SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS = _parse_positive_int_env("SELF_EMPLOYED_REMINDER_DUE_SOON_DAYS", 3)
 SELF_EMPLOYED_REMINDER_EMAIL_ENABLED = _parse_bool_env("SELF_EMPLOYED_REMINDER_EMAIL_ENABLED", False)
@@ -109,8 +109,8 @@ SELF_EMPLOYED_REMINDER_EMAIL_PROVIDER = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_
 SELF_EMPLOYED_REMINDER_SMS_PROVIDER = os.getenv("SELF_EMPLOYED_REMINDER_SMS_PROVIDER", "webhook").strip().lower()
 SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_DISPATCH_URL", "").strip()
 SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL = os.getenv("SELF_EMPLOYED_REMINDER_SMS_DISPATCH_URL", "").strip()
-SELF_EMPLOYED_REMINDER_EMAIL_FROM = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_FROM", "noreply@selfmonitor.app").strip()
-SELF_EMPLOYED_REMINDER_SMS_FROM = os.getenv("SELF_EMPLOYED_REMINDER_SMS_FROM", "SelfMonitor").strip()
+SELF_EMPLOYED_REMINDER_EMAIL_FROM = os.getenv("SELF_EMPLOYED_REMINDER_EMAIL_FROM", "noreply@mynettax.app").strip()
+SELF_EMPLOYED_REMINDER_SMS_FROM = os.getenv("SELF_EMPLOYED_REMINDER_SMS_FROM", "MyNetTax").strip()
 SELF_EMPLOYED_SENDGRID_API_URL = os.getenv("SELF_EMPLOYED_SENDGRID_API_URL", "https://api.sendgrid.com/v3/mail/send").strip()
 SELF_EMPLOYED_SENDGRID_API_KEY = os.getenv("SELF_EMPLOYED_SENDGRID_API_KEY", "").strip()
 SELF_EMPLOYED_TWILIO_API_BASE_URL = os.getenv("SELF_EMPLOYED_TWILIO_API_BASE_URL", "https://api.twilio.com").strip().rstrip("/")
@@ -212,7 +212,7 @@ PARTNER_EXPORT_WATERMARK_SECRET = (
 )
 PARTNER_EXPORT_WATERMARK_VISIBLE_TEXT = os.getenv(
     "PARTNER_EXPORT_WATERMARK_VISIBLE_TEXT",
-    "SelfMonitor Proprietary",
+    "MyNetTax Proprietary",
 ).strip()
 
 
@@ -277,9 +277,9 @@ def _build_export_watermark(*, user_id: str, context: str) -> Dict[str, str]:
 def _build_export_response_headers(*, filename: str, watermark: Optional[Dict[str, str]]) -> Dict[str, str]:
     headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
     if watermark and PARTNER_EXPORT_WATERMARK_ENABLED:
-        headers["X-SelfMonitor-Export-Watermark"] = watermark["id"]
-        headers["X-SelfMonitor-Export-Context"] = watermark["context"]
-        headers["X-SelfMonitor-Export-User-Fingerprint"] = watermark["user_fingerprint"]
+        headers["X-MyNetTax-Export-Watermark"] = watermark["id"]
+        headers["X-MyNetTax-Export-Context"] = watermark["context"]
+        headers["X-MyNetTax-Export-User-Fingerprint"] = watermark["user_fingerprint"]
     return headers
 
 @asynccontextmanager
@@ -513,7 +513,7 @@ def _build_invoice_reminder_email_body(
         if reminder_type == "overdue"
         else f"This is a due-soon reminder for invoice {invoice_number}."
     )
-    return "\n".join([lead, "", message, "", "Sent by SelfMonitor billing automation."])
+    return "\n".join([lead, "", message, "", "Sent by MyNetTax billing automation."])
 
 
 def _build_invoice_reminder_sms_body(
@@ -695,7 +695,7 @@ def _build_calendar_reminder_email_body(
             "",
             message,
             "",
-            "Sent by SelfMonitor calendar automation.",
+            "Sent by MyNetTax calendar automation.",
         ]
     )
 

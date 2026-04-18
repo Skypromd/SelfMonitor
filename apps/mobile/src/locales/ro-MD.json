@@ -77,7 +77,13 @@
     "potential_savings": "Economii potențiale",
     "trial_title": "Perioadă de probă activă",
     "trial_badge": "Probă",
-    "trial_subtitle": "Proba ta Pro se încheie în"
+    "trial_subtitle": "Proba ta Pro se încheie în",
+    "mtd_card_title": "MTD (impozit pe venit)",
+    "mtd_open_tax": "Deschide sumarul fiscal",
+    "mtd_body_overdue": "O actualizare trimestrială MTD pare restantă. Verifică cifrele în sumar înainte de orice depunere.",
+    "mtd_body_due": "S-a încheiat trimestrul — verifică termenele în sumarul fiscal.",
+    "mtd_body_upcoming": "Se pot aplica actualizări trimestriale MTD. Următorul termen este în sumar.",
+    "mtd_body_generic": "În funcție de venit, se pot aplica actualizări trimestriale MTD. Deschide sumarul pentru date."
   },
   "tax": {
     "title": "Sumar taxe",
@@ -234,7 +240,9 @@
     "register_title": "Înregistrare pentru Self Assessment",
     "register_note": "Termen de înregistrare până la 5 octombrie.",
     "paper_title": "Termen depunere pe hârtie",
-    "paper_note": "Declarația pe hârtie până la 31 octombrie."
+    "paper_note": "Declarația pe hârtie până la 31 octombrie.",
+    "mtd_badge": "MTD",
+    "mtd_quarter_note": "Actualizare trimestrială MTD. Verifică cifrele în sumar înainte de depunerea la HMRC."
   },
   "accountant": {
     "title": "Partajare contabil",

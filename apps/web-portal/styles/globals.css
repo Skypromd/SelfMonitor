@@ -114,6 +114,16 @@ a:hover { color: var(--accent-light); }
 .kpiUpdated     { animation: countPulse 280ms ease; }
 .bottomSheet    { animation: slideUp var(--ease-slow) cubic-bezier(0.32, 0.72, 0, 1); }
 
+@media (max-width: 900px) {
+  .tax-prep-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .tax-prep-grid > div:nth-child(2) {
+    position: static !important;
+    top: auto !important;
+  }
+}
+
 /* ── Touch targets (mobile) ─────────────────────────── */
 @media (max-width: 767px) {
   button, a, [role="button"] { min-height: 44px; }

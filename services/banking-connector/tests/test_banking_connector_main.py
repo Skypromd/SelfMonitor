@@ -41,6 +41,21 @@ def test_sync_quota_returns_limits():
     assert "used_today" in data and "remaining" in data
 
 
+def test_list_providers_public():
+    response = client.get("/providers")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data, list)
+    assert len(data) >= 1
+    ids = {p["id"] for p in data}
+    assert "mock_bank" in ids
+    assert data[0]["id"] == "saltedge"
+    for p in data:
+        assert set(p.keys()) == {"id", "display_name", "configured", "logo_url"}
+        assert p["configured"] in ("true", "false")
+        assert p["logo_url"].startswith("https://")
+
+
 def test_initiate_connection_success():
     """
     Test that the /connections/initiate endpoint returns a well-formed consent URL.
@@ -55,6 +70,19 @@ def test_initiate_connection_success():
     assert "consent_url" in data
     assert "https://fake-bank-provider.com/consent" in data["consent_url"]
     assert "client_id=mock_bank" in data["consent_url"]
+
+
+def test_initiate_truelayer_returns_truelayer_auth_url():
+    response = client.post(
+        "/connections/initiate",
+        headers=get_auth_headers(),
+        json={"provider_id": "truelayer", "redirect_uri": "http://localhost:3000/callback"},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "truelayer" in data["consent_url"].lower()
+    assert "response_type=code" in data["consent_url"]
+    assert data["provider"].startswith("truelayer")
 
 @pytest.mark.asyncio
 async def test_callback_schedules_celery_task(mocker):

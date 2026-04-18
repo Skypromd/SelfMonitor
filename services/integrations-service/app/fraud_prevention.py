@@ -14,7 +14,7 @@ class FraudPreventionHeaders:
     """Generates HMRC-mandated fraud prevention headers."""
 
     def __init__(self):
-        self.vendor_product_name = os.getenv("HMRC_VENDOR_PRODUCT_NAME", "SelfMonitor")
+        self.vendor_product_name = os.getenv("HMRC_VENDOR_PRODUCT_NAME", "MyNetTax")
         self.vendor_version = os.getenv("HMRC_VENDOR_VERSION", "1.0.0")
 
     def generate(
@@ -29,9 +29,9 @@ class FraudPreventionHeaders:
         headers = {
             "Gov-Client-Connection-Method": connection_method,
             "Gov-Vendor-Product-Name": self.vendor_product_name,
-            "Gov-Vendor-Version": f"SelfMonitor={self.vendor_version}",
+            "Gov-Vendor-Version": f"MyNetTax={self.vendor_version}",
             "Gov-Vendor-License-IDs": "",
-            "Gov-Client-User-IDs": f"selfmonitor={user_id}" if user_id else "",
+            "Gov-Client-User-IDs": f"mynettax={user_id}" if user_id else "",
             "Gov-Client-Timezone": f"UTC+{datetime.datetime.now().astimezone().strftime('%z')[:3]}:00",
             "Gov-Client-Local-IPs": client_ip if client_ip else "",
             "Gov-Client-Device-ID": client_device_id or str(uuid.uuid4()),

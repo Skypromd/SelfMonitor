@@ -1,5 +1,5 @@
 """
-SelfMonitor Strategic Partnerships & B2B Platform
+MyNetTax Strategic Partnerships & B2B Platform
 Enterprise alliance management and B2B revenue acceleration for unicorn trajectory
 
 Features:
@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, EmailStr
 
 # --- Configuration ---
 app = FastAPI(
-    title="SelfMonitor Strategic Partnerships & B2B Platform",
+    title="MyNetTax Strategic Partnerships & B2B Platform",
     description="Enterprise alliance management and B2B revenue acceleration for unicorn growth",
     version="1.0.0",
     docs_url="/partnerships/docs",
@@ -825,7 +825,7 @@ async def list_channel_programs(
                 "gold": Decimal("0.20"),
                 "platinum": Decimal("0.25")
             },
-            required_certifications=["SelfMonitor Fundamentals", "Financial Technology", "Sales Excellence"],
+            required_certifications=["MyNetTax Fundamentals", "Financial Technology", "Sales Excellence"],
             program_manager="channel_manager_001"
         )
     ]

@@ -77,7 +77,13 @@
     "potential_savings": "Potential savings",
     "trial_title": "Trial active",
     "trial_badge": "Trial",
-    "trial_subtitle": "Your Pro trial ends in"
+    "trial_subtitle": "Your Pro trial ends in",
+    "mtd_card_title": "MTD (Income Tax)",
+    "mtd_open_tax": "Open tax summary",
+    "mtd_body_overdue": "A quarterly update looks overdue. Review figures in Tax summary before any submission.",
+    "mtd_body_due": "A quarterly period has ended — check filing dates in Tax summary.",
+    "mtd_body_upcoming": "Quarterly MTD updates may apply. Next deadline shown in Tax summary.",
+    "mtd_body_generic": "Based on your income, quarterly MTD may apply. Open Tax summary for dates."
   },
   "tax": {
     "title": "Tax summary",
@@ -107,7 +113,11 @@
     "estimated_tax": "Estimated tax due",
     "export_csv": "Export CSV",
     "category_breakdown": "SA103 categories",
-    "pro_note": "HMRC submission requires Pro."
+    "pro_note": "HMRC submission requires Pro.",
+    "mtd_section_title": "MTD quarterly updates",
+    "mtd_next_label": "Next filing deadline",
+    "mtd_quarter_due": "Due",
+    "mtd_footer": "Submit only after you review and confirm — not automatic."
   },
   "cis": {
     "tracker_title": "CIS refund tracker",
@@ -234,7 +244,9 @@
     "register_title": "Register for Self Assessment",
     "register_note": "Deadline to register by 5 October.",
     "paper_title": "Paper filing deadline",
-    "paper_note": "Paper return due by 31 October."
+    "paper_note": "Paper return due by 31 October.",
+    "mtd_badge": "MTD",
+    "mtd_quarter_note": "MTD quarterly update. Review figures in Tax summary before any HMRC submission."
   },
   "accountant": {
     "title": "Accountant share",

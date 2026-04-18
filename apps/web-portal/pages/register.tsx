@@ -210,7 +210,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
 
   return (
     <>
-      <Head><title>Create Account — SelfMonitor</title></Head>
+      <Head><title>Create Account — MyNetTax</title></Head>
       <div className={styles.container}>
         <main className={styles.main} style={{ maxWidth: 520 }}>
 
@@ -255,7 +255,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
               ) : (
                 <>
                   <h1 className={styles.title} style={{ fontSize: '1.75rem' }}>Create your account</h1>
-                  <p className={styles.description}>Get started with SelfMonitor</p>
+                  <p className={styles.description}>Get started with MyNetTax</p>
                 </>
               )}
 

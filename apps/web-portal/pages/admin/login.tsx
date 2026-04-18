@@ -65,7 +65,7 @@ export default function AdminLoginPage({ onLoginSuccess }: AdminLoginProps) {
   return (
     <>
       <Head>
-        <title>Admin — SelfMonitor Operations</title>
+        <title>Admin — MyNetTax Operations</title>
         <meta name="robots" content="noindex,nofollow" />
       </Head>
       <div
@@ -108,7 +108,7 @@ export default function AdminLoginPage({ onLoginSuccess }: AdminLoginProps) {
               <div style={{ fontWeight: 800, fontSize: '0.95rem', color: '#fbbf24' }}>
                 Operations Console
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>SelfMonitor — только для staff</div>
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>MyNetTax — только для staff</div>
             </div>
           </div>
 

@@ -1,5 +1,5 @@
 """
-Dependency injection for SelfMonitor Recommendation Engine
+Dependency injection for MyNetTax Recommendation Engine
 """
 
 from typing import Dict, Any, List

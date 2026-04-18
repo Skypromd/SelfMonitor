@@ -14,7 +14,7 @@ export default function MarketplaceScreen() {
   const { t } = useTranslation();
   const handleRequest = (subject: string) => {
     const encoded = encodeURIComponent(subject);
-    Linking.openURL(`mailto:partners@selfmonitor.app?subject=${encoded}`);
+    Linking.openURL(`mailto:partners@mynettax.app?subject=${encoded}`);
   };
 
   return (

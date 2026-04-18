@@ -14,7 +14,7 @@ export default function CheckoutCancelPage() {
   return (
     <>
       <Head>
-        <title>Payment Cancelled — SelfMonitor</title>
+        <title>Payment Cancelled — MyNetTax</title>
       </Head>
       <div className={styles.container}>
         <main className={styles.main} style={{ maxWidth: 520, textAlign: 'center' }}>
@@ -44,7 +44,7 @@ export default function CheckoutCancelPage() {
             margin: '0 0 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.875rem', lineHeight: 2,
           }}>
             <div>💡 You can always start a free trial — no credit card required</div>
-            <div>💡 Try the Free plan to explore SelfMonitor at no cost</div>
+            <div>💡 Try the Free plan to explore MyNetTax at no cost</div>
             <div>💡 Upgrade whenever you&apos;re ready from your dashboard</div>
           </div>
 

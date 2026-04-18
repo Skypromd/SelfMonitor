@@ -163,7 +163,7 @@ def build_fraud_prevention_headers(
     Returns (headers dict for HMRC, connection_method string used).
     Server fills Gov-Client-Public-IP (and port when known) from observed inbound metadata.
     """
-    vendor_product_name = os.getenv("HMRC_VENDOR_PRODUCT_NAME", "SelfMonitor")
+    vendor_product_name = os.getenv("HMRC_VENDOR_PRODUCT_NAME", "MyNetTax")
     vendor_version = os.getenv("HMRC_VENDOR_VERSION", "1.0.0")
     vendor_public_ip = (os.getenv("HMRC_VENDOR_PUBLIC_IP") or "").strip()
 
@@ -198,9 +198,9 @@ def build_fraud_prevention_headers(
     headers: dict[str, str] = {
         "Gov-Client-Connection-Method": connection_method,
         "Gov-Vendor-Product-Name": vendor_product_name,
-        "Gov-Vendor-Version": f"SelfMonitor={vendor_version}",
+        "Gov-Vendor-Version": f"MyNetTax={vendor_version}",
         "Gov-Vendor-License-IDs": "",
-        "Gov-Client-User-IDs": f"selfmonitor={user_id}" if user_id else "",
+        "Gov-Client-User-IDs": f"mynettax={user_id}" if user_id else "",
         "Gov-Client-Timezone": tz,
         "Gov-Client-Device-ID": device_id[:128],
         "Gov-Client-Multi-Factor": "",
@@ -216,12 +216,12 @@ def build_fraud_prevention_headers(
         ua = (ctx.user_agent or "").strip()
         if ua:
             headers["Gov-Client-Browser-JS-User-Agent"] = ua[:2048]
-            headers["Gov-Client-User-Agent"] = f"product=SelfMonitorWeb&version={vendor_version}"
+            headers["Gov-Client-User-Agent"] = f"product=MyNetTaxWeb&version={vendor_version}"
         else:
-            headers["Gov-Client-User-Agent"] = f"product=SelfMonitorWeb&version={vendor_version}"
+            headers["Gov-Client-User-Agent"] = f"product=MyNetTaxWeb&version={vendor_version}"
     else:
         ua = (ctx.user_agent or "").strip()
-        parts = [f"product=SelfMonitorMobile&version={vendor_version}"]
+        parts = [f"product=MyNetTaxMobile&version={vendor_version}"]
         if ctx.app_version:
             parts.append(f"app_version={ctx.app_version}")
         if ctx.build_number:

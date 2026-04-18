@@ -1,6 +1,6 @@
 # GraphQL Federation Gateway
 
-Apollo Federation Gateway that provides a unified GraphQL API for all SelfMonitor microservices. This gateway orchestrates 29+ microservices into a single, cohesive GraphQL endpoint with federated schema composition.
+Apollo Federation Gateway that provides a unified GraphQL API for all MyNetTax microservices. This gateway orchestrates 29+ microservices into a single, cohesive GraphQL endpoint with federated schema composition.
 
 ## 🚀 Architecture Overview
 
@@ -405,7 +405,7 @@ const sdk = new NodeSDK({
 
 ---
 
-**Built with ❤️ for SelfMonitor FinTech Platform**
+**Built with ❤️ for MyNetTax FinTech Platform**
 
 For more information, see:
 - [Apollo Federation Documentation](https://www.apollographql.com/docs/federation/)

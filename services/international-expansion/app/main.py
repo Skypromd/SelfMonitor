@@ -1,5 +1,5 @@
 """
-SelfMonitor International Expansion Platform
+MyNetTax International Expansion Platform
 Comprehensive global scaling infrastructure for unicorn trajectory
 
 Features:
@@ -30,7 +30,7 @@ import currency_converter  # type: ignore
 
 # --- Configuration ---
 app = FastAPI(
-    title="SelfMonitor International Expansion Platform",
+    title="MyNetTax International Expansion Platform",
     description="Comprehensive global scaling infrastructure for international market penetration",
     version="1.0.0",
     docs_url="/international/docs",
@@ -212,7 +212,7 @@ class LocalizationService:
             SupportedLanguage.EN_GB: {
                 "common.submit": "Submit",
                 "common.cancel": "Cancel",
-                "common.welcome": "Welcome to SelfMonitor",
+                "common.welcome": "Welcome to MyNetTax",
                 "common.currency": "Currency",
                 "dashboard.title": "Financial Dashboard",
                 "transactions.title": "Transaction History",
@@ -222,7 +222,7 @@ class LocalizationService:
             SupportedLanguage.FR_FR: {
                 "common.submit": "Soumettre",
                 "common.cancel": "Annuler",
-                "common.welcome": "Bienvenue sur SelfMonitor",
+                "common.welcome": "Bienvenue sur MyNetTax",
                 "common.currency": "Devise",
                 "dashboard.title": "Tableau de Bord Financier",
                 "transactions.title": "Historique des Transactions",
@@ -232,7 +232,7 @@ class LocalizationService:
             SupportedLanguage.DE_DE: {
                 "common.submit": "Einreichen",
                 "common.cancel": "Abbrechen",
-                "common.welcome": "Willkommen bei SelfMonitor",
+                "common.welcome": "Willkommen bei MyNetTax",
                 "common.currency": "Währung",
                 "dashboard.title": "Finanzdashboard",
                 "transactions.title": "Transaktionsverlauf",
@@ -242,7 +242,7 @@ class LocalizationService:
             SupportedLanguage.ES_ES: {
                 "common.submit": "Enviar",
                 "common.cancel": "Cancelar",
-                "common.welcome": "Bienvenido a SelfMonitor",
+                "common.welcome": "Bienvenido a MyNetTax",
                 "common.currency": "Moneda",
                 "dashboard.title": "Panel Financiero",
                 "transactions.title": "Historial de Transacciones",

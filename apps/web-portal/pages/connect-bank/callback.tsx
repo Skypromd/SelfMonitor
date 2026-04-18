@@ -42,14 +42,18 @@ export default function BankCallbackPage() {
     if (!token) {
       setStatus('error');
       setMessage('Session expired. Please log in again.');
+      if (typeof window !== 'undefined') sessionStorage.removeItem('bankingProviderId');
       return;
     }
 
     const exchange = async () => {
       try {
-        const qs = connectionId
+        const providerId =
+          (typeof window !== 'undefined' && sessionStorage.getItem('bankingProviderId')) || '';
+        const qsBase = connectionId
           ? `connection_id=${encodeURIComponent(connectionId)}`
           : `code=${encodeURIComponent(code)}`;
+        const qs = providerId ? `${qsBase}&provider_id=${encodeURIComponent(providerId)}` : qsBase;
         const res = await fetch(`${BANKING_SERVICE_URL}/connections/callback?${qs}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -60,12 +64,14 @@ export default function BankCallbackPage() {
         setMessage(data.message || 'Bank connected successfully!');
         setStatus('success');
         sessionStorage.removeItem('bankingToken');
+        sessionStorage.removeItem('bankingProviderId');
 
         // Redirect after short delay
         setTimeout(() => void router.replace('/transactions'), 2500);
       } catch (err) {
         setStatus('error');
         setMessage(err instanceof Error ? err.message : 'Connection failed');
+        if (typeof window !== 'undefined') sessionStorage.removeItem('bankingProviderId');
       }
     };
 

@@ -1,5 +1,5 @@
 """
-Logging configuration for SelfMonitor Recommendation Engine
+Logging configuration for MyNetTax Recommendation Engine
 """
 
 import logging

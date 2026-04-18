@@ -35,7 +35,7 @@ export default function AssistantPage({ token }: AssistantPageProps) {
     {
       id: '0',
       role: 'assistant',
-      content: "Hi! I'm your SelfMonitor AI assistant. I can help with tax questions, expense planning, invoicing, and financial advice for self-employed individuals. What can I help you with today?",
+      content: "Hi! I'm your MyNetTax AI assistant. I can help with tax questions, expense planning, invoicing, and financial advice for self-employed individuals. What can I help you with today?",
       timestamp: new Date(),
     },
   ]);

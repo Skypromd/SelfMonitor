@@ -1,3 +1,4 @@
+import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useNavigation } from '@react-navigation/native';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -25,6 +26,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
 import { flushQueue, getQueueCount } from '../services/offlineQueue';
 import { getSyncLogEntries, SyncLogEntry } from '../services/syncLog';
+import type { MainTabParamList } from '../navigation/MainTabs';
 import { colors, spacing } from '../theme';
 
 type Transaction = {
@@ -34,10 +36,17 @@ type Transaction = {
   business_use_percent?: number | null;
 };
 
+type MtdQuarterApi = { quarter: string; due_date: string; status: string };
+
+type MtdBanner = {
+  variant: 'overdue' | 'due_now' | 'upcoming' | 'generic';
+  detail: string;
+};
+
 export default function DashboardScreen() {
   const { token } = useAuth();
   const { t, tDynamic } = useTranslation();
-  const navigation = useNavigation();
+  const navigation = useNavigation<BottomTabNavigationProp<MainTabParamList>>();
   const { isOffline } = useNetworkStatus();
   const { plan, status, trialDaysLeft } = useSubscriptionPlan();
   const [readinessScore, setReadinessScore] = useState(0);
@@ -56,6 +65,7 @@ export default function DashboardScreen() {
     total: 0,
     uncategorizedExpenses: 0,
   });
+  const [mtdBanner, setMtdBanner] = useState<MtdBanner | null>(null);
 
   const loadReadiness = async () => {
     try {
@@ -131,8 +141,41 @@ export default function DashboardScreen() {
       if (!response.ok) return;
       const data = await response.json();
       setEstimatedTax(data.estimated_tax_due || 0);
+      const mtd = data.mtd_obligation as
+        | { reporting_required?: boolean; next_deadline?: string | null; quarterly_updates?: MtdQuarterApi[] }
+        | undefined;
+      if (!mtd?.reporting_required) {
+        setMtdBanner(null);
+        return;
+      }
+      const quarters = Array.isArray(mtd.quarterly_updates) ? mtd.quarterly_updates : [];
+      const hot = quarters.find((q) => q.status === 'overdue' || q.status === 'due_now');
+      const formatUk = (iso: string) => {
+        const d = new Date(iso);
+        return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+      };
+      if (hot?.status === 'overdue') {
+        setMtdBanner({
+          variant: 'overdue',
+          detail: `${hot.quarter} was due ${formatUk(hot.due_date)}.`,
+        });
+      } else if (hot?.status === 'due_now') {
+        setMtdBanner({
+          variant: 'due_now',
+          detail: `${hot.quarter} period ended; file by ${formatUk(hot.due_date)}.`,
+        });
+      } else if (mtd.next_deadline) {
+        const days = Math.ceil((new Date(mtd.next_deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        setMtdBanner({
+          variant: 'upcoming',
+          detail: `Next filing ${formatUk(mtd.next_deadline)}${days >= 0 ? ` (${days}d)` : ''}.`,
+        });
+      } else {
+        setMtdBanner({ variant: 'generic', detail: '' });
+      }
     } catch {
       setEstimatedTax(null);
+      setMtdBanner(null);
     }
   };
 
@@ -242,6 +285,53 @@ export default function DashboardScreen() {
           />
         </GlassCard>
       </FadeInView>
+
+      {mtdBanner ? (
+        <FadeInView delay={115}>
+          <Card
+            style={{
+              borderWidth: 1,
+              borderColor:
+                mtdBanner.variant === 'overdue'
+                  ? 'rgba(239,68,68,0.45)'
+                  : mtdBanner.variant === 'due_now'
+                    ? 'rgba(245,158,11,0.45)'
+                    : 'rgba(13,148,136,0.35)',
+              backgroundColor:
+                mtdBanner.variant === 'overdue'
+                  ? 'rgba(239,68,68,0.06)'
+                  : mtdBanner.variant === 'due_now'
+                    ? 'rgba(245,158,11,0.06)'
+                    : 'rgba(13,148,136,0.06)',
+            }}
+          >
+            <View style={styles.titleRow}>
+              <Text style={styles.cardTitle}>{t('dashboard.mtd_card_title')}</Text>
+              <Badge
+                label={mtdBanner.variant === 'overdue' ? '!' : mtdBanner.variant === 'due_now' ? 'Due' : 'MTD'}
+                tone={mtdBanner.variant === 'overdue' ? 'danger' : mtdBanner.variant === 'due_now' ? 'warning' : 'info'}
+              />
+            </View>
+            <Text style={styles.mtdBody}>
+              {mtdBanner.detail ? `${mtdBanner.detail} ` : ''}
+              {mtdBanner.variant === 'overdue'
+                ? t('dashboard.mtd_body_overdue')
+                : mtdBanner.variant === 'due_now'
+                  ? t('dashboard.mtd_body_due')
+                  : mtdBanner.variant === 'upcoming'
+                    ? t('dashboard.mtd_body_upcoming')
+                    : t('dashboard.mtd_body_generic')}
+            </Text>
+            <PrimaryButton
+              title={t('dashboard.mtd_open_tax')}
+              onPress={() => navigation.navigate('More', { screen: 'TaxSummary' })}
+              variant="secondary"
+              haptic="light"
+              style={styles.secondaryButton}
+            />
+          </Card>
+        </FadeInView>
+      ) : null}
 
       <SectionHeader title={t('dashboard.tax_pot_title')} subtitle={t('dashboard.tax_pot_subtitle')} />
       <FadeInView delay={130}>
@@ -481,6 +571,12 @@ const styles = StyleSheet.create({
   },
   deadlineButton: {
     marginTop: spacing.lg,
+  },
+  mtdBody: {
+    color: colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: spacing.sm,
   },
   syncRow: {
     flexDirection: 'row',

@@ -116,7 +116,7 @@ export class SIEMEngine extends EventEmitter {
         this.splunkClient = new splunkLogging.Logger({
           token: process.env.SPLUNK_TOKEN || '',
           url: process.env.SPLUNK_URL,
-          source: 'selfmonitor-security',
+          source: 'mynettax-security',
           sourcetype: 'json',
         });
         this.logger.info('Splunk SIEM integration initialized');
@@ -313,7 +313,7 @@ export class SIEMEngine extends EventEmitter {
   private async sendToExternalSIEMs(event: SecurityEvent): Promise<void> {
     const siemEvent = {
       timestamp: new Date().toISOString(),
-      source: 'selfmonitor-security-service',
+      source: 'mynettax-security-service',
       ...event,
     };
 
@@ -321,7 +321,7 @@ export class SIEMEngine extends EventEmitter {
     if (this.elasticsearchClient) {
       try {
         await this.elasticsearchClient.index({
-          index: `selfmonitor-security-${new Date().toISOString().split('T')[0]}`,
+          index: `mynettax-security-${new Date().toISOString().split('T')[0]}`,
           body: siemEvent,
         });
       } catch (error) {

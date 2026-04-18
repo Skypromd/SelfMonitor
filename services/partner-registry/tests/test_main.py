@@ -315,7 +315,7 @@ def test_lead_report_csv_export(mocker):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
     assert "attachment; filename=\"lead_report_" in response.headers["content-disposition"]
-    assert response.headers["x-selfmonitor-export-watermark"]
+    assert response.headers["x-mynettax-export-watermark"]
 
     rows = list(csv.DictReader(io.StringIO(response.text)))
     assert rows[0]["row_type"] == "SUMMARY"
@@ -969,7 +969,7 @@ def test_invoice_pdf_and_accounting_exports(mocker):
     pdf_response = client.get(f"/billing/invoices/{invoice_id}/pdf", headers=get_billing_headers())
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
-    assert pdf_response.headers["x-selfmonitor-export-watermark"]
+    assert pdf_response.headers["x-mynettax-export-watermark"]
     assert f"{invoice_payload['invoice_number']}.pdf" in pdf_response.headers["content-disposition"]
     assert pdf_response.content.startswith(b"%PDF-")
 
@@ -979,7 +979,7 @@ def test_invoice_pdf_and_accounting_exports(mocker):
     )
     assert xero_response.status_code == 200
     assert xero_response.headers["content-type"].startswith("text/csv")
-    assert xero_response.headers["x-selfmonitor-export-watermark"]
+    assert xero_response.headers["x-mynettax-export-watermark"]
     assert "ContactName,InvoiceNumber,InvoiceDate,DueDate" in xero_response.text
     assert invoice_payload["invoice_number"] in xero_response.text
 
@@ -989,7 +989,7 @@ def test_invoice_pdf_and_accounting_exports(mocker):
     )
     assert qb_response.status_code == 200
     assert qb_response.headers["content-type"].startswith("text/csv")
-    assert qb_response.headers["x-selfmonitor-export-watermark"]
+    assert qb_response.headers["x-mynettax-export-watermark"]
     assert "Customer,InvoiceNo,InvoiceDate,DueDate" in qb_response.text
     assert invoice_payload["invoice_number"] in qb_response.text
 
@@ -1024,8 +1024,8 @@ def test_self_employed_invoice_lifecycle_and_exports(mocker):
     assert invoice_payload["subtotal_gbp"] == 350.0
     assert invoice_payload["tax_amount_gbp"] == 70.0
     assert invoice_payload["total_amount_gbp"] == 420.0
-    assert invoice_payload["payment_link_url"].startswith("https://pay.selfmonitor.app/invoices/")
-    assert invoice_payload["payment_link_provider"] == "selfmonitor_payment_link"
+    assert invoice_payload["payment_link_url"].startswith("https://pay.mynettax.app/invoices/")
+    assert invoice_payload["payment_link_provider"] == "mynettax_payment_link"
     assert len(invoice_payload["lines"]) == 2
 
     list_response = client.get("/self-employed/invoices", headers=owner_headers)
@@ -1068,13 +1068,13 @@ def test_self_employed_invoice_lifecycle_and_exports(mocker):
     pdf_response = client.get(f"/self-employed/invoices/{invoice_id}/pdf", headers=owner_headers)
     assert pdf_response.status_code == 200
     assert pdf_response.headers["content-type"].startswith("application/pdf")
-    assert pdf_response.headers["x-selfmonitor-export-watermark"]
+    assert pdf_response.headers["x-mynettax-export-watermark"]
     assert pdf_response.content.startswith(b"%PDF-")
 
     csv_response = client.get(f"/self-employed/invoices/{invoice_id}/csv", headers=owner_headers)
     assert csv_response.status_code == 200
     assert csv_response.headers["content-type"].startswith("text/csv")
-    assert csv_response.headers["x-selfmonitor-export-watermark"]
+    assert csv_response.headers["x-mynettax-export-watermark"]
     assert invoice_payload["invoice_number"] in csv_response.text
 
 
@@ -1143,7 +1143,7 @@ def test_self_employed_advanced_recurring_branding_and_reminders(mocker):
     assert generated_invoice["recurring_plan_id"] == recurring_plan_id
     assert generated_invoice["brand_business_name"] == "North Star Consulting"
     assert generated_invoice["brand_accent_color"] == "#2244AA"
-    assert generated_invoice["payment_link_url"].startswith("https://pay.selfmonitor.app/invoices/")
+    assert generated_invoice["payment_link_url"].startswith("https://pay.mynettax.app/invoices/")
 
     issue_generated = client.patch(
         f"/self-employed/invoices/{generated_invoice_id}/status",

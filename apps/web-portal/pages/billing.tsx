@@ -48,9 +48,9 @@ const PLAN_AMOUNT_GBP: Record<string, number> = {
   free: 0, starter: 15, growth: 18, pro: 21, business: 30,
 };
 
-const fmt = (n: number) =>
-  `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const pct = (n: number) => `${n.toFixed(1)}%`;
+const fmt = (n: number | null | undefined) =>
+  `£${Number(n ?? 0).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const pct = (n: number | null | undefined) => `${Number(n ?? 0).toFixed(1)}%`;
 
 const STATUS_COLOR: Record<string, string> = {
   paid: '#10b981', sent: '#3b82f6', pending: '#f59e0b',
@@ -207,7 +207,7 @@ export default function BillingPage({ token, user }: BillingPageProps) {
 
   return (
     <>
-      <Head><title>Platform billing — SelfMonitor</title></Head>
+      <Head><title>Platform billing — MyNetTax</title></Head>
       <div className={styles.pageContainerWide}>
 
         {/* ── Header ─────────────────────────────────────────────────────── */}

@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AI Agent Service - SelfMate",
-    description="Autonomous AI Financial Advisor for SelfMonitor platform.",
+    description="Autonomous AI Financial Advisor for MyNetTax platform.",
     version="1.0.0",
     lifespan=lifespan
 )

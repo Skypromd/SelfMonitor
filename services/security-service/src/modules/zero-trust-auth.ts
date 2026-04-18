@@ -274,8 +274,8 @@ export class ZeroTrustAuthManager {
 
       // Generate MFA secret
       const secret = speakeasy.generateSecret({
-        name: `SelfMonitor (${request.user.email})`,
-        issuer: process.env.MFA_ISSUER || 'SelfMonitor',
+        name: `MyNetTax (${request.user.email})`,
+        issuer: process.env.MFA_ISSUER || 'MyNetTax',
         length: 32,
       });
 

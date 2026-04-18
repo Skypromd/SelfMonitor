@@ -7,6 +7,7 @@ set -e
 # Configuration
 DATE=$(date +"%Y%m%d_%H%M%S")
 BACKUP_DIR="/backups"
+mkdir -p "$BACKUP_DIR/postgres" "$BACKUP_DIR/redis"
 POSTGRES_BACKUP="$BACKUP_DIR/postgres/pg_backup_$DATE.sql.gz"
 REDIS_BACKUP="$BACKUP_DIR/redis/redis_backup_$DATE.rdb"
 LOG_FILE="$BACKUP_DIR/backup_$DATE.log"

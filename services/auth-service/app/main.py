@@ -19,7 +19,7 @@ from urllib.parse import unquote
 import httpx
 import pyotp  # type: ignore[import-untyped]
 import qrcode  # type: ignore[import-untyped]
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt  # type: ignore[import-untyped]
@@ -37,6 +37,7 @@ from app.config import (
     AUTH_CORS_ORIGINS,
     AUTH_DB_PATH,
     COMPLIANCE_SERVICE_URL,
+    INTERNAL_SERVICE_SECRET,
     LOCKOUT_THRESHOLD,
     REQUIRE_ADMIN_2FA,
     SECRET_KEY,
@@ -75,6 +76,43 @@ Instrumentator().instrument(app).expose(app)
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+def _require_internal_service_token(
+    x_internal_token: Annotated[str | None, Header()] = None,
+) -> None:
+    if not INTERNAL_SERVICE_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="internal_calls_not_configured",
+        )
+    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+
+def list_active_emails_for_reminders() -> list[str]:
+    with db_lock:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT email FROM users WHERE is_active = 1"
+            ).fetchall()
+        finally:
+            conn.close()
+    out: list[str] = []
+    for row in rows:
+        if row and row[0]:
+            out.append(str(row[0]).strip().lower())
+    return out
+
+
+@app.get(
+    "/internal/reminder-recipients",
+    dependencies=[Depends(_require_internal_service_token)],
+)
+async def internal_reminder_recipients():
+    """Returns active user emails for scheduled MTD (or other) reminders. Internal only."""
+    return {"emails": list_active_emails_for_reminders()}
 
 
 # --- Security Utils ---
@@ -615,17 +653,17 @@ def send_reset_email(to_email: str, token: str) -> None:
     reset_url = f"{APP_BASE_URL}/reset-password?token={token}"
 
     msg = email.mime.multipart.MIMEMultipart("alternative")
-    msg["Subject"] = "Reset your SelfMonitor password"
-    msg["From"] = f"SelfMonitor <{SMTP_FROM}>"
+    msg["Subject"] = "Reset your MyNetTax password"
+    msg["From"] = f"MyNetTax <{SMTP_FROM}>"
     msg["To"] = to_email
 
     text_body = (
         f"Hello,\n\n"
-        f"We received a request to reset the password for your SelfMonitor account.\n\n"
+        f"We received a request to reset the password for your MyNetTax account.\n\n"
         f"Click the link below (valid for {RESET_TOKEN_EXPIRE_MINUTES} minutes):\n"
         f"{reset_url}\n\n"
         f"If you did not request this, just ignore this email — your password will not change.\n\n"
-        f"— The SelfMonitor team"
+        f"— The MyNetTax team"
     )
     html_body = f"""\
 <!DOCTYPE html>
@@ -636,7 +674,7 @@ def send_reset_email(to_email: str, token: str) -> None:
       <span style="display:inline-block;width:36px;height:36px;border-radius:10px;
                    background:linear-gradient(135deg,#0d9488,#0284c7);
                    text-align:center;line-height:36px;font-weight:800;color:#fff">SM</span>
-      <span style="font-weight:700;font-size:1.1rem">SelfMonitor</span>
+      <span style="font-weight:700;font-size:1.1rem">MyNetTax</span>
     </div>
     <h2 style="margin:0 0 0.75rem">Reset your password</h2>
     <p style="color:#94a3b8;margin-bottom:1.5rem">
@@ -1110,13 +1148,13 @@ async def setup_two_factor_auth_json(
 
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(
-        name=current_user.email, issuer_name="SelfMonitor"
+        name=current_user.email, issuer_name="MyNetTax"
     )
 
     return {
         "secret": secret,
         "provisioning_uri": provisioning_uri,
-        "issuer": "SelfMonitor",
+        "issuer": "MyNetTax",
     }
 
 
@@ -1232,7 +1270,7 @@ async def phone_send_code(payload: PhoneSendRequest):
 
     _send_sms(
         to=payload.phone,
-        body=f"Your SelfMonitor verification code is: {code}. Valid for 10 minutes.",
+        body=f"Your MyNetTax verification code is: {code}. Valid for 10 minutes.",
     )
 
     response: dict[str, Any] = {"sent": True}

@@ -10,7 +10,9 @@ from app.ocr_pipeline import (
     estimate_ocr_confidence,
     extract_total_amount,
     extract_transaction_date,
+    extract_vat_from_text,
     infer_vendor_name,
+    parse_analyze_expense_response,
 )
 
 
@@ -87,3 +89,59 @@ def test_evaluate_ocr_quality_marks_high_confidence_as_confirmed():
     )
     assert quality.needs_review is False
     assert quality.reason == "high_confidence"
+
+
+def test_parse_analyze_expense_response_reads_summary_fields():
+    response = {
+        "Blocks": [
+            {"BlockType": "LINE", "Text": "Coffee Shop Ltd"},
+            {"BlockType": "LINE", "Text": "Total paid £14.40"},
+        ],
+        "ExpenseDocuments": [
+            {
+                "SummaryFields": [
+                    {"Type": {"Text": "VENDOR_NAME"}, "ValueDetection": {"Text": "Coffee Shop Ltd"}},
+                    {"Type": {"Text": "TOTAL"}, "ValueDetection": {"Text": "£14.40"}},
+                    {"Type": {"Text": "VAT"}, "ValueDetection": {"Text": "£2.40"}},
+                    {
+                        "Type": {"Text": "INVOICE_RECEIPT_DATE"},
+                        "ValueDetection": {"Text": "13/02/2026"},
+                    },
+                ]
+            }
+        ],
+    }
+    text, hints = parse_analyze_expense_response(response)
+    assert "Coffee Shop Ltd" in text
+    assert hints.vendor_name == "Coffee Shop Ltd"
+    assert hints.total_amount == 14.4
+    assert hints.vat_amount == 2.4
+    assert hints.transaction_date == datetime.date(2026, 2, 13)
+
+
+def test_extract_vat_from_text_finds_vat_line():
+    text = "Items 12.00\nVAT £2.40\nTOTAL £14.40"
+    assert extract_vat_from_text(text) == 2.4
+
+
+def test_extract_vat_from_text_skips_net_subtotal_lines():
+    text = "Net excluding VAT 12.00\nVAT £2.40"
+    assert extract_vat_from_text(text) == 2.4
+
+
+def test_estimate_ocr_confidence_bonus_for_vat():
+    base = estimate_ocr_confidence(
+        text="",
+        total_amount=10.0,
+        transaction_date=datetime.date(2026, 1, 1),
+        vendor_name="Acme",
+    )
+    with_vat = estimate_ocr_confidence(
+        text="",
+        total_amount=10.0,
+        transaction_date=datetime.date(2026, 1, 1),
+        vendor_name="Acme",
+        vat_amount=2.0,
+    )
+    assert base == 0.8
+    assert with_vat == 0.85

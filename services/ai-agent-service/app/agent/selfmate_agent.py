@@ -1,5 +1,5 @@
 """
-SelfMate AI Agent - The autonomous financial advisor for SelfMonitor.
+SelfMate AI Agent - The autonomous financial advisor for MyNetTax.
 
 This is the core AI agent that provides personalized financial advice,
 automates tasks, and helps users achieve their financial goals.
@@ -125,7 +125,7 @@ class SelfMateAgent:
             - Confident in your expertise but humble about limitations
 
             You have access to comprehensive financial data and can take actions across
-            the entire SelfMonitor platform to help users achieve their goals.""",
+            the entire MyNetTax platform to help users achieve their goals.""",
 
             "guidelines": """
             1. Always provide specific, actionable advice

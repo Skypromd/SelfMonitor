@@ -1,12 +1,13 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import DashboardScreen from '../screens/DashboardScreen';
 import TransactionsScreen from '../screens/TransactionsScreen';
 import DocumentsScreen from '../screens/DocumentsScreen';
 import ReportsScreen from '../screens/ReportsScreen';
-import MoreStack from './MoreStack';
+import MoreStack, { type MoreStackParamList } from './MoreStack';
 import { useTranslation } from '../hooks/useTranslation';
 import { colors } from '../theme';
 
@@ -15,7 +16,7 @@ export type MainTabParamList = {
   Transactions: undefined;
   Documents: undefined;
   Reports: undefined;
-  More: undefined;
+  More: NavigatorScreenParams<MoreStackParamList>;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();

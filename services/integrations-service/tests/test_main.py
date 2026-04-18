@@ -44,7 +44,7 @@ def _web_fraud_client_context() -> dict[str, object]:
 def _mobile_fraud_client_context() -> dict[str, object]:
     return {
         "client_type": "mobile",
-        "user_agent": "SelfMonitorMobile/1.0.0 (pytest)",
+        "user_agent": "MyNetTaxMobile/1.0.0 (pytest)",
         "device_id": "aaaaaaaa-bbbb-4ccc-dddd-eeeeeeeeeeee",
     }
 

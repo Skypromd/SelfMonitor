@@ -26,8 +26,9 @@ import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
+from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from app.stt import transcribe
@@ -37,8 +38,24 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 AUTH_SECRET_KEY     = os.environ["AUTH_SECRET_KEY"]
+AUTH_ALGORITHM      = os.getenv("AUTH_ALGORITHM", "HS256")
 AGENT_SERVICE_URL   = os.getenv("AGENT_SERVICE_URL",  "http://ai-agent-service:80")
 MTD_AGENT_URL       = os.getenv("MTD_AGENT_URL",       "http://mtd-agent:8022")
+VOICE_GATEWAY_ENFORCE_JWT = os.getenv("VOICE_GATEWAY_ENFORCE_JWT", "0") == "1"
+
+
+def _assert_voice_identity(user_id: str, token: str) -> None:
+    if not VOICE_GATEWAY_ENFORCE_JWT:
+        return
+    if not (token or "").strip():
+        raise ValueError("missing_bearer_token")
+    try:
+        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+    except JWTError as exc:
+        raise ValueError("invalid_bearer_token") from exc
+    sub = payload.get("sub")
+    if sub is None or str(sub) != str(user_id):
+        raise ValueError("token_user_mismatch")
 
 
 @asynccontextmanager
@@ -125,10 +142,14 @@ async def voice_ws(websocket: WebSocket):
             if msg_type == "audio":
                 # Step 1: STT
                 try:
+                    _assert_voice_identity(str(user_id), str(token))
                     audio_b64 = msg["data"]
                     audio_bytes = base64.b64decode(audio_b64)
                     lang = msg.get("lang", "en")
                     transcript = await transcribe(audio_bytes, language=lang)
+                except ValueError as exc:
+                    await websocket.send_json({"type": "error", "message": str(exc)})
+                    continue
                 except Exception as exc:
                     await websocket.send_json({"type": "error", "message": str(exc)})
                     continue
@@ -141,6 +162,11 @@ async def voice_ws(websocket: WebSocket):
                 lang = msg.get("lang", "en")
                 if not text:
                     await websocket.send_json({"type": "error", "message": "Empty text"})
+                    continue
+                try:
+                    _assert_voice_identity(str(user_id), str(token))
+                except ValueError as exc:
+                    await websocket.send_json({"type": "error", "message": str(exc)})
                     continue
             else:
                 await websocket.send_json({"type": "error", "message": f"Unknown type: {msg_type}"})
@@ -198,6 +224,10 @@ class TextRequest(BaseModel):
 async def voice_text(req: TextRequest):
     """Text-in → AI response text-out (no audio generation)."""
     try:
+        _assert_voice_identity(req.user_id, req.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    try:
         if _is_mtd_question(req.text):
             response = await _ask_mtd_agent(req.user_id, req.text, language=req.language)
         else:
@@ -210,6 +240,10 @@ async def voice_text(req: TextRequest):
 @app.post("/voice/speak")
 async def voice_speak(req: TextRequest):
     """Text-in → MP3 audio bytes (base64 encoded)."""
+    try:
+        _assert_voice_identity(req.user_id, req.token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
     try:
         audio = await synthesize(req.text)
         return {

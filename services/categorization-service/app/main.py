@@ -7,6 +7,8 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
+from .learn_store import lookup_user_category, upsert_rule
+
 log = logging.getLogger(__name__)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
@@ -50,16 +52,28 @@ class CategorizationRequest(BaseModel):
 class CategorizationResponse(BaseModel):
     category: Optional[str]
 
+
+class LearnRequest(BaseModel):
+    description: str
+    category: str
+
+
+class LearnResponse(BaseModel):
+    stored: bool
+    pattern: Optional[str] = None
+
 _CATEGORY_RULES: dict[str, list[str]] = {
     "groceries": [
         "tesco", "sainsbury", "sainsburys", "lidl", "aldi", "asda", "morrisons",
         "waitrose", "co-op", "coop", "iceland", "ocado", "marks spencer food",
-        "m&s food", "farmfoods",
+        "m&s food", "farmfoods", "budgens", "spar", "londis", "premier",
+        "heron foods", "b&m", "home bargains", "poundland", "wilko",
     ],
     "transport": [
         "tfl", "trainline", "uber", "bolt", "gett", "lyft", "addison lee",
         "national rail", "scotrail", "great western", "avanti", "lner",
-        "megabus", "national express", "flixbus",
+        "megabus", "national express", "flixbus", "black cab", "gettaxi",
+        "free now", "voi", "lime", "santander cycles",
     ],
     "fuel": [
         "shell", "bp", "esso", "texaco", "total", "jet", "murco",
@@ -69,11 +83,16 @@ _CATEGORY_RULES: dict[str, list[str]] = {
         "pret", "costa", "starbucks", "greggs", "mcdonalds", "burger king",
         "kfc", "nandos", "pizza hut", "dominos", "subway", "leon",
         "wasabi", "itsu", "eat", "caffe nero", "joe the juice",
+        "deliveroo", "uber eats", "just eat", "hungryhouse", "five guys",
+        "wagamama", "zizzi", "ask italian", "franco manca", "honest burgers",
+        "tortilla", "chipotle", "shake shack",
     ],
     "subscriptions": [
         "netflix", "spotify", "amazon prime", "disney plus", "apple",
         "youtube premium", "adobe", "microsoft 365", "google one",
-        "dropbox", "notion", "slack", "zoom", "canva",
+        "dropbox", "notion", "slack", "zoom", "canva", "audible",
+        "now tv", "nowtv", "paramount plus", "apple music", "deezer",
+        "tidal", "strava", "peloton", "headspace", "calm",
     ],
     "utilities": [
         "british gas", "edf", "eon", "octopus energy", "bulb", "ovo",
@@ -114,11 +133,38 @@ _CATEGORY_RULES: dict[str, list[str]] = {
     ],
     "health": [
         "pharmacy", "boots", "superdrug", "dentist", "optician",
-        "specsavers", "bupa", "vitality",
+        "specsavers", "bupa", "vitality", "lloyds pharmacy", "well pharmacy",
+        "day lewis", "rowlands pharmacy", "nhs", "gp surgery",
     ],
     "home_office": [
         "ikea", "argos furniture", "john lewis", "desk", "chair",
         "monitor", "keyboard", "webcam", "headset",
+        "currys", "pc world", "argos", "very.co.uk", "ao.com",
+    ],
+    "cost_of_goods": [
+        "amazon.co.uk", "amazon uk", "amzn.co.uk", "amzn mktp",
+        "ebay", "etsy uk", "etsy", "aliexpress", "wish.com",
+        "book depository", "waterstones", "wh smith",
+    ],
+    "entertainment": [
+        "cineworld", "odeon", "vue cinema", "everyman", "picturehouse",
+        "ticketmaster", "seetickets", "dice.fm", "eventbrite",
+        "gigsandtours", "axs", "stubhub",
+    ],
+    "software": [
+        "github", "gitlab", "jetbrains", "figma", "linear.app",
+        "monday.com", "asana", "trello", "atlassian", "jira",
+        "vercel", "netlify", "heroku", "digitalocean", "amazon web services",
+    ],
+    "bank_charges": [
+        "lloyds bank", "barclays", "hsbc uk", "hsbc", "natwest",
+        "nationwide", "santander", "metro bank", "starling bank",
+        "monzo", "revolut", "tsb bank", "halifax", "rbs", "royal bank",
+        "coutts", "wise", "transferwise", "paypal fees",
+    ],
+    "tools": [
+        "screwfix", "toolstation", "travis perkins", "wickes", "bnq",
+        "b&q", "selco", "jewson", "halfords",
     ],
 }
 
@@ -127,7 +173,7 @@ _VALID_CATEGORIES = set(_CATEGORY_RULES.keys()) | {
     "legal", "accounting", "advertising", "marketing", "insurance",
     "utilities", "rent", "home_office", "phone", "internet", "training",
     "equipment", "tools", "software", "bank_charges", "staff_costs",
-    "cost_of_goods", "pension",
+    "cost_of_goods", "pension", "entertainment", "other",
 }
 
 _LLM_SYSTEM = (
@@ -174,13 +220,33 @@ def _llm_categorize(description: str) -> Optional[str]:
         return None
 
 
+@app.post("/learn", response_model=LearnResponse)
+async def learn_category_rule(
+    request: LearnRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Remember a description → category mapping for this user (applied before global rules)."""
+    cat = request.category.strip().lower().replace(" ", "_")
+    if cat not in _VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown category '{request.category}'.",
+        )
+    pattern = upsert_rule(user_id, request.description, cat)
+    if pattern is None:
+        return LearnResponse(stored=False, pattern=None)
+    return LearnResponse(stored=True, pattern=pattern)
+
+
 @app.post("/categorize", response_model=CategorizationResponse)
 async def categorize_transaction(
     request: CategorizationRequest,
-    _user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
-    """Rules first, GPT-4o-mini fallback for unknown vendors."""
-    category = suggest_category_from_rules(request.description)
+    """User-learned rules first, then UK merchant rules, then GPT-4o-mini fallback."""
+    category = lookup_user_category(user_id, request.description)
+    if category is None:
+        category = suggest_category_from_rules(request.description)
     if category is None:
         category = _llm_categorize(request.description)
     return CategorizationResponse(category=category)
@@ -195,12 +261,14 @@ class BulkCategorizationResponse(BaseModel):
 @app.post("/categorize/bulk", response_model=BulkCategorizationResponse)
 async def categorize_bulk(
     request: BulkCategorizationRequest,
-    _user_id: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ):
     """Categorize multiple transactions at once"""
     results = []
     for desc in request.descriptions:
-        category = suggest_category_from_rules(desc)
+        category = lookup_user_category(user_id, desc)
+        if category is None:
+            category = suggest_category_from_rules(desc)
         results.append({"description": desc, "category": category})
     return BulkCategorizationResponse(results=results)
 

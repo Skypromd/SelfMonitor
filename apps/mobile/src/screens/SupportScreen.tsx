@@ -18,15 +18,15 @@ export default function SupportScreen() {
         <Card>
           <ListItem
             title={t('support.email_label')}
-            subtitle="support@selfmonitor.app"
+            subtitle="support@mynettax.app"
             icon="mail-outline"
-            onPress={() => Linking.openURL('mailto:support@selfmonitor.app')}
+            onPress={() => Linking.openURL('mailto:support@mynettax.app')}
           />
           <ListItem
             title={t('support.help_label')}
-            subtitle="selfmonitor.app/help"
+            subtitle="mynettax.app/help"
             icon="globe-outline"
-            onPress={() => Linking.openURL('https://selfmonitor.app/help')}
+            onPress={() => Linking.openURL('https://mynettax.app/help')}
           />
         </Card>
       </FadeInView>

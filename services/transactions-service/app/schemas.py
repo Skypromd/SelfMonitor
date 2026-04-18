@@ -62,6 +62,7 @@ class ReceiptDraftCreateRequest(BaseModel):
     suggested_category: Optional[str] = None
     expense_article: Optional[str] = None
     is_potentially_deductible: Optional[bool] = None
+    vat_amount_gbp: Optional[float] = Field(default=None, ge=0)
 
 
 class ReceiptDraftCreateResponse(BaseModel):
@@ -120,6 +121,7 @@ class ReceiptDraftUpdateRequest(BaseModel):
     vendor_name: Optional[str] = None
     transaction_date: Optional[datetime.date] = None
     suggested_category: Optional[str] = None
+    vat_amount_gbp: Optional[float] = Field(default=None, ge=0)
 
 
 # --- CIS variant B + accountant ---

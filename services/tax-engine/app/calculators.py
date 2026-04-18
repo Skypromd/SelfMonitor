@@ -1,6 +1,8 @@
 """
 UK Tax Calculators — PAYE, Rental, CIS, Dividend, Crypto, Self-Employed.
 Matching Pie.tax's calculator collection for competitive parity.
+
+Bank-linked Self Assessment estimates (transactions, CIS credits, MTD): use tax-engine POST /calculate.
 """
 from typing import Optional
 from pydantic import BaseModel

@@ -107,7 +107,7 @@ export default function LoginScreen() {
             <View style={styles.logoCircle}>
               <Text style={styles.logoEmoji}>💎</Text>
             </View>
-            <Text style={styles.brandName}>SelfMonitor</Text>
+            <Text style={styles.brandName}>MT</Text>
             <Text style={styles.tagline}>
               Financial Dashboard for the Self-Employed
             </Text>
@@ -185,7 +185,7 @@ export default function LoginScreen() {
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>
-              Secure login powered by SelfMonitor
+              Secure login powered by MyNetTax
             </Text>
           </View>
         </ScrollView>

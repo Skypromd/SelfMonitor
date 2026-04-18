@@ -61,8 +61,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   return (
     <>
       <Head>
-        <title>Log In — SelfMonitor</title>
-        <meta name="description" content="Log in to your SelfMonitor account" />
+        <title>Log In — MyNetTax</title>
+        <meta name="description" content="Log in to your MyNetTax account" />
       </Head>
       <div className={styles.container}>
         <main className={styles.main} style={{ maxWidth: 440 }}>
@@ -74,7 +74,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '0.75rem', fontWeight: 800, color: '#fff',
             }}>SM</span>
-            <span style={{ fontWeight: 700, fontSize: '1.15rem', color: '#f1f5f9' }}>SelfMonitor</span>
+            <span style={{ fontWeight: 700, fontSize: '1.15rem', color: '#f1f5f9' }}>MyNetTax</span>
           </div>
 
           {!totpRequired ? (

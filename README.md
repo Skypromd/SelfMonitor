@@ -1,4 +1,4 @@
-# SelfMonitor — Tax & Finance Platform for UK Self-Employed
+# MyNetTax — Tax & Finance Platform for UK Self-Employed
 
 All-in-one mobile-first platform for self-employed individuals in the UK. MTD tax filing, invoicing, mortgage readiness, AI advisor — in 10 languages.
 

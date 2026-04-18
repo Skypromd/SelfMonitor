@@ -118,7 +118,7 @@ type AlertDeliveriesResponse = {
 type DeliveryStatusFilter = 'all' | 'failed' | 'delivered' | 'pending';
 type DeliveryChannelFilter = 'all' | 'email' | 'push';
 
-const DELIVERY_FILTERS_STORAGE_KEY = 'selfmonitor.security.deliveries.filters.v1';
+const DELIVERY_FILTERS_STORAGE_KEY = 'mynettax.security.deliveries.filters.v1';
 const DELIVERY_FILTER_QUERY_STATUS = 'delivery_status';
 const DELIVERY_FILTER_QUERY_CHANNEL = 'delivery_channel';
 const DELIVERY_FILTER_QUERY_WINDOW_HOURS = 'delivery_window_h';

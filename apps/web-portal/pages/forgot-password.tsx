@@ -51,8 +51,8 @@ export default function ForgotPasswordPage() {
   return (
     <>
       <Head>
-        <title>Forgot Password — SelfMonitor</title>
-        <meta name="description" content="Reset your SelfMonitor password" />
+        <title>Forgot Password — MyNetTax</title>
+        <meta name="description" content="Reset your MyNetTax password" />
       </Head>
       <div className={styles.container}>
         <main className={styles.main} style={{ maxWidth: 440 }}>
@@ -65,7 +65,7 @@ export default function ForgotPasswordPage() {
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '0.75rem', fontWeight: 800, color: '#fff',
             }}>SM</span>
-            <span style={{ fontWeight: 700, fontSize: '1.15rem', color: '#f1f5f9' }}>SelfMonitor</span>
+            <span style={{ fontWeight: 700, fontSize: '1.15rem', color: '#f1f5f9' }}>MyNetTax</span>
           </div>
 
           {step === 'form' ? (

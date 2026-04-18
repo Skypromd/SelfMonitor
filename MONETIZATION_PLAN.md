@@ -1,4 +1,4 @@
-# SelfMonitor — Монетизация и выбор провайдеров
+# MyNetTax — Монетизация и выбор провайдеров
 
 ## 1. Open Banking провайдеры: полное сравнение
 
@@ -67,7 +67,7 @@
 | **Enterprise** | 50K-100K | **Yapily (UK)** + **SaltEdge (EU)** + **TrueLayer (payments)** | ~£15-25K | Оптимальная комбинация: цена + покрытие + instant payments |
 | **100K+** | Прямая интеграция OBIE | ~£5-10K | Убрать посредника для топ-5 UK банков (Barclays, HSBC, Lloyds, NatWest, Santander) |
 
-**Ключевой инсайт для SelfMonitor**: SaltEdge — лучший старт именно для нас потому что наша ниша — мигранты. У поляка в UK есть счёт в Barclays И в PKO Bank Polski. Ни Yapily, ни TrueLayer не покрывают польские банки. SaltEdge покрывает.
+**Ключевой инсайт для MyNetTax**: SaltEdge — лучший старт именно для нас потому что наша ниша — мигранты. У поляка в UK есть счёт в Barclays И в PKO Bank Polski. Ни Yapily, ни TrueLayer не покрывают польские банки. SaltEdge покрывает.
 
 ---
 
@@ -216,7 +216,7 @@ Margin                                         76.3%
 
 ## 4. Сравнение с конкурентами по цене
 
-| Фича | SelfMonitor £9 | FreeAgent £19 | QuickBooks £10 | Xero £16 |
+| Фича | MyNetTax £9 | FreeAgent £19 | QuickBooks £10 | Xero £16 |
 |---|---|---|---|---|
 | MTD quarterly | ✅ | ✅ | ✅ | ✅ |
 | Final declaration | ✅ | ✅ | ✅ | ✅ |

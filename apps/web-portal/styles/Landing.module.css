@@ -131,6 +131,12 @@
   color: #f1f5f9;
 }
 
+.navBrandIcon {
+  flex-shrink: 0;
+  border-radius: 9px;
+  display: block;
+}
+
 .navMark {
   display: inline-flex;
   align-items: center;
@@ -1200,11 +1206,9 @@
   margin-bottom: 0.25rem;
 }
 
-.phoneLogo {
-  color: var(--lp-accent-teal);
-  font-weight: 700;
-  font-size: 1.1rem;
-  letter-spacing: -0.02em;
+.phoneBrandMark {
+  display: block;
+  margin: 0 auto;
 }
 
 .phoneCard {

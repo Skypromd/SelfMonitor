@@ -1,13 +1,12 @@
 FROM python:3.12-slim
 
-WORKDIR /app
+WORKDIR /code
 
-# Install dependencies first (Docker layer cache)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY services/finops-monitor/requirements.txt /code/requirements.txt
+RUN pip install --no-cache-dir -r /code/requirements.txt
 
-# Copy application code
-COPY app/ ./app/
+COPY libs /code/libs
+COPY services/finops-monitor/app /code/app
 
 EXPOSE 8021
 

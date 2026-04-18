@@ -528,6 +528,11 @@ components:
         is_potentially_deductible:
           type: boolean
           nullable: true
+        vat_amount_gbp:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
       required:
         - document_id
         - filename

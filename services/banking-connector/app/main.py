@@ -97,7 +97,7 @@ from libs.shared_http.request_id import get_request_id
 
 from .bank_sync_quota import consume_sync_slot_or_raise, sync_status
 from .connection_store import get_connection_count, increment_connection_count
-from .providers.registry import get_provider
+from .providers.registry import get_provider, list_providers
 from .providers.saltedge import SaltedgeProvider
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
@@ -137,6 +137,13 @@ ALLOWED_REDIRECT_DOMAINS = {"localhost", "127.0.0.1"}
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+
+@app.get("/providers")
+async def banking_providers():
+    """Registered Open Banking connectors (for Connect Bank UI). No secrets returned."""
+    return list_providers()
+
 
 # --- Endpoints ---
 @app.post("/connections/initiate", response_model=InitiateConnectionResponse)
@@ -208,7 +215,7 @@ async def initiate_connection(
     else:
         consent_url = (
             f"{TRUELAYER_AUTH_BASE}/?response_type=code"
-            f"&client_id=selfmonitor-dev"
+            f"&client_id=mynettax-dev"
             f"&redirect_uri={redirect_uri}"
             f"&scope=info%20accounts%20balance%20transactions%20offline_access"
             f"&providers=uk-ob-all%20uk-oauth-all"

@@ -8,23 +8,37 @@ Endpoints:
   GET /mtd/{user_id}/quarterly/{quarter}     – specific quarter (e.g. Q1)
   GET /mtd/{user_id}/all/{tax_year}          – all 4 quarters for a tax year
   POST /mtd/{user_id}/sync                   – manual sync of MTD totals
+  POST /mtd/me/expo-push-token               – register Expo push token (JWT)
+  DELETE /mtd/me/expo-push-token             – remove Expo push token (JWT)
 
 Scheduled tasks:
   run_all_monitors()    – every 5 minutes  (fraud, balance, invoices)
   run_mtd_weekly()      – every Sunday     (bulk-sync MTD accumulators)
+  run_mtd_reminders     – daily 08:05 UTC (MTD deadline email + Expo push)
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+for _parent in Path(__file__).resolve().parents:
+    if (_parent / "libs").exists():
+        _root = str(_parent)
+        if _root not in sys.path:
+            sys.path.insert(0, _root)
+        break
+
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 
 import app.monitors.balance_monitor as balance_monitor
 import app.monitors.fraud_monitor as fraud_monitor
@@ -41,6 +55,10 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
+INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
+
+_get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+_EXPO_PUSH_TOKEN_TTL = int(os.getenv("FINOPS_EXPO_PUSH_TTL_SECONDS", str(120 * 86400)))
 
 # ── scheduler + redis (module-level, initialised in lifespan) ────────────────
 scheduler = AsyncIOScheduler()
@@ -67,6 +85,14 @@ async def lifespan(app: FastAPI):
         day_of_week="sun",
         hour=2,
         id="mtd_weekly",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _run_mtd_reminders,
+        "cron",
+        hour=8,
+        minute=5,
+        id="mtd_reminders",
         replace_existing=True,
     )
     scheduler.start()
@@ -116,6 +142,18 @@ async def _run_mtd_weekly() -> None:
     # In production this would query the transactions service for all users
     # and call accumulator.bulk_sync(). For now we log the intent.
     log.info("MTD weekly sync complete (no users configured yet)")
+
+
+async def _run_mtd_email_reminders() -> None:
+    if redis_client is None:
+        return
+    log.info("[%s] MTD email reminders", datetime.now(timezone.utc).isoformat())
+    try:
+        from app.mtd import reminder_email
+
+        await reminder_email.dispatch_daily_reminders(redis_client)
+    except Exception as exc:
+        log.error("MTD email reminders error: %s", exc, exc_info=True)
 
 
 # ── REST endpoints ────────────────────────────────────────────────────────────
@@ -196,6 +234,41 @@ class SyncPayload(BaseModel):
     quarter: str | None = None     # Q1 | Q2 | Q3 | Q4, defaults to current
 
 
+class ExpoPushTokenPayload(BaseModel):
+    expo_push_token: str = Field(..., min_length=24, max_length=512)
+
+
+def _expo_push_redis_key(user_id: str) -> str:
+    return f"mtd:expo_push:{user_id.strip().lower()}"
+
+
+@app.post("/mtd/me/expo-push-token")
+async def register_expo_push_token(
+    payload: ExpoPushTokenPayload,
+    user_id: str = Depends(get_current_user_id),
+):
+    from app.mtd.expo_push import validate_expo_push_token_format
+
+    if not validate_expo_push_token_format(payload.expo_push_token):
+        raise HTTPException(status_code=422, detail="invalid_expo_push_token")
+    if redis_client is None:
+        raise HTTPException(status_code=503, detail="redis_unavailable")
+    await redis_client.set(
+        _expo_push_redis_key(user_id),
+        payload.expo_push_token.strip(),
+        ex=_EXPO_PUSH_TOKEN_TTL,
+    )
+    return {"ok": True}
+
+
+@app.delete("/mtd/me/expo-push-token")
+async def delete_expo_push_token(user_id: str = Depends(get_current_user_id)):
+    if redis_client is None:
+        raise HTTPException(status_code=503, detail="redis_unavailable")
+    await redis_client.delete(_expo_push_redis_key(user_id))
+    return {"ok": True}
+
+
 @app.post("/mtd/{user_id}/sync")
 async def mtd_sync(user_id: str, payload: SyncPayload):
     """Manually push aggregated MTD totals for a user-quarter."""
@@ -217,3 +290,18 @@ async def mtd_sync(user_id: str, payload: SyncPayload):
             },
         )
     return result
+
+
+@app.post("/internal/mtd-reminders/run")
+async def internal_run_mtd_reminders(
+    x_internal_token: str | None = Header(None, alias="X-Internal-Token"),
+):
+    if not INTERNAL_SERVICE_SECRET:
+        raise HTTPException(status_code=503, detail="internal_calls_not_configured")
+    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
+        raise HTTPException(status_code=403, detail="forbidden")
+    if redis_client is None:
+        raise HTTPException(status_code=503, detail="redis_unavailable")
+    from app.mtd import reminder_email
+
+    return await reminder_email.dispatch_daily_reminders(redis_client)

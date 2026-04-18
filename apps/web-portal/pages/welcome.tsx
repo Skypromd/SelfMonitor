@@ -33,7 +33,7 @@ export default function WelcomePage() {
   return (
     <>
       <Head>
-        <title>Welcome to SelfMonitor — Choose Your Language</title>
+        <title>MT (MyNetTax) — Choose Your Language</title>
       </Head>
       <div style={{
         minHeight: '100vh',
@@ -52,8 +52,11 @@ export default function WelcomePage() {
             letterSpacing: '-0.04em',
             margin: '0 0 0.5rem',
           }}>
-            SelfMonitor
+            MT
           </h1>
+          <p style={{ color: 'var(--lp-text-muted)', fontSize: '0.95rem', margin: '0 0 0.25rem' }}>
+            MyNetTax
+          </p>
           <p style={{ color: 'var(--lp-text-muted)', fontSize: '1.1rem' }}>
             Choose your language / Выберите язык
           </p>

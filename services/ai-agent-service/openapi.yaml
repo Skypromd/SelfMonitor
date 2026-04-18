@@ -11,7 +11,7 @@ info:
     ## Key Features
     - **Autonomous Advisory**: GPT-4 powered financial recommendations
     - **Proactive Monitoring**: Real-time financial health tracking
-    - **Cross-Service Integration**: Seamless integration with all SelfMonitor services
+    - **Cross-Service Integration**: Seamless integration with all MyNetTax services
     - **Advanced Memory**: Persistent conversation history and user preferences
     - **Dynamic Tools**: Real-time access to financial data and services
     
@@ -19,7 +19,7 @@ info:
     All endpoints require valid JWT authentication token in the Authorization header.
     
   contact:
-    name: SelfMonitor Development Team
+    name: MyNetTax Development Team
     email: dev@selfmonitor.app
   license:
     name: Proprietary

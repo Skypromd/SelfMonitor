@@ -7,14 +7,16 @@ from typing import List
 import datetime
 import re
 
-from .expense_classifier import to_expense_article
+from .expense_classifier import canonical_hmrc_expense_code, to_expense_article
 
 _REVIEW_TRACKED_FIELDS: tuple[str, ...] = (
     "total_amount",
     "vendor_name",
     "transaction_date",
+    "vat_amount_gbp",
     "suggested_category",
     "expense_article",
+    "hmrc_allowable_expense_code",
     "is_potentially_deductible",
 )
 _FEEDBACK_FIELDS: tuple[str, ...] = (
@@ -119,7 +121,7 @@ def _normalize_review_value(field: str, value: object) -> float | str | bool | N
         if isinstance(value, str):
             stripped = value.strip()
             return stripped.split("T", 1)[0] if stripped else None
-    if field == "total_amount":
+    if field in ("total_amount", "vat_amount_gbp"):
         if isinstance(value, (int, float)):
             return round(float(value), 2)
         if isinstance(value, str):
@@ -227,6 +229,27 @@ async def list_documents_requiring_review(
     return total, review_documents[offset : offset + limit]
 
 
+async def patch_document_extracted_fields(
+    db: AsyncSession,
+    *,
+    user_id: str,
+    doc_id: uuid.UUID,
+    fields: dict,
+) -> models.Document | None:
+    db_document = await get_document_by_id(db, user_id=user_id, doc_id=doc_id)
+    if db_document is None:
+        return None
+    current = dict(db_document.extracted_data or {})
+    for key, value in fields.items():
+        if value is None:
+            continue
+        current[key] = value
+    db_document.extracted_data = current
+    await db.commit()
+    await db.refresh(db_document)
+    return db_document
+
+
 async def update_document_review(
     db: AsyncSession,
     *,
@@ -247,10 +270,14 @@ async def update_document_review(
         extracted_dict["vendor_name"] = payload.vendor_name
     if payload.transaction_date is not None:
         extracted_dict["transaction_date"] = payload.transaction_date.isoformat()
+    if payload.vat_amount_gbp is not None:
+        extracted_dict["vat_amount_gbp"] = payload.vat_amount_gbp
     if payload.suggested_category is not None:
         extracted_dict["suggested_category"] = payload.suggested_category
     if payload.expense_article is not None:
         extracted_dict["expense_article"] = payload.expense_article
+    if payload.hmrc_allowable_expense_code is not None:
+        extracted_dict["hmrc_allowable_expense_code"] = payload.hmrc_allowable_expense_code
     if payload.is_potentially_deductible is not None:
         extracted_dict["is_potentially_deductible"] = payload.is_potentially_deductible
 
@@ -258,6 +285,10 @@ async def update_document_review(
         expense_article, deductible = to_expense_article(payload.suggested_category)
         extracted_dict["expense_article"] = expense_article
         extracted_dict["is_potentially_deductible"] = deductible
+    if payload.suggested_category is not None and payload.hmrc_allowable_expense_code is None:
+        hmrc_c = canonical_hmrc_expense_code(payload.suggested_category)
+        if hmrc_c:
+            extracted_dict["hmrc_allowable_expense_code"] = hmrc_c
 
     review_changes = _build_review_changes(before_data=original_extracted, after_data=extracted_dict)
     changed_fields = bool(review_changes)

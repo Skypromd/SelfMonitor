@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: SelfMonitor Real-time Recommendation Engine
+  title: MyNetTax Real-time Recommendation Engine
   version: 2.0.0
   description: |
     AI-powered real-time recommendations for financial optimization, investment strategies, and business growth.
@@ -21,7 +21,7 @@ info:
     All endpoints require valid JWT authentication token in the Authorization header.
     
   contact:
-    name: SelfMonitor Development Team
+    name: MyNetTax Development Team
     email: dev@selfmonitor.app
   license:
     name: Proprietary

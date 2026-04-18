@@ -3,7 +3,11 @@ import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.expense_classifier import suggest_category_from_keywords, to_expense_article
+from app.expense_classifier import (
+    canonical_hmrc_expense_code,
+    suggest_category_from_keywords,
+    to_expense_article,
+)
 
 
 def test_keyword_classifier_detects_transport():
@@ -20,6 +24,14 @@ def test_keyword_classifier_returns_none_for_unknown():
 
 def test_expense_article_mapping_for_deductible_category():
     assert to_expense_article("transport") == ("travel_costs", True)
+
+
+def test_expense_article_mapping_for_hmrc_accounting_code():
+    assert to_expense_article("accounting") == ("professional_fees", True)
+
+
+def test_canonical_hmrc_code_maps_transport_alias():
+    assert canonical_hmrc_expense_code("transport") == "travel"
 
 
 def test_expense_article_mapping_for_non_deductible_category():

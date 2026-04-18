@@ -21,21 +21,27 @@ AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
-def get_current_user_id(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+def require_platform_admin(token: Annotated[str, Depends(oauth2_scheme)]) -> dict:
+    """Platform-wide cost data: operators only (JWT is_admin or role admin/owner)."""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
-        payload = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
+        payload: dict = jwt.decode(token, AUTH_SECRET_KEY, algorithms=[AUTH_ALGORITHM])
     except JWTError as exc:
         raise credentials_exception from exc
-
-    user_id = payload.get("sub")
-    if not user_id:
+    if payload.get("sub") is None:
         raise credentials_exception
-    return user_id
+    is_admin = payload.get("is_admin") is True
+    role = str(payload.get("role") or "user")
+    if is_admin or role in ("owner", "admin"):
+        return payload
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Admin or owner role required for cost optimization APIs",
+    )
 
 # --- Models ---
 class CostCategory(str, Enum):
@@ -58,7 +64,7 @@ async def health_check():
 
 @app.get("/cost-analysis")
 async def get_current_cost_breakdown(
-    current_user: str = Depends(get_current_user_id)
+    _: dict = Depends(require_platform_admin),
 ) -> Dict[str, Any]:
     """Analyze current monthly costs and identify optimization opportunities"""
 
@@ -149,7 +155,7 @@ async def get_current_cost_breakdown(
 async def implement_cost_optimization(
     optimization_type: str,
     background_tasks: BackgroundTasks,
-    current_user: str = Depends(get_current_user_id)
+    _: dict = Depends(require_platform_admin),
 ) -> Dict[str, Any]:
     """Implement specific cost optimization strategies"""
 
@@ -213,7 +219,7 @@ async def execute_optimization(optimization_type: str, plan: Dict[str, Any]):
 
 @app.get("/cost-efficiency-metrics")
 async def get_cost_efficiency_metrics(
-    current_user: str = Depends(get_current_user_id)
+    _: dict = Depends(require_platform_admin),
 ) -> Dict[str, Any]:
     """Get cost efficiency and optimization metrics"""
 
@@ -251,7 +257,7 @@ async def get_cost_efficiency_metrics(
 
 @app.get("/automation-recommendations")
 async def get_automation_recommendations(
-    current_user: str = Depends(get_current_user_id)
+    _: dict = Depends(require_platform_admin),
 ) -> Dict[str, Any]:
     """Get AI-powered recommendations for further automation"""
 
@@ -297,7 +303,7 @@ async def get_automation_recommendations(
 @app.post("/deploy-full-optimization")
 async def deploy_comprehensive_cost_optimization(
     background_tasks: BackgroundTasks,
-    current_user: str = Depends(get_current_user_id)
+    _: dict = Depends(require_platform_admin),
 ) -> Dict[str, Any]:
     """Deploy comprehensive cost optimization across all areas"""
 
@@ -352,7 +358,7 @@ async def execute_comprehensive_optimization(plan: Dict[str, Any]):
 
 @app.get("/optimization-dashboard")
 async def get_optimization_dashboard(
-    current_user: str = Depends(get_current_user_id)
+    _: dict = Depends(require_platform_admin),
 ) -> Dict[str, Any]:
     """Real-time cost optimization dashboard"""
 

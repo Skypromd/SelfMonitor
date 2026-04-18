@@ -70,6 +70,13 @@ const STATUS_META: Record<InvoiceStatus, { color: string; label: string }> = {
 
 const ALL_STATUSES = ['all', 'draft', 'sent', 'paid', 'overdue', 'partially_paid', 'cancelled'] as const;
 
+function escapeInvoiceCsvField(value: string): string {
+  if (/[",\n\r]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
 type InvoicesPageProps = { token: string };
 
 export default function InvoicesPage({ token }: InvoicesPageProps) {
@@ -96,6 +103,7 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
 
   // Delete confirm
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [csvExportBusy, setCsvExportBusy] = useState(false);
 
   // Form
   const [clientName, setClientName] = useState('');
@@ -251,6 +259,71 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
     fetchInvoices();
   };
 
+  const exportInvoicesCsv = async () => {
+    setCsvExportBusy(true);
+    try {
+      const rows: Invoice[] = [];
+      const pageSize = 100;
+      let skip = 0;
+      for (;;) {
+        const params = new URLSearchParams({
+          skip: String(skip),
+          limit: String(pageSize),
+          sort_by: sortField,
+          sort_order: sortOrder,
+        });
+        if (statusFilter !== 'all') params.set('status', statusFilter);
+        if (debouncedSearch) params.set('search', debouncedSearch);
+        const res = await fetch(`${INVOICE_SERVICE_URL}/invoices?${params}`, { headers: headers() });
+        if (!res.ok) return;
+        const batch = (await res.json()) as Invoice[];
+        rows.push(...batch);
+        if (batch.length < pageSize) break;
+        skip += pageSize;
+      }
+      const header = [
+        'id',
+        'invoice_number',
+        'client_name',
+        'client_email',
+        'issue_date',
+        'due_date',
+        'status',
+        'currency',
+        'subtotal',
+        'vat_amount',
+        'total_amount',
+      ];
+      const lines = [
+        header.join(','),
+        ...rows.map((inv) =>
+          [
+            escapeInvoiceCsvField(inv.id),
+            escapeInvoiceCsvField(inv.invoice_number),
+            escapeInvoiceCsvField(inv.client_name),
+            escapeInvoiceCsvField(inv.client_email ?? ''),
+            escapeInvoiceCsvField(inv.issue_date),
+            escapeInvoiceCsvField(inv.due_date),
+            escapeInvoiceCsvField(inv.status),
+            escapeInvoiceCsvField(inv.currency),
+            String(inv.subtotal),
+            String(inv.vat_amount),
+            String(inv.total_amount),
+          ].join(','),
+        ),
+      ];
+      const blob = new Blob([`\uFEFF${lines.join('\n')}`], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoices-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setCsvExportBusy(false);
+    }
+  };
+
   const fmt = (v: number, c = 'GBP') =>
     new Intl.NumberFormat('en-GB', { style: 'currency', currency: c }).format(v);
 
@@ -343,6 +416,28 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          onClick={() => void exportInvoicesCsv()}
+          disabled={csvExportBusy}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '0.4rem 0.85rem',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border)',
+            background: 'var(--bg-card)',
+            color: 'var(--text-secondary)',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+            cursor: csvExportBusy ? 'wait' : 'pointer',
+            marginLeft: 'auto',
+          }}
+        >
+          <Download size={15} />
+          {csvExportBusy ? 'Exporting…' : 'Export CSV'}
+        </button>
       </div>
 
       {/* New Invoice Form */}

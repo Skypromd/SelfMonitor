@@ -114,7 +114,7 @@ def require_support_admin(
     return payload
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="SelfMonitor Support AI Service", version="1.0.0")
+app = FastAPI(title="MyNetTax Support AI Service", version="1.0.0")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
 
