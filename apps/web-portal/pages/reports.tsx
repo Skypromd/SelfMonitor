@@ -180,6 +180,24 @@ type MortgageAffordabilityResponse = {
   years_trading: number | null;
 };
 
+type MortgageProgressStep = {
+  detail: string;
+  done: boolean;
+  id: string;
+  progress_ratio: number | null;
+  status: 'completed' | 'current' | 'upcoming';
+  title: string;
+};
+
+type MortgageProgressResponse = {
+  current_step_id: string | null;
+  disclaimer: string;
+  estimated_months_to_deposit_goal: number | null;
+  estimated_timeline_note: string | null;
+  signals: Record<string, unknown>;
+  steps: MortgageProgressStep[];
+};
+
 const EMPLOYMENT_PROFILE_OPTIONS = [
   { label: 'Self-employed sole trader', value: 'sole_trader' },
   { label: 'Limited company director', value: 'limited_company_director' },
@@ -226,6 +244,17 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [affordResult, setAffordResult] = useState<MortgageAffordabilityResponse | null>(null);
   const [affordLoading, setAffordLoading] = useState(false);
   const [affordError, setAffordError] = useState('');
+  const [progDepositSaved, setProgDepositSaved] = useState('');
+  const [progDepositTarget, setProgDepositTarget] = useState('');
+  const [progMonthlySave, setProgMonthlySave] = useState('');
+  const [progCredit, setProgCredit] = useState<'unknown' | 'ok' | 'building'>('unknown');
+  const [progDebts, setProgDebts] = useState<'unknown' | 'managing' | 'reduce_first'>('unknown');
+  const [progTaxFiled, setProgTaxFiled] = useState<boolean | ''>('');
+  const [progReadiness, setProgReadiness] = useState('');
+  const [progYears, setProgYears] = useState('');
+  const [progLoading, setProgLoading] = useState(false);
+  const [progResult, setProgResult] = useState<MortgageProgressResponse | null>(null);
+  const [progError, setProgError] = useState('');
   const { formatNumber, t } = useTranslation();
 
   useEffect(() => {
@@ -332,6 +361,43 @@ export default function ReportsPage({ token }: ReportsPageProps) {
       setAffordError(e instanceof Error ? e.message : 'Unexpected error');
     } finally {
       setAffordLoading(false);
+    }
+  };
+
+  const loadMortgageProgress = async () => {
+    setProgError('');
+    setProgResult(null);
+    const ds = progDepositSaved.trim() ? parseFloat(progDepositSaved.replace(/,/g, '')) : NaN;
+    const dt = progDepositTarget.trim() ? parseFloat(progDepositTarget.replace(/,/g, '')) : NaN;
+    const ms = progMonthlySave.trim() ? parseFloat(progMonthlySave.replace(/,/g, '')) : NaN;
+    const rd = progReadiness.trim() ? parseInt(progReadiness, 10) : NaN;
+    const yr = progYears.trim() ? parseFloat(progYears.replace(/,/g, '')) : NaN;
+    setProgLoading(true);
+    try {
+      const res = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/progress-tracker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          credit_focus: progCredit,
+          deposit_saved_gbp: !Number.isNaN(ds) && ds >= 0 ? ds : null,
+          deposit_target_gbp: !Number.isNaN(dt) && dt > 0 ? dt : null,
+          monthly_savings_gbp: !Number.isNaN(ms) && ms > 0 ? ms : null,
+          debts_priority: progDebts,
+          tax_return_filed: progTaxFiled === '' ? null : progTaxFiled,
+          self_employed_years_override: !Number.isNaN(yr) && yr >= 0 ? yr : null,
+          mortgage_readiness_percent: !Number.isNaN(rd) && rd >= 0 ? rd : null,
+          include_backend_signals: true,
+        }),
+      });
+      const payload = (await res.json()) as MortgageProgressResponse | { detail?: string };
+      if (!res.ok) {
+        throw new Error('detail' in payload && payload.detail ? String(payload.detail) : 'Progress request failed');
+      }
+      setProgResult(payload as MortgageProgressResponse);
+    } catch (e) {
+      setProgError(e instanceof Error ? e.message : 'Unexpected error');
+    } finally {
+      setProgLoading(false);
     }
   };
 
@@ -756,6 +822,150 @@ export default function ReportsPage({ token }: ReportsPageProps) {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+      </div>
+
+      <div className={styles.subContainer}>
+        <h2>Road to mortgage (tracker)</h2>
+        <p className={styles.tableCaption}>
+          Informational steps only — not a lender timeline. Backend can enrich months of bank data and document count when you refresh.
+        </p>
+        <div className={styles.adminFiltersGrid}>
+          <label className={styles.filterField}>
+            <span>Deposit saved (£)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={progDepositSaved}
+              onChange={(e) => setProgDepositSaved(e.target.value)}
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Deposit target (£)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={progDepositTarget}
+              onChange={(e) => setProgDepositTarget(e.target.value)}
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Monthly savings (£)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={progMonthlySave}
+              onChange={(e) => setProgMonthlySave(e.target.value)}
+              placeholder="For ETA to deposit goal"
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Credit (self-report)</span>
+            <select
+              className={styles.categorySelect}
+              value={progCredit}
+              onChange={(e) => setProgCredit(e.target.value as 'unknown' | 'ok' | 'building')}
+            >
+              <option value="unknown">Unknown</option>
+              <option value="ok">On track</option>
+              <option value="building">Actively building / repairing</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Debts</span>
+            <select
+              className={styles.categorySelect}
+              value={progDebts}
+              onChange={(e) => setProgDebts(e.target.value as 'unknown' | 'managing' | 'reduce_first')}
+            >
+              <option value="unknown">Unknown</option>
+              <option value="managing">Managing</option>
+              <option value="reduce_first">Reduce before mortgage</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Tax return filed?</span>
+            <select
+              className={styles.categorySelect}
+              value={progTaxFiled === '' ? '' : progTaxFiled ? 'yes' : 'no'}
+              onChange={(e) => {
+                const v = e.target.value;
+                setProgTaxFiled(v === '' ? '' : v === 'yes');
+              }}
+            >
+              <option value="">Not specified</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Years trading (override)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={progYears}
+              onChange={(e) => setProgYears(e.target.value)}
+              placeholder="Optional if bank history loaded"
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Pack readiness %</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="numeric"
+              value={progReadiness}
+              onChange={(e) => setProgReadiness(e.target.value)}
+              placeholder="From Assess readiness below"
+            />
+          </label>
+        </div>
+        <div className={styles.adminActionsRow}>
+          {readiness != null && (
+            <button
+              type="button"
+              className={styles.button}
+              onClick={() => setProgReadiness(String(readiness.overall_completion_percent))}
+            >
+              Use last readiness %
+            </button>
+          )}
+          <button type="button" className={styles.button} disabled={progLoading} onClick={() => void loadMortgageProgress()}>
+            {progLoading ? 'Loading…' : 'Refresh progress'}
+          </button>
+        </div>
+        {progError && <p className={styles.error}>{progError}</p>}
+        {progResult && (
+          <div className={styles.resultsContainer} style={{ marginTop: 16 }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--lp-text-muted)' }}>{progResult.disclaimer}</p>
+            {progResult.estimated_timeline_note && (
+              <p style={{ fontSize: '0.9rem', marginBottom: 12 }}>{progResult.estimated_timeline_note}</p>
+            )}
+            <p style={{ fontSize: '0.82rem', color: 'var(--lp-text-muted)' }}>
+              Signals: bank history ~{String(progResult.signals.months_bank_history ?? '—')} months, docs{' '}
+              {String(progResult.signals.document_count ?? '—')}, readiness {String(progResult.signals.mortgage_readiness_percent ?? '—')}
+              %.
+            </p>
+            <ol style={{ margin: '12px 0 0 0', paddingLeft: 20, lineHeight: 1.65 }}>
+              {progResult.steps.map((s) => (
+                <li key={s.id} style={{ marginBottom: 10 }}>
+                  <strong>
+                    [{s.status}] {s.title}
+                  </strong>
+                  {s.progress_ratio != null ? (
+                    <span style={{ marginLeft: 8, fontSize: '0.85rem' }}>
+                      ({Math.round(s.progress_ratio * 100)}% of deposit goal)
+                    </span>
+                  ) : null}
+                  <div style={{ fontSize: '0.88rem', color: 'var(--lp-text-muted)' }}>{s.detail}</div>
+                </li>
+              ))}
+            </ol>
           </div>
         )}
       </div>

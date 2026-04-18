@@ -36,6 +36,10 @@ from libs.shared_http.request_id import RequestIdMiddleware
 from libs.shared_http.retry import get_json_with_retry
 
 from .mortgage_affordability import build_affordability_result
+from .mortgage_progress_tracker import (
+    build_mortgage_progress_timeline,
+    merge_backend_signals,
+)
 from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
     LENDER_PROFILE_METADATA,
@@ -1496,6 +1500,38 @@ class MortgageAffordabilityResponse(BaseModel):
     disclaimer: str
 
 
+class MortgageProgressRequest(BaseModel):
+    credit_focus: Literal["unknown", "ok", "building"] = "unknown"
+    deposit_saved_gbp: Optional[float] = Field(default=None, ge=0)
+    deposit_target_gbp: Optional[float] = Field(default=None, ge=0)
+    monthly_savings_gbp: Optional[float] = Field(default=None, ge=0)
+    debts_priority: Literal["unknown", "managing", "reduce_first"] = "unknown"
+    tax_return_filed: Optional[bool] = None
+    self_employed_years_override: Optional[float] = Field(default=None, ge=0, le=40)
+    mortgage_readiness_percent: Optional[int] = Field(default=None, ge=0, le=100)
+    include_backend_signals: bool = True
+    months_bank_history: Optional[int] = Field(default=None, ge=0, le=600)
+    document_count: Optional[int] = Field(default=None, ge=0, le=50_000)
+
+
+class MortgageProgressStepOut(BaseModel):
+    id: str
+    title: str
+    detail: str
+    status: Literal["completed", "current", "upcoming"]
+    done: bool
+    progress_ratio: Optional[float] = None
+
+
+class MortgageProgressResponse(BaseModel):
+    steps: list[MortgageProgressStepOut]
+    current_step_id: Optional[str] = None
+    signals: dict[str, Any]
+    estimated_months_to_deposit_goal: Optional[int] = None
+    estimated_timeline_note: Optional[str] = None
+    disclaimer: str
+
+
 class MortgageChecklistRequest(BaseModel):
     mortgage_type: str
     employment_profile: str = "sole_trader"
@@ -1829,6 +1865,60 @@ async def mortgage_affordability_calculator(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     return MortgageAffordabilityResponse.model_validate(raw)
+
+
+@app.post("/mortgage/progress-tracker", response_model=MortgageProgressResponse)
+async def mortgage_progress_tracker(
+    request: MortgageProgressRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """Seven-step journey timeline with optional bank/doc signals from backend services."""
+    tx_for_merge: list[dict[str, Any]] | None = None
+    docs_for_merge: list[dict[str, Any]] | None = None
+    if request.include_backend_signals:
+        tx_url = os.getenv("TRANSACTIONS_SERVICE_URL", "").strip()
+        if tx_url and request.months_bank_history is None:
+            try:
+                raw_tx = await get_json_with_retry(
+                    tx_url,
+                    headers={"Authorization": f"Bearer {bearer_token}"},
+                    timeout=12.0,
+                )
+                if isinstance(raw_tx, list):
+                    tx_for_merge = [t for t in raw_tx if isinstance(t, dict)]
+            except httpx.HTTPError:
+                tx_for_merge = None
+        if request.document_count is None:
+            try:
+                docs_for_merge = await _load_user_uploaded_documents(
+                    bearer_token=bearer_token,
+                    max_documents_scan=400,
+                )
+            except HTTPException:
+                docs_for_merge = []
+
+    merged = merge_backend_signals(
+        {
+            "months_bank_history": request.months_bank_history,
+            "document_count": request.document_count,
+        },
+        transactions=tx_for_merge,
+        documents=docs_for_merge,
+    )
+    raw = build_mortgage_progress_timeline(
+        credit_focus=request.credit_focus,
+        deposit_saved_gbp=request.deposit_saved_gbp,
+        deposit_target_gbp=request.deposit_target_gbp,
+        monthly_savings_gbp=request.monthly_savings_gbp,
+        debts_priority=request.debts_priority,
+        tax_return_filed=request.tax_return_filed,
+        self_employed_years_override=request.self_employed_years_override,
+        months_bank_history=merged.get("months_bank_history"),
+        document_count=merged.get("document_count"),
+        mortgage_readiness_percent=request.mortgage_readiness_percent,
+    )
+    return MortgageProgressResponse.model_validate(raw)
 
 
 @app.post("/mortgage/checklist", response_model=MortgageChecklistResponse)

@@ -151,18 +151,12 @@
 - [ ] Фильтр: языки broker-а (EN, PL, RO, UA — для нашей аудитории мигрантов)
 
 ### 1.5.6 Mortgage Progress Tracker ("Дорога к ипотеке")
-- [ ] Timeline с шагами от текущего состояния до подачи заявки:
-  - Step 1: Build credit score (if needed)
-  - Step 2: Save deposit (progress bar: £X of £Y saved)
-  - Step 3: Complete 1-2 years self-employed accounts
-  - Step 4: File tax return (SA302)
-  - Step 5: Reduce outstanding debts
-  - Step 6: Prepare mortgage pack
-  - Step 7: Apply
-- [ ] Автоматическое определение текущего шага из данных юзера
-- [ ] Push-уведомления при достижении milestone: "🎉 Your deposit reached 10%!"
-- [ ] Estimated timeline: "At your current savings rate, you'll be ready in 8 months"
-- [ ] Monthly progress email: "Your mortgage readiness score improved from 62 to 71"
+- [x] Timeline: 7 шагов (credit → deposit → accounts → tax → debts → pack → apply) — `POST /mortgage/progress-tracker`
+- [x] Авто-сигналы: месяцы банковской истории + число документов (если `include_backend_signals` и сервисы доступны)
+- [x] Текущий шаг: первый незавершённый; депозит с **progress_ratio**; ETA депозита при monthly savings
+- [x] Web **Reports**: блок «Road to mortgage», кнопка **Use last readiness %**
+- [ ] Push / email при milestone — не делали
+- [ ] Ежемесячный email прогресса — не делали
 
 ---
 
