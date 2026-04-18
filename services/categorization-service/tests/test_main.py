@@ -6,6 +6,10 @@ os.environ["AUTH_SECRET_KEY"] = "test-secret"
 _learn_fd, _learn_path = tempfile.mkstemp(suffix=".json")
 os.close(_learn_fd)
 os.environ["CATEGORIZATION_LEARNED_RULES_PATH"] = _learn_path
+_merch_fd, _merch_path = tempfile.mkstemp(suffix=".json")
+os.close(_merch_fd)
+os.environ["CATEGORIZATION_MERCHANT_RULES_PATH"] = _merch_path
+os.environ["CATEGORIZATION_INTERNAL_TOKEN"] = "test-internal-token"
 
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -81,6 +85,53 @@ def test_bulk_categorize_uses_learned_rule():
     rows = bulk.json()["results"]
     assert len(rows) == 1
     assert rows[0]["category"] == "food_and_drink"
+
+
+def test_user_learn_beats_global_merchant_rule():
+    client.post(
+        "/internal/merchant-rules",
+        headers={"X-Internal-Token": "test-internal-token"},
+        json={"pattern": "ZZOVERRIDE MERCHANT", "category": "fuel"},
+    )
+    uid = "override-user@example.com"
+    client.post(
+        "/learn",
+        headers=auth_headers(uid),
+        json={"description": "ZZOVERRIDE MERCHANT BRANCH", "category": "groceries"},
+    )
+    cat = client.post(
+        "/categorize",
+        headers=auth_headers(uid),
+        json={"description": "CARD ZZOVERRIDE MERCHANT BRANCH"},
+    )
+    assert cat.status_code == 200
+    assert cat.json()["category"] == "groceries"
+
+
+def test_internal_merchant_rule_then_categorize():
+    inc = client.post(
+        "/internal/merchant-rules",
+        headers={"X-Internal-Token": "test-internal-token"},
+        json={"pattern": "ZZGLOBALMERCH XYZ", "category": "fuel"},
+    )
+    assert inc.status_code == 200
+    assert inc.json()["stored"] is True
+    cat = client.post(
+        "/categorize",
+        headers=auth_headers(),
+        json={"description": "VISA PAYMENT ZZGLOBALMERCH XYZ LONDON"},
+    )
+    assert cat.status_code == 200
+    assert cat.json()["category"] == "fuel"
+
+
+def test_internal_merchant_rules_requires_token():
+    r = client.post("/internal/merchant-rules", json={"pattern": "x", "category": "fuel"})
+    assert r.status_code == 401
+
+
+def test_get_merchant_rules_requires_auth():
+    assert client.get("/merchant-rules").status_code == 401
 
 
 def test_other_user_does_not_see_learned_rule():

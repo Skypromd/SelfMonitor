@@ -810,6 +810,8 @@ services:
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       CATEGORIZATION_LEARNED_RULES_PATH: "/data/learned_rules.json"
+      CATEGORIZATION_MERCHANT_RULES_PATH: "/data/merchant_rules.json"
+      CATEGORIZATION_INTERNAL_TOKEN: "${CATEGORIZATION_INTERNAL_TOKEN:-}"
     volumes:
       - categorization_learned_data:/data
     networks:

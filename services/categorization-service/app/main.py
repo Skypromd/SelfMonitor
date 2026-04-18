@@ -2,12 +2,17 @@ import logging
 import os
 from typing import Annotated, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
 from .learn_store import lookup_user_category, upsert_rule
+from .merchant_rules_store import (
+    list_global_merchant_rules,
+    lookup_global_merchant_category,
+    upsert_global_merchant_rule,
+)
 
 log = logging.getLogger(__name__)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -61,6 +66,20 @@ class LearnRequest(BaseModel):
 class LearnResponse(BaseModel):
     stored: bool
     pattern: Optional[str] = None
+
+
+class InternalMerchantRuleRequest(BaseModel):
+    pattern: str
+    category: str
+
+
+class InternalMerchantRuleResponse(BaseModel):
+    stored: bool
+    pattern: Optional[str] = None
+
+
+class MerchantRulesListResponse(BaseModel):
+    rules: dict[str, str]
 
 _CATEGORY_RULES: dict[str, list[str]] = {
     "groceries": [
@@ -197,6 +216,21 @@ def suggest_category_from_rules(description: str) -> Optional[str]:
     return best_match
 
 
+def _resolve_category(user_id: str, description: str, *, use_llm: bool) -> Optional[str]:
+    category = lookup_user_category(user_id, description)
+    if category is not None:
+        return category
+    category = lookup_global_merchant_category(description)
+    if category is not None:
+        return category
+    category = suggest_category_from_rules(description)
+    if category is not None:
+        return category
+    if use_llm:
+        return _llm_categorize(description)
+    return None
+
+
 def _llm_categorize(description: str) -> Optional[str]:
     """GPT fallback when rules don't match."""
     if not OPENAI_API_KEY:
@@ -238,17 +272,46 @@ async def learn_category_rule(
     return LearnResponse(stored=True, pattern=pattern)
 
 
+@app.get("/merchant-rules", response_model=MerchantRulesListResponse)
+async def get_merchant_rules(_user_id: str = Depends(get_current_user_id)):
+    return MerchantRulesListResponse(rules=list_global_merchant_rules())
+
+
+@app.post("/internal/merchant-rules", response_model=InternalMerchantRuleResponse)
+async def internal_upsert_merchant_rule(
+    request: InternalMerchantRuleRequest,
+    x_internal_token: Annotated[str | None, Header()] = None,
+):
+    expected = os.getenv("CATEGORIZATION_INTERNAL_TOKEN", "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Global merchant rules admin is not configured.",
+        )
+    if not x_internal_token or x_internal_token != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid internal token.",
+        )
+    cat = request.category.strip().lower().replace(" ", "_")
+    if cat not in _VALID_CATEGORIES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown category '{request.category}'.",
+        )
+    pattern = upsert_global_merchant_rule(request.pattern, cat)
+    if pattern is None:
+        return InternalMerchantRuleResponse(stored=False, pattern=None)
+    return InternalMerchantRuleResponse(stored=True, pattern=pattern)
+
+
 @app.post("/categorize", response_model=CategorizationResponse)
 async def categorize_transaction(
     request: CategorizationRequest,
     user_id: str = Depends(get_current_user_id),
 ):
-    """User-learned rules first, then UK merchant rules, then GPT-4o-mini fallback."""
-    category = lookup_user_category(user_id, request.description)
-    if category is None:
-        category = suggest_category_from_rules(request.description)
-    if category is None:
-        category = _llm_categorize(request.description)
+    """User-learned rules, global merchant table, UK merchant dictionary, then GPT-4o-mini."""
+    category = _resolve_category(user_id, request.description, use_llm=True)
     return CategorizationResponse(category=category)
 
 
@@ -266,9 +329,7 @@ async def categorize_bulk(
     """Categorize multiple transactions at once"""
     results = []
     for desc in request.descriptions:
-        category = lookup_user_category(user_id, desc)
-        if category is None:
-            category = suggest_category_from_rules(desc)
+        category = _resolve_category(user_id, desc, use_llm=False)
         results.append({"description": desc, "category": category})
     return BulkCategorizationResponse(results=results)
 

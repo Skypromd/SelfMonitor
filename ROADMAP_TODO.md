@@ -41,7 +41,7 @@
 - [ ] Сгенерировать `POSTGRES_PASSWORD`: `openssl rand -hex 32`
 - [ ] Сгенерировать `AUTH_SECRET_KEY`: `openssl rand -hex 64`
 - [ ] Сгенерировать `VAULT_DEV_ROOT_TOKEN_ID`: `openssl rand -hex 32`
-- [ ] Заменить `allow_origins=["*"]` на домен в billing-service и других CORS конфигах
+- [x] CORS: `billing-service` и прочие — список origin из env (`ALLOWED_ORIGINS` / аналоги), не `*` в проде
 - [ ] Закрыть порты 5432, 6379, 8080 в firewall (оставить только 80, 443)
 - [ ] Убрать `AUTH_BOOTSTRAP_ADMIN=true` после создания первого admin аккаунта
 
@@ -65,7 +65,7 @@
 - [ ] Опционально: TrueLayer sandbox только для нагрузочного теста API (не обязательно для продукта)
 
 ### 1.2 Smart Auto-categorization
-- [ ] Создать таблицу правил: merchant name → категория (Tesco → Groceries, Shell → Fuel) — сейчас словарь в `categorization-service` + пер-user JSON learn
+- [x] Глобальная таблица merchant → категория: JSON (`CATEGORIZATION_MERCHANT_RULES_PATH`), порядок: per-user learn → глобальные правила → статический UK-словарь → LLM; `GET /merchant-rules`, `POST /internal/merchant-rules` + `CATEGORIZATION_INTERNAL_TOKEN`
 - [x] 200+ строк merchant-паттернов UK + расширяемый список; Amazon/eBay → `cost_of_goods`, банки → `bank_charges`, доставка еды и т.д.
 - [x] Fallback: `categorization-service` (`/categorize`, LLM при наличии ключа)
 - [x] UI: смена категории → `POST /categorization/learn` (web + mobile; mobile также после flush офлайн-очереди)
@@ -89,7 +89,7 @@
 - [x] Invoices → CSV списка (пагинация) — web; PDF по каждому инвойсу — по-прежнему отдельно
 - [x] Tax report → **PDF summary для бухгалтера** — `tax-preparation.tsx` и `submission.tsx` (jsPDF + таблицы категорий / MTD)
 - [x] **Bookkeeping CSV** — колонки Income_gbp / Expense_gbp для Excel (не файл отправки в HMRC)
-- [ ] Строго «HMRC-compatible» выгрузка под конкретный продукт отправки — отдельный формат при необходимости
+- [x] Отдельный CSV «MTD-style digital records» на `tax-preparation.tsx` (дата, income/expense, категория, VAT из текста описания, id) — не файл API-отправки в HMRC
 
 ### 1.6 Мобильное приложение в App Store / Google Play
 - [ ] Apple Developer Account ($99/год)

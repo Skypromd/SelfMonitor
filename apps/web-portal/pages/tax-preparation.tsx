@@ -26,6 +26,11 @@ type Txn = {
   provider_transaction_id: string;
 };
 
+function vatGbpFromDescription(description: string): string {
+  const m = description.match(/VAT\s*£\s*([0-9]+(?:\.[0-9]{1,2})?)/i);
+  return m ? m[1] : '';
+}
+
 type CisCreditsBreakdown = {
   verified_gbp: number;
   unverified_self_attested_gbp: number;
@@ -193,6 +198,32 @@ function buildBookkeepingSplitLines(txns: Txn[]): string[] {
         income,
         expense,
         escapeTaxCsvField(t.category ?? ''),
+      ].join(','),
+    );
+  }
+  return lines;
+}
+
+/**
+ * Wider digital-records layout: dated entries, split cash columns, category, VAT parsed from receipt-style descriptions.
+ * For retention / review; not a Making Tax Digital API submission payload.
+ */
+function buildMtdDigitalRecordsLines(txns: Txn[]): string[] {
+  const header =
+    'Date,Description,Income_gbp,Expense_gbp,Category,VAT_gbp_parsed_from_description,Transaction_id';
+  const lines = [header];
+  for (const t of txns) {
+    const income = t.amount > 0 ? String(t.amount) : '';
+    const expense = t.amount < 0 ? String(Math.abs(t.amount)) : '';
+    lines.push(
+      [
+        escapeTaxCsvField(t.date),
+        escapeTaxCsvField(t.description),
+        income,
+        expense,
+        escapeTaxCsvField(t.category ?? ''),
+        escapeTaxCsvField(vatGbpFromDescription(t.description)),
+        escapeTaxCsvField(t.id),
       ].join(','),
     );
   }
@@ -450,6 +481,28 @@ export default function TaxPreparationPage({ token }: Props) {
               title="Income and expense in separate columns for spreadsheets. Not an HMRC submission format."
             >
               Bookkeeping CSV
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                downloadTaxCsv(
+                  `mtd-digital-records-${year.label.replace(/\//g, '-')}-${new Date().toISOString().slice(0, 10)}.csv`,
+                  buildMtdDigitalRecordsLines(txns),
+                )
+              }
+              style={{
+                padding: '8px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--card-bg)',
+                color: 'var(--text-secondary)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+              title="Digital records layout for spreadsheets: dates, amounts, category, VAT from receipt text if present. Not an HMRC API submission file."
+            >
+              MTD-style digital records CSV
             </button>
             <button
               type="button"
