@@ -35,6 +35,7 @@ from libs.shared_auth.plan_limits import plan_limits_from_payload
 from libs.shared_http.request_id import RequestIdMiddleware
 from libs.shared_http.retry import get_json_with_retry
 
+from .mortgage_affordability import build_affordability_result
 from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
     LENDER_PROFILE_METADATA,
@@ -1439,6 +1440,49 @@ class LenderProfileSummary(BaseModel):
     description: str
 
 
+class MortgageAffordabilityRequest(BaseModel):
+    annual_income_gbp: float = Field(gt=0, description="Gross annual income for planning (e.g. salary or SA profits).")
+    employment: Literal["employed", "self_employed"]
+    property_price_gbp: Optional[float] = Field(default=None, ge=0)
+    deposit_gbp: Optional[float] = Field(default=None, ge=0)
+    annual_interest_rate_pct: float = Field(default=5.0, ge=0, le=20)
+    term_years: int = Field(default=30, ge=5, le=40)
+    first_time_buyer: bool = False
+    additional_property: bool = False
+
+
+class MortgageLenderScenarioOut(BaseModel):
+    id: str
+    label: str
+    min_accounts_years: int
+    income_multiple: float
+    min_deposit_pct: int
+    notes: str
+    max_loan_from_income_gbp: float
+
+
+class MortgageAffordabilityResponse(BaseModel):
+    employment: str
+    baseline_income_multiple: float
+    employed_planning_multiple: float
+    self_employed_planning_multiple_range: list[float]
+    max_loan_from_income_gbp: float
+    max_loan_from_income_gbp_self_employed_range: Optional[list[float]] = None
+    loan_amount_for_payment_gbp: Optional[float] = None
+    ltv_pct: Optional[float] = None
+    monthly_payment_gbp: float
+    annual_interest_rate_pct: float
+    stressed_annual_interest_rate_pct: float
+    stress_rate_add_pct_points: float
+    monthly_payment_if_rates_up_3pp_gbp: float
+    stamp_duty_england_gbp: Optional[float] = None
+    first_time_buyer: bool
+    additional_property_surcharge_applied: bool
+    term_years: int
+    lender_scenarios: list[MortgageLenderScenarioOut]
+    disclaimer: str
+
+
 class MortgageChecklistRequest(BaseModel):
     mortgage_type: str
     employment_profile: str = "sole_trader"
@@ -1748,6 +1792,28 @@ async def list_supported_lender_profiles(_user_id: str = Depends(get_current_use
         )
         for code, metadata in LENDER_PROFILE_METADATA.items()
     ]
+
+
+@app.post("/mortgage/affordability", response_model=MortgageAffordabilityResponse)
+async def mortgage_affordability_calculator(
+    request: MortgageAffordabilityRequest,
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Illustrative max borrowing, repayment, +3pp stress payment, and England SDLT."""
+    try:
+        raw = build_affordability_result(
+            annual_income_gbp=request.annual_income_gbp,
+            employment=request.employment,
+            property_price_gbp=request.property_price_gbp,
+            deposit_gbp=request.deposit_gbp,
+            annual_interest_rate_pct=request.annual_interest_rate_pct,
+            term_years=request.term_years,
+            first_time_buyer=request.first_time_buyer,
+            additional_property=request.additional_property,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return MortgageAffordabilityResponse.model_validate(raw)
 
 
 @app.post("/mortgage/checklist", response_model=MortgageChecklistResponse)

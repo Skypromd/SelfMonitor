@@ -115,20 +115,20 @@
 - [x] UI: `/assistant` — чекбокс «Mortgage readiness» и `?mode=mortgage` → прямой `POST /chat` с `context.advisor_mode`
 
 ### 1.5.2 Affordability Calculator
-- [ ] Max mortgage по формулам: employed 4.5x, self-employed 3-4x (average 2-3 years)
-- [ ] Расчёт по разным кредиторам: Barclays (1 год), HSBC (2 года), Halifax (retained profit)
-- [ ] Monthly payment calculator: variable vs fixed, разные сроки (25/30/35 лет)
-- [ ] Stress test: "Если ставка вырастет на 3%, ваш платёж будет £X" (HMRC требование)
-- [ ] Stamp Duty calculator: first-time buyer relief, standard rates, surcharges
-- [ ] Input: доход автоматически из данных MyNetTax (не вбивать руками)
+- [x] Max mortgage (планирование): employed **4.5×**, self-employed **3–4×** (база **3.5×**) — `analytics-service` `POST /mortgage/affordability`
+- [x] Сценарии по банкам (illustrative): Barclays / HSBC / Halifax / Nationwide / NatWest — те же caps от дохода в ответе API
+- [x] Ежемесячный платёж (annuity repayment) и срок **5–40** лет; номинальная ставка задаётся пользователем
+- [x] Stress: **+3 п.п.** к номинальной ставке → отдельный месячный платёж
+- [x] SDLT England: first-time buyer до £625k (рельеф), standard marginal bands, +3% surcharge для additional property (упрощённо)
+- [x] Web **Reports**: блок «Mortgage affordability» + кнопка **Fill income from tax estimate** (`/calculate` 2025/26)
 
 ### 1.5.3 Lender Comparison (реальные банки)
-- [ ] База кредиторов с условиями для self-employed:
-  - [ ] Barclays: 1 год accounts, 4.49x income, min 10% deposit
-  - [ ] HSBC: 2 года accounts, 4x income, min 10% deposit
-  - [ ] Halifax: 2 года, принимает retained profit для Ltd directors
-  - [ ] Nationwide: 2 года SA302, 4.5x для strong applications
-  - [ ] NatWest: 2 года, 4x, flex underwriting для contractors
+- [x] Иллюстративные строки в `POST /mortgage/affordability` (multiples / min history / notes):
+  - [x] Barclays-style: 1 год, 4.49×, 10% deposit
+  - [x] HSBC-style: 2 года, 4×, 10%
+  - [x] Halifax-style: 2 года, retained profit note
+  - [x] Nationwide-style: 2 года, 4.5×
+  - [x] NatWest-style: 2 года, 4×, contractors note
   - [ ] Specialist: Kensington, Pepper Money, Together (adverse credit)
 - [ ] Автоматический matching: профиль юзера → подходящие банки с % вероятности одобрения
 - [ ] Фильтры: deposit %, income type, credit history, property type

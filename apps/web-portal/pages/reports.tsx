@@ -3,6 +3,9 @@ import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || '/api/analytics';
+const TAX_SERVICE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
+
+const AFFORDABILITY_TAX_YEAR = { start: '2025-04-06', end: '2026-04-05' } as const;
 
 type ReportsPageProps = {
   token: string;
@@ -141,6 +144,36 @@ type MortgagePackIndexResponse = MortgageReadinessResponse & {
   required_document_evidence: MortgageDocumentEvidenceItem[];
 };
 
+type MortgageAffordabilityResponse = {
+  additional_property_surcharge_applied: boolean;
+  annual_interest_rate_pct: number;
+  baseline_income_multiple: number;
+  disclaimer: string;
+  employed_planning_multiple: number;
+  employment: string;
+  first_time_buyer: boolean;
+  lender_scenarios: Array<{
+    id: string;
+    income_multiple: number;
+    label: string;
+    max_loan_from_income_gbp: number;
+    min_accounts_years: number;
+    min_deposit_pct: number;
+    notes: string;
+  }>;
+  loan_amount_for_payment_gbp: number | null;
+  ltv_pct: number | null;
+  max_loan_from_income_gbp: number;
+  max_loan_from_income_gbp_self_employed_range: [number, number] | null;
+  monthly_payment_gbp: number;
+  monthly_payment_if_rates_up_3pp_gbp: number;
+  self_employed_planning_multiple_range: [number, number];
+  stamp_duty_england_gbp: number | null;
+  stress_rate_add_pct_points: number;
+  stressed_annual_interest_rate_pct: number;
+  term_years: number;
+};
+
 const EMPLOYMENT_PROFILE_OPTIONS = [
   { label: 'Self-employed sole trader', value: 'sole_trader' },
   { label: 'Limited company director', value: 'limited_company_director' },
@@ -174,6 +207,17 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [checklistError, setChecklistError] = useState('');
   const [readinessError, setReadinessError] = useState('');
   const [matrixError, setMatrixError] = useState('');
+  const [affordIncome, setAffordIncome] = useState('');
+  const [affordProperty, setAffordProperty] = useState('');
+  const [affordDeposit, setAffordDeposit] = useState('');
+  const [affordRate, setAffordRate] = useState('5');
+  const [affordTerm, setAffordTerm] = useState('30');
+  const [affordEmployment, setAffordEmployment] = useState<'employed' | 'self_employed'>('self_employed');
+  const [affordFtb, setAffordFtb] = useState(false);
+  const [affordAdditional, setAffordAdditional] = useState(false);
+  const [affordResult, setAffordResult] = useState<MortgageAffordabilityResponse | null>(null);
+  const [affordLoading, setAffordLoading] = useState(false);
+  const [affordError, setAffordError] = useState('');
   const { formatNumber, t } = useTranslation();
 
   useEffect(() => {
@@ -211,6 +255,73 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     };
     loadSelectors();
   }, [token]);
+
+  const fillIncomeFromTax = async () => {
+    setAffordError('');
+    try {
+      const res = await fetch(`${TAX_SERVICE_URL}/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          start_date: AFFORDABILITY_TAX_YEAR.start,
+          end_date: AFFORDABILITY_TAX_YEAR.end,
+          jurisdiction: 'UK',
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { detail?: string }).detail ?? 'Tax calculation failed');
+      }
+      const data = (await res.json()) as { taxable_profit?: number; total_income?: number };
+      const inc = data.taxable_profit ?? data.total_income;
+      if (inc == null || Number.isNaN(Number(inc))) {
+        throw new Error('No taxable profit or total income in tax response');
+      }
+      setAffordIncome(String(Math.max(0, Math.round(Number(inc) * 100) / 100)));
+    } catch (e) {
+      setAffordError(e instanceof Error ? e.message : 'Could not load income');
+    }
+  };
+
+  const runAffordability = async () => {
+    setAffordError('');
+    setAffordResult(null);
+    const income = parseFloat(affordIncome.replace(/,/g, ''));
+    if (!income || income <= 0) {
+      setAffordError('Enter a positive annual income (or use “Fill from tax estimate”).');
+      return;
+    }
+    const priceRaw = affordProperty.trim() ? parseFloat(affordProperty.replace(/,/g, '')) : NaN;
+    const depRaw = affordDeposit.trim() ? parseFloat(affordDeposit.replace(/,/g, '')) : NaN;
+    const rate = parseFloat(affordRate) || 5;
+    const term = parseInt(affordTerm, 10) || 30;
+    setAffordLoading(true);
+    try {
+      const res = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/affordability`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          annual_income_gbp: income,
+          employment: affordEmployment,
+          property_price_gbp: !Number.isNaN(priceRaw) && priceRaw > 0 ? priceRaw : null,
+          deposit_gbp: !Number.isNaN(depRaw) && depRaw >= 0 ? depRaw : null,
+          annual_interest_rate_pct: rate,
+          term_years: term,
+          first_time_buyer: affordFtb,
+          additional_property: affordAdditional,
+        }),
+      });
+      const payload = (await res.json()) as MortgageAffordabilityResponse | { detail?: string };
+      if (!res.ok) {
+        throw new Error('detail' in payload && payload.detail ? String(payload.detail) : 'Affordability request failed');
+      }
+      setAffordResult(payload as MortgageAffordabilityResponse);
+    } catch (e) {
+      setAffordError(e instanceof Error ? e.message : 'Unexpected error');
+    } finally {
+      setAffordLoading(false);
+    }
+  };
 
   const handleGenerateReport = async () => {
     setIsLoading(true);
@@ -453,6 +564,154 @@ export default function ReportsPage({ token }: ReportsPageProps) {
           {isLoading ? t('reports.generating_button') : t('reports.generate_button')}
         </button>
         {error && <p className={styles.error}>{error}</p>}
+      </div>
+
+      <div className={styles.subContainer}>
+        <h2>Mortgage affordability (illustrative)</h2>
+        <p className={styles.tableCaption}>
+          Planning tool only — not a mortgage offer or regulated advice. England SDLT is simplified; confirm with gov.uk.
+        </p>
+        <div className={styles.adminFiltersGrid}>
+          <label className={styles.filterField}>
+            <span>Annual income (£)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={affordIncome}
+              onChange={(e) => setAffordIncome(e.target.value)}
+              placeholder="e.g. 52000"
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Employment (for multiple)</span>
+            <select
+              className={styles.categorySelect}
+              value={affordEmployment}
+              onChange={(e) => setAffordEmployment(e.target.value as 'employed' | 'self_employed')}
+            >
+              <option value="self_employed">Self-employed (planning ~3–4×)</option>
+              <option value="employed">Employed (planning ~4.5×)</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Property price (£, optional)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={affordProperty}
+              onChange={(e) => setAffordProperty(e.target.value)}
+              placeholder="For LTV / SDLT / loan size"
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Deposit (£, optional)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={affordDeposit}
+              onChange={(e) => setAffordDeposit(e.target.value)}
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Interest rate % (nominal)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="decimal"
+              value={affordRate}
+              onChange={(e) => setAffordRate(e.target.value)}
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>Term (years)</span>
+            <input
+              className={styles.categorySelect}
+              type="text"
+              inputMode="numeric"
+              value={affordTerm}
+              onChange={(e) => setAffordTerm(e.target.value)}
+            />
+          </label>
+          <label className={styles.filterField}>
+            <span>SDLT / buyer</span>
+            <label className={styles.checkboxPill}>
+              <input checked={affordFtb} onChange={(e) => setAffordFtb(e.target.checked)} type="checkbox" />
+              First-time buyer (England relief up to £625k)
+            </label>
+            <label className={styles.checkboxPill} style={{ marginTop: 8 }}>
+              <input checked={affordAdditional} onChange={(e) => setAffordAdditional(e.target.checked)} type="checkbox" />
+              Additional property (+3% illustrative surcharge)
+            </label>
+          </label>
+        </div>
+        <div className={styles.adminActionsRow}>
+          <button className={styles.button} type="button" onClick={() => void fillIncomeFromTax()}>
+            Fill income from tax estimate (2025/26)
+          </button>
+          <button className={styles.button} type="button" disabled={affordLoading} onClick={() => void runAffordability()}>
+            {affordLoading ? 'Calculating…' : 'Calculate'}
+          </button>
+        </div>
+        {affordError && <p className={styles.error}>{affordError}</p>}
+        {affordResult && (
+          <div className={styles.resultsContainer} style={{ marginTop: 16 }}>
+            <p style={{ fontSize: '0.85rem', color: 'var(--lp-text-muted)' }}>{affordResult.disclaimer}</p>
+            <ul style={{ fontSize: '0.9rem', lineHeight: 1.6 }}>
+              <li>
+                Max loan (baseline multiple {affordResult.baseline_income_multiple}×):{' '}
+                <strong>£{formatNumber(affordResult.max_loan_from_income_gbp)}</strong>
+              </li>
+              {affordResult.max_loan_from_income_gbp_self_employed_range && (
+                <li>
+                  Self-employed range (illustrative): £{formatNumber(affordResult.max_loan_from_income_gbp_self_employed_range[0])} – £
+                  {formatNumber(affordResult.max_loan_from_income_gbp_self_employed_range[1])} on same income
+                </li>
+              )}
+              {affordResult.loan_amount_for_payment_gbp != null && (
+                <li>
+                  Loan used for payment calc: £{formatNumber(affordResult.loan_amount_for_payment_gbp)}
+                  {affordResult.ltv_pct != null ? ` (LTV ${affordResult.ltv_pct}%)` : ''}
+                </li>
+              )}
+              <li>
+                Monthly payment: <strong>£{formatNumber(affordResult.monthly_payment_gbp)}</strong> at{' '}
+                {affordResult.annual_interest_rate_pct}% over {affordResult.term_years} years
+              </li>
+              <li>
+                If rate +{affordResult.stress_rate_add_pct_points}pp: <strong>£{formatNumber(affordResult.monthly_payment_if_rates_up_3pp_gbp)}</strong>/month
+              </li>
+              {affordResult.stamp_duty_england_gbp != null && (
+                <li>Stamp duty (England, illustrative): £{formatNumber(affordResult.stamp_duty_england_gbp)}</li>
+              )}
+            </ul>
+            <h4>Named lender scenarios (illustrative caps from income)</h4>
+            <div style={{ overflowX: 'auto' }}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Lender</th>
+                    <th>× income</th>
+                    <th>Max loan</th>
+                    <th>Notes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {affordResult.lender_scenarios.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.label}</td>
+                      <td>{row.income_multiple}</td>
+                      <td>£{formatNumber(row.max_loan_from_income_gbp)}</td>
+                      <td style={{ fontSize: '0.82rem' }}>{row.notes}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={styles.subContainer}>
