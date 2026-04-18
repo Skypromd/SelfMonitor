@@ -41,10 +41,22 @@ _LANGUAGE_NAMES: Dict[str, str] = {
     "es": "Spanish",
     "it": "Italian",
     "pl": "Polish",
+    "ro": "Romanian",
     "uk": "Ukrainian",
     "zh": "Chinese",
     "ar": "Arabic",
 }
+
+
+def _mortgage_advisor_prompt_addon() -> str:
+    return """
+MORTGAGE READINESS MODE (activated):
+- You help UK self-employed users understand mortgage **readiness** in general terms only.
+- This is **not** regulated mortgage advice: do **not** recommend a specific lender, product, or rate; do not say the user "will" be approved.
+- Useful UK patterns to mention when relevant: employed multiples are often quoted around **4–4.5×** income; self-employed lending is often **more conservative** (commonly **~3–4×** on verified profits, varies by lender); lenders typically want **1–3 years** of accounts / SA302 / tax year overviews; minimum deposits are often **~5–15%** depending on credit and product availability.
+- If the case is complex (adverse credit, visa, limited company retained profit, recent business change) or the user needs an offer, suggest speaking with a **whole-of-market mortgage broker** and using MyNetTax mortgage tools where available.
+- Personalise using USER PROFILE and FINANCIAL CONTEXT (income, profit, tax, deposit in context if present).
+"""
 
 
 def _language_instruction(lang: str) -> str:
@@ -198,6 +210,10 @@ class SelfMateAgent:
             # Analyze message intent and extract requirements
             intent = await self._analyze_message_intent(message, language=language, context=context)
 
+            advisor_mode = (
+                str((context or {}).get("advisor_mode") or "").strip().lower() or None
+            )
+
             # Generate comprehensive response
             response_data = await self._generate_response(
                 user_id=user_id,
@@ -206,7 +222,8 @@ class SelfMateAgent:
                 intent=intent,
                 user_profile=user_profile,
                 financial_context=financial_context,
-                conversation_history=conversation_history
+                conversation_history=conversation_history,
+                advisor_mode=advisor_mode,
             )
 
             # Execute any required actions
@@ -303,6 +320,7 @@ class SelfMateAgent:
         financial_context: Dict[str, Any],
         conversation_history: List[Dict[str, Any]],
         language: str = "en",
+        advisor_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate comprehensive response using GPT-4 with full context"""
 
@@ -326,10 +344,17 @@ class SelfMateAgent:
         {json.dumps(intent, indent=2)}
         """
 
+        mode_addon = (
+            _mortgage_advisor_prompt_addon()
+            if advisor_mode == "mortgage"
+            else ""
+        )
+
         system_prompt = f"""
         {self.personality['personality']}
 
         {self.personality['guidelines']}
+        {mode_addon}
 
         You have access to the user's complete financial picture through these tools:
         {json.dumps(list(self.tool_registry.get_available_tools().keys()) if self.tool_registry else [], indent=2)}

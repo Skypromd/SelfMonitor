@@ -1,4 +1,5 @@
 import { Bot, Send, User } from 'lucide-react';
+import { useRouter } from 'next/router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import styles from '../styles/Home.module.css';
@@ -31,6 +32,8 @@ const QUICK_PROMPTS = [
 ];
 
 export default function AssistantPage({ token }: AssistantPageProps) {
+  const router = useRouter();
+  const [mortgageMode, setMortgageMode] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
@@ -62,6 +65,11 @@ export default function AssistantPage({ token }: AssistantPageProps) {
   }, [headers]);
 
   useEffect(() => {
+    const q = router.query?.mode;
+    if (q === 'mortgage') setMortgageMode(true);
+  }, [router.query?.mode]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -72,25 +80,44 @@ export default function AssistantPage({ token }: AssistantPageProps) {
     setInput('');
     setLoading(true);
 
-    try {
-      // Try orchestrator first — richer multi-agent response
-      let res = await fetch(`${ORCHESTRATOR_URL}/orchestrate`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ message: text.trim(), session_id: sessionId, language: 'en' }),
-      });
+    const chatContext = {
+      user_type: 'self_employed',
+      currency: 'GBP',
+      region: 'UK',
+      ...(mortgageMode ? { advisor_mode: 'mortgage' as const } : {}),
+    };
 
-      // Fallback to direct agent if orchestrator unavailable
-      if (!res.ok && (res.status === 503 || res.status === 502 || res.status === 404)) {
+    try {
+      let res: Response;
+      if (mortgageMode) {
         res = await fetch(`${AI_AGENT_URL}/chat`, {
           method: 'POST',
           headers,
           body: JSON.stringify({
             message: text.trim(),
             session_id: sessionId,
-            context: { user_type: 'self_employed', currency: 'GBP', region: 'UK' },
+            language: 'en',
+            context: chatContext,
           }),
         });
+      } else {
+        res = await fetch(`${ORCHESTRATOR_URL}/orchestrate`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ message: text.trim(), session_id: sessionId, language: 'en' }),
+        });
+        if (!res.ok && (res.status === 503 || res.status === 502 || res.status === 404)) {
+          res = await fetch(`${AI_AGENT_URL}/chat`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              message: text.trim(),
+              session_id: sessionId,
+              language: 'en',
+              context: chatContext,
+            }),
+          });
+        }
       }
 
       if (res.ok) {
@@ -165,6 +192,24 @@ export default function AssistantPage({ token }: AssistantPageProps) {
               {agentStatus === 'online' ? 'Online' : agentStatus ? `Status: ${agentStatus}` : 'Connecting…'}
             </span>
           </div>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginTop: 12,
+              fontSize: '0.78rem',
+              color: 'var(--lp-text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={mortgageMode}
+              onChange={(e) => setMortgageMode(e.target.checked)}
+            />
+            Mortgage readiness (UK, informational — not regulated advice)
+          </label>
         </div>
 
         <div className={styles.card}>

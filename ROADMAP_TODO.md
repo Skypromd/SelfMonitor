@@ -108,11 +108,11 @@
 У нас уже есть: 9 endpoints, 1675 строк, 14 типов ипотеки, readiness assessment, PDF pack.
 
 ### 1.5.1 AI Mortgage Advisor (мультиязычный)
-- [ ] Промпт для ai-agent-service: "mortgage advisor" режим с контекстом юзера
-- [ ] AI видит: доход, расходы, tax returns, инвойсы, deposit — даёт персонализированный ответ
-- [ ] Примеры вопросов: "Can I get a mortgage?", "Czy mogę dostać kredyt hipoteczny?", "Чи можу я отримати іпотеку?"
-- [ ] AI знает UK mortgage rules: income multiples, self-employed requirements, deposit minimums
-- [ ] Fallback: если AI не уверен → "Рекомендуем поговорить с broker-ом" + ссылка на marketplace
+- [x] Режим `POST /chat` с `context.advisor_mode: "mortgage"` — отдельный системный блок (UK multiples, self-employed оговорки, FCA-style «не совет по ипотеке»)
+- [x] Контекст: профиль + financial_context из memory (доход/налоги и т.д.); tax returns / инвойсы в контекст — расширять отдельно
+- [x] Мультиязычность: параметр `language` (в т.ч. pl, ro, uk)
+- [x] UK mortgage rules в промпте; fallback: whole-of-market broker + in-app mortgage tools
+- [x] UI: `/assistant` — чекбокс «Mortgage readiness» и `?mode=mortgage` → прямой `POST /chat` с `context.advisor_mode`
 
 ### 1.5.2 Affordability Calculator
 - [ ] Max mortgage по формулам: employed 4.5x, self-employed 3-4x (average 2-3 years)
@@ -181,10 +181,10 @@
 - [ ] Мобильное приложение: кнопка микрофона на главном экране
 
 ### 2.3 MTD prep reminders (no auto-submit)
-- [ ] Cron: за 3 дня до MTD дедлайна → автосбор данных из transactions и **черновик** quarterly report
-- [ ] Уведомление: отчёт готов к review — пользователь **обязан** пройти draft → confirm → submit (как в `integrations-service`)
-- [ ] **Не делать** фоновую/авто-подачу в HMRC (политика продукта: только после явного подтверждения)
-- [ ] Audit: подготовка черновика, открытие self-check, confirm, submit
+- [x] За **3 дня** до дедлайна: письмо/push дополняется текстом «подготовьте черновик / review → confirm → submit»; флаг `mtd_draft_prep_hint` в событии Redis
+- [ ] Автосбор черновика quarterly в БД без входа пользователя — не делали (только напоминание открыть flow)
+- [x] **Нет** фоновой подачи в HMRC (как и раньше)
+- [x] Напоминания tier 14/7/3/1 не шлются, если квартал уже `submitted` (исправлена логика tier-1)
 
 ### 2.4 Real-time profit dashboard
 - [ ] WebSocket endpoint: новая транзакция → push на дашборд

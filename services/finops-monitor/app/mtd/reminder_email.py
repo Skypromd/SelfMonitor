@@ -74,6 +74,9 @@ def _email_dedup_key(user_id: str, deadline: date, kind: str) -> str:
     return f"mtd:reminder_email:{user_id}:{deadline.isoformat()}:{kind}"
 
 
+_dedup_key = _email_dedup_key
+
+
 def _push_dedup_key(user_id: str, deadline: date, kind: str) -> str:
     return f"mtd:reminder_push:{user_id}:{deadline.isoformat()}:{kind}"
 
@@ -212,7 +215,7 @@ async def process_user_day(
     for tier in REMINDER_TIERS:
         if days_left != tier:
             continue
-        if tier == 1 and status != "submitted":
+        if status == "submitted":
             continue
         subject = f"MyNetTax: MTD quarterly update due in {tier} day(s)"
         body = (
@@ -220,8 +223,16 @@ async def process_user_day(
             f"This is a reminder that your next MTD for Income Tax quarterly update "
             f"({next_q.label}) must be submitted by {deadline.isoformat()}.\n\n"
             f"You have {tier} day(s) left.\n\n"
-            f"— MyNetTax\n"
         )
+        extra: dict[str, Any] = {"tier": tier}
+        if tier == 3:
+            body += (
+                "You can now review your figures in MyNetTax and prepare your quarterly "
+                "summary as a draft. Nothing is sent to HMRC until you explicitly confirm "
+                "each submission step.\n\n"
+            )
+            extra["mtd_draft_prep_hint"] = True
+        body += "— MyNetTax\n"
         await _send_reminder_channels(
             redis,
             user_id=user_id,
@@ -231,7 +242,7 @@ async def process_user_day(
             subject=subject,
             body=body,
             next_q_label=next_q.label,
-            extra_event={"tier": tier},
+            extra_event=extra,
         )
 
     if days_left <= 1 and status != "submitted":

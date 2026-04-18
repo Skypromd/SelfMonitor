@@ -100,7 +100,10 @@ class ConversationMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
     session_id: Optional[str] = None
-    context: Optional[Dict[str, Any]] = None
+    context: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description='Optional hints, e.g. {"advisor_mode": "mortgage"} for UK mortgage readiness (informational only).',
+    )
     language: str = Field(default="en", description="ISO-639-1 language code: en, ru, de, fr, es, etc.")
 
 class ChatResponse(BaseModel):

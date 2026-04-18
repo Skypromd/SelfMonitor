@@ -95,6 +95,44 @@ class TestSelfMateAgent:
             assert response.response is not None
 
     @pytest.mark.asyncio
+    async def test_generate_response_mortgage_mode_includes_addon(
+        self,
+        mock_memory_manager: MemoryManager,
+        mock_tool_registry: ToolRegistry,
+        mock_openai_client: Any,
+    ):
+        mock_openai_client.chat.completions.create = AsyncMock(
+            return_value=Mock(
+                choices=[
+                    Mock(
+                        message=Mock(
+                            content='{"response": "ok", "actions": [], "insights": [], "next_actions": []}'
+                        )
+                    )
+                ]
+            )
+        )
+        with patch("openai.AsyncOpenAI", return_value=mock_openai_client):
+            agent = SelfMateAgent(
+                memory_manager=mock_memory_manager,
+                tool_registry=mock_tool_registry,
+                openai_api_key="test_key",
+            )
+            await agent._generate_response(
+                user_id="u1",
+                message="Can I get a mortgage?",
+                intent={},
+                user_profile={},
+                financial_context={},
+                conversation_history=[],
+                advisor_mode="mortgage",
+            )
+        call_kw = mock_openai_client.chat.completions.create.call_args
+        assert call_kw is not None
+        messages = call_kw.kwargs["messages"]
+        assert "MORTGAGE READINESS MODE" in messages[0]["content"]
+
+    @pytest.mark.asyncio
     async def test_generate_proactive_insights(
         self,
         mock_memory_manager: MemoryManager,
