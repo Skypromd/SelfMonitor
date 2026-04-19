@@ -48,6 +48,17 @@ _LANGUAGE_NAMES: Dict[str, str] = {
 }
 
 
+def _tax_advisor_prompt_addon() -> str:
+    return """
+UK TAX INFORMATION MODE (activated):
+- Provide **general** UK self-employment tax information only — not a substitute for an accountant or formal advice on the user's specific return.
+- Planning reference points (thresholds change every tax year — always say "verify on gov.uk for your year"): Personal Allowance often around **£12,570** with taper for income above **£100,000**; Income Tax is charged on slices (**basic / higher / additional** rates); Class **2** and **4** National Insurance apply to many self-employed profits with annual thresholds that are updated by HMRC.
+- Mention **MTD for Income Tax** where relevant (digital records, quarterly updates — no substitution for reading HMRC guidance).
+- Expenses must be **wholly and exclusively** for the business where claimed; simplified expenses (e.g. flat-rate home working, mileage) and the **£1,000 trading allowance** have strict eligibility — direct users to HMRC or a professional for their facts.
+- If asked "how much tax will I pay", steer them to MyNetTax figures, HMRC calculators, and professional review before filing.
+"""
+
+
 def _mortgage_advisor_prompt_addon() -> str:
     return """
 MORTGAGE READINESS MODE (activated):
@@ -344,11 +355,12 @@ class SelfMateAgent:
         {json.dumps(intent, indent=2)}
         """
 
-        mode_addon = (
-            _mortgage_advisor_prompt_addon()
-            if advisor_mode == "mortgage"
-            else ""
-        )
+        if advisor_mode == "mortgage":
+            mode_addon = _mortgage_advisor_prompt_addon()
+        elif advisor_mode == "tax":
+            mode_addon = _tax_advisor_prompt_addon()
+        else:
+            mode_addon = ""
 
         system_prompt = f"""
         {self.personality['personality']}

@@ -40,6 +40,7 @@ from .mortgage_progress_tracker import (
     build_mortgage_progress_timeline,
     merge_backend_signals,
 )
+from .tax_savings_tips import build_tax_savings_tips, filter_transactions_for_tax_year
 from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
     LENDER_PROFILE_METADATA,
@@ -1532,6 +1533,22 @@ class MortgageProgressResponse(BaseModel):
     disclaimer: str
 
 
+class TaxSavingsTipItem(BaseModel):
+    id: str
+    title: str
+    detail: str
+    category: Literal["static", "personalized"]
+    potential_saving_gbp: Optional[float] = None
+    priority: int
+
+
+class TaxSavingsTipsResponse(BaseModel):
+    tips: list[TaxSavingsTipItem]
+    disclaimer: str
+    transaction_count_used: int
+    expense_lines_used: int
+
+
 class MortgageChecklistRequest(BaseModel):
     mortgage_type: str
     employment_profile: str = "sole_trader"
@@ -1919,6 +1936,33 @@ async def mortgage_progress_tracker(
         mortgage_readiness_percent=request.mortgage_readiness_percent,
     )
     return MortgageProgressResponse.model_validate(raw)
+
+
+@app.get("/insights/tax-savings", response_model=TaxSavingsTipsResponse)
+async def tax_savings_insights(
+    start_date: Optional[datetime.date] = None,
+    end_date: Optional[datetime.date] = None,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """Static + pattern-matched UK expense hints from bank transactions (informational only)."""
+    tx_url = os.getenv("TRANSACTIONS_SERVICE_URL", "").strip()
+    tx_list: list[dict[str, Any]] = []
+    if tx_url:
+        try:
+            data = await get_json_with_retry(
+                tx_url,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                timeout=15.0,
+            )
+            if isinstance(data, list):
+                tx_list = [t for t in data if isinstance(t, dict)][:8000]
+        except httpx.HTTPError:
+            tx_list = []
+    if start_date is not None and end_date is not None:
+        tx_list = filter_transactions_for_tax_year(tx_list, start_date, end_date)
+    raw = build_tax_savings_tips(tx_list)
+    return TaxSavingsTipsResponse.model_validate(raw)
 
 
 @app.post("/mortgage/checklist", response_model=MortgageChecklistResponse)

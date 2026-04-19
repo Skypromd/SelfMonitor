@@ -22,6 +22,8 @@ type Message = {
 
 type AssistantPageProps = { token: string };
 
+type AdvisorFocus = 'general' | 'mortgage' | 'tax';
+
 const QUICK_PROMPTS = [
   'Prepare my tax return for this year',
   'How much tax do I owe?',
@@ -33,7 +35,7 @@ const QUICK_PROMPTS = [
 
 export default function AssistantPage({ token }: AssistantPageProps) {
   const router = useRouter();
-  const [mortgageMode, setMortgageMode] = useState(false);
+  const [advisorFocus, setAdvisorFocus] = useState<AdvisorFocus>('general');
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '0',
@@ -84,12 +86,13 @@ export default function AssistantPage({ token }: AssistantPageProps) {
       user_type: 'self_employed',
       currency: 'GBP',
       region: 'UK',
-      ...(mortgageMode ? { advisor_mode: 'mortgage' as const } : {}),
+      ...(advisorFocus === 'mortgage' ? { advisor_mode: 'mortgage' as const } : {}),
+      ...(advisorFocus === 'tax' ? { advisor_mode: 'tax' as const } : {}),
     };
 
     try {
       let res: Response;
-      if (mortgageMode) {
+      if (advisorFocus === 'mortgage' || advisorFocus === 'tax') {
         res = await fetch(`${AI_AGENT_URL}/chat`, {
           method: 'POST',
           headers,
@@ -192,23 +195,25 @@ export default function AssistantPage({ token }: AssistantPageProps) {
               {agentStatus === 'online' ? 'Online' : agentStatus ? `Status: ${agentStatus}` : 'Connecting…'}
             </span>
           </div>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              marginTop: 12,
-              fontSize: '0.78rem',
-              color: 'var(--lp-text-muted)',
-              cursor: 'pointer',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={mortgageMode}
-              onChange={(e) => setMortgageMode(e.target.checked)}
-            />
-            Mortgage readiness (UK, informational — not regulated advice)
+          <label style={{ display: 'block', marginTop: 12, fontSize: '0.78rem', color: 'var(--lp-text-muted)' }}>
+            <span style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>Focus</span>
+            <select
+              value={advisorFocus}
+              onChange={(e) => setAdvisorFocus(e.target.value as AdvisorFocus)}
+              style={{
+                width: '100%',
+                padding: '6px 8px',
+                borderRadius: 8,
+                border: '1px solid var(--lp-border)',
+                background: 'var(--lp-bg-surface)',
+                color: 'var(--lp-text)',
+                fontSize: '0.78rem',
+              }}
+            >
+              <option value="general">General</option>
+              <option value="tax">UK tax (informational — not advice)</option>
+              <option value="mortgage">Mortgage readiness (informational)</option>
+            </select>
           </label>
         </div>
 

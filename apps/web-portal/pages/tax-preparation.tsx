@@ -7,6 +7,7 @@ import styles from '../styles/Home.module.css';
 
 const TAX_SERVICE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
 const TXN_SERVICE_URL = process.env.NEXT_PUBLIC_TRANSACTIONS_SERVICE_URL || '/api/transactions';
+const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || '/api/analytics';
 
 type Props = { token: string };
 
@@ -288,6 +289,8 @@ export default function TaxPreparationPage({ token }: Props) {
   const [calc, setCalc] = useState<TaxCalc | null>(null);
   const [ready, setReady] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [taxTips, setTaxTips] = useState<TaxSavingsTip[]>([]);
+  const [taxTipsDisclaimer, setTaxTipsDisclaimer] = useState('');
 
   const year = TAX_YEARS[yearIdx];
 
@@ -297,6 +300,8 @@ export default function TaxPreparationPage({ token }: Props) {
     setError('');
     setCalc(null);
     setReady(false);
+    setTaxTips([]);
+    setTaxTipsDisclaimer('');
     try {
       const [txnRes, unmatchedRes, calcRes] = await Promise.all([
         fetch(`${TXN_SERVICE_URL}/transactions/me`, {
@@ -337,6 +342,24 @@ export default function TaxPreparationPage({ token }: Props) {
       const calcData: TaxCalc = await calcRes.json();
       setCalc(calcData);
       setReady(true);
+
+      let tipsList: TaxSavingsTip[] = [];
+      let tipsDisc = '';
+      try {
+        const tipsRes = await fetch(
+          `${ANALYTICS_SERVICE_URL}/insights/tax-savings?start_date=${encodeURIComponent(y.start)}&end_date=${encodeURIComponent(y.end)}`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (tipsRes.ok) {
+          const tj = (await tipsRes.json()) as { tips?: TaxSavingsTip[]; disclaimer?: string };
+          tipsList = Array.isArray(tj.tips) ? tj.tips : [];
+          tipsDisc = typeof tj.disclaimer === 'string' ? tj.disclaimer : '';
+        }
+      } catch {
+        tipsList = [];
+      }
+      setTaxTips(tipsList);
+      setTaxTipsDisclaimer(tipsDisc);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Unexpected error');
     } finally {
@@ -584,6 +607,40 @@ export default function TaxPreparationPage({ token }: Props) {
               <div style={{ marginBottom: 20 }}>
                 {warnings.map((w, i) => <WarningBox key={i}>{w}</WarningBox>)}
               </div>
+            )}
+
+            {taxTips.length > 0 && (
+              <SectionCard title="Tax-saving ideas (informational)">
+                {taxTipsDisclaimer ? (
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginTop: 0 }}>{taxTipsDisclaimer}</p>
+                ) : null}
+                <ul style={{ margin: '12px 0 0', paddingLeft: 18, fontSize: '0.88rem', lineHeight: 1.55 }}>
+                  {taxTips.slice(0, 8).map((tip) => (
+                    <li key={tip.id} style={{ marginBottom: 12 }}>
+                      <strong>{tip.title}</strong>{' '}
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          color: tip.category === 'personalized' ? 'var(--accent)' : 'var(--text-tertiary)',
+                        }}
+                      >
+                        [{tip.category}]
+                      </span>
+                      {tip.potential_saving_gbp != null ? (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginLeft: 6 }}>
+                          up to ~£{tip.potential_saving_gbp.toFixed(0)}/yr (illustrative)
+                        </span>
+                      ) : null}
+                      <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>{tip.detail}</div>
+                    </li>
+                  ))}
+                </ul>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginBottom: 0 }}>
+                  Also try the AI assistant with focus &quot;UK tax&quot; —{' '}
+                  <Link href="/assistant?mode=tax" style={{ color: 'var(--accent)' }}>/assistant?mode=tax</Link>
+                </p>
+              </SectionCard>
             )}
 
             <CisComplianceBanner breakdown={calc.breakdown?.cis_credits_breakdown} />

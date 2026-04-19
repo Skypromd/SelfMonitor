@@ -163,10 +163,10 @@
 ## Фаза 2: "Делает то, чего другие не умеют" (6-10 недель)
 
 ### 2.1 AI Tax Advisor на родном языке
-- [ ] Fine-tune промпт для ai-agent-service с UK tax rules (NI, Income Tax bands, allowances)
-- [ ] Добавить контекст пользователя: доход, расходы, категории → персонализированные советы
-- [ ] Тестирование на 10 языках (английский, польский, румынский, украинский — приоритет)
-- [ ] Примеры: "Могу ли я списать расходы на телефон?", "Сколько NI я заплачу?"
+- [x] Режим `context.advisor_mode: "tax"` — системный блок UK IT/NI/PA/MTD (информация, не замена бухгалтеру)
+- [x] Контекст: профиль + financial_context из memory; мультиязычность — параметр `language` (как у остального чата)
+- [ ] Отдельный fine-tune модели — не делали (достаточно промпта + RAG позже)
+- [x] UI: `/assistant` — Focus «UK tax», ссылка с `tax-preparation` на `/assistant?mode=tax`
 
 ### 2.2 Voice input
 - [ ] Интент-парсер: распознать "заплатил 50 фунтов за бензин" → {amount: 50, category: Fuel, currency: GBP}
@@ -187,10 +187,10 @@
 - [ ] Сравнение с прошлым годом
 
 ### 2.5 Tax savings tips
-- [ ] База UK allowable expenses (home office £6/week, mileage 45p/mile, phone, insurance)
-- [ ] Анализ транзакций юзера → персональные рекомендации
-- [ ] "Вы не списали home office allowance — это £312/год экономии"
-- [ ] Push-уведомление раз в месяц с суммой потенциальной экономии
+- [x] База подсказок: trading allowance, flat-rate home office (~£312/г), mileage, phone split — `GET /insights/tax-savings`
+- [x] Персонализация по категориям транзакций за выбранный tax year (`start_date` / `end_date`)
+- [x] Web: блок «Tax-saving ideas» на `tax-preparation.tsx`
+- [ ] Push раз в месяц — не делали
 
 ### 2.6 Instant invoice payments
 - [ ] Stripe Payment Links в каждом инвойсе
