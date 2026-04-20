@@ -1,7 +1,7 @@
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional, List
+from typing import Annotated, List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -72,6 +72,16 @@ async def create_referral_code(
         max_uses=50
     ))
     return db_code
+
+
+@app.get("/me/referral-code", response_model=Optional[schemas.ReferralCode])
+async def get_my_referral_code(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's referral code, or null if none exists yet."""
+    return await crud.get_referral_code_by_user(db, user_id)
+
 
 @app.post("/validate-referral")
 async def validate_referral_code(

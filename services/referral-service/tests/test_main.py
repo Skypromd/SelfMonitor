@@ -56,6 +56,19 @@ def test_leaderboard_no_auth():
     assert resp.status_code == 401
 
 
+def test_me_referral_code_no_auth():
+    resp = client.get("/me/referral-code")
+    assert resp.status_code == 401
+
+
+@patch("app.main.crud.get_referral_code_by_user")
+def test_me_referral_code_none(mock_get):
+    mock_get.return_value = None
+    resp = client.get("/me/referral-code", headers=AUTH_HEADER)
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
 def test_join_campaign_no_auth():
     resp = client.post("/campaigns/some-id/join")
     assert resp.status_code == 401

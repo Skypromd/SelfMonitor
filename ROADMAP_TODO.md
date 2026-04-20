@@ -203,10 +203,10 @@
 ## Фаза 3: "Viral growth" (10-16 недель)
 
 ### 3.1 Реферальная программа 2.0
-- [ ] £25 credit за каждого приглашённого друга (обоим)
+- [ ] £25 credit за каждого приглашённого друга (обоим) — модель `reward_amount` в referral-service; начисление в billing — отдельно
 - [ ] Месяц Pro бесплатно для топ-10 рефереров каждый месяц
-- [ ] Leaderboard в приложении (referral-service уже есть)
-- [ ] Sharing: уникальная ссылка + QR код
+- [x] Leaderboard: `GET /leaderboard` + позиция пользователя; web `referrals.tsx` (поля `referral_count` / `total_earned`)
+- [x] Sharing: ссылка `{origin}/register?ref=CODE&plan=starter`, QR (api.qrserver.com), `GET /me/referral-code`
 - [ ] Email-кампания существующим юзерам: "Invite a friend, get £25"
 
 ### 3.2 Бесплатный MTD калькулятор (SEO-магнит)

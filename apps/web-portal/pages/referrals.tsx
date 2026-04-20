@@ -1,4 +1,4 @@
-import { Copy, Gift, TrendingUp, Users } from 'lucide-react';
+import { Copy, Gift, Link2, TrendingUp, Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
@@ -26,9 +26,9 @@ type ReferralStats = {
 
 type LeaderboardEntry = {
   user_id: string;
-  rank: number;
-  referrals: number;
-  earned: number;
+  code?: string;
+  referral_count: number;
+  total_earned: number;
 };
 
 type ReferralsPageProps = { token: string };
@@ -45,6 +45,8 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
   const [validateCode, setValidateCode] = useState('');
   const [validateMsg, setValidateMsg] = useState('');
   const [validating, setValidating] = useState(false);
+  const [siteOrigin, setSiteOrigin] = useState('');
+  const [yourRank, setYourRank] = useState<number | null>(null);
 
   const headers = useMemo(
     () => ({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }),
@@ -55,14 +57,28 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
     setLoading(true);
     setError('');
     try {
-      const [statsRes, lbRes] = await Promise.all([
+      const [statsRes, lbRes, meRes] = await Promise.all([
         fetch(`${REFERRAL_SERVICE_URL}/stats`, { headers }),
         fetch(`${REFERRAL_SERVICE_URL}/leaderboard`, { headers }),
+        fetch(`${REFERRAL_SERVICE_URL}/me/referral-code`, { headers }),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (lbRes.ok) {
-        const data = await lbRes.json();
-        setLeaderboard(Array.isArray(data) ? data : data.leaderboard || []);
+        const data = (await lbRes.json()) as {
+          leaderboard?: LeaderboardEntry[];
+          your_position?: number;
+        } | LeaderboardEntry[];
+        if (Array.isArray(data)) {
+          setLeaderboard(data);
+          setYourRank(null);
+        } else {
+          setLeaderboard(data.leaderboard || []);
+          setYourRank(typeof data.your_position === 'number' ? data.your_position : null);
+        }
+      }
+      if (meRes.ok) {
+        const me = (await meRes.json()) as ReferralCode | null;
+        setCodes(me && me.code ? [me] : []);
       }
     } catch {
       setError('Unable to reach referral service.');
@@ -70,6 +86,10 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
       setLoading(false);
     }
   }, [headers]);
+
+  useEffect(() => {
+    setSiteOrigin(typeof window !== 'undefined' ? window.location.origin : '');
+  }, []);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -79,22 +99,26 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
     setTimeout(() => setCopied(''), 2000);
   };
 
+  const copyInviteLink = async (code: string) => {
+    if (!siteOrigin) return;
+    const url = `${siteOrigin}/register?ref=${encodeURIComponent(code)}&plan=starter`;
+    await navigator.clipboard.writeText(url).catch(() => {});
+    setCopied(`link:${code}`);
+    setTimeout(() => setCopied(''), 2000);
+  };
+
   const createCode = async () => {
     setCreating(true);
     setCreateMsg('');
     try {
-      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
-      const user_id = payload.sub || 'me';
       const res = await fetch(`${REFERRAL_SERVICE_URL}/referral-codes`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ user_id, campaign_type: 'standard', reward_amount: 25, max_uses: 50 }),
       });
       if (res.ok) {
         const code: ReferralCode = await res.json();
-        setCodes((prev) => [code, ...prev]);
-        setCreateMsg(`Code created: ${code.code}`);
-        fetchAll();
+        setCreateMsg(`Code ready: ${code.code}`);
+        await fetchAll();
       } else {
         const d = await res.json().catch(() => ({}));
         setCreateMsg(`Error: ${d.detail || res.statusText}`);
@@ -177,7 +201,11 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {codes.map((rc) => (
+                {codes.map((rc) => {
+                  const inviteUrl =
+                    siteOrigin &&
+                    `${siteOrigin}/register?ref=${encodeURIComponent(rc.code)}&plan=starter`;
+                  return (
                   <div key={rc.id} style={{ background: 'var(--lp-bg-surface)', borderRadius: 10, padding: '0.75rem 1rem', border: '1px solid var(--lp-border)' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <code style={{ fontSize: '1.1rem', fontWeight: 700, letterSpacing: 2, color: 'var(--lp-accent-teal)' }}>{rc.code}</code>
@@ -185,9 +213,47 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
                         onClick={() => copyCode(rc.code)}
                         style={{ background: 'none', border: '1px solid var(--lp-border)', borderRadius: 6, padding: '0.25rem 0.6rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: copied === rc.code ? '#34d399' : 'var(--lp-text-muted)' }}
                       >
-                        <Copy size={13} /> {copied === rc.code ? 'Copied!' : 'Copy'}
+                        <Copy size={13} /> {copied === rc.code ? 'Copied!' : 'Copy code'}
                       </button>
                     </div>
+                    {inviteUrl && (
+                      <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
+                        <div style={{ flex: '1 1 180px', minWidth: 0 }}>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--lp-text-muted)', marginBottom: 4 }}>Invite link</div>
+                          <div style={{ fontSize: '0.78rem', wordBreak: 'break-all', color: 'var(--lp-text)', lineHeight: 1.4 }}>{inviteUrl}</div>
+                          <button
+                            type="button"
+                            onClick={() => void copyInviteLink(rc.code)}
+                            style={{
+                              marginTop: 6,
+                              background: 'rgba(13,148,136,0.12)',
+                              border: '1px solid rgba(13,148,136,0.35)',
+                              borderRadius: 6,
+                              padding: '0.3rem 0.65rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              fontSize: '0.78rem',
+                              color: copied === `link:${rc.code}` ? '#34d399' : 'var(--lp-accent-teal)',
+                            }}
+                          >
+                            <Link2 size={13} /> {copied === `link:${rc.code}` ? 'Link copied' : 'Copy invite link'}
+                          </button>
+                        </div>
+                        <div style={{ flex: '0 0 auto' }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            alt=""
+                            width={120}
+                            height={120}
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(inviteUrl)}`}
+                            style={{ borderRadius: 8, border: '1px solid var(--lp-border)', display: 'block' }}
+                          />
+                          <span style={{ fontSize: '0.65rem', color: 'var(--lp-text-muted)' }}>QR via api.qrserver.com</span>
+                        </div>
+                      </div>
+                    )}
                     <div style={{ fontSize: '0.78rem', color: 'var(--lp-text-muted)', marginTop: 4 }}>
                       Reward: {fmt(rc.reward_amount)} · Max: {rc.max_uses} uses · {rc.campaign_type}
                     </div>
@@ -197,7 +263,8 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -229,6 +296,11 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
         {/* Leaderboard */}
         <div className={styles.card}>
           <h3 style={{ marginBottom: '1rem' }}>🏆 Referral Leaderboard</h3>
+          {yourRank != null && (
+            <p style={{ fontSize: '0.85rem', color: 'var(--lp-accent-teal)', marginBottom: '0.75rem', fontWeight: 600 }}>
+              Your position: #{yourRank}
+            </p>
+          )}
           {leaderboard.length === 0 ? (
             <p style={{ color: 'var(--lp-text-muted)', fontSize: '0.88rem' }}>No leaderboard data yet.</p>
           ) : (
@@ -249,8 +321,8 @@ export default function ReferralsPage({ token }: ReferralsPageProps) {
                     </span>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{entry.referrals ?? '—'} referrals</div>
-                    <div style={{ fontSize: '0.75rem', color: '#34d399' }}>{fmt(entry.earned ?? 0)}</div>
+                    <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>{entry.referral_count ?? 0} referrals</div>
+                    <div style={{ fontSize: '0.75rem', color: '#34d399' }}>{fmt(entry.total_earned ?? 0)}</div>
                   </div>
                 </div>
               ))}

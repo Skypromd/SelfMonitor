@@ -1,11 +1,12 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { adminSurfaceUrl } from '../lib/adminSurface';
 import styles from '../styles/Home.module.css';
 
 const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || '/api/auth';
+const REFERRAL_SERVICE_URL = process.env.NEXT_PUBLIC_REFERRAL_SERVICE_URL || '/api/referrals';
 
 const PLAN_NAMES: Record<string, string> = {
   free: 'Free', starter: 'Starter', growth: 'Growth', pro: 'Pro', business: 'Business',
@@ -44,6 +45,9 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [referralCode, setReferralCode] = useState('');
+  const [referralBanner, setReferralBanner] = useState('');
+  const referralAppliedRef = useRef(false);
 
   // ── Step 2: Phone verification ────────────────────────────────────────────
   const [phone, setPhone] = useState('');
@@ -59,6 +63,50 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
     const t = setTimeout(() => setResendCountdown(c => c - 1), 1000);
     return () => clearTimeout(t);
   }, [resendCountdown]);
+
+  useEffect(() => {
+    const r = router.query.ref;
+    if (typeof r === 'string' && r.trim()) setReferralCode(r.trim().toUpperCase());
+  }, [router.query.ref]);
+
+  useEffect(() => {
+    if (!accessToken || !referralCode.trim()) return;
+    if (referralAppliedRef.current) return;
+    referralAppliedRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch(`${REFERRAL_SERVICE_URL}/validate-referral`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ code: referralCode.trim().toUpperCase() }),
+        });
+        const d = (await res.json().catch(() => ({}))) as { detail?: string; message?: string };
+        if (cancelled) return;
+        if (res.ok) {
+          setReferralBanner(
+            typeof d.message === 'string'
+              ? d.message
+              : 'Referral recorded. Credits apply when your subscription qualifies.',
+          );
+        } else {
+          setReferralBanner(typeof d.detail === 'string' ? d.detail : 'Referral code could not be applied.');
+          referralAppliedRef.current = false;
+        }
+      } catch {
+        if (!cancelled) {
+          setReferralBanner('Referral service unavailable — apply your code later from Referrals.');
+          referralAppliedRef.current = false;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, referralCode]);
 
   // ── Step 3: Google Authenticator / TOTP ──────────────────────────────────
   const [mfaSecret, setMfaSecret] = useState('');
@@ -237,6 +285,31 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
             </div>
           </div>
 
+          {step !== 'account' && referralBanner && (
+            <div
+              style={{
+                width: '100%',
+                padding: '0.75rem 1rem',
+                borderRadius: 10,
+                marginBottom: '1.25rem',
+                fontSize: '0.88rem',
+                lineHeight: 1.5,
+                background:
+                  referralBanner.includes('Congratulations') || referralBanner.toLowerCase().includes('credit')
+                    ? 'rgba(52,211,153,0.12)'
+                    : 'rgba(245,158,11,0.1)',
+                border: `1px solid ${
+                  referralBanner.includes('Congratulations') || referralBanner.toLowerCase().includes('credit')
+                    ? 'rgba(52,211,153,0.35)'
+                    : 'rgba(245,158,11,0.35)'
+                }`,
+                color: 'var(--text-primary, #e2e8f0)',
+              }}
+            >
+              {referralBanner}
+            </div>
+          )}
+
           {/* ── STEP 1: Account ─────────────────────────────────── */}
           {step === 'account' && (
             <>
@@ -297,6 +370,20 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
                 <label htmlFor="reg-email" style={{ marginTop: '0.75rem', display: 'block' }}>Email address</label>
                 <input id="reg-email" type="email" placeholder="your@email.com" value={email}
                   onChange={e => setEmail(e.target.value)} className={styles.input} required autoComplete="email" />
+
+                <label htmlFor="reg-referral" style={{ marginTop: '0.75rem', display: 'block' }}>
+                  Referral code <span style={{ color: '#64748b', fontWeight: 400 }}>(optional)</span>
+                </label>
+                <input
+                  id="reg-referral"
+                  type="text"
+                  placeholder={"Friend's code from invite link"}
+                  value={referralCode}
+                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                  className={styles.input}
+                  autoComplete="off"
+                  spellCheck={false}
+                />
 
                 <label htmlFor="reg-password" style={{ marginTop: '0.75rem', display: 'block' }}>Password</label>
                 <div className={styles.passwordWrapper}>
