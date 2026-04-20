@@ -1,7 +1,18 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { FormEvent, useEffect, useState } from 'react';
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
@@ -89,6 +100,140 @@ function TaxCalculator({ token }: { token: string }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+type ProfitPulseWeek = {
+  week_start: string;
+  week_end: string;
+  income_gbp: number;
+  expenses_gbp: number;
+  profit_gbp: number;
+};
+
+type ProfitPulseData = {
+  as_of: string;
+  profit_today_gbp: number;
+  profit_week_gbp: number;
+  profit_tax_year_to_date_gbp: number;
+  weekly: ProfitPulseWeek[];
+  yoy_week_profit_delta_gbp: number;
+  prior_year_same_week_profit_gbp: number;
+  disclaimer: string;
+  estimated_tax_due_ytd_gbp?: number | null;
+};
+
+function formatGbp(n: number): string {
+  const abs = Math.abs(n).toFixed(2);
+  if (n < 0) return `-£${abs}`;
+  return `£${abs}`;
+}
+
+function ProfitPulseStrip({ token }: { token: string }) {
+  const [data, setData] = useState<ProfitPulseData | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await fetch(
+          `${ANALYTICS_SERVICE_URL}/insights/profit-pulse?include_tax_estimate=1`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        );
+        if (!response.ok) {
+          throw new Error('Profit pulse unavailable');
+        }
+        const json = (await response.json()) as ProfitPulseData;
+        if (!cancelled) {
+          setData(json);
+          setError('');
+        }
+      } catch (err: unknown) {
+        if (!cancelled) {
+          const details = err instanceof Error ? err.message : 'Profit pulse unavailable';
+          setError(details);
+        }
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), 55000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [token]);
+
+  if (error) {
+    return (
+      <p className={styles.info} style={{ marginBottom: '1rem' }}>
+        Profit snapshot unavailable — connect a bank and ensure analytics is enabled.
+      </p>
+    );
+  }
+  if (!data) {
+    return <p className={styles.info}>Loading profit snapshot…</p>;
+  }
+
+  const chartRows = data.weekly.map((w) => ({
+    label: w.week_start.slice(5),
+    profit: w.profit_gbp,
+    income: w.income_gbp,
+    expenses: w.expenses_gbp,
+  }));
+
+  return (
+    <div className={styles.subContainer}>
+      <h2>Profit pulse</h2>
+      <p style={{ fontSize: '0.88rem', color: 'rgba(15,23,42,0.65)', marginBottom: '1rem' }}>
+        {data.disclaimer}
+      </p>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+          gap: '0.75rem',
+          marginBottom: '1.25rem',
+        }}
+      >
+        <div style={{ padding: '0.75rem', borderRadius: 10, background: 'rgba(13,148,136,0.08)', border: '1px solid rgba(13,148,136,0.25)' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(15,23,42,0.55)' }}>Profit today</div>
+          <div style={{ fontSize: '1.35rem', fontWeight: 800 }}>{formatGbp(data.profit_today_gbp)}</div>
+        </div>
+        <div style={{ padding: '0.75rem', borderRadius: 10, background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(15,23,42,0.55)' }}>Profit this week</div>
+          <div style={{ fontSize: '1.35rem', fontWeight: 800 }}>{formatGbp(data.profit_week_gbp)}</div>
+        </div>
+        <div style={{ padding: '0.75rem', borderRadius: 10, background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(15,23,42,0.55)' }}>Tax year profit (bank)</div>
+          <div style={{ fontSize: '1.35rem', fontWeight: 800 }}>{formatGbp(data.profit_tax_year_to_date_gbp)}</div>
+        </div>
+        {typeof data.estimated_tax_due_ytd_gbp === 'number' && (
+          <div style={{ padding: '0.75rem', borderRadius: 10, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(15,23,42,0.55)' }}>Est. tax due (YTD)</div>
+            <div style={{ fontSize: '1.35rem', fontWeight: 800 }}>{formatGbp(data.estimated_tax_due_ytd_gbp)}</div>
+          </div>
+        )}
+        <div style={{ padding: '0.75rem', borderRadius: 10, background: 'rgba(15,23,42,0.04)', border: '1px solid rgba(15,23,42,0.08)' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'rgba(15,23,42,0.55)' }}>vs same week last year</div>
+          <div style={{ fontSize: '1.35rem', fontWeight: 800 }}>{formatGbp(data.yoy_week_profit_delta_gbp)}</div>
+          <div style={{ fontSize: '0.72rem', marginTop: '0.25rem', color: 'rgba(15,23,42,0.45)' }}>
+            Prior year week: {formatGbp(data.prior_year_same_week_profit_gbp)}
+          </div>
+        </div>
+      </div>
+      <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem' }}>Weekly profit (last 8 weeks)</h3>
+      <ResponsiveContainer width="100%" height={280}>
+        <BarChart data={chartRows}>
+          <CartesianGrid strokeDasharray="3 3" />
+          <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+          <YAxis tick={{ fontSize: 11 }} />
+          <Tooltip formatter={(value: number) => formatGbp(value)} />
+          <Legend />
+          <Bar dataKey="profit" fill="var(--lp-accent-teal, #0d9488)" name="Net profit" radius={[4, 4, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -502,6 +647,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
       <CisTasksStrip token={token} />
+      <ProfitPulseStrip token={token} />
       <ActionCenter token={token} />
       <CashFlowChart token={token} />
       <TaxCalculator token={token} />

@@ -181,10 +181,10 @@
 - [x] Напоминания tier 14/7/3/1 не шлются, если квартал уже `submitted` (исправлена логика tier-1)
 
 ### 2.4 Real-time profit dashboard
-- [ ] WebSocket endpoint: новая транзакция → push на дашборд
-- [ ] Виджеты: "Profit today", "Profit this week", "Tax owed so far"
-- [ ] Графики: доход vs расходы по неделям/месяцам
-- [ ] Сравнение с прошлым годом
+- [ ] WebSocket endpoint: новая транзакция → push на дашборд (пока: polling ~55s на `dashboard.tsx`)
+- [x] Виджеты: "Profit today", "Profit this week", "Tax owed so far" (`GET /insights/profit-pulse`, tax-engine YTD при `include_tax_estimate`)
+- [x] Графики: недельный net profit (8 недель, Recharts) на дашборде
+- [x] Сравнение с прошлым годом: delta по той же календарной неделе (~364 дня назад)
 
 ### 2.5 Tax savings tips
 - [x] База подсказок: trading allowance, flat-rate home office (~£312/г), mileage, phone split — `GET /insights/tax-savings`

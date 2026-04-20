@@ -40,6 +40,7 @@ from .mortgage_progress_tracker import (
     build_mortgage_progress_timeline,
     merge_backend_signals,
 )
+from .profit_pulse import build_profit_pulse, uk_tax_year_start_on
 from .tax_savings_tips import build_tax_savings_tips, filter_transactions_for_tax_year
 from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
@@ -1549,6 +1550,27 @@ class TaxSavingsTipsResponse(BaseModel):
     expense_lines_used: int
 
 
+class ProfitPulseWeekBucket(BaseModel):
+    week_start: str
+    week_end: str
+    income_gbp: float
+    expenses_gbp: float
+    profit_gbp: float
+
+
+class ProfitPulseResponse(BaseModel):
+    as_of: str
+    profit_today_gbp: float
+    profit_week_gbp: float
+    profit_tax_year_to_date_gbp: float
+    weekly: list[ProfitPulseWeekBucket]
+    yoy_week_profit_delta_gbp: float
+    prior_year_same_week_profit_gbp: float
+    disclaimer: str
+    transaction_rows_used: int
+    estimated_tax_due_ytd_gbp: Optional[float] = None
+
+
 class MortgageChecklistRequest(BaseModel):
     mortgage_type: str
     employment_profile: str = "sole_trader"
@@ -1963,6 +1985,60 @@ async def tax_savings_insights(
         tx_list = filter_transactions_for_tax_year(tx_list, start_date, end_date)
     raw = build_tax_savings_tips(tx_list)
     return TaxSavingsTipsResponse.model_validate(raw)
+
+
+@app.get("/insights/profit-pulse", response_model=ProfitPulseResponse)
+async def profit_pulse_insights(
+    include_tax_estimate: bool = False,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """Rolling profit from linked bank rows (polling-friendly; not accrual accounting)."""
+    tx_url = os.getenv("TRANSACTIONS_SERVICE_URL", "").strip()
+    tx_list: list[dict[str, Any]] = []
+    if tx_url:
+        try:
+            data = await get_json_with_retry(
+                tx_url,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                timeout=15.0,
+            )
+            if isinstance(data, list):
+                tx_list = [t for t in data if isinstance(t, dict)][:8000]
+        except httpx.HTTPError:
+            tx_list = []
+    raw: dict[str, Any] = build_profit_pulse(tx_list)
+    if include_tax_estimate:
+        tax_url = os.getenv(
+            "TAX_ENGINE_CALCULATE_URL", "http://tax-engine/calculate"
+        ).strip()
+        if tax_url:
+            today = datetime.date.today()
+            ty_start = uk_tax_year_start_on(today)
+            try:
+                async with httpx.AsyncClient() as client:
+                    r = await client.post(
+                        tax_url,
+                        headers={
+                            "Authorization": f"Bearer {bearer_token}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "start_date": ty_start.isoformat(),
+                            "end_date": today.isoformat(),
+                            "jurisdiction": "UK",
+                        },
+                        timeout=12.0,
+                    )
+                if r.status_code == 200:
+                    body = r.json()
+                    if isinstance(body, dict):
+                        est = body.get("estimated_tax_due")
+                        if isinstance(est, (int, float)):
+                            raw["estimated_tax_due_ytd_gbp"] = float(est)
+            except httpx.HTTPError:
+                raw["estimated_tax_due_ytd_gbp"] = None
+    return ProfitPulseResponse.model_validate(raw)
 
 
 @app.post("/mortgage/checklist", response_model=MortgageChecklistResponse)

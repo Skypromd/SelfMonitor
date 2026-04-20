@@ -762,6 +762,7 @@ services:
       TRANSACTIONS_SERVICE_URL: "${ANALYTICS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       DOCUMENTS_SERVICE_URL: "${ANALYTICS_DOCUMENTS_SERVICE_URL:-http://documents-service/documents}"
       USER_PROFILE_SERVICE_URL: "${ANALYTICS_USER_PROFILE_SERVICE_URL:-http://user-profile-service/profiles/me}"
+      TAX_ENGINE_CALCULATE_URL: "${TAX_ENGINE_CALCULATE_URL:-http://tax-engine/calculate}"
     networks:
       - default_network
 
