@@ -21,7 +21,12 @@ from .calculate_extended import (
     rough_employee_class1_annual,
     student_loan_repayment_annual,
 )
-from .calculators import calculate_crypto_tax, calculate_dividend_tax
+from .calculators import (
+    UKSelfEmployedTaxResult,
+    calculate_crypto_tax,
+    calculate_dividend_tax,
+    calculate_self_employed_tax,
+)
 from .telemetry import setup_telemetry
 
 logger = logging.getLogger(__name__)
@@ -771,6 +776,45 @@ def _txn_dict_min_date(transactions: list[dict], min_d: datetime.date) -> list[d
         if td >= min_d:
             out.append(t)
     return out
+
+
+class PublicSelfEmployedEstimateRequest(BaseModel):
+    gross_trading_income: float = Field(..., ge=0, le=10_000_000)
+    allowable_expenses: float = Field(0.0, ge=0, le=10_000_000)
+    use_trading_allowance: bool = False
+    student_loan_plan: Optional[str] = None
+
+
+class PublicSelfEmployedEstimateResponse(BaseModel):
+    result: UKSelfEmployedTaxResult
+    disclaimer: str
+    tax_year_label: str = "2025/26"
+
+
+_PUBLIC_SE_DISCLAIMER = (
+    "Illustrative UK self-employment estimate using in-engine 2025/26-style bands and NI rules. "
+    "Not tax or legal advice. For bank-linked MTD figures and filing, create an account."
+)
+
+
+@app.post("/public/self-employed-estimate", response_model=PublicSelfEmployedEstimateResponse)
+async def public_self_employed_estimate(body: PublicSelfEmployedEstimateRequest):
+    """No authentication: manual inputs only (SEO / lead magnet)."""
+    if body.allowable_expenses > body.gross_trading_income + 0.01:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Allowable expenses cannot exceed gross trading income.",
+        )
+    result = calculate_self_employed_tax(
+        gross_trading_income=body.gross_trading_income,
+        allowable_expenses=body.allowable_expenses,
+        use_trading_allowance=body.use_trading_allowance,
+        student_loan_plan=body.student_loan_plan,
+    )
+    return PublicSelfEmployedEstimateResponse(
+        result=result,
+        disclaimer=_PUBLIC_SE_DISCLAIMER,
+    )
 
 
 @app.get("/metrics")

@@ -210,10 +210,10 @@
 - [ ] Email-кампания существующим юзерам: "Invite a friend, get £25"
 
 ### 3.2 Бесплатный MTD калькулятор (SEO-магнит)
-- [ ] Лендинг: "UK Self-Employed Tax Calculator 2026"
-- [ ] Без регистрации: ввёл доход → получил расчёт Income Tax + NI + take-home pay
-- [ ] CTA: "Want to file automatically? Sign up free"
-- [ ] SEO на 10 языках: "Kalkulator podatków UK" (польский), "Calculator impozit UK" (румынский)
+- [x] Лендинг: `/tax-calculator-uk` + `POST /public/self-employed-estimate` (tax-engine, без JWT)
+- [x] Без регистрации: доход/расходы → Income Tax + NI + SL + take-home (модель `calculate_self_employed_tax`, 2025/26-style)
+- [x] CTA на странице → `/register`
+- [ ] SEO на 10 языках: отдельные локализованные лендинги — не делали (страница EN)
 
 ### 3.3 Партнёрство с accountants
 - [ ] Accountant portal: бухгалтер видит всех клиентов, их данные, подачи

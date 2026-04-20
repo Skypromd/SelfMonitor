@@ -585,3 +585,25 @@ def test_calculate_and_submit_rejects_non_quarter_partial_period_when_mtd_requir
         )
     assert response.status_code == 400
     assert "submission period must match an HMRC quarter" in response.json()["detail"]
+
+
+def test_public_self_employed_estimate_no_auth():
+    response = client.post(
+        "/public/self-employed-estimate",
+        json={"gross_trading_income": 50000, "allowable_expenses": 5000, "use_trading_allowance": False},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["tax_year_label"] == "2025/26"
+    assert "disclaimer" in data and len(data["disclaimer"]) > 20
+    assert data["result"]["gross_trading_income"] == 50000
+    assert data["result"]["total_tax_and_ni"] > 0
+    assert data["result"]["net_take_home"] > 0
+
+
+def test_public_self_employed_estimate_rejects_expenses_over_income():
+    response = client.post(
+        "/public/self-employed-estimate",
+        json={"gross_trading_income": 1000, "allowable_expenses": 5000},
+    )
+    assert response.status_code == 400

@@ -1317,6 +1317,7 @@ export default function LandingPage() {
               <div>
                 <p className={styles.footerColTitle}>Legal</p>
                 <ul className={styles.footerLinks}>
+                  <li><Link href="/tax-calculator-uk">UK tax calculator (free)</Link></li>
                   <li><Link href="/privacy">Privacy Policy</Link></li>
                   <li><Link href="/terms">Terms of Service</Link></li>
                   <li><Link href="/cookies">Cookie Policy</Link></li>
