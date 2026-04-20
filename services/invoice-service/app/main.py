@@ -1,14 +1,17 @@
 import asyncio
+import logging
 import os
+from decimal import Decimal
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, status, Query, BackgroundTasks
+
+import stripe
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.responses import FileResponse
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 
 from . import crud, models, schemas
 from .database import get_db
@@ -16,6 +19,9 @@ from .pdf_generator import PDFGenerator
 from .invoice_calculator import InvoiceCalculator
 from .reporting_service import InvoiceReportingService
 from .sync_service import InvoiceTransactionSync
+from .stripe_invoice import create_stripe_payment_link, parse_checkout_session_completed
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="MyNetTax Invoice Service",
@@ -593,7 +599,7 @@ async def create_payment_link(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a Stripe payment link for an invoice"""
+    """Generate a Stripe Payment Link for an invoice (reuses stored URL until paid)."""
     invoice = await crud.get_invoice(db, invoice_id, user_id)
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -601,17 +607,114 @@ async def create_payment_link(
     if invoice.status == "paid":
         raise HTTPException(status_code=400, detail="Invoice already paid")
 
-    payment_link = f"https://pay.mynettax.app/invoice/{invoice_id}"
+    if getattr(invoice, "stripe_payment_link_url", None):
+        url = invoice.stripe_payment_link_url
+        return {
+            "invoice_id": invoice_id,
+            "payment_link": url,
+            "amount": float(invoice.total_amount),
+            "currency": invoice.currency or "GBP",
+            "client_name": invoice.client_name,
+            "expires_in": "until deactivated in Stripe Dashboard",
+            "message": f"Share this link with {invoice.client_name} to receive payment of £{invoice.total_amount}",
+        }
+
+    try:
+        url, _lid = create_stripe_payment_link(invoice=invoice, user_id=user_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except stripe.StripeError as exc:
+        msg = getattr(exc, "user_message", None) or str(exc)
+        raise HTTPException(status_code=502, detail=f"Stripe error: {msg}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await crud.update_invoice_stripe_link(
+        db,
+        invoice_id=invoice_id,
+        user_id=user_id,
+        link_id=_lid,
+        url=url,
+    )
 
     return {
         "invoice_id": invoice_id,
-        "payment_link": payment_link,
+        "payment_link": url,
         "amount": float(invoice.total_amount),
         "currency": invoice.currency or "GBP",
         "client_name": invoice.client_name,
-        "expires_in": "30 days",
+        "expires_in": "until deactivated in Stripe Dashboard",
         "message": f"Share this link with {invoice.client_name} to receive payment of £{invoice.total_amount}",
     }
+
+
+@app.post("/webhooks/stripe/invoices")
+async def stripe_invoices_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
+):
+    """Stripe webhook: mark invoice paid after Checkout completes (Payment Link)."""
+    wh = os.environ.get("STRIPE_INVOICE_WEBHOOK_SECRET", "").strip()
+    if not wh:
+        wh = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
+    if not wh:
+        raise HTTPException(
+            status_code=503,
+            detail="Stripe webhook signing secret not configured (STRIPE_INVOICE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET)",
+        )
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    payload = await request.body()
+    try:
+        event = stripe.Webhook.construct_event(payload, stripe_signature, wh)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid payload") from exc
+    except stripe.SignatureVerificationError as exc:
+        raise HTTPException(status_code=400, detail="Invalid signature") from exc
+
+    if event.get("type") != "checkout.session.completed":
+        return {"received": True}
+
+    if not await crud.claim_stripe_webhook_event(db, event["id"]):
+        return {"received": True, "duplicate": True}
+
+    parsed = parse_checkout_session_completed(event)
+    if not parsed:
+        return {"received": True}
+
+    invoice = await crud.get_invoice_by_id(db, parsed["invoice_id"])
+    if not invoice:
+        logger.warning("stripe invoice webhook: unknown invoice_id=%s", parsed["invoice_id"])
+        return {"received": True}
+
+    if invoice.status in ("paid", "cancelled"):
+        return {"received": True}
+
+    if (invoice.currency or "GBP").upper() != parsed["currency"]:
+        logger.warning("stripe invoice webhook: currency mismatch for invoice=%s", invoice.id)
+        return {"received": True}
+
+    expected = Decimal(str(invoice.total_amount))
+    paid_gbp = Decimal(parsed["amount_total_minor"]) / Decimal(100)
+    if abs(expected - paid_gbp) > Decimal("0.02"):
+        logger.warning("stripe invoice webhook: amount mismatch for invoice=%s", invoice.id)
+        return {"received": True}
+
+    inv_str = str(invoice.id)
+    if await crud.has_payment_with_reference(db, inv_str, parsed["checkout_session_id"]):
+        return {"received": True}
+
+    pdata = schemas.InvoicePaymentCreate(
+        amount=paid_gbp,
+        payment_method=schemas.PaymentMethod.STRIPE,
+        reference_number=parsed["checkout_session_id"][:100],
+        notes="Stripe Checkout (Payment Link)",
+    )
+    await crud.create_payment(db, inv_str, pdata)
+    await crud.update_invoice_status_from_payments(db, inv_str)
+    return {"received": True, "paid_invoice_id": inv_str}
 
 if __name__ == "__main__":
     import uvicorn

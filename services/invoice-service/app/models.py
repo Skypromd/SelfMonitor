@@ -30,6 +30,7 @@ class Invoice(Base):
     vat_rate = Column(Numeric(5, 2), nullable=False, default=20.0)  # UK VAT 20%
     vat_amount = Column(Numeric(10, 2), nullable=False, default=0)
     total_amount = Column(Numeric(10, 2), nullable=False, default=0)
+    paid_amount = Column(Numeric(10, 2), nullable=True, default=0)
 
     # Status & Metadata
     status = Column(String, nullable=False, default='draft')  # draft, sent, paid, overdue, cancelled
@@ -39,6 +40,8 @@ class Invoice(Base):
 
     # File Storage
     pdf_file_path = Column(String, nullable=True)
+    stripe_payment_link_id = Column(String(255), nullable=True)
+    stripe_payment_link_url = Column(Text, nullable=True)
 
     # Audit Trail
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -93,6 +96,13 @@ class InvoicePayment(Base):
 
     # Relationship
     invoice = relationship("Invoice", back_populates="payments")
+
+
+class StripeInvoiceWebhookEvent(Base):
+    __tablename__ = "stripe_invoice_webhook_events"
+
+    event_id = Column(String(255), primary_key=True)
+    received_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class InvoiceTemplate(Base):

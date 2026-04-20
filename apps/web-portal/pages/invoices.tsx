@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  CreditCard,
   Download,
   FilePlus,
   FileText,
@@ -48,6 +49,7 @@ type Invoice = {
   vat_amount: number;
   subtotal: number;
   line_items: LineItem[];
+  stripe_payment_link_url?: string | null;
 };
 
 type ReportSummary = {
@@ -104,6 +106,8 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
   // Delete confirm
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [csvExportBusy, setCsvExportBusy] = useState(false);
+  const [paymentLinkBusyId, setPaymentLinkBusyId] = useState<string | null>(null);
+  const [paymentLinkMsg, setPaymentLinkMsg] = useState('');
 
   // Form
   const [clientName, setClientName] = useState('');
@@ -252,6 +256,37 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
     }
   };
 
+  const createPaymentLink = async (invoiceId: string) => {
+    setPaymentLinkBusyId(invoiceId);
+    setPaymentLinkMsg('');
+    try {
+      const res = await fetch(`${INVOICE_SERVICE_URL}/invoices/${invoiceId}/payment-link`, {
+        method: 'POST',
+        headers: headers(),
+      });
+      const data = (await res.json().catch(() => ({}))) as { detail?: unknown; payment_link?: string };
+      if (!res.ok) {
+        const detail = data.detail;
+        const msg = typeof detail === 'string' ? detail : `Error ${res.status}`;
+        setPaymentLinkMsg(msg);
+        return;
+      }
+      const link = data.payment_link;
+      if (!link) {
+        setPaymentLinkMsg('No payment link in response.');
+        return;
+      }
+      await navigator.clipboard.writeText(link);
+      setPaymentLinkMsg('Stripe payment link copied to clipboard.');
+      void fetchInvoices();
+      setTimeout(() => setPaymentLinkMsg(''), 5000);
+    } catch {
+      setPaymentLinkMsg('Could not create payment link.');
+    } finally {
+      setPaymentLinkBusyId(null);
+    }
+  };
+
   const confirmDelete = async () => {
     if (!confirmDeleteId) return;
     await fetch(`${INVOICE_SERVICE_URL}/invoices/${confirmDeleteId}`, { method: 'DELETE', headers: headers() });
@@ -327,6 +362,8 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
   const fmt = (v: number, c = 'GBP') =>
     new Intl.NumberFormat('en-GB', { style: 'currency', currency: c }).format(v);
 
+  const canStripePaymentLink = (s: InvoiceStatus) => s !== 'paid' && s !== 'cancelled';
+
   const overdueCount = summary?.overdue_count ?? 0;
 
   return (
@@ -379,6 +416,22 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
               <div style={{ fontSize: '1.4rem', fontWeight: 700, color: c.warn ? '#f87171' : 'var(--text-primary)' }}>{c.value}</div>
             </div>
           ))}
+        </div>
+      )}
+
+      {paymentLinkMsg && (
+        <div
+          style={{
+            marginBottom: '0.75rem',
+            padding: '0.5rem 0.75rem',
+            borderRadius: 'var(--radius-md)',
+            fontSize: '0.85rem',
+            background: paymentLinkMsg.includes('clipboard') ? 'rgba(52,211,153,0.12)' : 'rgba(239,68,68,0.1)',
+            color: paymentLinkMsg.includes('clipboard') ? 'var(--text-primary)' : '#b91c1c',
+            border: `1px solid ${paymentLinkMsg.includes('clipboard') ? 'rgba(52,211,153,0.35)' : 'rgba(239,68,68,0.35)'}`,
+          }}
+        >
+          {paymentLinkMsg}
         </div>
       )}
 
@@ -628,6 +681,25 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
                               <Send size={15} />
                             </button>
                           )}
+                          {canStripePaymentLink(inv.status) && (
+                            <button
+                              type="button"
+                              onClick={() => void createPaymentLink(inv.id)}
+                              disabled={paymentLinkBusyId === inv.id}
+                              title="Copy Stripe payment link"
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                cursor: paymentLinkBusyId === inv.id ? 'wait' : 'pointer',
+                                color: '#0d9488',
+                                padding: '3px 5px',
+                                borderRadius: 'var(--radius-xs)',
+                                opacity: paymentLinkBusyId === inv.id ? 0.5 : 1,
+                              }}
+                            >
+                              <CreditCard size={15} />
+                            </button>
+                          )}
                           <button onClick={() => downloadPDF(inv.id, inv.invoice_number)} title="Download PDF"
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '3px 5px', borderRadius: 'var(--radius-xs)' }}>
                             <Download size={15} />
@@ -681,6 +753,29 @@ export default function InvoicesPage({ token }: InvoicesPageProps) {
                         <button onClick={() => sendInvoice(inv.id)}
                           style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0.3rem 0.6rem', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(96,165,250,0.4)', background: 'rgba(96,165,250,0.1)', color: '#60a5fa', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 500 }}>
                           <Send size={13} /> Send
+                        </button>
+                      )}
+                      {canStripePaymentLink(inv.status) && (
+                        <button
+                          type="button"
+                          onClick={() => void createPaymentLink(inv.id)}
+                          disabled={paymentLinkBusyId === inv.id}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '0.3rem 0.6rem',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid rgba(13,148,136,0.45)',
+                            background: 'rgba(13,148,136,0.08)',
+                            color: '#0d9488',
+                            cursor: paymentLinkBusyId === inv.id ? 'wait' : 'pointer',
+                            fontSize: '0.78rem',
+                            fontWeight: 500,
+                            opacity: paymentLinkBusyId === inv.id ? 0.6 : 1,
+                          }}
+                        >
+                          <CreditCard size={13} /> Pay link
                         </button>
                       )}
                       <button onClick={() => downloadPDF(inv.id, inv.invoice_number)}

@@ -193,10 +193,10 @@
 - [ ] Push раз в месяц — не делали
 
 ### 2.6 Instant invoice payments
-- [ ] Stripe Payment Links в каждом инвойсе
-- [ ] Клиент получает email → нажимает "Pay now" → оплата картой
-- [ ] Webhook: Stripe payment.succeeded → инвойс статус = "paid"
-- [ ] Уведомление юзеру: "Invoice #INV-001 paid! £500 received"
+- [x] Stripe Payment Links: `POST /invoices/{id}/payment-link` (Stripe Payment Link API), UI «Pay link» / иконка на `invoices.tsx`
+- [ ] Клиент получает email → нажимает "Pay now" → оплата картой — не делали (только копирование ссылки)
+- [x] Webhook: `POST /webhooks/stripe/invoices` — `checkout.session.completed` → запись оплаты (Stripe) + статус paid через `update_invoice_status_from_payments`
+- [ ] Уведомление юзеру: "Invoice #INV-001 paid! £500 received" — не делали (push/email)
 
 ---
 

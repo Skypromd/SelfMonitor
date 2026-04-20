@@ -124,6 +124,7 @@ class Invoice(InvoiceBase):
 
     status: InvoiceStatus
     pdf_file_path: Optional[str]
+    stripe_payment_link_url: Optional[str] = None
 
     created_at: datetime
     updated_at: datetime

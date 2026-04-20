@@ -385,6 +385,9 @@ services:
     environment:
       DATABASE_URL: "postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_invoices"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-}"
+      STRIPE_INVOICE_WEBHOOK_SECRET: "${STRIPE_INVOICE_WEBHOOK_SECRET:-}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
       PDF_OUTPUT_DIR: /app/pdfs
       REDIS_URL: "${INVOICE_REDIS_URL:-redis://redis-master:6379/0}"
       TRANSACTIONS_SERVICE_URL: http://transactions-service:80

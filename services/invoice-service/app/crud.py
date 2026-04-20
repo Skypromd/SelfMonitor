@@ -2,7 +2,8 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime, date
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, desc, asc
+from sqlalchemy import select, and_, or_, func, desc, asc, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from uuid import uuid4
 
@@ -75,6 +76,69 @@ async def get_invoice(db: AsyncSession, invoice_id: str, user_id: str) -> Option
         ))
     )
     return result.scalar_one_or_none()
+
+
+async def get_invoice_by_id(
+    db: AsyncSession, invoice_id: str
+) -> Optional[models.Invoice]:
+    result = await db.execute(
+        select(models.Invoice)
+        .options(
+            selectinload(models.Invoice.line_items),
+            selectinload(models.Invoice.payments),
+        )
+        .where(models.Invoice.id == invoice_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def update_invoice_stripe_link(
+    db: AsyncSession,
+    invoice_id: str,
+    user_id: str,
+    link_id: str,
+    url: str,
+) -> None:
+    await db.execute(
+        update(models.Invoice)
+        .where(
+            and_(
+                models.Invoice.id == invoice_id,
+                models.Invoice.user_id == user_id,
+            )
+        )
+        .values(
+            stripe_payment_link_id=link_id,
+            stripe_payment_link_url=url,
+        )
+    )
+    await db.commit()
+
+
+async def claim_stripe_webhook_event(db: AsyncSession, event_id: str) -> bool:
+    row = models.StripeInvoiceWebhookEvent(event_id=event_id)
+    db.add(row)
+    try:
+        await db.commit()
+        return True
+    except IntegrityError:
+        await db.rollback()
+        return False
+
+
+async def has_payment_with_reference(
+    db: AsyncSession, invoice_id: str, reference: str
+) -> bool:
+    result = await db.execute(
+        select(models.InvoicePayment.id).where(
+            and_(
+                models.InvoicePayment.invoice_id == invoice_id,
+                models.InvoicePayment.reference_number == reference,
+            )
+        ).limit(1)
+    )
+    return result.scalar_one_or_none() is not None
+
 
 async def get_invoices_filtered(
     db: AsyncSession,
