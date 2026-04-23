@@ -38,7 +38,13 @@ Handles user authentication, registration, and token management.
 
 ## Running Locally
 
+Build context for Docker is the **repository root** (`libs/shared_auth` is copied into the image; `PYTHONPATH=/code`).
+
+From repo root (so `libs` resolves):
+
 ```bash
+export PYTHONPATH="$(pwd)"   # Windows: set PYTHONPATH=%CD%
+cd services/auth-service
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
@@ -46,5 +52,6 @@ uvicorn app.main:app --reload
 ## Testing
 
 ```bash
+# From repo root with PYTHONPATH set as above, or from this directory (tests add repo root to sys.path):
 pytest tests/test_main.py
 ```

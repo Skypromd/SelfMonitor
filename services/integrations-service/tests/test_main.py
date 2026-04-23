@@ -144,6 +144,65 @@ def test_submit_hmrc_mtd_quarterly_update_rejects_without_confirmation_when_requ
     assert "explicit confirmation" in response.json()["detail"].lower()
 
 
+def test_internal_mtd_quarterly_draft_forbidden(monkeypatch, tmp_path):
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "sec-internal-draft-1")
+    report = _valid_quarterly_payload()["report"]
+    r = client.post(
+        "/internal/hmrc/mtd/quarterly-update/draft",
+        json={"user_id": TEST_USER_ID, "report": report},
+        headers={"X-Internal-Token": "wrong-token"},
+    )
+    assert r.status_code == 403
+
+
+def test_internal_mtd_quarterly_draft_ok(monkeypatch, tmp_path):
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "sec-internal-draft-1")
+    report = _valid_quarterly_payload()["report"]
+    r = client.post(
+        "/internal/hmrc/mtd/quarterly-update/draft",
+        json={"user_id": "internal-draft-user@example.com", "report": report},
+        headers={"X-Internal-Token": "sec-internal-draft-1"},
+    )
+    assert r.status_code == 201
+    assert r.json().get("draft_id")
+
+
+def test_mtd_draft_latest_empty(monkeypatch, tmp_path):
+    _isolated_db(monkeypatch, tmp_path)
+    r = client.get("/integrations/hmrc/mtd/quarterly-update/draft/latest", headers=_headers())
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("draft_id") is None
+
+
+def test_mtd_confirm_blocked_while_awaiting_accountant(monkeypatch, tmp_path):
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_REQUIRE_EXPLICIT_CONFIRM", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    report = _valid_quarterly_payload()["report"]
+    r_draft = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/draft",
+        headers=_headers(),
+        json={"report": report},
+    )
+    assert r_draft.status_code == 201
+    draft_id = r_draft.json()["draft_id"]
+    r_tr = client.post(
+        f"/integrations/hmrc/mtd/quarterly-update/draft/{draft_id}/workflow",
+        headers=_headers(),
+        json={"target_status": "ready_for_accountant_review"},
+    )
+    assert r_tr.status_code == 200
+    r_conf = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/confirm",
+        headers=_headers(),
+        json={"draft_id": draft_id},
+    )
+    assert r_conf.status_code == 409
+
+
 def test_hmrc_mtd_draft_confirm_submit_flow(monkeypatch, tmp_path):
     _isolated_db(monkeypatch, tmp_path)
     monkeypatch.setattr("app.main.HMRC_REQUIRE_EXPLICIT_CONFIRM", True)
@@ -571,6 +630,58 @@ def test_unverified_cis_ack_posts_compliance_audit(monkeypatch):
         json=body,
     )
     assert response.status_code == 202
-    audit.assert_awaited()
-    assert audit.await_args.kwargs["action"] == "cis_unverified_submit_confirmed"
+    assert audit.await_count == 2
+
+    def _call_kwargs(c):
+        kw = getattr(c, "kwargs", None)
+        if kw:
+            return kw
+        return c[1] if isinstance(c, tuple) and len(c) > 1 else {}
+
+    actions = {_call_kwargs(c)["action"] for c in audit.await_args_list}
+    assert actions == {"cis_unverified_submit_confirmed", "mtd_quarterly_submitted"}
     assert audit.await_args.kwargs["compliance_base_url"] == "http://compliance:80"
+
+
+def test_quarterly_submit_posts_mtd_compliance_audit(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    monkeypatch.setattr("app.main.COMPLIANCE_SERVICE_URL", "http://compliance:80")
+    audit = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.main.post_audit_event", audit)
+    response = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=_valid_quarterly_payload(),
+    )
+    assert response.status_code == 202
+    audit.assert_awaited_once()
+    assert audit.await_args.kwargs["action"] == "mtd_quarterly_submitted"
+    assert audit.await_args.kwargs["details"]["quarter"] == "Q1"
+    assert audit.await_args.kwargs["details"]["correlation_id"] == "corr-123"
+
+
+def test_final_declaration_posts_mtd_compliance_audit(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    monkeypatch.setattr("app.main.COMPLIANCE_SERVICE_URL", "http://compliance:80")
+    audit = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.main.post_audit_event", audit)
+    body = {
+        "tax_year_start": "2025-04-06",
+        "tax_year_end": "2026-04-05",
+        "total_income": 50000.0,
+        "total_expenses": 10000.0,
+        "declaration": "true_and_complete",
+    }
+    response = client.post(
+        "/integrations/hmrc/mtd/final-declaration",
+        headers=_headers(),
+        json=body,
+    )
+    assert response.status_code == 202
+    audit.assert_awaited_once()
+    assert audit.await_args.kwargs["action"] == "mtd_final_declaration_submitted"
+    assert audit.await_args.kwargs["details"]["declaration_status"] == "accepted"

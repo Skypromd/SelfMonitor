@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import Depends, HTTPException, status
 from jose import JWTError, jwt
 
+from .auth_secret_preflight import resolve_auth_secret_key
 from .jwt_fastapi import build_jwt_auth_dependencies
 
 _get_bearer_token, _ = build_jwt_auth_dependencies()
@@ -25,7 +26,7 @@ _DEFAULT_FREE = {
     "plan": "free",
     "bank_connections_limit": 1,
     "bank_sync_daily_limit": 0,
-    "transactions_per_month_limit": 200,
+    "transactions_per_month_limit": 20,
     "storage_limit_gb": 1,
     "transaction_history_months": 3,
     "hmrc_direct_submission": False,
@@ -33,6 +34,24 @@ _DEFAULT_FREE = {
     "mortgage_reports": False,
     "advanced_analytics": False,
     "cash_flow_forecast": False,
+}
+
+# Fallback when JWT omits bank_connections_limit (align with auth-service PLAN_FEATURES).
+_BANK_CONNECTIONS_BY_PLAN: dict[str, int] = {
+    "free": 1,
+    "starter": 3,
+    "growth": 2,
+    "pro": 5,
+    "business": 10,
+}
+
+# Fallback when JWT omits transactions_per_month_limit (align with auth-service PLAN_FEATURES).
+_TRANSACTIONS_PER_MONTH_BY_PLAN: dict[str, int] = {
+    "free": 20,
+    "starter": 999999,
+    "growth": 2000,
+    "pro": 5000,
+    "business": 999999,
 }
 
 # Fallback when JWT predates bank_sync_daily_limit claim (align with auth-service PLAN_FEATURES).
@@ -121,10 +140,7 @@ class PlanLimits:
 
 
 def _secret_and_algo() -> tuple[str, str]:
-    secret = os.environ["AUTH_SECRET_KEY"].strip()
-    if not secret:
-        raise RuntimeError("AUTH_SECRET_KEY must be non-empty")
-    return secret, "HS256"
+    return resolve_auth_secret_key(), "HS256"
 
 
 def _int_claim(payload: dict[str, Any], key: str, default: int) -> int:
@@ -175,14 +191,18 @@ def plan_limits_from_payload(payload: dict[str, Any]) -> PlanLimits:
     doc_cap_fallback = _DOCUMENTS_MAX_BY_PLAN.get(plan, _DOCUMENTS_MAX_BY_PLAN["free"])
     tier_fallback = _EVIDENCE_PACK_TIER_BY_PLAN.get(plan, "none")
     credits_fallback = _ACCOUNTANT_REVIEW_CREDITS_BY_PLAN.get(plan, 0)
+    bank_conn_fallback = _BANK_CONNECTIONS_BY_PLAN.get(plan, _DEFAULT_FREE["bank_connections_limit"])
+    tx_per_mo_fallback = _TRANSACTIONS_PER_MONTH_BY_PLAN.get(
+        plan, _DEFAULT_FREE["transactions_per_month_limit"]
+    )
     return PlanLimits(
         plan=plan,
-        bank_connections_limit=_int_claim(payload, "bank_connections_limit", _DEFAULT_FREE["bank_connections_limit"]),
+        bank_connections_limit=_int_claim(payload, "bank_connections_limit", bank_conn_fallback),
         bank_sync_daily_limit=_int_claim(payload, "bank_sync_daily_limit", sync_fallback),
         transactions_per_month_limit=_int_claim(
             payload,
             "transactions_per_month_limit",
-            _DEFAULT_FREE["transactions_per_month_limit"],
+            tx_per_mo_fallback,
         ),
         storage_limit_gb=_int_claim(payload, "storage_limit_gb", _DEFAULT_FREE["storage_limit_gb"]),
         transaction_history_months=_int_claim(payload, "transaction_history_months", hist_fallback),

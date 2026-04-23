@@ -4,20 +4,19 @@ from __future__ import annotations
 
 import os
 
-_ALLOW_WEAK_JWT = os.getenv("AUTH_ALLOW_WEAK_JWT_SECRET", "").strip().lower() in (
+from libs.shared_auth.auth_secret_preflight import resolve_auth_secret_key
+
+SECRET_KEY = resolve_auth_secret_key()
+_allow_weak_jwt = os.getenv("AUTH_ALLOW_WEAK_JWT_SECRET", "").strip().lower() in (
     "1",
     "true",
     "yes",
 )
-_raw_auth_secret = os.environ["AUTH_SECRET_KEY"].strip()
-if not _raw_auth_secret:
-    raise RuntimeError("AUTH_SECRET_KEY must be set and non-empty")
-if not _ALLOW_WEAK_JWT and len(_raw_auth_secret) < 32:
+if not _allow_weak_jwt and len(SECRET_KEY) < 32:
     raise RuntimeError(
         "AUTH_SECRET_KEY must be at least 32 characters for production-like deployments. "
         "For local dev or CI, set AUTH_ALLOW_WEAK_JWT_SECRET=1."
     )
-SECRET_KEY = _raw_auth_secret
 ALGORITHM = "HS256"
 INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
@@ -59,6 +58,7 @@ APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:3000")
 COMPLIANCE_SERVICE_URL = os.getenv(
     "COMPLIANCE_SERVICE_URL", "http://compliance-service:8000"
 )
+REFERRAL_SERVICE_URL = os.getenv("REFERRAL_SERVICE_URL", "http://referral-service:80").rstrip("/")
 
 _AUTH_CORS_BASE = ["http://localhost:3000", "http://192.168.0.248:3000"]
 _AUTH_CORS_EXTRA = os.getenv("AUTH_CORS_EXTRA_ORIGINS", "").strip()

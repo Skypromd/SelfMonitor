@@ -686,6 +686,39 @@ def test_cis_evidence_pack_zip(db_session):
     assert r.content[:2] == b"PK"
 
 
+def test_cis_evidence_share_token_forbidden_on_starter(db_session):
+    r = client.post("/cis/evidence-pack/share-token", headers=get_auth_headers(plan="starter"))
+    assert r.status_code == 403
+
+
+def test_cis_evidence_share_and_shared_zip_roundtrip(db_session):
+    mint = client.post("/cis/evidence-pack/share-token", headers=get_auth_headers(plan="growth"))
+    assert mint.status_code == 201
+    tok = mint.json()["token"]
+    dl = client.get(f"/cis/evidence-pack/shared-zip?token={tok}")
+    assert dl.status_code == 200
+    assert dl.content[:2] == b"PK"
+
+
+def test_cis_shared_zip_invalid_token(db_session):
+    r = client.get("/cis/evidence-pack/shared-zip?token=definitely-not-a-valid-signed-token")
+    assert r.status_code == 401
+
+
+def test_cis_shared_zip_posts_compliance_audit(db_session, monkeypatch):
+    monkeypatch.setattr("app.crud_cis.COMPLIANCE_SERVICE_URL", "http://compliance:80")
+    audit = AsyncMock(return_value=True)
+    monkeypatch.setattr("app.main.post_audit_event", audit)
+    mint = client.post("/cis/evidence-pack/share-token", headers=get_auth_headers(plan="growth"))
+    assert mint.status_code == 201
+    tok = mint.json()["token"]
+    dl = client.get(f"/cis/evidence-pack/shared-zip?token={tok}")
+    assert dl.status_code == 200
+    audit.assert_awaited()
+    assert audit.await_args.kwargs["action"] == "cis_evidence_pack_shared_download"
+    assert audit.await_args.kwargs["compliance_base_url"] == "http://compliance:80"
+
+
 def test_cis_dismiss_sends_audit_when_compliance_configured(db_session, monkeypatch):
     monkeypatch.setattr("app.crud_cis.COMPLIANCE_SERVICE_URL", "http://compliance:80")
     audit = AsyncMock(return_value=True)

@@ -3,12 +3,12 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Header, Query, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from . import crud, models, schemas
+from . import billing_credit, crud, models, schemas
 from .database import engine, get_db
 
 app = FastAPI(
@@ -50,6 +50,70 @@ async def on_startup():
 async def health_check():
     return {"status": "ok"}
 
+
+def _require_internal_token(x_internal_token: str | None) -> None:
+    if not billing_credit.INTERNAL_SERVICE_SECRET:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="internal_calls_not_configured",
+        )
+    if not x_internal_token or x_internal_token != billing_credit.INTERNAL_SERVICE_SECRET:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+
+@app.post("/internal/apply-signup-referral")
+async def internal_apply_signup_referral(
+    body: schemas.InternalReferralSignup,
+    db: AsyncSession = Depends(get_db),
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+):
+    """Called by auth-service after user registers with ?ref= (no JWT yet)."""
+    _require_internal_token(x_internal_token)
+    ref_email = str(body.referee_email).lower().strip()
+    code = body.code.strip().upper()
+    if await crud.count_usages_for_referred_user(db, ref_email) > 0:
+        return {"status": "noop", "detail": "referral_already_recorded"}
+    referral_code = await crud.get_referral_code_by_code(db, code)
+    if not referral_code or not referral_code.is_active:
+        raise HTTPException(status_code=404, detail="Invalid or expired referral code")
+    if referral_code.user_id.lower().strip() == ref_email:
+        raise HTTPException(status_code=400, detail="Cannot use your own referral code")
+    usage_count = await crud.get_referral_usage_count(db, referral_code.id)
+    if usage_count >= referral_code.max_uses:
+        raise HTTPException(status_code=400, detail="Referral code has reached maximum uses")
+    usage = await crud.create_referral_usage(
+        db,
+        schemas.ReferralUsageCreate(
+            referral_code_id=referral_code.id,
+            referred_user_id=ref_email,
+            referrer_user_id=referral_code.user_id,
+        ),
+    )
+    await billing_credit.grant_referral_pair_credits(
+        referrer_user_id=referral_code.user_id,
+        referee_user_id=ref_email,
+        amount_gbp=float(referral_code.reward_amount),
+        usage_id=str(usage.id),
+    )
+    return {
+        "status": "ok",
+        "referrer_reward": referral_code.reward_amount,
+        "referee_reward": referral_code.reward_amount,
+    }
+
+
+@app.get("/internal/top-referrers")
+async def internal_top_referrers(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    limit: int = Query(10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+):
+    _require_internal_token(x_internal_token)
+    items = await crud.top_referrers_in_month(db, year, month, limit)
+    return {"items": items, "year": year, "month": month}
+
 @app.post("/referral-codes", response_model=schemas.ReferralCode)
 async def create_referral_code(
     user_id: str = Depends(get_current_user_id),
@@ -90,8 +154,13 @@ async def validate_referral_code(
     db: AsyncSession = Depends(get_db)
 ):
     """Validate and apply a referral code during registration"""
-    # Get referral code
-    referral_code = await crud.get_referral_code_by_code(db, request.code)
+    if await crud.count_usages_for_referred_user(db, user_id) > 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Referral rewards already applied for this account",
+        )
+    code = request.code.strip().upper()
+    referral_code = await crud.get_referral_code_by_code(db, code)
     if not referral_code or not referral_code.is_active:
         raise HTTPException(status_code=404, detail="Invalid or expired referral code")
 
@@ -110,6 +179,12 @@ async def validate_referral_code(
         referred_user_id=user_id,
         referrer_user_id=referral_code.user_id
     ))
+    await billing_credit.grant_referral_pair_credits(
+        referrer_user_id=referral_code.user_id,
+        referee_user_id=user_id,
+        amount_gbp=float(referral_code.reward_amount),
+        usage_id=str(usage.id),
+    )
 
     return {
         "status": "valid",

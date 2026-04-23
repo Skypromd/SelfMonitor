@@ -46,6 +46,7 @@ jobs:
           - categorization-service
           - consent-service
           - documents-service
+          - finops-monitor
           - integrations-service
           - mtd-agent
           - partner-registry
@@ -79,6 +80,8 @@ jobs:
         working-directory: ./services/${{ matrix.service }}
         env:
           AUTH_SECRET_KEY: test-ci-auth-secret
+          AUTH_ALLOW_WEAK_JWT_SECRET: "1"
+          AUTH_REQUIRE_ADMIN_2FA: "false"
           INTERNAL_SERVICE_SECRET: test-ci-internal-service-secret
           REGULATORY_SKIP_EXTERNAL_WATCH: "1"
         run: |
@@ -104,6 +107,7 @@ jobs:
           - categorization-service
           - consent-service
           - documents-service
+          - finops-monitor
           - integrations-service
           - mtd-agent
           - partner-registry
@@ -138,6 +142,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}
+      AUTH_SECRET_KEY: test-smoke-auth-secret-key-32chars!!
+      AUTH_ALLOW_WEAK_JWT_SECRET: "1"
 
     steps:
       - name: Checkout code

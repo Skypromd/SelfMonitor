@@ -90,6 +90,12 @@ components:
         details:
           type: object
           additionalProperties: true
+        prev_chain_hash:
+          type: string
+          description: SHA-256 hex of previous row chain_hash for this user, or genesis (64 zeros) for first chained row
+        chain_hash:
+          type: string
+          description: SHA-256 hex over prev_chain_hash and canonical event payload
       required:
         - id
         - timestamp

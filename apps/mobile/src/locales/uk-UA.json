@@ -259,7 +259,13 @@
     "exported_tax": "Податковий підсумок експортовано.",
     "exported_documents": "Документи експортовано.",
     "export_error": "Експорт не вдався.",
-    "offline_error": "Ви офлайн. Експортуйте, коли будете онлайн."
+    "offline_error": "Ви офлайн. Експортуйте, коли будете онлайн.",
+    "cis_evidence_link": "Посилання на CIS evidence pack",
+    "cis_evidence_shared": "CIS evidence pack — URL для бухгалтера (термін дії визначає сервер):",
+    "cis_evidence_note": "Передавайте лише захищеним каналом. Посилання працює без входу.",
+    "cis_evidence_done": "Посилання надіслано.",
+    "cis_evidence_plan": "CIS evidence pack з тарифу Growth.",
+    "cis_evidence_failed": "Не вдалося створити посилання."
   },
   "assistant": {
     "title": "AI асистент",
@@ -315,6 +321,7 @@
   "transactions": {
     "title": "Транзакції",
     "subtitle": "Категоризуйте й відстежуйте доходи та витрати.",
+    "business_scope": "Бізнес",
     "empty_state": "Поки немає транзакцій.",
     "connect_bank": "Підключити банк",
     "csv_import": "Імпорт CSV",
@@ -480,7 +487,18 @@
     "save_error": "Не вдалося оновити підписку.",
     "saved_offline": "Збережено офлайн. Синхронізація після онлайна.",
     "active_label": "Активна",
-    "trial_left": "Проба закінчиться через"
+    "trial_left": "Проба закінчиться через",
+    "stripe_card_title": "Платна підписка (Stripe)",
+    "stripe_plan_label": "План",
+    "stripe_status_label": "Статус",
+    "stripe_period_end": "Поточний період до",
+    "account_credit_label": "Кредит на рахунку",
+    "consult_sessions_label": "Доступні сесії з бухгалтером",
+    "consult_section_hint": "Додатково: платна сесія перевірки CIS (запис через підтримку).",
+    "consult_buy": "Купити сесію",
+    "consult_checkout_loading": "Відкриваємо оплату…",
+    "consult_checkout_error": "Не вдалося почати оплату.",
+    "billing_load_error": "Не вдалося завантажити дані Stripe."
   },
   "settings": {
     "title": "Налаштування",

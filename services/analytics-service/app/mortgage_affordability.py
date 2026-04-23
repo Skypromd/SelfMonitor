@@ -11,6 +11,7 @@ from typing import Any, Literal
 
 EmploymentKind = Literal["employed", "self_employed"]
 CreditBand = Literal["clean", "minor", "adverse"]
+PropertyKind = Literal["standard_residential", "buy_to_let", "leasehold_flat"]
 
 # Income multiples (illustrative planning bands — lender policy varies).
 EMPLOYED_INCOME_MULTIPLE = 4.5
@@ -19,6 +20,10 @@ SELF_EMPLOYED_INCOME_MULTIPLE_HIGH = 4.0
 SELF_EMPLOYED_INCOME_MULTIPLE_MID = 3.5
 
 STRESS_RATE_ADD_PCT_POINTS = 3.0
+
+# Bump each quarter when illustrative lender notes / multiples are reviewed (planning only).
+ILLUSTRATIVE_LENDERS_AS_OF = "2026-04-01"
+ILLUSTRATIVE_LENDERS_PACK_VERSION = 1
 
 NAMED_LENDER_SCENARIOS: list[dict[str, Any]] = [
     {
@@ -100,6 +105,7 @@ def _illustrative_fit_score(
     credit_band: CreditBand,
     years_trading: int | None,
     deposit_pct: float | None,
+    property_kind: PropertyKind = "standard_residential",
 ) -> tuple[float, list[str]]:
     """Heuristic 0–100 score for ordering scenarios only — not an approval probability."""
     reasons: list[str] = []
@@ -147,6 +153,21 @@ def _illustrative_fit_score(
             reasons.append(
                 f"Deposit below illustrative {need_dep}% for this scenario (you have ~{deposit_pct:.1f}%)."
             )
+
+    if property_kind == "leasehold_flat":
+        if is_specialist:
+            score += 2
+            reasons.append("Leasehold flat: service charge / ground rent complexity — specialists often cited for niche cases.")
+        else:
+            score -= 3
+            reasons.append("Leasehold flat: extra affordability checks common on mainstream products.")
+    elif property_kind == "buy_to_let":
+        if is_specialist:
+            score += 4
+            reasons.append("Buy-to-let: ICR / stress tests vary; specialist segment sometimes more flexible in illustrations.")
+        else:
+            score -= 2
+            reasons.append("Buy-to-let: rental stress and tax differ from owner-occupier — high-street fit may be lower in this model.")
 
     score = max(0.0, min(100.0, score))
     return round(score, 1), reasons
@@ -224,6 +245,8 @@ def build_affordability_result(
     additional_property: bool,
     credit_band: CreditBand = "clean",
     years_trading: int | None = None,
+    property_type: PropertyKind = "standard_residential",
+    ccj_in_past_6y: bool = False,
 ) -> dict[str, Any]:
     if annual_income_gbp <= 0:
         raise ValueError("annual_income_gbp must be positive")
@@ -237,6 +260,25 @@ def build_affordability_result(
         raise ValueError("deposit_gbp cannot be negative")
     if years_trading is not None and (years_trading < 0 or years_trading > 40):
         raise ValueError("years_trading must be between 0 and 40")
+
+    effective_credit: CreditBand = credit_band
+    if ccj_in_past_6y and credit_band == "clean":
+        effective_credit = "minor"
+
+    planner_notes: list[str] = []
+    if ccj_in_past_6y:
+        planner_notes.append(
+            "CCJ in the past 6 years (self-reported): real underwriting is case-specific; "
+            "illustrative fit uses a minor-credit tilt when you selected \"clean\"."
+        )
+    if property_type == "buy_to_let":
+        planner_notes.append(
+            "Buy-to-let: ICR, rental stress tests, and tax differ from a home you live in — confirm with a broker."
+        )
+    if property_type == "leasehold_flat":
+        planner_notes.append(
+            "Leasehold flat: service charges and ground rent affect affordability — lender treatment varies."
+        )
 
     deposit_pct: float | None = None
     if (
@@ -286,9 +328,10 @@ def build_affordability_result(
         cap = round(annual_income_gbp * mult, 2)
         fit, fit_reasons = _illustrative_fit_score(
             row,
-            credit_band=credit_band,
+            credit_band=effective_credit,
             years_trading=years_trading,
             deposit_pct=deposit_pct,
+            property_kind=property_type,
         )
         lender_rows.append(
             {
@@ -303,13 +346,18 @@ def build_affordability_result(
     disclaimer = (
         "Illustrative numbers only — not a mortgage offer, affordability assessment, or regulated advice. "
         "Lenders apply stress tests, credit scoring, and expenditure checks. "
-        "Lender ordering uses a heuristic fit score from credit band, deposit %, and trading history — not approval odds. "
+        "Lender ordering uses a heuristic fit score from credit band, deposit %, trading history, and optional "
+        "property/CCJ filters — not approval odds. "
         "SDLT is modelled for England using simplified bands; confirm with gov.uk / your conveyancer."
     )
 
     return {
         "employment": employment,
         "credit_band": credit_band,
+        "credit_band_effective": effective_credit,
+        "property_type": property_type,
+        "ccj_in_past_6y": ccj_in_past_6y,
+        "planner_notes": planner_notes,
         "years_trading": years_trading,
         "deposit_pct_computed": deposit_pct,
         "baseline_income_multiple": baseline,
@@ -335,4 +383,6 @@ def build_affordability_result(
         "term_years": term_years,
         "lender_scenarios": lender_rows,
         "disclaimer": disclaimer,
+        "illustrative_lenders_as_of": ILLUSTRATIVE_LENDERS_AS_OF,
+        "illustrative_lenders_pack_version": ILLUSTRATIVE_LENDERS_PACK_VERSION,
     }

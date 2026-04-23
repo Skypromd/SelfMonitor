@@ -7,10 +7,12 @@ JWT при логине получает лимиты и флаги (`libs/share
 
 | Plan | £/mo | Bank | Sync/day | History (mo) | Tx/mo | GB | HMRC guided | HMRC direct+fraud | VAT | CIS tracker | Acct. reviews/mo |
 |------|------|------|----------|--------------|-------|-----|-------------|-------------------|-----|-------------|------------------|
-| free | 0 | 1 | 0 | 3 | 200 | 1 | no | no | no | no | 0 |
-| starter | 12 | 1 | 1 | 3 | 500 | 2 | yes | no | no | yes | 0 |
+| free | 0 | 1 | 0 | 3 | 20 | 1 | no | no | no | no | 0 |
+| starter | 12 | 3 | 1 | 3 | unlimited* | 2 | yes | no | no | yes | 0 |
 | growth | 15 | 2 | 3 | 12 | 2000 | 6 | yes | no | no | yes | 0 |
 | pro | 18 | 5 | 10 | 24 | 5000 | 10 | yes | yes | yes | yes | 1 |
 | business | 28 | 10 | 25 | 36 | high | 25 | yes | yes | yes | yes | 4 |
 
 Остальные колонки (AI cat., OCR, mortgage, API, white-label) — без изменений по сравнению с предыдущей матрицей; см. `PLAN_FEATURES` в коде.
+
+\*Starter и Business: в JWT поле `transactions_per_month` = **999999** (практический «безлимит» для учёта лимитов в сервисах).

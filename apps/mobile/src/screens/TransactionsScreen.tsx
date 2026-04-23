@@ -17,6 +17,12 @@ import Chip from '../components/Chip';
 import { useTranslation } from '../hooks/useTranslation';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { apiRequest } from '../services/api';
+import {
+  fetchUserBusinesses,
+  readStoredTransactionsBusinessId,
+  writeStoredTransactionsBusinessId,
+  type UserBusinessRow,
+} from '../services/transactionsBusinessStorage';
 import { enqueueCategoryUpdate, flushQueue, getQueueCount } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing } from '../theme';
@@ -72,7 +78,47 @@ export default function TransactionsScreen() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [queuedCount, setQueuedCount] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [businesses, setBusinesses] = useState<UserBusinessRow[]>([]);
+  const [selectedBusinessId, setSelectedBusinessId] = useState<string | null>(null);
+  const [businessLoadError, setBusinessLoadError] = useState('');
   const effectiveAccountId = manualAccountId || accountId;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!token) {
+      setBusinesses([]);
+      setSelectedBusinessId(null);
+      setBusinessLoadError('');
+      return;
+    }
+    void (async () => {
+      setBusinessLoadError('');
+      try {
+        const rows = await fetchUserBusinesses(token);
+        if (cancelled) return;
+        setBusinesses(rows);
+        const stored = await readStoredTransactionsBusinessId(token);
+        const ids = new Set(rows.map((r) => r.id));
+        const pick = stored && ids.has(stored) ? stored : rows[0]?.id ?? null;
+        setSelectedBusinessId(pick);
+        if (pick) {
+          await writeStoredTransactionsBusinessId(token, pick);
+        }
+      } catch {
+        if (!cancelled) setBusinessLoadError('Could not load businesses');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const selectBusiness = async (id: string) => {
+    setSelectedBusinessId(id);
+    if (token) {
+      await writeStoredTransactionsBusinessId(token, id);
+    }
+  };
 
   const categoryOptions = useMemo(() => ([
     { value: 'income', label: t('transactions.category_income') },
@@ -85,7 +131,7 @@ export default function TransactionsScreen() {
 
   const loadCached = async () => {
     try {
-      const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
+      const cacheKey = `transactions.${effectiveAccountId || 'me'}.${selectedBusinessId || 'default'}`;
       const cached = await AsyncStorage.getItem(cacheKey);
       if (cached) {
         const data = JSON.parse(cached);
@@ -118,7 +164,7 @@ export default function TransactionsScreen() {
       const path = effectiveAccountId
         ? `/transactions/accounts/${effectiveAccountId}/transactions`
         : '/transactions/transactions/me';
-      const response = await apiRequest(path, { token });
+      const response = await apiRequest(path, { token, businessId: selectedBusinessId });
       if (!response.ok) return;
       const data = await response.json();
       setTransactions(data || []);
@@ -127,7 +173,7 @@ export default function TransactionsScreen() {
       setSummary({ income, expenses });
       setLastSync(new Date().toISOString());
       try {
-        const cacheKey = `transactions.${effectiveAccountId || 'me'}`;
+        const cacheKey = `transactions.${effectiveAccountId || 'me'}.${selectedBusinessId || 'default'}`;
         await AsyncStorage.setItem(cacheKey, JSON.stringify(data || []));
       } catch {
         return;
@@ -142,7 +188,7 @@ export default function TransactionsScreen() {
     loadCached();
     fetchProviders();
     fetchTransactions();
-  }, [token, effectiveAccountId]);
+  }, [token, effectiveAccountId, selectedBusinessId]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -263,6 +309,7 @@ export default function TransactionsScreen() {
       const response = await apiRequest('/transactions/import/csv', {
         method: 'POST',
         token,
+        businessId: selectedBusinessId,
         body: formData,
       });
       const data = await response.json();
@@ -285,7 +332,8 @@ export default function TransactionsScreen() {
       const count = await enqueueCategoryUpdate(
         selectedTransaction.id,
         newCategory,
-        selectedTransaction.description
+        selectedTransaction.description,
+        selectedBusinessId,
       );
       setQueuedCount(count);
       setCategoryModalOpen(false);
@@ -295,6 +343,7 @@ export default function TransactionsScreen() {
       const response = await apiRequest(`/transactions/transactions/${selectedTransaction.id}`, {
         method: 'PATCH',
         token,
+        businessId: selectedBusinessId,
         body: JSON.stringify({ category: newCategory }),
       });
       if (!response.ok) throw new Error();
@@ -348,6 +397,25 @@ export default function TransactionsScreen() {
   return (
     <Screen refreshing={isRefreshing} onRefresh={handleRefresh}>
       <SectionHeader title={t('transactions.title')} subtitle={t('transactions.subtitle')} />
+      {businesses.length > 0 ? (
+        <FadeInView delay={40}>
+          <Card>
+            <Text style={styles.cardTitle}>{t('transactions.business_scope')}</Text>
+            <View style={styles.providerRow}>
+              {businesses.map((b) => (
+                <View key={b.id} style={styles.providerChip}>
+                  <Chip
+                    label={b.display_name}
+                    selected={b.id === selectedBusinessId}
+                    onPress={() => void selectBusiness(b.id)}
+                  />
+                </View>
+              ))}
+            </View>
+          </Card>
+        </FadeInView>
+      ) : null}
+      {businessLoadError ? <Text style={styles.error}>{businessLoadError}</Text> : null}
       <FadeInView>
         <View style={styles.statsRow}>
           <StatCard label={t('transactions.income_label')} value={`GBP ${summary.income.toFixed(2)}`} icon="trending-up-outline" />

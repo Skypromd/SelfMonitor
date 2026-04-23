@@ -1,6 +1,7 @@
 import os
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///test.db"
+os.environ["INTERNAL_SERVICE_SECRET"] = "referral-internal-test"
 
 from unittest.mock import AsyncMock, patch, MagicMock
 import uuid
@@ -10,7 +11,10 @@ import pytest
 from jose import jwt
 from fastapi.testclient import TestClient
 
+from app import billing_credit
 from app.main import app
+
+billing_credit.INTERNAL_SERVICE_SECRET = "referral-internal-test"
 
 client = TestClient(app)
 
@@ -174,3 +178,20 @@ def test_join_campaign_not_found(mock_get):
     mock_get.return_value = None
     resp = client.post("/campaigns/some-id/join", headers=AUTH_HEADER)
     assert resp.status_code == 404
+
+
+def test_internal_top_referrers_wrong_token():
+    resp = client.get(
+        "/internal/top-referrers?year=2026&month=3&limit=10",
+        headers={"X-Internal-Token": "wrong"},
+    )
+    assert resp.status_code == 403
+
+
+def test_internal_apply_signup_wrong_token():
+    resp = client.post(
+        "/internal/apply-signup-referral",
+        json={"referee_email": "new@example.com", "code": "ABC"},
+        headers={"X-Internal-Token": "wrong"},
+    )
+    assert resp.status_code == 403

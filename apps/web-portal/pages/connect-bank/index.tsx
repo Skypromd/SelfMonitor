@@ -46,6 +46,8 @@ export default function ConnectBankPage({ token }: ConnectBankPageProps) {
   const [connectingId, setConnectingId] = useState('');
   const [flowError, setFlowError] = useState('');
   const [syncQuota, setSyncQuota] = useState<{ daily_limit: number; remaining: number } | null>(null);
+  const [statementExportBusy, setStatementExportBusy] = useState(false);
+  const [statementExportError, setStatementExportError] = useState('');
 
   const loadProviders = useCallback(async () => {
     setLoadError('');
@@ -113,6 +115,34 @@ export default function ConnectBankPage({ token }: ConnectBankPageProps) {
     } catch (err) {
       setConnectingId('');
       setFlowError(err instanceof Error ? err.message : 'Connection failed');
+    }
+  };
+
+  const downloadStatementCsv = async (days: number) => {
+    setStatementExportError('');
+    setStatementExportBusy(true);
+    try {
+      const params = new URLSearchParams({ days: String(days) });
+      const res = await fetch(`${BANKING_SERVICE_URL}/exports/statement-csv?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(typeof (body as { detail?: string }).detail === 'string' ? (body as { detail: string }).detail : 'Export failed');
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `bank-statement-${days}d.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setStatementExportError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setStatementExportBusy(false);
     }
   };
 
@@ -201,6 +231,33 @@ export default function ConnectBankPage({ token }: ConnectBankPageProps) {
               </button>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className={styles.subContainer}>
+        <h2 style={{ marginTop: 0 }}>Statement-style export (CSV)</h2>
+        <p style={{ color: 'var(--lp-muted)', fontSize: '0.9rem', marginBottom: '0.75rem', maxWidth: 720 }}>
+          Download transactions already stored in MyNetTax (from your last manual bank sync). This is not a bank PDF
+          statement; lenders may ask for originals. Default window is about six months (180 days).
+        </p>
+        {statementExportError && <p className={styles.error}>{statementExportError}</p>}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            type="button"
+            className={styles.button}
+            disabled={statementExportBusy}
+            onClick={() => void downloadStatementCsv(180)}
+          >
+            {statementExportBusy ? 'Preparing…' : 'Download last ~6 months (180 days)'}
+          </button>
+          <button
+            type="button"
+            className={styles.button}
+            disabled={statementExportBusy}
+            onClick={() => void downloadStatementCsv(90)}
+          >
+            Last 90 days
+          </button>
         </div>
       </div>
 

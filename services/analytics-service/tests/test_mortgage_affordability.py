@@ -21,6 +21,21 @@ def test_stamp_duty_ftb_under_nil_band():
     assert stamp_duty_england_gbp(400_000, first_time_buyer=True, additional_property=False) == 0.0
 
 
+def test_illustrative_lender_metadata_present():
+    r = build_affordability_result(
+        annual_income_gbp=60_000,
+        employment="self_employed",
+        property_price_gbp=300_000,
+        deposit_gbp=30_000,
+        annual_interest_rate_pct=5.0,
+        term_years=25,
+        first_time_buyer=True,
+        additional_property=False,
+    )
+    assert r["illustrative_lenders_as_of"]
+    assert r["illustrative_lenders_pack_version"] >= 1
+
+
 def test_affordability_max_loan_and_stress():
     r = build_affordability_result(
         annual_income_gbp=50_000,
@@ -84,3 +99,38 @@ def test_additional_property_surcharge():
     )
     assert r["additional_property_surcharge_applied"] is True
     assert (r["stamp_duty_england_gbp"] or 0) > 0
+
+
+def test_ccj_clean_uses_effective_minor_and_planner_notes():
+    r = build_affordability_result(
+        annual_income_gbp=48_000,
+        employment="self_employed",
+        property_price_gbp=200_000,
+        deposit_gbp=40_000,
+        annual_interest_rate_pct=5.0,
+        term_years=30,
+        first_time_buyer=False,
+        additional_property=False,
+        credit_band="clean",
+        years_trading=2,
+        ccj_in_past_6y=True,
+    )
+    assert r["credit_band_effective"] == "minor"
+    assert r["ccj_in_past_6y"] is True
+    assert any("CCJ" in n for n in r["planner_notes"])
+
+
+def test_buy_to_let_planner_note_and_property_type_echo():
+    r = build_affordability_result(
+        annual_income_gbp=55_000,
+        employment="self_employed",
+        property_price_gbp=250_000,
+        deposit_gbp=62_500,
+        annual_interest_rate_pct=5.0,
+        term_years=30,
+        first_time_buyer=False,
+        additional_property=False,
+        property_type="buy_to_let",
+    )
+    assert r["property_type"] == "buy_to_let"
+    assert any("Buy-to-let" in n for n in r["planner_notes"])

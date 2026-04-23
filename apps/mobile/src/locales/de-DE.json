@@ -259,7 +259,13 @@
     "exported_tax": "Steuerübersicht exportiert.",
     "exported_documents": "Dokumente exportiert.",
     "export_error": "Export fehlgeschlagen.",
-    "offline_error": "Offline. Export online."
+    "offline_error": "Offline. Export online.",
+    "cis_evidence_link": "CIS-Nachweispaket: Download-Link",
+    "cis_evidence_shared": "CIS-Nachweispaket — URL für den Steuerberater (Ablauf siehe Server):",
+    "cis_evidence_note": "Nur über einen sicheren Kanal teilen. Link ohne Ihr Login nutzbar.",
+    "cis_evidence_done": "Link geteilt.",
+    "cis_evidence_plan": "CIS-Nachweispaket ab Tarif Growth.",
+    "cis_evidence_failed": "Link konnte nicht erstellt werden."
   },
   "assistant": {
     "title": "KI-Assistent",
@@ -315,6 +321,7 @@
   "transactions": {
     "title": "Transaktionen",
     "subtitle": "Einnahmen und Ausgaben kategorisieren.",
+    "business_scope": "Unternehmen",
     "empty_state": "Noch keine Transaktionen.",
     "connect_bank": "Bank verbinden",
     "csv_import": "CSV-Import",
@@ -480,7 +487,18 @@
     "save_error": "Abonnement konnte nicht aktualisiert werden.",
     "saved_offline": "Offline gespeichert. Sync erfolgt online.",
     "active_label": "Aktiv",
-    "trial_left": "Test endet in"
+    "trial_left": "Test endet in",
+    "stripe_card_title": "Bezahltes Abonnement (Stripe)",
+    "stripe_plan_label": "Plan",
+    "stripe_status_label": "Status",
+    "stripe_period_end": "Aktuelle Periode endet",
+    "account_credit_label": "Guthaben",
+    "consult_sessions_label": "Verfügbare Steuerberater-Sitzungen",
+    "consult_section_hint": "Optional: bezahlte CIS-Prüfung durch einen Steuerberater (Terminierung über Support).",
+    "consult_buy": "Sitzung kaufen",
+    "consult_checkout_loading": "Checkout wird geöffnet…",
+    "consult_checkout_error": "Checkout konnte nicht gestartet werden.",
+    "billing_load_error": "Stripe-Abrechnung konnte nicht geladen werden."
   },
   "settings": {
     "title": "Einstellungen",

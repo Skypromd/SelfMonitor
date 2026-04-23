@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
 import styles from '../styles/Home.module.css';
 
-const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
+const API_GATEWAY_ROOT = (process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api').replace(/\/$/, '');
+const TRANSACTIONS_API_BASE = `${API_GATEWAY_ROOT}/transactions`;
 const BANKING_SERVICE_URL =
   process.env.NEXT_PUBLIC_BANKING_SERVICE_URL || '/api/banking';
 const OPEN_BANKING_PROVIDER =
@@ -69,7 +71,7 @@ type CISReviewTask = {
   updated_at: string;
 };
 
-const CIS_API = `${API_GATEWAY_URL}/transactions/cis`;
+const CIS_API = `${TRANSACTIONS_API_BASE}/cis`;
 
 function monthBoundsFromDate(isoDate: string): { period_start: string; period_end: string } {
   const [yStr, mStr] = isoDate.split('-');
@@ -213,7 +215,7 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
   );
 }
 
-function TransactionsList({ token, accountId }: { token: string, accountId: string }) {
+function TransactionsList({ token, accountId, businessId }: { token: string; accountId: string; businessId: string | null }) {
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -224,6 +226,8 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   const [cisResolveBusy, setCisResolveBusy] = useState(false);
   const [flaggingTxn, setFlaggingTxn] = useState('');
   const [cisZipBusy, setCisZipBusy] = useState(false);
+  const [cisShareBusy, setCisShareBusy] = useState(false);
+  const [cisShareMsg, setCisShareMsg] = useState('');
   const [cisForm, setCisForm] = useState({
     mode: 'self_attest' as 'verified' | 'self_attest',
     contractorName: '',
@@ -242,11 +246,11 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   const reloadCisTasks = useCallback(async () => {
     try {
       const res = await fetch(`${CIS_API}/tasks?status=open`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId),
       });
       if (res.ok) setCisTasks((await res.json()) as CISReviewTask[]);
     } catch { /* ignore */ }
-  }, [token]);
+  }, [token, businessId]);
 
   useEffect(() => {
     void reloadCisTasks();
@@ -304,7 +308,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   const handleCisScan = async () => {
     setCisBusy(true);
     try {
-      await fetch(`${CIS_API}/tasks/scan`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      await fetch(`${CIS_API}/tasks/scan`, { method: 'POST', headers: transactionsBearerHeaders(token, businessId) });
       await reloadCisTasks();
     } finally {
       setCisBusy(false);
@@ -315,7 +319,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     setCisZipBusy(true);
     try {
       const res = await fetch(`${CIS_API}/evidence-pack/zip`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId),
       });
       if (!res.ok) return;
       const blob = await res.blob();
@@ -330,12 +334,53 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     }
   };
 
+  const handleAccountantEvidenceLink = async () => {
+    setCisShareBusy(true);
+    setCisShareMsg('');
+    try {
+      const res = await fetch(`${CIS_API}/evidence-pack/share-token`, {
+        method: 'POST',
+        headers: transactionsBearerHeaders(token, businessId),
+      });
+      if (res.status === 403) {
+        setCisShareMsg('Evidence pack requires Growth or higher.');
+        return;
+      }
+      if (!res.ok) {
+        setCisShareMsg('Could not create accountant link.');
+        return;
+      }
+      const data = (await res.json()) as {
+        token: string;
+        relative_download_path: string;
+      };
+      const path = `${TRANSACTIONS_API_BASE}${data.relative_download_path}?token=${encodeURIComponent(
+        data.token,
+      )}`;
+      const absolute =
+        typeof window !== 'undefined' ? `${window.location.origin}${path}` : path;
+      try {
+        await navigator.clipboard.writeText(absolute);
+        setCisShareMsg(
+          'Accountant link copied. It expires after the hours set on the server — share only over a secure channel.',
+        );
+      } catch {
+        window.prompt('Copy this link for your accountant:', absolute);
+        setCisShareMsg('');
+      }
+    } catch {
+      setCisShareMsg('Could not copy link. Try again or use Download evidence ZIP.');
+    } finally {
+      setCisShareBusy(false);
+    }
+  };
+
   const flagCisSuspect = async (transactionId: string) => {
     setFlaggingTxn(transactionId);
     try {
       const res = await fetch(`${CIS_API}/tasks/suspect`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ transaction_id: transactionId, reason: 'user_flagged' }),
       });
       if (res.ok) await reloadCisTasks();
@@ -356,7 +401,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     try {
       const res = await fetch(`${CIS_API}/tasks/${modalTask.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ status: 'dismissed_not_cis' }),
       });
       if (!res.ok) {
@@ -379,7 +424,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     try {
       const res = await fetch(`${CIS_API}/tasks/${modalTask.id}/snooze-reminder?days=30`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId),
       });
       if (!res.ok) throw new Error('Snooze failed');
       await reloadCisTasks();
@@ -458,7 +503,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
 
       const recRes = await fetch(`${CIS_API}/records`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify(recordBody),
       });
       const recJson = await recRes.json().catch(() => ({}));
@@ -469,7 +514,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
       const patchStatus = cisForm.mode === 'verified' ? 'resolved_verified' : 'resolved_unverified';
       const patchRes = await fetch(`${CIS_API}/tasks/${modalTask.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ status: patchStatus, cis_record_id: recordId, payer_label: name }),
       });
       if (!patchRes.ok) {
@@ -491,8 +536,8 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     setError('');
     const timeoutId = window.setTimeout(async () => {
       try {
-        const response = await fetch(`${API_GATEWAY_URL}/transactions/accounts/${accountId}/transactions`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+        const response = await fetch(`${TRANSACTIONS_API_BASE}/accounts/${accountId}/transactions`, {
+          headers: transactionsBearerHeaders(token, businessId),
         });
         if (!response.ok) throw new Error('Failed to fetch transactions');
         const data = await response.json();
@@ -507,7 +552,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [accountId, token]);
+  }, [accountId, token, businessId]);
 
   const [isAutoCategorizing, setIsAutoCategorizing] = useState(false);
 
@@ -546,9 +591,9 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   const handleCategoryChange = async (transactionId: string, newCategory: string) => {
     const row = transactions.find((t) => t.id === transactionId);
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/${transactionId}`, {
+      const response = await fetch(`${TRANSACTIONS_API_BASE}/transactions/${transactionId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ category: newCategory })
       });
       if (!response.ok) throw new Error('Failed to update category');
@@ -621,7 +666,29 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
         >
           {cisZipBusy ? 'ZIP…' : 'Download evidence ZIP'}
         </button>
+        <button
+          type="button"
+          disabled={cisShareBusy}
+          onClick={() => void handleAccountantEvidenceLink()}
+          style={{
+            padding: '0.35rem 0.85rem',
+            borderRadius: 8,
+            border: '1px solid rgba(59,130,246,0.45)',
+            background: 'rgba(59,130,246,0.1)',
+            color: 'rgb(96,165,250)',
+            fontWeight: 600,
+            fontSize: '0.82rem',
+            cursor: cisShareBusy ? 'wait' : 'pointer',
+          }}
+        >
+          {cisShareBusy ? 'Link…' : 'Accountant download link'}
+        </button>
       </div>
+      {cisShareMsg ? (
+        <p style={{ margin: '0.35rem 0 0', fontSize: '0.78rem', color: 'var(--lp-muted)', width: '100%' }}>
+          {cisShareMsg}
+        </p>
+      ) : null}
     </div>
   );
 
@@ -1004,7 +1071,7 @@ function TransactionsList({ token, accountId }: { token: string, accountId: stri
   );
 }
 
-function ReceiptDraftManualMatching({ token }: { token: string }) {
+function ReceiptDraftManualMatching({ token, businessId }: { token: string; businessId: string | null }) {
   const [rows, setRows] = useState<UnmatchedReceiptDraftItem[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState('');
@@ -1034,8 +1101,8 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
       if (searchDate) {
         params.set('search_date', searchDate);
       }
-      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/unmatched?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const response = await fetch(`${TRANSACTIONS_API_BASE}/transactions/receipt-drafts/unmatched?${params.toString()}`, {
+        headers: transactionsBearerHeaders(token, businessId),
       });
       if (!response.ok) throw new Error('Failed to load unmatched receipt drafts');
       const data: UnmatchedReceiptDraftsResponse = await response.json();
@@ -1046,7 +1113,7 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
     } finally {
       setIsLoading(false);
     }
-  }, [includeIgnoredDrafts, searchAmount, searchDate, searchProviderTransactionId, token]);
+  }, [includeIgnoredDrafts, searchAmount, searchDate, searchProviderTransactionId, token, businessId]);
 
   useEffect(() => {
     void loadUnmatchedDrafts();
@@ -1058,12 +1125,9 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
     setError('');
     setMessage('');
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/${draftId}/reconcile`, {
+      const response = await fetch(`${TRANSACTIONS_API_BASE}/transactions/receipt-drafts/${draftId}/reconcile`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ target_transaction_id: targetId }),
       });
       const payload = await response.json();
@@ -1083,12 +1147,9 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
     setError('');
     setMessage('');
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/${draftId}/ignore-candidate`, {
+      const response = await fetch(`${TRANSACTIONS_API_BASE}/transactions/receipt-drafts/${draftId}/ignore-candidate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
         body: JSON.stringify({ target_transaction_id: targetId }),
       });
       const payload = await response.json();
@@ -1108,11 +1169,9 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
     setError('');
     setMessage('');
     try {
-      const response = await fetch(`${API_GATEWAY_URL}/transactions/transactions/receipt-drafts/${draftId}/${action}`, {
+      const response = await fetch(`${TRANSACTIONS_API_BASE}/transactions/receipt-drafts/${draftId}/${action}`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        headers: transactionsBearerHeaders(token, businessId),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.detail || `Failed to ${action} draft`);
@@ -1276,13 +1335,37 @@ function ReceiptDraftManualMatching({ token }: { token: string }) {
 
 export default function TransactionsPage({ token }: TransactionsPageProps) {
     const [connectedAccountId, setConnectedAccountId] = useState('');
+    const { businesses, loadError, selectedBusinessId, setSelectedBusinessId } = useTransactionsBusinessScope(
+      token,
+      TRANSACTIONS_API_BASE,
+    );
     return (
         <div className={styles.pageContainer}>
             <h1>Transactions</h1>
             <p>Connect your bank account to import and categorize your transactions.</p>
+            {businesses.length > 0 && (
+              <div className={styles.subContainer} style={{ marginBottom: '1rem', padding: '0.75rem 1rem' }}>
+                <label style={{ display: 'block', fontSize: '0.82rem', color: 'var(--lp-muted)', marginBottom: 6 }}>
+                  Business
+                </label>
+                <select
+                  className={styles.input}
+                  onChange={(e) => setSelectedBusinessId(e.target.value)}
+                  value={selectedBusinessId ?? businesses[0]?.id ?? ''}
+                  style={{ maxWidth: 360, width: '100%' }}
+                >
+                  {businesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {loadError ? <p className={styles.error} style={{ marginBottom: '1rem', fontSize: '0.88rem' }}>{loadError}</p> : null}
             <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />
-            <TransactionsList token={token} accountId={connectedAccountId} />
-            <ReceiptDraftManualMatching token={token} />
+            <TransactionsList token={token} accountId={connectedAccountId} businessId={selectedBusinessId} />
+            <ReceiptDraftManualMatching token={token} businessId={selectedBusinessId} />
         </div>
     );
 }

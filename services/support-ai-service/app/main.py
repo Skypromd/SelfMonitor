@@ -65,15 +65,13 @@ with engine.begin() as conn:
     except Exception:
         pass
 
-AUTH_SECRET_KEY = os.environ.get("AUTH_SECRET_KEY", "").strip()
+_auth_raw = os.environ["AUTH_SECRET_KEY"].strip()
+if not _auth_raw:
+    raise RuntimeError("AUTH_SECRET_KEY must be non-empty")
+AUTH_SECRET_KEY = _auth_raw
 
 
 def _decode_support_jwt(authorization: str | None) -> dict[str, Any]:
-    if not AUTH_SECRET_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AUTH_SECRET_KEY is not configured",
-        )
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

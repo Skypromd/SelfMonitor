@@ -84,6 +84,7 @@ ALLOWED_CONTENT_TYPES = {
 }
 
 # --- S3 Configuration ---
+COMPLIANCE_SERVICE_URL = (os.getenv("COMPLIANCE_SERVICE_URL") or "").strip()
 TRANSACTIONS_SERVICE_URL = os.getenv(
     "TRANSACTIONS_SERVICE_URL",
     "http://transactions-service/transactions/receipt-drafts",
@@ -164,9 +165,33 @@ from libs.shared_auth.jwt_fastapi import (  # noqa: E402,I001,I002,C0411
 )
 from libs.shared_auth.plan_enforcement_log import log_plan_enforcement_denial  # noqa: E402
 from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits  # noqa: E402
+from libs.shared_compliance.audit_client import post_audit_event  # noqa: E402
 from libs.shared_http.request_id import get_request_id  # noqa: E402
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
+AUTH_ALGORITHM = "HS256"
+logger = logging.getLogger(__name__)
+
+
+async def _audit_document_event(
+    *,
+    bearer_token: str,
+    user_id: str,
+    action: str,
+    details: dict[str, object],
+) -> None:
+    if not COMPLIANCE_SERVICE_URL:
+        return
+    ok = await post_audit_event(
+        compliance_base_url=COMPLIANCE_SERVICE_URL,
+        bearer_token=bearer_token,
+        user_id=user_id,
+        action=action,
+        details=details,
+    )
+    if not ok:
+        logger.warning("compliance audit not recorded action=%s user=%s", action, user_id)
 OCR_REVIEW_COMPLETION_SECONDS = Histogram(
     "ocr_review_completion_seconds",
     "Time from document upload to review completion.",
@@ -305,6 +330,20 @@ async def upload_document(
         filename=safe_filename,
         filepath=s3_key,
         file_size_bytes=file_len,
+    )
+
+    await _audit_document_event(
+        bearer_token=bearer_token,
+        user_id=user_id,
+        action="document_uploaded",
+        details={
+            "document_id": str(db_document.id),
+            "filename": safe_filename,
+            "storage_key": s3_key,
+            "file_size_bytes": file_len,
+            "extension": file_extension,
+            "request_id": get_request_id(),
+        },
     )
 
     # Trigger background OCR task with persisted file key.
@@ -496,5 +535,23 @@ async def review_document(
                     exc,
                     exc_info=True,
                 )
+
+    final_ed = getattr(updated, "extracted_data", None)
+    review_status_final = (
+        str(final_ed.get("review_status", "")).strip().lower()
+        if isinstance(final_ed, dict)
+        else review_status
+    )
+    await _audit_document_event(
+        bearer_token=bearer,
+        user_id=user_id,
+        action="document_review_updated",
+        details={
+            "document_id": str(document_id),
+            "filename": str(getattr(updated, "filename", "") or ""),
+            "review_status": review_status_final or review_status,
+            "request_id": get_request_id(),
+        },
+    )
 
     return updated

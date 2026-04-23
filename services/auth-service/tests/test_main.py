@@ -2,9 +2,15 @@ from fastapi.testclient import TestClient
 # We need to adjust the path to import the app from the parent directory
 import sys
 import os
+
 os.environ["AUTH_ALLOW_WEAK_JWT_SECRET"] = "1"
 os.environ["AUTH_SECRET_KEY"] = "test-secret"
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+os.environ["AUTH_REQUIRE_ADMIN_2FA"] = "false"
+_tests_dir = os.path.dirname(__file__)
+_service_root = os.path.abspath(os.path.join(_tests_dir, ".."))
+_repo_root = os.path.abspath(os.path.join(_service_root, "..", ".."))
+sys.path.insert(0, _repo_root)
+sys.path.insert(0, _service_root)
 from app.main import (
     app,
     get_user_record,

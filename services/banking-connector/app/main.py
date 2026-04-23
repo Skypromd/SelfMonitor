@@ -1,4 +1,5 @@
 import datetime
+import io
 import logging
 import os
 import sys
@@ -8,7 +9,8 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 import hvac
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 # --- Config ---
@@ -31,6 +33,43 @@ TRUELAYER_AUTH_BASE = "https://auth.truelayer.com" if _TL_PRODUCTION else "https
 TRUELAYER_API_BASE = "https://api.truelayer.com" if _TL_PRODUCTION else "https://api.truelayer-sandbox.com"
 
 TRANSACTIONS_SERVICE_URL = os.getenv("TRANSACTIONS_SERVICE_URL", "http://transactions-service:80")
+
+
+def _transactions_me_list_url() -> str:
+    """URL for GET /transactions/me (stored rows after Open Banking import)."""
+    explicit = os.getenv("TRANSACTIONS_ME_URL", "").strip()
+    if explicit:
+        return explicit
+    raw = os.getenv("TRANSACTIONS_SERVICE_URL")
+    stripped = raw.strip().rstrip("/") if raw else ""
+    base = stripped or "http://transactions-service:80"
+    if not base:
+        return ""
+    if base.endswith("/import"):
+        return base[: -len("/import")] + "/transactions/me"
+    if base.endswith("/transactions/me"):
+        return base
+    return base + "/transactions/me"
+
+
+def _csv_escape_cell(value: str) -> str:
+    if any(c in value for c in '",\r\n'):
+        return '"' + value.replace('"', '""') + '"'
+    return value
+
+
+def _parse_transaction_date(raw: Any) -> Optional[datetime.date]:
+    if isinstance(raw, datetime.date) and not isinstance(raw, datetime.datetime):
+        return raw
+    if isinstance(raw, datetime.datetime):
+        return raw.date()
+    if isinstance(raw, str) and len(raw) >= 10:
+        try:
+            return datetime.date.fromisoformat(raw[:10])
+        except ValueError:
+            return None
+    return None
+
 
 # Try to import Celery task — gracefully degrade if broker unavailable
 try:
@@ -477,6 +516,122 @@ async def get_sync_quota(
     limits: PlanLimits = Depends(get_plan_limits),
 ):
     return sync_status(user_id, limits.bank_sync_daily_limit)
+
+
+@app.get("/exports/statement-csv")
+async def export_statement_csv(
+    days: int = Query(
+        180,
+        ge=1,
+        le=730,
+        description="Rolling window in days (default 180, about six months).",
+    ),
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """
+    CSV of the user's stored transactions in a date window (from transactions-service).
+    Read-only: does not call the bank or consume sync quota. Rows are whatever was last imported via Open Banking sync.
+    """
+    me_url = _transactions_me_list_url()
+    if not me_url:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Transactions list URL is not configured.",
+        )
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(
+                me_url,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+    except httpx.HTTPStatusError as exc:
+        detail = "Transactions service rejected the request."
+        try:
+            body = exc.response.json()
+            if isinstance(body, dict) and isinstance(body.get("detail"), str):
+                detail = body["detail"]
+        except Exception:
+            pass
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.RequestError as exc:
+        logger.warning("statement-csv: transactions request failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Could not reach transactions service.",
+        ) from exc
+
+    if not isinstance(payload, list):
+        payload = []
+
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=days)
+
+    filtered: List[Dict[str, Any]] = []
+    for item in payload:
+        if not isinstance(item, dict):
+            continue
+        d = _parse_transaction_date(item.get("date"))
+        if d is None or d < start or d > end:
+            continue
+        filtered.append(item)
+
+    filtered.sort(
+        key=lambda r: (
+            _parse_transaction_date(r.get("date")) or start,
+            str(r.get("id", "")),
+        )
+    )
+
+    max_rows = 12000
+    if len(filtered) > max_rows:
+        filtered = filtered[:max_rows]
+
+    header = [
+        "id",
+        "date",
+        "amount",
+        "currency",
+        "description",
+        "category",
+        "tax_category",
+        "account_id",
+        "provider_transaction_id",
+    ]
+    lines = [",".join(header)]
+
+    def cell(item: Dict[str, Any], key: str) -> str:
+        v = item.get(key)
+        if v is None:
+            return ""
+        return _csv_escape_cell(str(v))
+
+    for item in filtered:
+        lines.append(
+            ",".join(
+                [
+                    cell(item, "id"),
+                    cell(item, "date"),
+                    cell(item, "amount"),
+                    cell(item, "currency"),
+                    cell(item, "description"),
+                    cell(item, "category"),
+                    cell(item, "tax_category"),
+                    cell(item, "account_id"),
+                    cell(item, "provider_transaction_id"),
+                ]
+            )
+        )
+
+    csv_text = "\r\n".join(lines) + "\r\n"
+    filename = f"bank-statement-{days}d-{end.isoformat()}.csv"
+    return StreamingResponse(
+        io.BytesIO(csv_text.encode("utf-8")),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.post("/connections/{connection_id}/sync", response_model=CallbackResponse)

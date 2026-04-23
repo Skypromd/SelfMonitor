@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { apiRequest } from './api';
+import { readStoredTransactionsBusinessId } from './transactionsBusinessStorage';
 import { notifyReportReady } from './notifications';
 import { addSyncLogEntry } from './syncLog';
 
@@ -13,6 +14,7 @@ type CategoryUpdateAction = {
     transactionId: string;
     category: string;
     description?: string;
+    businessId?: string | null;
   };
   createdAt: string;
 };
@@ -84,7 +86,8 @@ export const getQueuedReportRequests = async () => {
 export const enqueueCategoryUpdate = async (
   transactionId: string,
   category: string,
-  description?: string
+  description?: string,
+  businessId?: string | null,
 ) => {
   const queue = await loadQueue();
   const filtered = queue.filter(
@@ -93,7 +96,12 @@ export const enqueueCategoryUpdate = async (
   const next: CategoryUpdateAction = {
     id: `${transactionId}-${Date.now()}`,
     type: 'update_category',
-    payload: { transactionId, category, ...(description ? { description } : {}) },
+    payload: {
+      transactionId,
+      category,
+      ...(description ? { description } : {}),
+      ...(businessId != null && String(businessId).trim() ? { businessId: String(businessId).trim() } : {}),
+    },
     createdAt: new Date().toISOString(),
   };
   filtered.push(next);
@@ -168,9 +176,14 @@ export const flushQueue = async (token: string | null) => {
 
   for (const item of queue) {
     if (item.type === 'update_category') {
+      const businessId =
+        item.payload.businessId != null && String(item.payload.businessId).trim()
+          ? String(item.payload.businessId).trim()
+          : await readStoredTransactionsBusinessId(token);
       const response = await apiRequest(`/transactions/transactions/${item.payload.transactionId}`, {
         method: 'PATCH',
         token,
+        businessId,
         body: JSON.stringify({ category: item.payload.category }),
       });
       if (!response.ok) {

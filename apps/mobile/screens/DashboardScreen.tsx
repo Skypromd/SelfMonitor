@@ -12,10 +12,30 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Audio } from 'expo-av';
+import * as Haptics from 'expo-haptics';
+import * as Localization from 'expo-localization';
 import { useNavigation } from '@react-navigation/native';
 import { colors, spacing, fontSize, borderRadius } from '../theme';
-import { apiCall } from '../api';
+import { apiCall, getVoiceHttpBase } from '../api';
 import { useAuth } from '../context/AuthContext';
+
+function jwtSub(jwt: string): string | null {
+  const parts = jwt.split('.');
+  if (parts.length < 2) return null;
+  try {
+    let b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = (4 - (b64.length % 4)) % 4;
+    if (pad) b64 += '='.repeat(pad);
+    const json = JSON.parse(atob(b64)) as { sub?: unknown };
+    const sub = json.sub;
+    if (typeof sub === 'string') return sub;
+    if (sub != null && (typeof sub === 'number' || typeof sub === 'boolean')) return String(sub);
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 type Transaction = {
   id: string;
@@ -32,12 +52,7 @@ const MOCK_TRANSACTIONS: Transaction[] = [
   { id: '5', description: 'Office Supplies', amount: -34.5, date: '4d ago' },
 ];
 
-const QUICK_ACTIONS = [
-  { icon: '🔄', label: 'Sync', screen: 'BankSync' },
-  { icon: '📸', label: 'Scan', screen: 'ReceiptScan' },
-  { icon: '🏠', label: 'Mortgage', screen: 'Mortgage' },
-  { icon: '📄', label: 'Invoice', screen: 'Invoices' },
-];
+type QuickAction = { icon: string; label: string; onPress: () => void };
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -99,10 +114,11 @@ function AnimatedPressable({
 }
 
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const navigation = useNavigation<any>();
   const [advice, setAdvice] = useState<string | null>(null);
   const [adviceLoading, setAdviceLoading] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
 
   const [taxYear, setTaxYear] = useState('2024');
   const [taxIncome, setTaxIncome] = useState('');
@@ -190,6 +206,94 @@ export default function DashboardScreen() {
 
   const userName = user?.email?.split('@')[0] || 'there';
 
+  const quickActions: QuickAction[] = [
+    { icon: '🔄', label: 'Sync', onPress: () => navigation.navigate('Money') },
+    { icon: '📸', label: 'Scan', onPress: () => navigation.navigate('Scan') },
+    { icon: '🏠', label: 'Mortgage', onPress: () => navigation.navigate('Me', { screen: 'Mortgage' }) },
+    { icon: '📄', label: 'Invoice', onPress: () => navigation.navigate('Money') },
+  ];
+
+  const handleVoiceExpense = useCallback(async () => {
+    if (!token || voiceBusy) return;
+    const sub = jwtSub(token);
+    if (!sub) {
+      Alert.alert('Voice expense', 'Could not read your session. Please sign in again.');
+      return;
+    }
+    setVoiceBusy(true);
+    let recording: Audio.Recording | undefined;
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Voice expense', 'Microphone permission is required.');
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+      recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      await new Promise<void>(resolve => setTimeout(resolve, 4000));
+      const uri = recording.getURI();
+      await recording.stopAndUnloadAsync();
+      recording = undefined;
+      if (!uri) {
+        throw new Error('Recording failed');
+      }
+      const lang = (Localization.getLocales()[0]?.languageCode ?? 'en').slice(0, 2);
+      const form = new FormData();
+      form.append('user_id', sub);
+      form.append('token', token);
+      form.append('language', lang);
+      form.append('audio', { uri, name: 'clip.m4a', type: 'audio/m4a' } as unknown as Blob);
+      const res = await fetch(`${getVoiceHttpBase()}/voice/transcribe-intent`, {
+        method: 'POST',
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        detail?: string | string[];
+        text?: string;
+        intent?: { amount: number; category: string; currency: string } | null;
+      };
+      if (!res.ok) {
+        const detail = data.detail;
+        const msg = Array.isArray(detail) ? detail.join(', ') : typeof detail === 'string' ? detail : `HTTP ${res.status}`;
+        Alert.alert('Voice expense', msg);
+        return;
+      }
+      const intent = data.intent;
+      if (intent && typeof intent.amount === 'number' && intent.category) {
+        const msg = `${intent.category} · ${intent.currency} ${intent.amount.toFixed(2)}`;
+        Alert.alert('Captured expense', msg, [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Open Money', onPress: () => navigation.navigate('Money') },
+        ]);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        const hint = data.text?.trim() ? data.text.trim() : 'Could not detect amount and category. Try e.g. “paid 12 lunch”.';
+        Alert.alert('Voice expense', hint, [
+          { text: 'OK', style: 'cancel' },
+          { text: 'Open Money', onPress: () => navigation.navigate('Money') },
+        ]);
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      Alert.alert('Voice expense', message);
+    } finally {
+      if (recording) {
+        try {
+          await recording.stopAndUnloadAsync();
+        } catch {
+          /* already stopped */
+        }
+      }
+      setVoiceBusy(false);
+    }
+  }, [navigation, token]);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView
@@ -206,6 +310,14 @@ export default function DashboardScreen() {
           <Text style={styles.greeting}>
             {getGreeting()}, {userName} {getGreetingEmoji()}
           </Text>
+          <TouchableOpacity
+            style={[styles.voiceMic, (!token || voiceBusy) && styles.voiceMicDisabled]}
+            onPress={() => void handleVoiceExpense()}
+            disabled={!token || voiceBusy}
+            accessibilityLabel={voiceBusy ? 'Recording voice expense' : 'Voice quick expense'}
+          >
+            <Text style={styles.voiceMicIcon}>{voiceBusy ? '⏺' : '🎤'}</Text>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Hero Balance */}
@@ -245,8 +357,8 @@ export default function DashboardScreen() {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.quickActionsRow}
         >
-          {QUICK_ACTIONS.map((action, i) => (
-            <AnimatedPressable key={i} onPress={() => {}} style={styles.quickActionItem}>
+          {quickActions.map((action, i) => (
+            <AnimatedPressable key={i} onPress={action.onPress} style={styles.quickActionItem}>
               <View style={styles.quickActionCircle}>
                 <Text style={styles.quickActionIcon}>{action.icon}</Text>
               </View>
@@ -474,13 +586,34 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl,
   },
   greetingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
+    gap: spacing.md,
   },
   greeting: {
+    flex: 1,
     fontSize: fontSize.lg,
     fontWeight: '600',
     color: colors.textSecondary,
+  },
+  voiceMic: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.bgCard,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voiceMicDisabled: {
+    opacity: 0.45,
+  },
+  voiceMicIcon: {
+    fontSize: 22,
   },
   heroSection: {
     alignItems: 'center',

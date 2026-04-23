@@ -1,9 +1,18 @@
 import uuid
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, JSON, String, Uuid
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, JSON, String, Uuid
 from sqlalchemy.sql import func
 
 from .database import Base
+
+
+class UserBusiness(Base):
+    __tablename__ = "user_businesses"
+
+    id = Column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+    display_name = Column(String(120), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Transaction(Base):
@@ -11,6 +20,7 @@ class Transaction(Base):
 
     id = Column(Uuid(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
     user_id = Column(String, nullable=False, index=True)
+    business_id = Column(Uuid(as_uuid=True), ForeignKey("user_businesses.id"), nullable=True, index=True)
     account_id = Column(Uuid(as_uuid=True), nullable=False, index=True)
 
     provider_transaction_id = Column(String, nullable=False)

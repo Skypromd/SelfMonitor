@@ -26,7 +26,16 @@ import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -235,6 +244,51 @@ async def voice_text(req: TextRequest):
     except Exception as exc:
         response = f"Agent unavailable: {exc}"
     return {"user_id": req.user_id, "input": req.text, "response": response}
+
+
+class QuickIntentRequest(BaseModel):
+    text: str
+    language: str = "en"
+
+
+@app.post("/voice/quick-intent")
+async def voice_quick_intent(req: QuickIntentRequest):
+    """Typed phrase → structured expense intent (no STT)."""
+    from app.expense_intent import parse_expense_intent
+
+    intent = parse_expense_intent(req.text, req.language)
+    return {"text": req.text, "intent": intent}
+
+
+@app.post("/voice/transcribe-intent")
+async def voice_transcribe_intent(
+    user_id: str = Form(...),
+    token: str = Form(""),
+    language: str = Form("en"),
+    audio: UploadFile = File(...),
+):
+    """Upload short audio → Whisper STT → expense intent JSON."""
+    try:
+        _assert_voice_identity(user_id, token)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    raw = await audio.read()
+    if len(raw) < 32:
+        raise HTTPException(status_code=400, detail="audio_too_short")
+    ext = (audio.filename or "clip.m4a").rsplit(".", 1)[-1].lower()
+    fname = (
+        f"upload.{ext}"
+        if ext in ("webm", "mp4", "wav", "mp3", "m4a", "ogg", "flac")
+        else "upload.m4a"
+    )
+    try:
+        text = await transcribe(raw, filename=fname, language=language)
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    from app.expense_intent import parse_expense_intent
+
+    intent = parse_expense_intent(text, language)
+    return {"text": text, "intent": intent}
 
 
 @app.post("/voice/speak")

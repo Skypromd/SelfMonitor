@@ -1,3 +1,4 @@
+import contextvars
 import datetime
 import logging
 import os
@@ -8,7 +9,8 @@ from pathlib import Path
 from typing import Any, List, Optional, Literal
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Response, status
+from jose import jwt as jose_jwt
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, generate_latest
 from pydantic import BaseModel, Field
 
@@ -41,6 +43,11 @@ MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL = os.getenv(
 CALENDAR_SERVICE_URL = os.getenv("CALENDAR_SERVICE_URL", "http://localhost:8015/events")
 INVOICE_SERVICE_URL = os.getenv("INVOICE_SERVICE_URL", "http://invoice-service:80")
 REGULATORY_SERVICE_URL = os.getenv("REGULATORY_SERVICE_URL", "http://regulatory-service:8025")
+INTEGRATIONS_INTERNAL_BASE_URL = os.getenv(
+    "INTEGRATIONS_INTERNAL_BASE_URL",
+    "http://integrations-service:80",
+).strip().rstrip("/")
+COMPLIANCE_SERVICE_URL = (os.getenv("COMPLIANCE_SERVICE_URL") or "").strip()
 
 # ── Regulatory rates: TTL cache from regulatory-service; merge with fallback. ─
 _REGULATORY_RULES_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
@@ -331,11 +338,36 @@ for parent in Path(__file__).resolve().parents:
         break
 
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
-from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
+from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits, plan_limits_from_payload
+from libs.shared_compliance.audit_client import post_audit_event
 from libs.shared_http.retry import get_json_with_retry, post_json_with_retry
 from libs.shared_mtd import build_mtd_self_employment_period_summary
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
+
+_CALCULATE_EMIT_COMPLIANCE_AUDIT: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "tax_engine_calculate_emit_compliance_audit", default=True
+)
+
+
+async def _audit_tax_compliance_event(
+    *,
+    bearer_token: str,
+    user_id: str,
+    action: str,
+    details: dict[str, Any],
+) -> None:
+    if not COMPLIANCE_SERVICE_URL:
+        return
+    ok = await post_audit_event(
+        compliance_base_url=COMPLIANCE_SERVICE_URL,
+        bearer_token=bearer_token,
+        user_id=user_id,
+        action=action,
+        details=details,
+    )
+    if not ok:
+        logger.warning("compliance audit not recorded action=%s user=%s", action, user_id)
 
 app = FastAPI(
     title="Tax Engine Service",
@@ -437,6 +469,31 @@ class MTDPrepareResponse(BaseModel):
     hmrc_period_summary_json: dict[str, Any]
     integrations_quarterly_payload: dict[str, Any] | None = None
     prepare_notes: List[str] = Field(default_factory=list)
+
+
+class InternalAutoDraftQuarterlyRequest(BaseModel):
+    user_id: str = Field(min_length=3, max_length=320)
+    tax_year_start_year: int = Field(ge=2020, le=2045)
+    quarter: Literal["Q1", "Q2", "Q3", "Q4"]
+
+
+class InternalAutoDraftQuarterlyResponse(BaseModel):
+    status: Literal["draft_created", "skipped"]
+    reason: str | None = None
+    draft_id: str | None = None
+
+
+def _mint_finops_worker_bearer(user_id: str) -> str:
+    now = datetime.datetime.now(datetime.UTC)
+    exp = now + datetime.timedelta(minutes=15)
+    secret = os.environ["AUTH_SECRET_KEY"].strip()
+    payload: dict[str, Any] = {
+        "sub": user_id,
+        "plan": "business",
+        "exp": int(exp.timestamp()),
+        "iat": int(now.timestamp()),
+    }
+    return jose_jwt.encode(payload, secret, algorithm="HS256")
 
 
 def _parse_iso_date(value: Any) -> datetime.date | None:
@@ -1057,6 +1114,18 @@ async def calculate_tax(
         }
     )
     TAX_CALCULATIONS_TOTAL.labels(result="success").inc()
+    if _CALCULATE_EMIT_COMPLIANCE_AUDIT.get():
+        await _audit_tax_compliance_event(
+            bearer_token=bearer_token,
+            user_id=user_id,
+            action="tax_calculate",
+            details={
+                "start_date": request.start_date.isoformat(),
+                "end_date": request.end_date.isoformat(),
+                "jurisdiction": request.jurisdiction,
+                "estimated_tax_due": round(estimated_tax, 2),
+            },
+        )
     return TaxCalculationResult(
         user_id=user_id,
         start_date=request.start_date,
@@ -1105,7 +1174,11 @@ async def mtd_prepare(
     bearer_token: str = Depends(get_bearer_token),
     limits: PlanLimits = Depends(get_plan_limits),
 ):
-    calculation_result = await calculate_tax(request, user_id, bearer_token, limits)
+    _tok = _CALCULATE_EMIT_COMPLIANCE_AUDIT.set(False)
+    try:
+        calculation_result = await calculate_tax(request, user_id, bearer_token, limits)
+    finally:
+        _CALCULATE_EMIT_COMPLIANCE_AUDIT.reset(_tok)
     mtd_obligation = (
         calculation_result.mtd_obligation
         if isinstance(calculation_result.mtd_obligation, dict)
@@ -1142,12 +1215,117 @@ async def mtd_prepare(
                 "MTD quarterly reporting is required, but the selected dates do not match "
                 "a quarterly window or full tax year; adjust the period before submit."
             )
+    await _audit_tax_compliance_event(
+        bearer_token=bearer_token,
+        user_id=user_id,
+        action="tax_mtd_prepare",
+        details={
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
+            "jurisdiction": request.jurisdiction,
+            "mtd_reporting_required": bool(mtd_obligation.get("reporting_required")),
+            "has_integrations_quarterly_payload": integrations_quarterly_payload is not None,
+            "estimated_tax_due": calculation_result.estimated_tax_due,
+            "prepare_notes_count": len(prepare_notes),
+        },
+    )
     return MTDPrepareResponse(
         calculation=calculation_result,
         hmrc_period_summary_json=hmrc_period_summary_json,
         integrations_quarterly_payload=integrations_quarterly_payload,
         prepare_notes=prepare_notes,
     )
+
+
+@app.post("/internal/mtd/auto-draft-quarterly", response_model=InternalAutoDraftQuarterlyResponse)
+async def internal_mtd_auto_draft_quarterly(
+    body: InternalAutoDraftQuarterlyRequest,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+):
+    """Finops-scheduled: build quarterly MTD figures and persist integrations draft (no HMRC submit)."""
+    secret = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="internal_calls_not_configured")
+    if not x_internal_token or x_internal_token != secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+    qrow = next(
+        (q for q in _quarter_dates(body.tax_year_start_year) if q.quarter == body.quarter),
+        None,
+    )
+    if qrow is None:
+        return InternalAutoDraftQuarterlyResponse(status="skipped", reason="invalid_quarter")
+
+    ps = datetime.date.fromisoformat(qrow.period_start)
+    pe = datetime.date.fromisoformat(qrow.period_end)
+    limits = plan_limits_from_payload({"plan": "business"})
+    request = TaxCalculationRequest(start_date=ps, end_date=pe, jurisdiction="UK")
+    uid = body.user_id.strip()
+    bearer = _mint_finops_worker_bearer(uid)
+    _tok = _CALCULATE_EMIT_COMPLIANCE_AUDIT.set(False)
+    try:
+        calculation_result = await calculate_tax(request, uid, bearer, limits)
+    except HTTPException as exc:
+        detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        return InternalAutoDraftQuarterlyResponse(status="skipped", reason=f"tax_calculation:{detail}")
+    except Exception as exc:
+        logger.warning("internal auto-draft calculate_tax failed: %s", exc)
+        return InternalAutoDraftQuarterlyResponse(status="skipped", reason="tax_calculation_error")
+    finally:
+        _CALCULATE_EMIT_COMPLIANCE_AUDIT.reset(_tok)
+
+    mtd_obligation = (
+        calculation_result.mtd_obligation if isinstance(calculation_result.mtd_obligation, dict) else {}
+    )
+    if not bool(mtd_obligation.get("reporting_required")):
+        return InternalAutoDraftQuarterlyResponse(status="skipped", reason="mtd_not_required")
+
+    quarter_window = _resolve_matching_mtd_quarter(
+        period_start=request.start_date,
+        period_end=request.end_date,
+        mtd_obligation=mtd_obligation,
+    )
+    if quarter_window is None:
+        return InternalAutoDraftQuarterlyResponse(status="skipped", reason="no_matching_quarter_window")
+
+    integrations_payload = _build_mtd_quarterly_submission_payload(
+        user_id=uid,
+        request=request,
+        calculation_result=calculation_result,
+        mtd_obligation=mtd_obligation,
+        quarter_window=quarter_window,
+    )
+    report = integrations_payload.get("report")
+    if not isinstance(report, dict):
+        return InternalAutoDraftQuarterlyResponse(status="skipped", reason="no_report_payload")
+
+    url = f"{INTEGRATIONS_INTERNAL_BASE_URL}/internal/hmrc/mtd/quarterly-update/draft"
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            r = await client.post(
+                url,
+                headers={"X-Internal-Token": secret},
+                json={"user_id": uid, "report": report},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning("internal auto-draft integrations call failed: %s", exc)
+        return InternalAutoDraftQuarterlyResponse(status="skipped", reason="integrations_unreachable")
+
+    if r.status_code not in (200, 201):
+        text = (r.text or "")[:400]
+        logger.warning("integrations draft returned %s: %s", r.status_code, text)
+        return InternalAutoDraftQuarterlyResponse(
+            status="skipped",
+            reason=f"integrations_http_{r.status_code}",
+        )
+
+    try:
+        resp_json = r.json()
+    except Exception:
+        resp_json = {}
+    did = resp_json.get("draft_id")
+    draft_id_str = str(did) if did is not None else None
+    return InternalAutoDraftQuarterlyResponse(status="draft_created", draft_id=draft_id_str)
 
 
 @app.post("/calculate-and-submit", status_code=status.HTTP_202_ACCEPTED)
@@ -1159,7 +1337,11 @@ async def calculate_and_submit_tax(
 ):
     # This re-uses the logic from the calculate endpoint.
     # In a real app, this logic would be in a shared function.
-    calculation_result = await calculate_tax(request, user_id, bearer_token, limits)
+    _tok = _CALCULATE_EMIT_COMPLIANCE_AUDIT.set(False)
+    try:
+        calculation_result = await calculate_tax(request, user_id, bearer_token, limits)
+    finally:
+        _CALCULATE_EMIT_COMPLIANCE_AUDIT.reset(_tok)
 
     # 5. Submit the calculated tax to the integrations service.
     # For compliant MTD quarterly windows we use a dedicated direct HMRC endpoint.
@@ -1229,6 +1411,19 @@ async def calculate_and_submit_tax(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Could not connect to integrations-service: {exc}",
         ) from exc
+
+    await _audit_tax_compliance_event(
+        bearer_token=bearer_token,
+        user_id=user_id,
+        action="tax_calculate_and_submit",
+        details={
+            "start_date": request.start_date.isoformat(),
+            "end_date": request.end_date.isoformat(),
+            "submission_mode": submission_mode,
+            "submission_id": submission_data.get("submission_id"),
+            "estimated_tax_due": calculation_result.estimated_tax_due,
+        },
+    )
 
     # 6. Create a calendar event for the payment deadline
     try:

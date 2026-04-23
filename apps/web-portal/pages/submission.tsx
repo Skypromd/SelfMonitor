@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from 'react';
+import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
+import { MtdDraftWorkflowStrip, type MtdDraftLatest } from '../components/MtdDraftWorkflow';
 import { downloadAccountantTaxSummaryPdf, type AccountantPdfCalc } from '../lib/taxAccountantPdf';
 import styles from '../styles/Home.module.css';
 
 const TAX_ENGINE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
 const TXN_SERVICE_URL = process.env.NEXT_PUBLIC_TRANSACTIONS_SERVICE_URL || '/api/transactions';
+const INTEGRATIONS_API = process.env.NEXT_PUBLIC_INTEGRATIONS_SERVICE_URL || '/api/integrations';
 
 type Props = { token: string };
 
@@ -64,6 +67,22 @@ const fmt = (n: number) =>
     : `£${n.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
+
+function formatApiDetail(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e) => {
+        if (e && typeof e === 'object' && 'msg' in e) return String((e as { msg: string }).msg);
+        return JSON.stringify(e);
+      })
+      .join('; ');
+  }
+  if (detail && typeof detail === 'object' && 'message' in detail) {
+    return String((detail as { message: string }).message);
+  }
+  return 'Request failed';
+}
 
 function escapeSubmissionCsvField(value: string): string {
   if (/[",\n\r]/.test(value)) {
@@ -207,6 +226,10 @@ function StatusPill({ status }: { status: string }) {
 }
 
 export default function SubmissionPage({ token }: Props) {
+  const { businesses, loadError, selectedBusinessId, setSelectedBusinessId } = useTransactionsBusinessScope(
+    token,
+    TXN_SERVICE_URL,
+  );
   const [step, setStep] = useState<Step>('draft');
   const [yearIdx, setYearIdx] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -216,15 +239,34 @@ export default function SubmissionPage({ token }: Props) {
   const [unverifiedCisSubmitAck, setUnverifiedCisSubmitAck] = useState(false);
   const [txExportBusy, setTxExportBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const [mtdDraft, setMtdDraft] = useState<MtdDraftLatest | null>(null);
 
   const year = TAX_YEARS[yearIdx];
 
   const requiresUnverifiedCisAck = Boolean(calc?.cis_hmrc_submit_requires_unverified_ack);
 
+  const refreshMtdDraft = async (c: TaxCalcResult | null) => {
+    if (!c?.mtd_obligation?.reporting_required) {
+      setMtdDraft(null);
+      return;
+    }
+    try {
+      const dr = await fetch(
+        `${INTEGRATIONS_API}/integrations/hmrc/mtd/quarterly-update/draft/latest`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (dr.ok) setMtdDraft((await dr.json()) as MtdDraftLatest);
+      else setMtdDraft(null);
+    } catch {
+      setMtdDraft(null);
+    }
+  };
+
   const handleCalculate = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setMtdDraft(null);
     try {
       const res = await fetch(`${TAX_ENGINE_URL}/calculate`, {
         method: 'POST',
@@ -232,10 +274,11 @@ export default function SubmissionPage({ token }: Props) {
         body: JSON.stringify({ start_date: year.start, end_date: year.end, jurisdiction: 'UK' }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Calculation failed');
+      if (!res.ok) throw new Error(formatApiDetail(data.detail) || 'Calculation failed');
       setCalc(data);
       setUnverifiedCisSubmitAck(false);
       setStep('review');
+      void refreshMtdDraft(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
@@ -256,7 +299,7 @@ export default function SubmissionPage({ token }: Props) {
     setTxExportBusy(true);
     try {
       const res = await fetch(`${TXN_SERVICE_URL}/transactions/me`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, selectedBusinessId),
       });
       if (!res.ok) throw new Error('Could not load transactions');
       const all = (await res.json()) as SubmissionTxnRow[];
@@ -282,7 +325,7 @@ export default function SubmissionPage({ token }: Props) {
     setTxExportBusy(true);
     try {
       const res = await fetch(`${TXN_SERVICE_URL}/transactions/me`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: transactionsBearerHeaders(token, selectedBusinessId),
       });
       if (!res.ok) throw new Error('Could not load transactions');
       const all = (await res.json()) as SubmissionTxnRow[];
@@ -364,7 +407,7 @@ export default function SubmissionPage({ token }: Props) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'Submission failed');
+      if (!res.ok) throw new Error(formatApiDetail(data.detail) || 'Submission failed');
       setSubmitResult(data);
       setStep('submitted');
     } catch (err) {
@@ -410,6 +453,35 @@ export default function SubmissionPage({ token }: Props) {
         <p style={{ color: 'var(--lp-muted)', marginTop: '0.5rem' }}>
           Draft → Review → Confirm your Self Assessment submission
         </p>
+        {(businesses.length > 0 || loadError) && (
+          <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center' }}>
+            {businesses.length > 0 ? (
+              <>
+                <span style={{ fontSize: '0.82rem', color: 'var(--lp-muted)', fontWeight: 600 }}>Business</span>
+                <select
+                  onChange={(e) => setSelectedBusinessId(e.target.value)}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--lp-border)',
+                    background: 'var(--lp-bg-elevated)',
+                    fontSize: '0.85rem',
+                  }}
+                  value={selectedBusinessId ?? businesses[0]?.id ?? ''}
+                >
+                  {businesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.display_name}
+                    </option>
+                  ))}
+                </select>
+              </>
+            ) : null}
+            {loadError ? (
+              <span style={{ fontSize: '0.8rem', color: 'rgb(248,113,113)' }}>{loadError}</span>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* Step indicator */}
@@ -565,6 +637,7 @@ export default function SubmissionPage({ token }: Props) {
                     </div>
                   ))}
                 </div>
+                <MtdDraftWorkflowStrip reportingRequired={calc.mtd_obligation.reporting_required} mtdDraft={mtdDraft} />
               </section>
             )}
           </div>
@@ -692,6 +765,7 @@ export default function SubmissionPage({ token }: Props) {
         <div style={{ maxWidth: 560 }}>
           <div style={{ background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 16, padding: '2rem' }}>
             <h2 style={{ marginTop: 0 }}>Final Declaration</h2>
+            <MtdDraftWorkflowStrip reportingRequired={calc.mtd_obligation.reporting_required} mtdDraft={mtdDraft} />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginBottom: '1.5rem' }}>
               <MiniRow label="Tax period" value={`${calc.start_date} → ${calc.end_date}`} />
@@ -777,7 +851,12 @@ export default function SubmissionPage({ token }: Props) {
             </div>
 
             <button
-              onClick={() => { setStep('draft'); setCalc(null); setSubmitResult(null); }}
+              onClick={() => {
+                setStep('draft');
+                setCalc(null);
+                setSubmitResult(null);
+                setMtdDraft(null);
+              }}
               style={{ padding: '0.75rem 2rem', background: 'var(--lp-accent-teal)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer' }}
             >
               Start New Return

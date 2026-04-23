@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 
+from app.mtd.auto_draft import try_mtd_auto_draft_for_upcoming_deadline
 from app.mtd.deadlines import get_next_deadline
 from app.mtd.tracker import QuarterlyAccumulator
 from app.redis_bus import publish_event
@@ -244,6 +245,14 @@ async def process_user_day(
             next_q_label=next_q.label,
             extra_event=extra,
         )
+        if tier == 3:
+            await try_mtd_auto_draft_for_upcoming_deadline(
+                redis,
+                user_id=user_id,
+                next_q_label=next_q.label,
+                deadline=deadline,
+                days_before_deadline=tier,
+            )
 
     if days_left <= 1 and status != "submitted":
         subject = "Urgent: MTD quarterly update — action needed"

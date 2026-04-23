@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 import uuid
+import zipfile
 from collections import defaultdict, deque
 from datetime import timedelta, timezone
 from enum import Enum
@@ -42,6 +43,7 @@ from .mortgage_progress_tracker import (
 )
 from .profit_pulse import build_profit_pulse, uk_tax_year_start_on
 from .tax_savings_tips import build_tax_savings_tips, filter_transactions_for_tax_year
+from .mortgage_money_preview import build_mortgage_money_preview
 from .mortgage_requirements import (
     EMPLOYMENT_PROFILE_METADATA,
     LENDER_PROFILE_METADATA,
@@ -1462,6 +1464,14 @@ class MortgageAffordabilityRequest(BaseModel):
         le=40,
         description="Full years of self-employment / accounts (for illustrative lender fit only).",
     )
+    property_type: Literal["standard_residential", "buy_to_let", "leasehold_flat"] = Field(
+        default="standard_residential",
+        description="Illustrative lender-fit tilt only — not underwriting.",
+    )
+    ccj_in_past_6y: bool = Field(
+        default=False,
+        description="Self-reported CCJ in past 6 years; tilts illustrative fit when credit_band is clean.",
+    )
 
 
 class MortgageLenderScenarioOut(BaseModel):
@@ -1480,6 +1490,10 @@ class MortgageLenderScenarioOut(BaseModel):
 class MortgageAffordabilityResponse(BaseModel):
     employment: str
     credit_band: str
+    credit_band_effective: str
+    property_type: str
+    ccj_in_past_6y: bool
+    planner_notes: list[str]
     years_trading: Optional[int] = None
     deposit_pct_computed: Optional[float] = None
     baseline_income_multiple: float
@@ -1500,6 +1514,8 @@ class MortgageAffordabilityResponse(BaseModel):
     term_years: int
     lender_scenarios: list[MortgageLenderScenarioOut]
     disclaimer: str
+    illustrative_lenders_as_of: str
+    illustrative_lenders_pack_version: int = 1
 
 
 class MortgageProgressRequest(BaseModel):
@@ -1800,6 +1816,31 @@ class MortgagePackIndexResponse(BaseModel):
     generated_at: datetime.datetime
 
 
+class MortgageMoneyPreviewMonthRow(BaseModel):
+    month: str
+    income_gbp: float
+    expenditure_gbp: float
+    net_gbp: float
+
+
+class MortgageMoneyPreviewTaxYearRow(BaseModel):
+    tax_year: str
+    period_start: Optional[str] = None
+    period_end: Optional[str] = None
+    income_gbp: float
+    expenditure_gbp: float
+    net_profit_gbp: float
+
+
+class MortgageMoneyPreviewResponse(BaseModel):
+    disclaimer: str
+    window_start: str
+    window_end: str
+    months_requested: int
+    monthly_income_and_expenditure: list[MortgageMoneyPreviewMonthRow]
+    tax_year_summaries: list[MortgageMoneyPreviewTaxYearRow]
+
+
 # --- Forecasting Endpoint ---
 @app.get("/health")
 async def health_check():
@@ -1900,6 +1941,8 @@ async def mortgage_affordability_calculator(
             additional_property=request.additional_property,
             credit_band=request.credit_band,
             years_trading=request.years_trading,
+            property_type=request.property_type,
+            ccj_in_past_6y=request.ccj_in_past_6y,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
@@ -2466,12 +2509,10 @@ async def evaluate_mortgage_lender_fit(
     return MortgageLenderFitResponse.model_validate(lender_fit)
 
 
-@app.post("/mortgage/pack-index", response_model=MortgagePackIndexResponse)
-async def generate_mortgage_pack_index(
+async def _run_mortgage_pack_index_pipeline(
     request: MortgagePackIndexRequest,
-    _user_id: str = Depends(get_current_user_id),
-    bearer_token: str = Depends(get_bearer_token),
-):
+    bearer_token: str,
+) -> dict[str, Any]:
     _validate_mortgage_selector_inputs(
         mortgage_type=request.mortgage_type,
         employment_profile=request.employment_profile,
@@ -2543,6 +2584,16 @@ async def generate_mortgage_pack_index(
         if refresh_action not in next_actions_pi3:
             pack_index["next_actions"] = [refresh_action, *next_actions_pi3]
     pack_index["generated_at"] = datetime.datetime.now(datetime.UTC)
+    return pack_index
+
+
+@app.post("/mortgage/pack-index", response_model=MortgagePackIndexResponse)
+async def generate_mortgage_pack_index(
+    request: MortgagePackIndexRequest,
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    pack_index = await _run_mortgage_pack_index_pipeline(request, bearer_token)
     return MortgagePackIndexResponse.model_validate(pack_index)
 
 
@@ -2552,77 +2603,10 @@ async def generate_mortgage_pack_index_pdf(
     _user_id: str = Depends(get_current_user_id),
     bearer_token: str = Depends(get_bearer_token),
 ):
-    _validate_mortgage_selector_inputs(
-        mortgage_type=request.mortgage_type,
-        employment_profile=request.employment_profile,
-        lender_profile=request.lender_profile,
-    )
-    checklist = build_mortgage_document_checklist(
-        mortgage_type=request.mortgage_type,
-        employment_profile=request.employment_profile,
-        include_adverse_credit_pack=request.include_adverse_credit_pack,
-        lender_profile=request.lender_profile,
-    )
-    uploaded_documents = await _load_user_uploaded_documents(
-        bearer_token=bearer_token,
-        max_documents_scan=request.max_documents_scan,
-    )
-    filenames = _extract_document_filenames(uploaded_documents)
-    pack_index = build_mortgage_pack_index(
-        checklist=checklist,
-        uploaded_filenames=filenames,
-    )
-    first_name, last_name = await _load_user_profile_name(bearer_token=bearer_token)
-    quality_checks = build_mortgage_evidence_quality_checks(
-        uploaded_documents=uploaded_documents,
-        applicant_first_name=first_name,
-        applicant_last_name=last_name,
-    )
-    pack_index.update(quality_checks)
-    refresh_reminders = build_mortgage_refresh_reminders(
-        uploaded_documents=uploaded_documents
-    )
-    pack_index.update(refresh_reminders)
-    _eq_sum_pdf = quality_checks.get("evidence_quality_summary")
-    eq_sum_pdf: Optional[dict[str, object]] = _eq_sum_pdf if isinstance(_eq_sum_pdf, dict) else None
-    submission_gate = build_mortgage_submission_gate(
-        readiness_status=str(pack_index.get("readiness_status", "")),
-        evidence_quality_summary=eq_sum_pdf,
-        advisor_review_confirmed=request.advisor_review_confirmed,
-    )
-    pack_index["submission_gate"] = submission_gate
-    quality_summary = quality_checks.get("evidence_quality_summary")
-    if isinstance(quality_summary, dict) and bool(quality_summary.get("has_blockers")):
-        _raw_pdfna1 = pack_index.get("next_actions")
-        next_actions_pdf1: list[Any] = list(_raw_pdfna1) if isinstance(_raw_pdfna1, list) else []
-        blocker_action = (
-            "Resolve critical evidence-quality blockers before broker submission."
-        )
-        if blocker_action not in next_actions_pdf1:
-            pack_index["next_actions"] = [blocker_action, *next_actions_pdf1]
-    if not request.advisor_review_confirmed:
-        _raw_pdfna2 = pack_index.get("next_actions")
-        next_actions_pdf2: list[Any] = list(_raw_pdfna2) if isinstance(_raw_pdfna2, list) else []
-        advisor_action = (
-            "Get a qualified mortgage adviser review before broker submission."
-        )
-        if advisor_action not in next_actions_pdf2:
-            pack_index["next_actions"] = [advisor_action, *next_actions_pdf2]
-    refresh_summary = refresh_reminders.get("refresh_reminder_summary")
-    if (
-        isinstance(refresh_summary, dict)
-        and int(refresh_summary.get("due_now_count", 0)) > 0
-    ):
-        _raw_pdfna3 = pack_index.get("next_actions")
-        next_actions_pdf3: list[Any] = list(_raw_pdfna3) if isinstance(_raw_pdfna3, list) else []
-        due_now_count = int(refresh_summary.get("due_now_count", 0))
-        refresh_action = (
-            f"Refresh {due_now_count} statement/ID evidence item(s)"
-            " this month to keep the pack submission-ready."
-        )
-        if refresh_action not in next_actions_pdf3:
-            pack_index["next_actions"] = [refresh_action, *next_actions_pdf3]
-    generated_at = datetime.datetime.now(datetime.UTC)
+    pack_index = await _run_mortgage_pack_index_pipeline(request, bearer_token)
+    generated_at = pack_index["generated_at"]
+    if not isinstance(generated_at, datetime.datetime):
+        generated_at = datetime.datetime.now(datetime.UTC)
     pack_index["generated_at"] = generated_at.isoformat()
     pdf_bytes = _build_mortgage_pack_index_pdf_bytes(pack_index)
     filename_safe_type = request.mortgage_type.replace(" ", "_")
@@ -2635,6 +2619,421 @@ async def generate_mortgage_pack_index_pdf(
                 f"filename=mortgage_pack_index_{filename_safe_type}_{generated_at.date().isoformat()}.pdf"
             )
         },
+    )
+
+
+@app.get("/mortgage/money-preview", response_model=MortgageMoneyPreviewResponse)
+async def mortgage_money_preview_endpoint(
+    months: int = Query(12, ge=1, le=36),
+    tax_years: int = Query(3, ge=1, le=6),
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """Illustrative monthly I&E-style rollups + UK tax-year P&L from linked bank rows (not statutory accounts)."""
+    tx_url = os.getenv("TRANSACTIONS_SERVICE_URL", "").strip()
+    if not tx_url:
+        raise HTTPException(status_code=503, detail="Transactions service not configured")
+    tx_list: list[dict[str, Any]] = []
+    try:
+        data = await get_json_with_retry(
+            tx_url,
+            headers={"Authorization": f"Bearer {bearer_token}"},
+            timeout=15.0,
+        )
+        if isinstance(data, list):
+            tx_list = [t for t in data if isinstance(t, dict)][:12000]
+    except httpx.HTTPError:
+        tx_list = []
+    raw = build_mortgage_money_preview(tx_list, months=months, tax_years=tax_years)
+    return MortgageMoneyPreviewResponse.model_validate(raw)
+
+
+async def _fetch_bank_statement_csv_bytes(
+    bearer_token: str,
+    *,
+    statement_days: int,
+) -> tuple[Optional[bytes], Optional[str]]:
+    base = os.getenv("BANKING_CONNECTOR_SERVICE_URL", "").strip().rstrip("/")
+    if not base:
+        base = "http://banking-connector:80"
+    url = f"{base}/exports/statement-csv"
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            resp = await client.get(
+                url,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                params={"days": str(statement_days)},
+            )
+            if resp.status_code != 200:
+                return None, f"banking-connector HTTP {resp.status_code}"
+            if not resp.content:
+                return None, "empty CSV response"
+            return resp.content, None
+    except httpx.RequestError as exc:
+        return None, str(exc)
+
+
+def _hmrc_mortgage_document_excerpt(pack_index: dict[str, Any]) -> dict[str, Any]:
+    interest = frozenset({"sa302_2y", "tax_year_overviews_2y"})
+    items: list[dict[str, Any]] = []
+    for bucket in ("required_document_evidence", "conditional_document_evidence"):
+        for row in pack_index.get(bucket) or []:
+            if not isinstance(row, dict):
+                continue
+            code = str(row.get("code", ""))
+            if code not in interest:
+                continue
+            items.append(
+                {
+                    "code": code,
+                    "title": row.get("title"),
+                    "match_status": row.get("match_status"),
+                    "matched_filenames": row.get("matched_filenames"),
+                    "reason": row.get("reason"),
+                }
+            )
+    return {
+        "disclaimer": (
+            "Detection is based on uploaded filenames vs mortgage checklist rules only. "
+            "Official SA302 and Tax Year Overview PDFs must come from HMRC Personal Tax Account "
+            "or your accountant."
+        ),
+        "items": items,
+    }
+
+
+def _tax_year_label_to_slash_param(label: str) -> str:
+    parts = label.replace("–", "-").strip().split("-")
+    if len(parts) != 2:
+        return "2025/2026"
+    try:
+        a0, a1 = int(parts[0]), int(parts[1])
+    except ValueError:
+        return "2025/2026"
+    y0 = 2000 + a0
+    y1 = 2000 + a1
+    if y1 != y0 + 1:
+        return "2025/2026"
+    return f"{y0}/{y1}"
+
+
+def _tax_year_label_to_hmrc_hyphen_path(label: str) -> Optional[str]:
+    """Map pack label like 24-25 to HMRC path tax year 2024-25."""
+    parts = label.replace("–", "-").strip().split("-")
+    if len(parts) != 2:
+        return None
+    try:
+        a0, a1 = int(parts[0]), int(parts[1])
+    except ValueError:
+        return None
+    y0 = 2000 + a0
+    y1 = 2000 + a1
+    if y1 != y0 + 1:
+        return None
+    return f"{y0}-{str(y1)[2:]}"
+
+
+def _pick_first_calculation_id(payload: dict[str, Any]) -> Optional[str]:
+    for key in ("calculations", "items", "calculationList"):
+        arr = payload.get(key)
+        if not isinstance(arr, list) or not arr:
+            continue
+        first = arr[0]
+        if not isinstance(first, dict):
+            continue
+        for cid_key in ("calculationId", "id", "calculation_id"):
+            v = first.get(cid_key)
+            if v:
+                return str(v)
+    return None
+
+
+async def _fetch_hmrc_individual_calculation_json(
+    bearer_token: str,
+    money_raw: dict[str, Any],
+    nino: str,
+) -> tuple[Optional[bytes], Optional[str]]:
+    summaries = money_raw.get("tax_year_summaries") or []
+    if not summaries or not isinstance(summaries[-1], dict):
+        return None, "no tax_year_summaries in money preview"
+    label = str(summaries[-1].get("tax_year") or "")
+    tax_hyphen = _tax_year_label_to_hmrc_hyphen_path(label)
+    if not tax_hyphen:
+        return None, "could not map tax year label to HMRC hyphen format"
+    nino_clean = "".join(nino.split()).upper()
+    if len(nino_clean) != 9:
+        return None, "hmrc_nino must be 9 characters"
+    base = os.getenv("INTEGRATIONS_SERVICE_URL", "").strip().rstrip("/")
+    if not base:
+        return None, "integrations service URL not configured"
+    list_url = f"{base}/integrations/hmrc/self-assessment/{tax_hyphen}/calculations"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            list_resp = await client.get(
+                list_url,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                params={"nino": nino_clean},
+            )
+        if list_resp.status_code != 200:
+            return None, f"list calculations HTTP {list_resp.status_code}"
+        list_body = list_resp.json()
+    except httpx.RequestError as exc:
+        return None, str(exc)
+    if not isinstance(list_body, dict):
+        return None, "unexpected list response shape"
+    calc_id = _pick_first_calculation_id(list_body)
+    if not calc_id:
+        return None, "no calculationId in list response"
+    retrieve_url = (
+        f"{base}/integrations/hmrc/self-assessment/{tax_hyphen}/calculations/{calc_id}"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            ret_resp = await client.get(
+                retrieve_url,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                params={"nino": nino_clean},
+            )
+        if ret_resp.status_code != 200:
+            return None, f"retrieve calculation HTTP {ret_resp.status_code}"
+        detail = ret_resp.json()
+    except httpx.RequestError as exc:
+        return None, str(exc)
+    wrapper = {
+        "disclaimer": (
+            "Payload from integrations-service Individual Calculations retrieve. "
+            "Not a PDF Tax Year overview; validate against lender requirements."
+        ),
+        "tax_year": tax_hyphen,
+        "nino": nino_clean,
+        "calculation_id": calc_id,
+        "list_excerpt": {k: list_body.get(k) for k in ("mode", "calculations") if k in list_body},
+        "calculation": detail,
+    }
+    return json.dumps(wrapper, indent=2, default=str).encode("utf-8"), None
+
+
+async def _fetch_hmrc_tax_calculation_bundle_json(
+    bearer_token: str,
+    money_raw: dict[str, Any],
+) -> tuple[Optional[bytes], Optional[str]]:
+    summaries = money_raw.get("tax_year_summaries") or []
+    if not summaries or not isinstance(summaries[-1], dict):
+        return None, "no tax_year_summaries in money preview"
+    last = summaries[-1]
+    total_income = float(last.get("income_gbp") or 0.0)
+    total_deductions = float(last.get("expenditure_gbp") or 0.0)
+    label = str(last.get("tax_year") or "")
+    tax_year_param = _tax_year_label_to_slash_param(label)
+    base = os.getenv("INTEGRATIONS_SERVICE_URL", "").strip().rstrip("/")
+    if not base:
+        return None, "integrations service URL not configured"
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(
+                f"{base}/integrations/hmrc/mtd/tax-calculation",
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                params={
+                    "total_income": total_income,
+                    "total_deductions": total_deductions,
+                    "tax_year": tax_year_param,
+                },
+            )
+        if resp.status_code != 200:
+            return None, f"integrations HTTP {resp.status_code}"
+        body = resp.json()
+    except httpx.RequestError as exc:
+        return None, str(exc)
+    wrapper = {
+        "disclaimer": (
+            "Illustrative calculation from integrations-service (simulated or sandbox HMRC). "
+            "Not an official SA302 and not a Tax Year Overview. Lenders may require HMRC-issued PDFs."
+        ),
+        "inputs": {
+            "total_income": total_income,
+            "total_deductions": total_deductions,
+            "tax_year": tax_year_param,
+            "source_tax_year_label": label,
+        },
+        "calculation": body,
+    }
+    return json.dumps(wrapper, indent=2).encode("utf-8"), None
+
+
+_BROKER_BUNDLE_HMRC_OFFICIAL_EVIDENCE_GUIDE = """\
+Official HMRC tax evidence (PDF / printout) — UK lenders and brokers
+=====================================================================
+
+MyNetTax cannot download Personal Tax Account (PTA) PDFs for you. HMRC does not
+offer a public API that replaces the taxpayer signing in and saving the document.
+
+1) Sign in to your Personal Tax Account
+   https://www.gov.uk/personal-tax-account
+
+2) Self Assessment tax calculation / SA302 / tax year overview
+   Follow current HMRC wording on:
+   https://www.gov.uk/sa302-tax-calculation
+   After sign-in, use Self Assessment, then the option to view or print your tax
+   calculation for the tax years your lender asked for (labels change over time).
+
+3) What to attach alongside this ZIP
+   Save the HMRC-issued PDF (or a clear print-to-PDF) for each required tax year.
+   Use filenames your broker recognises, for example:
+     hmrc-tax-year-overview-2023-24.pdf
+   Upload copies to MyNetTax Documents so they appear in your mortgage pack checklist.
+
+4) How the JSON files in this ZIP relate to HMRC PDFs
+   - hmrc-individual-calculation.json (if present) is structured API output, not the PTA PDF.
+   - hmrc-income-tax-estimate.json is illustrative / MTD-style, not a lender-grade SA302.
+   Always follow your lender's or broker's written list of acceptable evidence.
+"""
+
+
+@app.post("/mortgage/broker-bundle.zip")
+async def download_mortgage_broker_bundle_zip(
+    request: MortgagePackIndexRequest,
+    months: int = Query(12, ge=1, le=36),
+    tax_years: int = Query(3, ge=1, le=6),
+    statement_days: int = Query(180, ge=1, le=730),
+    include_bank_statement_csv: bool = Query(True),
+    include_hmrc_individual_calculation: bool = Query(
+        False,
+        description="If true and hmrc_nino is set, call integrations Individual Calculations list+retrieve.",
+    ),
+    hmrc_nino: Optional[str] = Query(
+        None,
+        min_length=1,
+        max_length=14,
+        description="UK NINO (9 letters/digits) when include_hmrc_individual_calculation is true.",
+    ),
+    _user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+):
+    """
+    Starter ZIP: pack index JSON, money preview JSON, optional bank CSV, HMRC-related JSON
+    (upload filename match status for SA302 / tax year overview codes + illustrative tax calc from integrations).
+    """
+    pack_index = await _run_mortgage_pack_index_pipeline(request, bearer_token)
+    pack_json_bytes = json.dumps(
+        MortgagePackIndexResponse.model_validate(pack_index).model_dump(mode="json"),
+        indent=2,
+    ).encode("utf-8")
+
+    tx_url = os.getenv("TRANSACTIONS_SERVICE_URL", "").strip()
+    tx_list: list[dict[str, Any]] = []
+    if tx_url:
+        try:
+            data = await get_json_with_retry(
+                tx_url,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+                timeout=15.0,
+            )
+            if isinstance(data, list):
+                tx_list = [t for t in data if isinstance(t, dict)][:12000]
+        except httpx.HTTPError:
+            tx_list = []
+    money_raw = build_mortgage_money_preview(tx_list, months=months, tax_years=tax_years)
+    money_json_bytes = json.dumps(
+        MortgageMoneyPreviewResponse.model_validate(money_raw).model_dump(mode="json"),
+        indent=2,
+    ).encode("utf-8")
+
+    csv_bytes: Optional[bytes] = None
+    csv_err: Optional[str] = None
+    if include_bank_statement_csv:
+        csv_bytes, csv_err = await _fetch_bank_statement_csv_bytes(
+            bearer_token,
+            statement_days=statement_days,
+        )
+
+    hmrc_doc_json = json.dumps(_hmrc_mortgage_document_excerpt(pack_index), indent=2).encode("utf-8")
+    hmrc_calc_bytes, hmrc_calc_err = await _fetch_hmrc_tax_calculation_bundle_json(bearer_token, money_raw)
+
+    hmrc_individual_bytes: Optional[bytes] = None
+    hmrc_individual_err: Optional[str] = None
+    if include_hmrc_individual_calculation and hmrc_nino and hmrc_nino.strip():
+        hmrc_individual_bytes, hmrc_individual_err = await _fetch_hmrc_individual_calculation_json(
+            bearer_token,
+            money_raw,
+            hmrc_nino,
+        )
+
+    gen = pack_index.get("generated_at")
+    if isinstance(gen, datetime.datetime):
+        day_slug = gen.date().isoformat()
+    else:
+        day_slug = datetime.date.today().isoformat()
+    filename_safe_type = request.mortgage_type.replace(" ", "_").replace("/", "_")
+
+    readme_lines = [
+        "MyNetTax — broker starter bundle (informational, not regulated mortgage advice).",
+        "Verify all figures and documents with your lender or broker before submission.",
+        "",
+        "Files:",
+        "- mortgage-pack-index.json — checklist, readiness, evidence summary",
+        "- money-preview.json — illustrative monthly I&E and UK tax-year rollups from stored bank rows",
+        "- hmrc-mortgage-document-status.json — SA302 / tax year overview checklist match (upload filenames)",
+        "- hmrc-official-tax-evidence-steps.txt — how to obtain official HMRC PDFs from gov.uk PTA",
+    ]
+    if hmrc_calc_bytes:
+        readme_lines.append(
+            "- hmrc-income-tax-estimate.json — illustrative tax calc (integrations MTD tax-calculation; not SA302)"
+        )
+    elif hmrc_calc_err:
+        readme_lines.append(f"- (hmrc-income-tax-estimate omitted: {hmrc_calc_err})")
+    if hmrc_individual_bytes:
+        readme_lines.append(
+            "- hmrc-individual-calculation.json — HMRC Individual Calculations retrieve (via integrations)"
+        )
+    elif include_hmrc_individual_calculation and hmrc_nino and hmrc_nino.strip() and hmrc_individual_err:
+        readme_lines.append(f"- (hmrc-individual-calculation omitted: {hmrc_individual_err})")
+    if csv_bytes:
+        readme_lines.append(
+            f"- bank-transactions-{statement_days}d.csv — stored transactions CSV (rolling window)"
+        )
+    elif include_bank_statement_csv and csv_err:
+        readme_lines.append(f"- (bank CSV omitted: {csv_err})")
+    elif not include_bank_statement_csv:
+        readme_lines.append(
+            "- (bank CSV not requested; add query include_bank_statement_csv=true to try)"
+        )
+    readme_body = "\n".join(readme_lines) + "\n"
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("README-broker-bundle.txt", readme_body.encode("utf-8"))
+        zf.writestr(
+            "hmrc-official-tax-evidence-steps.txt",
+            _BROKER_BUNDLE_HMRC_OFFICIAL_EVIDENCE_GUIDE.encode("utf-8"),
+        )
+        zf.writestr("mortgage-pack-index.json", pack_json_bytes)
+        zf.writestr("money-preview.json", money_json_bytes)
+        zf.writestr("hmrc-mortgage-document-status.json", hmrc_doc_json)
+        if hmrc_calc_bytes:
+            zf.writestr("hmrc-income-tax-estimate.json", hmrc_calc_bytes)
+        elif hmrc_calc_err:
+            zf.writestr(
+                "hmrc-income-tax-estimate-note.txt",
+                (hmrc_calc_err + "\n").encode("utf-8"),
+            )
+        if hmrc_individual_bytes:
+            zf.writestr("hmrc-individual-calculation.json", hmrc_individual_bytes)
+        elif include_hmrc_individual_calculation and hmrc_nino and hmrc_nino.strip() and hmrc_individual_err:
+            zf.writestr(
+                "hmrc-individual-calculation-note.txt",
+                (hmrc_individual_err + "\n").encode("utf-8"),
+            )
+        if csv_bytes:
+            zf.writestr(f"bank-transactions-{statement_days}d.csv", csv_bytes)
+        elif include_bank_statement_csv and csv_err:
+            zf.writestr("bank-statement-export-note.txt", (csv_err + "\n").encode("utf-8"))
+
+    buf.seek(0)
+    zip_name = f"broker-bundle_{filename_safe_type}_{day_slug}.zip"
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_name}"'},
     )
 
 

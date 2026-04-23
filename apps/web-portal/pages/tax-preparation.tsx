@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import { CisComplianceBanner } from '../components/CisComplianceBanner';
+import { MtdTaxPrepSubmissionCta, MtdTaxPrepDraftCaption, mtdWorkflowLabel, type MtdDraftLatest } from '../components/MtdDraftWorkflow';
 import { downloadAccountantTaxSummaryPdf } from '../lib/taxAccountantPdf';
+import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
 import styles from '../styles/Home.module.css';
 
 const TAX_SERVICE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
 const TXN_SERVICE_URL = process.env.NEXT_PUBLIC_TRANSACTIONS_SERVICE_URL || '/api/transactions';
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || '/api/analytics';
+const INTEGRATIONS_API = process.env.NEXT_PUBLIC_INTEGRATIONS_SERVICE_URL || '/api/integrations';
 
 type Props = { token: string };
 
@@ -39,6 +42,15 @@ type CisCreditsBreakdown = {
   hmrc_submit_extra_confirm_required: boolean;
   legacy_cis_field_routed_to_unverified?: boolean;
   legacy_cis_field_ignored_use_split_inputs?: boolean;
+};
+
+type TaxSavingsTip = {
+  id: string;
+  title: string;
+  detail: string;
+  category: 'static' | 'personalized';
+  potential_saving_gbp?: number | null;
+  priority: number;
 };
 
 type TaxCalc = {
@@ -281,6 +293,10 @@ function Row({ label, value, bold, accent }: { label: string; value: string; bol
 
 export default function TaxPreparationPage({ token }: Props) {
   const router = useRouter();
+  const { businesses, loadError, selectedBusinessId, setSelectedBusinessId } = useTransactionsBusinessScope(
+    token,
+    TXN_SERVICE_URL,
+  );
   const [yearIdx, setYearIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -291,10 +307,12 @@ export default function TaxPreparationPage({ token }: Props) {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [taxTips, setTaxTips] = useState<TaxSavingsTip[]>([]);
   const [taxTipsDisclaimer, setTaxTipsDisclaimer] = useState('');
+  const [mtdDraft, setMtdDraft] = useState<MtdDraftLatest | null>(null);
+  const [mtdWorkflowBusy, setMtdWorkflowBusy] = useState(false);
 
   const year = TAX_YEARS[yearIdx];
 
-  const load = async (yIdx: number) => {
+  const load = useCallback(async (yIdx: number) => {
     const y = TAX_YEARS[yIdx];
     setLoading(true);
     setError('');
@@ -302,13 +320,15 @@ export default function TaxPreparationPage({ token }: Props) {
     setReady(false);
     setTaxTips([]);
     setTaxTipsDisclaimer('');
+    setMtdDraft(null);
     try {
+      const txnHeaders = transactionsBearerHeaders(token, selectedBusinessId);
       const [txnRes, unmatchedRes, calcRes] = await Promise.all([
         fetch(`${TXN_SERVICE_URL}/transactions/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: txnHeaders,
         }),
         fetch(`${TXN_SERVICE_URL}/transactions/receipt-drafts/unmatched?limit=1`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: txnHeaders,
         }),
         fetch(`${TAX_SERVICE_URL}/calculate`, {
           method: 'POST',
@@ -343,6 +363,24 @@ export default function TaxPreparationPage({ token }: Props) {
       setCalc(calcData);
       setReady(true);
 
+      if (calcData.mtd_obligation?.reporting_required) {
+        try {
+          const dr = await fetch(
+            `${INTEGRATIONS_API}/integrations/hmrc/mtd/quarterly-update/draft/latest`,
+            { headers: { Authorization: `Bearer ${token}` } },
+          );
+          if (dr.ok) {
+            setMtdDraft((await dr.json()) as MtdDraftLatest);
+          } else {
+            setMtdDraft(null);
+          }
+        } catch {
+          setMtdDraft(null);
+        }
+      } else {
+        setMtdDraft(null);
+      }
+
       let tipsList: TaxSavingsTip[] = [];
       let tipsDisc = '';
       try {
@@ -365,16 +403,39 @@ export default function TaxPreparationPage({ token }: Props) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, selectedBusinessId]);
 
   useEffect(() => {
     void load(yearIdx);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [yearIdx, selectedBusinessId, token, load]);
 
   const handleYearChange = (idx: number) => {
     setYearIdx(idx);
     void load(idx);
+  };
+
+  const runMtdWorkflowTransition = async (target: 'ready_for_accountant_review' | 'accountant_reviewed') => {
+    if (!token || !mtdDraft?.draft_id) return;
+    setMtdWorkflowBusy(true);
+    setError('');
+    try {
+      const r = await fetch(
+        `${INTEGRATIONS_API}/integrations/hmrc/mtd/quarterly-update/draft/${mtdDraft.draft_id}/workflow`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ target_status: target }),
+        },
+      );
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({})) as { detail?: string };
+        setError(typeof err.detail === 'string' ? err.detail : 'Workflow update failed');
+        return;
+      }
+      await load(yearIdx);
+    } finally {
+      setMtdWorkflowBusy(false);
+    }
   };
 
   // Derived data
@@ -422,7 +483,7 @@ export default function TaxPreparationPage({ token }: Props) {
       </div>
 
       {/* Tax Year Selector */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         {TAX_YEARS.map((y, i) => (
           <button
             key={y.label}
@@ -439,6 +500,34 @@ export default function TaxPreparationPage({ token }: Props) {
             {y.label}
           </button>
         ))}
+      </div>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+        {businesses.length > 0 ? (
+          <>
+            <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', fontWeight: 600 }}>Business</span>
+            <select
+              onChange={(e) => setSelectedBusinessId(e.target.value)}
+              style={{
+                padding: '6px 12px',
+                borderRadius: 8,
+                border: '1px solid var(--border)',
+                background: 'var(--card-bg)',
+                color: 'var(--text-primary)',
+                fontSize: '0.85rem',
+              }}
+              value={selectedBusinessId ?? businesses[0]?.id ?? ''}
+            >
+              {businesses.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.display_name}
+                </option>
+              ))}
+            </select>
+          </>
+        ) : null}
+        {loadError ? (
+          <span style={{ color: 'var(--accent)', fontSize: '0.82rem' }}>{loadError}</span>
+        ) : null}
         {ready && calc && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <button
@@ -757,6 +846,58 @@ export default function TaxPreparationPage({ token }: Props) {
                     </div>
                   ))}
                 </div>
+                <MtdTaxPrepSubmissionCta />
+                {mtdDraft?.draft_id && mtdDraft.workflow_status ? (
+                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-light)' }}>
+                    <MtdTaxPrepDraftCaption />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                      <Pill label={mtdWorkflowLabel(mtdDraft.workflow_status)} color="#6366f1" />
+                      {mtdDraft.quarter ? (
+                        <span style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)' }}>Quarter {mtdDraft.quarter}</span>
+                      ) : null}
+                    </div>
+                    {mtdDraft.workflow_status === 'draft' && (
+                      <button
+                        type="button"
+                        disabled={mtdWorkflowBusy}
+                        onClick={() => void runMtdWorkflowTransition('ready_for_accountant_review')}
+                        style={{
+                          marginTop: 12,
+                          padding: '8px 14px',
+                          fontSize: '0.82rem',
+                          fontWeight: 600,
+                          borderRadius: 8,
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elevated)',
+                          cursor: mtdWorkflowBusy ? 'wait' : 'pointer',
+                          opacity: mtdWorkflowBusy ? 0.65 : 1,
+                        }}
+                      >
+                        Request accountant review
+                      </button>
+                    )}
+                    {mtdDraft.workflow_status === 'ready_for_accountant_review' && (
+                      <button
+                        type="button"
+                        disabled={mtdWorkflowBusy}
+                        onClick={() => void runMtdWorkflowTransition('accountant_reviewed')}
+                        style={{
+                          marginTop: 12,
+                          padding: '8px 14px',
+                          fontSize: '0.82rem',
+                          fontWeight: 600,
+                          borderRadius: 8,
+                          border: '1px solid var(--border)',
+                          background: 'var(--bg-elevated)',
+                          cursor: mtdWorkflowBusy ? 'wait' : 'pointer',
+                          opacity: mtdWorkflowBusy ? 0.65 : 1,
+                        }}
+                      >
+                        Mark accountant reviewed (demo)
+                      </button>
+                    )}
+                  </div>
+                ) : null}
               </SectionCard>
             )}
           </div>

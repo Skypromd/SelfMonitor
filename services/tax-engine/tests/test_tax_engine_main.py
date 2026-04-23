@@ -157,6 +157,97 @@ def test_calculate_tax_with_mocked_transactions():
     assert isinstance(data["breakdown"]["estimate_disclaimers"], list)
 
 
+def test_calculate_posts_compliance_audit_when_configured():
+    mock_transactions = [
+        {"date": "2023-05-10", "amount": 3000.0, "category": "income"},
+    ]
+    with _httpx_get_router(transactions=mock_transactions, regulatory={}), patch(
+        "app.main.post_audit_event", new_callable=AsyncMock
+    ) as mock_audit:
+        mock_audit.return_value = True
+        prev = app_main.COMPLIANCE_SERVICE_URL
+        app_main.COMPLIANCE_SERVICE_URL = "http://compliance:80"
+        try:
+            response = client.post(
+                "/calculate",
+                headers=get_auth_headers(),
+                json={"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"},
+            )
+        finally:
+            app_main.COMPLIANCE_SERVICE_URL = prev
+    assert response.status_code == 200
+    mock_audit.assert_awaited_once()
+    aud = mock_audit.await_args.kwargs
+    assert aud["action"] == "tax_calculate"
+    assert aud["user_id"] == TEST_USER_ID
+    assert aud["details"]["jurisdiction"] == "UK"
+
+
+def test_calculate_and_submit_posts_compliance_audit_when_configured():
+    mock_transactions = [
+        {"date": "2026-05-10", "amount": 60000.0, "category": "income"},
+        {"date": "2026-06-15", "amount": -3000.0, "category": "transport"},
+    ]
+    mock_get_response = httpx.Response(
+        200,
+        json=mock_transactions,
+        request=httpx.Request("GET", "http://transactions-service/transactions/me"),
+    )
+    prev = app_main.COMPLIANCE_SERVICE_URL
+    app_main.COMPLIANCE_SERVICE_URL = "http://compliance:80"
+    try:
+        with _httpx_fixed_response(mock_get_response):
+            with patch(
+                "app.main.post_json_with_retry",
+                side_effect=[
+                    {"submission_id": "mock-submission-id"},
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ],
+            ) as mock_post:
+                with patch("app.main.post_audit_event", new_callable=AsyncMock) as mock_audit:
+                    mock_audit.return_value = True
+                    response = client.post(
+                        "/calculate-and-submit",
+                        headers=get_auth_headers(),
+                        json={"start_date": "2026-04-06", "end_date": "2027-04-05", "jurisdiction": "UK"},
+                    )
+    finally:
+        app_main.COMPLIANCE_SERVICE_URL = prev
+    assert response.status_code == 202
+    mock_audit.assert_awaited_once()
+    assert mock_audit.await_args.kwargs["action"] == "tax_calculate_and_submit"
+    assert mock_audit.await_args.kwargs["details"]["submission_id"] == "mock-submission-id"
+    assert mock_post.call_count == 6
+
+
+def test_mtd_prepare_posts_compliance_audit_when_configured():
+    mock_transactions = [
+        {"date": "2023-05-10", "amount": 3000.0, "category": "income"},
+        {"date": "2023-06-15", "amount": -150.0, "category": "transport"},
+        {"date": "2023-07-20", "amount": -80.0, "category": "groceries"},
+        {"date": "2023-08-01", "amount": -50.0, "category": "office_supplies"},
+    ]
+    body = {"start_date": "2023-01-01", "end_date": "2023-12-31", "jurisdiction": "UK"}
+    with _httpx_get_router(transactions=mock_transactions, regulatory={}), patch(
+        "app.main.post_audit_event", new_callable=AsyncMock
+    ) as mock_audit:
+        mock_audit.return_value = True
+        prev = app_main.COMPLIANCE_SERVICE_URL
+        app_main.COMPLIANCE_SERVICE_URL = "http://compliance:80"
+        try:
+            response = client.post("/mtd/prepare", headers=get_auth_headers(), json=body)
+        finally:
+            app_main.COMPLIANCE_SERVICE_URL = prev
+    assert response.status_code == 200
+    mock_audit.assert_awaited_once()
+    assert mock_audit.await_args.kwargs["action"] == "tax_mtd_prepare"
+    assert mock_audit.await_args.kwargs["user_id"] == TEST_USER_ID
+
+
 def test_cis_legacy_single_field_treated_as_unverified():
     mock_transactions = [
         {"date": "2023-05-10", "amount": 3000.0, "category": "income"},
@@ -607,3 +698,13 @@ def test_public_self_employed_estimate_rejects_expenses_over_income():
         json={"gross_trading_income": 1000, "allowable_expenses": 5000},
     )
     assert response.status_code == 400
+
+
+def test_internal_mtd_auto_draft_forbidden_without_valid_token(monkeypatch):
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "good-internal-draft-token")
+    response = client.post(
+        "/internal/mtd/auto-draft-quarterly",
+        headers={"X-Internal-Token": "wrong"},
+        json={"user_id": "u@example.com", "tax_year_start_year": 2026, "quarter": "Q1"},
+    )
+    assert response.status_code == 403

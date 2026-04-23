@@ -80,7 +80,8 @@ HMRC Sandbox App ID: `04c10afd-a1bd-4328-b993-27169719e9a1`
 
 ```bash
 cp .env.example .env
-# Edit .env — see comments for Stripe, HMRC, Open Banking setup
+# Strong secrets for first deploy: python scripts/print_phase0_secrets.py  (see docs/GO_LIVE_CHECKLIST.md)
+# Edit .env — Stripe, HMRC, Open Banking, Salt Edge (see comments in .env.example)
 docker compose up --build -d
 ```
 
@@ -111,7 +112,7 @@ Web portal: `http://localhost:3000`
 |--------|------------|
 | **Env** | Copy `apps/web-portal/.env.local` from comments in repo or create it. Use **same-origin** API paths (`NEXT_PUBLIC_API_GATEWAY_URL=/api`, `NEXT_PUBLIC_AUTH_SERVICE_URL=/api/auth`, etc.) so the browser calls `http://localhost:3000/api/...` and Next.js **rewrites** proxy to the gateway (see `apps/web-portal/next.config.js`). Avoid `http://localhost:8000` in `NEXT_PUBLIC_*` for the browser unless nginx CORS is fully configured for every route you use. |
 | **Backend** | Gateway: `http://localhost:8000`. Typical local backend: `scripts/start_backend_v1.ps1` / `scripts/start_backend_v1.sh` or `docker compose` + `nginx-gateway`. |
-| **nginx** | After editing `nginx/nginx.conf` or `nginx/snippets/*`, rebuild/restart: `docker compose up -d --build nginx-gateway`. Snippet `nginx/snippets/cors_api_gateway.conf` adds CORS for preflight when clients hit **:8000** directly (e.g. mobile). |
+| **nginx** | After editing `nginx/nginx.conf` or `nginx/snippets/*`, rebuild/restart: `docker compose up -d --build nginx-gateway`. Snippet `nginx/snippets/cors_api_gateway.conf` adds CORS for preflight when clients hit **:8000** directly (e.g. mobile). **CIS:** `GET /api/transactions/cis/evidence-pack/shared-zip` has a dedicated stricter `limit_req` (signed-token download, no JWT). |
 | **v1 slice** | Lean stack: `scripts/compose_v1_up.ps1` / `.sh` — includes `partner-registry` for `/api/partners`. |
 | **Operator subdomain `practolog`** | Optional: separate **origin** for operators (different `sessionStorage` from end users). Enable in `apps/web-portal/.env.local`: `NEXT_PUBLIC_ADMIN_SUBDOMAIN_ENABLED=1`, `NEXT_PUBLIC_ADMIN_HOST=practolog.localhost`, `NEXT_PUBLIC_CLIENT_ORIGIN=http://localhost:3000`, `NEXT_PUBLIC_ADMIN_ORIGIN=http://practolog.localhost:3000`. Then open **`http://practolog.localhost:3000`** for `/admin`, `/admin/login`, Platform billing (`/billing`). Clients use **`http://localhost:3000`**. Logic: `apps/web-portal/middleware.ts`, helpers: `apps/web-portal/lib/adminSurface.ts`. **Production:** DNS + TLS for e.g. `practolog.example.com` and `app.example.com`; set the four variables to HTTPS origins. |
 | **Admin account** | Not created via `/register`. Use auth bootstrap (`AUTH_BOOTSTRAP_ADMIN`, `AUTH_ADMIN_EMAIL`, `AUTH_ADMIN_PASSWORD` in root `.env`) and **`/admin/login`** (on practolog host when subdomain mode is on). |
@@ -197,7 +198,7 @@ GET  /api/categorization/categories
 | Tier | Price | Bank Sync | Key Features |
 |---|---|---|---|
 | Free | £0 | No sync | Manual entry, dashboard, tax calculator |
-| Starter | £12/mo | 1×/day | CIS tracker, guided MTD, 1 bank |
+| Starter | £12/mo | 1×/day | CIS tracker, guided MTD, 3 banks |
 | Growth | £15/mo | 3×/day | 2 banks, 12 mo history, guided MTD |
 | Pro | £18/mo | 10×/day | 5 banks, direct+fraud MTD, VAT, 24 mo history |
 | Business | £28/mo | 25×/day | 10 banks, 36 mo history, higher limits |

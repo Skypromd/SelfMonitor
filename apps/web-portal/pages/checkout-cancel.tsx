@@ -5,7 +5,9 @@ import styles from '../styles/Home.module.css';
 
 export default function CheckoutCancelPage() {
   const router = useRouter();
-  const { plan } = router.query;
+  const { plan, product } = router.query;
+  const productStr = Array.isArray(product) ? product[0] : product;
+  const isConsult = productStr === 'accountant_cis_consult';
 
   const planName = plan
     ? (plan as string).charAt(0).toUpperCase() + (plan as string).slice(1)
@@ -34,8 +36,17 @@ export default function CheckoutCancelPage() {
           </h1>
 
           <p className={styles.description} style={{ marginBottom: '1.5rem' }}>
-            No worries — your <strong style={{ color: '#14b8a6' }}>{planName}</strong> subscription was not started.
-            You have not been charged.
+            {isConsult ? (
+              <>
+                Checkout for a <strong style={{ color: '#14b8a6' }}>CIS accountant review</strong> session was
+                cancelled. You have not been charged.
+              </>
+            ) : (
+              <>
+                No worries — your <strong style={{ color: '#14b8a6' }}>{planName}</strong> subscription was not started.
+                You have not been charged.
+              </>
+            )}
           </p>
 
           <div style={{
@@ -43,29 +54,40 @@ export default function CheckoutCancelPage() {
             background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
             margin: '0 0 1.5rem', textAlign: 'left', color: '#94a3b8', fontSize: '0.875rem', lineHeight: 2,
           }}>
-            <div>💡 You can always start a free trial — no credit card required</div>
-            <div>💡 Try the Free plan to explore MyNetTax at no cost</div>
-            <div>💡 Upgrade whenever you&apos;re ready from your dashboard</div>
+            {isConsult ? (
+              <>
+                <div>💡 You can restart checkout from My subscription</div>
+                <div>💡 Questions? Use the contact link in the site footer</div>
+              </>
+            ) : (
+              <>
+                <div>💡 You can always start a free trial — no credit card required</div>
+                <div>💡 Try the Free plan to explore MyNetTax at no cost</div>
+                <div>💡 Upgrade whenever you&apos;re ready from your dashboard</div>
+              </>
+            )}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%' }}>
             <Link
-              href={`/#pricing`}
+              href={isConsult ? '/my-subscription' : '/#pricing'}
               className={styles.button}
               style={{ display: 'block', textDecoration: 'none', padding: '0.875rem 2rem', borderRadius: 10 }}
             >
-              View Plans Again
+              {isConsult ? 'Back to My subscription' : 'View Plans Again'}
             </Link>
-            <Link
-              href="/register?plan=free"
-              style={{
-                display: 'block', textDecoration: 'none', padding: '0.875rem 2rem',
-                borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)',
-                color: '#94a3b8', fontSize: '0.875rem', textAlign: 'center',
-              }}
-            >
-              Start with Free Plan instead
-            </Link>
+            {!isConsult ? (
+              <Link
+                href="/register?plan=free"
+                style={{
+                  display: 'block', textDecoration: 'none', padding: '0.875rem 2rem',
+                  borderRadius: 10, border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#94a3b8', fontSize: '0.875rem', textAlign: 'center',
+                }}
+              >
+                Start with Free Plan instead
+              </Link>
+            ) : null}
           </div>
 
           <p style={{ marginTop: '1.5rem' }}>

@@ -7,7 +7,7 @@ Handles audit logs and other compliance tasks.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | /health | No | Health check |
-| POST | /audit-events | Yes | Record a new event in the persistent audit log |
+| POST | /audit-events | Yes | Record a new event; assigns **per-user hash chain** (`prev_chain_hash`, `chain_hash`, SHA-256) |
 | GET | /audit-events | Yes | Query the audit log, optionally filtered by user_id |
 
 ## Environment Variables
@@ -27,5 +27,5 @@ uvicorn app.main:app --reload
 ## Testing
 
 ```bash
-pytest tests/test_main.py
+pytest tests/test_compliance_service_main.py
 ```

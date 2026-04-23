@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useState } from 'react';
 import { Share, StyleSheet, Text } from 'react-native';
 
 import Screen from '../components/Screen';
@@ -7,6 +8,9 @@ import Card from '../components/Card';
 import PrimaryButton from '../components/PrimaryButton';
 import FadeInView from '../components/FadeInView';
 import { apiRequest } from '../services/api';
+import { readStoredTransactionsBusinessId } from '../services/transactionsBusinessStorage';
+
+const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8080/api';
 import { toCsv } from '../utils/csv';
 import { useAuth } from '../context/AuthContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
@@ -37,6 +41,17 @@ export default function AccountantShareScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
+  const [transactionsBusinessId, setTransactionsBusinessId] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setTransactionsBusinessId(null);
+        return;
+      }
+      void readStoredTransactionsBusinessId(token).then(setTransactionsBusinessId);
+    }, [token]),
+  );
 
   const handleExportTransactions = async () => {
     setMessage('');
@@ -47,7 +62,10 @@ export default function AccountantShareScreen() {
     }
     setLoadingKey('transactions');
     try {
-      const response = await apiRequest('/transactions/transactions/me', { token });
+      const response = await apiRequest('/transactions/transactions/me', {
+        token,
+        businessId: transactionsBusinessId,
+      });
       if (!response.ok) throw new Error();
       const data = await response.json();
       const headers = ['date', 'description', 'amount', 'currency', 'category'];
@@ -104,6 +122,43 @@ export default function AccountantShareScreen() {
     }
   };
 
+  const handleCisEvidenceAccountantLink = async () => {
+    setMessage('');
+    setError('');
+    if (isOffline) {
+      setError(t('accountant.offline_error'));
+      return;
+    }
+    setLoadingKey('cis_evidence');
+    try {
+      const response = await apiRequest('/transactions/cis/evidence-pack/share-token', {
+        method: 'POST',
+        token,
+        body: '{}',
+      });
+      if (response.status === 403) {
+        setError(t('accountant.cis_evidence_plan'));
+        return;
+      }
+      if (!response.ok) {
+        setError(t('accountant.cis_evidence_failed'));
+        return;
+      }
+      const data = (await response.json()) as { token: string; relative_download_path: string };
+      const path = `${data.relative_download_path}?token=${encodeURIComponent(data.token)}`;
+      const url = `${API_GATEWAY_URL.replace(/\/$/, '')}/transactions${path.startsWith('/') ? '' : '/'}${path}`;
+      const note = t('accountant.cis_evidence_note');
+      await Share.share({
+        message: `${t('accountant.cis_evidence_shared')}\n\n${url}\n\n${note}`,
+      });
+      setMessage(t('accountant.cis_evidence_done'));
+    } catch {
+      setError(t('accountant.cis_evidence_failed'));
+    } finally {
+      setLoadingKey(null);
+    }
+  };
+
   const handleExportDocuments = async () => {
     setMessage('');
     setError('');
@@ -148,6 +203,15 @@ export default function AccountantShareScreen() {
           <PrimaryButton
             title={loadingKey === 'documents' ? t('common.loading') : t('accountant.export_documents')}
             onPress={handleExportDocuments}
+            haptic="medium"
+            variant="secondary"
+            style={styles.secondaryButton}
+          />
+          <PrimaryButton
+            title={
+              loadingKey === 'cis_evidence' ? t('common.loading') : t('accountant.cis_evidence_link')
+            }
+            onPress={handleCisEvidenceAccountantLink}
             haptic="medium"
             variant="secondary"
             style={styles.secondaryButton}

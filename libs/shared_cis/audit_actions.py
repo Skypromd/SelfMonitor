@@ -13,3 +13,4 @@ class CISAuditAction(StrEnum):
     CIS_AMOUNTS_SAVED = "cis_amounts_saved"
     CIS_UNVERIFIED_SUBMIT_CONFIRMED = "cis_unverified_submit_confirmed"
     CIS_RECORD_UPDATED = "cis_record_updated"
+    CIS_EVIDENCE_PACK_SHARED_DOWNLOAD = "cis_evidence_pack_shared_download"

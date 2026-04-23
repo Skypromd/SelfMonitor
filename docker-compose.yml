@@ -343,7 +343,9 @@ services:
       - default_network
 
   auth-service:
-    build: ./services/auth-service
+    build:
+      context: .
+      dockerfile: services/auth-service/Dockerfile
     container_name: auth-service
     depends_on:
       - redis
@@ -372,6 +374,7 @@ services:
       APP_BASE_URL: "${APP_BASE_URL:-http://localhost:3000}"
       AUTH_CORS_EXTRA_ORIGINS: "${AUTH_CORS_EXTRA_ORIGINS:-http://practolog.localhost:3000}"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
+      REFERRAL_SERVICE_URL: "${REFERRAL_SERVICE_URL:-http://referral-service:80}"
     volumes:
       - auth_service_data:/data
     # ports are no longer exposed directly
@@ -392,6 +395,13 @@ services:
       REDIS_URL: "${INVOICE_REDIS_URL:-redis://redis-master:6379/0}"
       TRANSACTIONS_SERVICE_URL: http://transactions-service:80
       ANALYTICS_SERVICE_URL: http://analytics-service:80
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
+      FINOPS_MONITOR_URL: "${FINOPS_MONITOR_URL:-http://finops-monitor:8021}"
+      SMTP_HOST: "${SMTP_HOST:-}"
+      SMTP_PORT: "${SMTP_PORT:-587}"
+      SMTP_USER: "${SMTP_USER:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-}"
     volumes:
       - invoice_pdfs:/app/pdfs
       - ./services/invoice-service/templates:/app/templates
@@ -451,6 +461,7 @@ services:
       COMPLIANCE_SERVICE_URL: "${TRANSACTIONS_COMPLIANCE_SERVICE_URL:-http://compliance-service:80}"
       # Kafka producer not wired on app; keep off unless emit_event + broker are implemented
       KAFKA_ENABLED: "${KAFKA_ENABLED:-false}"
+      FINOPS_MONITOR_URL: "${FINOPS_MONITOR_URL:-http://finops-monitor:8021}"
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 80"
     networks:
       - default_network
@@ -493,6 +504,7 @@ services:
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${BANKING_TRANSACTIONS_SERVICE_URL:-http://transactions-service/import}"
+      TRANSACTIONS_ME_URL: "${BANKING_TRANSACTIONS_ME_URL:-http://transactions-service/transactions/me}"
       VAULT_ADDR: "${BANKING_VAULT_ADDR:-http://vault:8200}"
       VAULT_TOKEN: "${VAULT_DEV_ROOT_TOKEN_ID}"
       BANKING_CONNECTIONS_STORE_PATH: "${BANKING_CONNECTIONS_STORE_PATH:-/data/banking_user_connections.json}"
@@ -623,6 +635,7 @@ services:
       AWS_DEFAULT_REGION: "${DOCUMENTS_AWS_DEFAULT_REGION:-eu-west-2}"
       AWS_TEXTRACT_ENDPOINT_URL: "${DOCUMENTS_AWS_TEXTRACT_ENDPOINT_URL:-http://localstack:4566}"
       S3_BUCKET_NAME: "${DOCUMENTS_S3_BUCKET_NAME:-documents-bucket}"
+      COMPLIANCE_SERVICE_URL: "${DOCUMENTS_COMPLIANCE_SERVICE_URL:-http://compliance-service:80}"
       CATEGORIZATION_SERVICE_URL: "${DOCUMENTS_CATEGORIZATION_SERVICE_URL:-http://categorization-service/categorize}"
       TRANSACTIONS_SERVICE_URL: "${DOCUMENTS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/receipt-drafts}"
       OCR_PROVIDER: "${DOCUMENTS_OCR_PROVIDER:-textract}"
@@ -647,11 +660,14 @@ services:
       - regulatory-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
+      INTEGRATIONS_INTERNAL_BASE_URL: "${TAX_INTEGRATIONS_INTERNAL_BASE_URL:-http://integrations-service:80}"
       TRANSACTIONS_SERVICE_URL: "${TAX_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
       INTEGRATIONS_SERVICE_URL: "${TAX_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/submit-tax-return}"
       MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL: "${TAX_MTD_QUARTERLY_INTEGRATIONS_SERVICE_URL:-http://integrations-service/integrations/hmrc/mtd/quarterly-update}"
       CALENDAR_SERVICE_URL: "${TAX_CALENDAR_SERVICE_URL:-http://calendar-service/events}"
       REGULATORY_SERVICE_URL: "${REGULATORY_SERVICE_URL:-http://regulatory-service:8025}"
+      COMPLIANCE_SERVICE_URL: "${TAX_COMPLIANCE_SERVICE_URL:-http://compliance-service:80}"
       TAX_MTD_ITSA_RULES_JSON: '${TAX_MTD_ITSA_RULES_JSON:-[{"policy_code":"UK_MTD_ITSA_2026","effective_from":"2026-04-06","threshold":50000,"reporting_cadence":"quarterly_updates_plus_final_declaration"},{"policy_code":"UK_MTD_ITSA_2027","effective_from":"2027-04-06","threshold":30000,"reporting_cadence":"quarterly_updates_plus_final_declaration"},{"policy_code":"UK_MTD_ITSA_2028","effective_from":"2028-04-06","threshold":20000,"reporting_cadence":"quarterly_updates_plus_final_declaration"}]}'
       OTEL_SERVICE_NAME: "${TAX_OTEL_SERVICE_NAME:-tax-engine}"
       OTEL_EXPORTER_OTLP_ENDPOINT: "${TAX_OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}"
@@ -725,6 +741,7 @@ services:
       dockerfile: services/integrations-service/Dockerfile
     container_name: integrations-service
     environment:
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
       INTEGRATIONS_DB_PATH: "${INTEGRATIONS_DB_PATH:-/tmp/integrations.db}"
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       HMRC_DIRECT_API_BASE_URL: "${HMRC_DIRECT_API_BASE_URL:-https://api.service.hmrc.gov.uk}"
@@ -732,7 +749,7 @@ services:
       HMRC_OAUTH_TOKEN_URL: "${HMRC_OAUTH_TOKEN_URL:-https://test-api.service.hmrc.gov.uk/oauth/token}"
       HMRC_OAUTH_CLIENT_ID: "${HMRC_OAUTH_CLIENT_ID:-}"
       HMRC_OAUTH_CLIENT_SECRET: "${HMRC_OAUTH_CLIENT_SECRET:-}"
-      HMRC_OAUTH_SCOPE: "${HMRC_OAUTH_SCOPE:-write:self-assessment}"
+      HMRC_OAUTH_SCOPE: "${HMRC_OAUTH_SCOPE:-read:self-assessment write:self-assessment}"
       HMRC_QUARTERLY_ENDPOINT_PATH: "${HMRC_QUARTERLY_ENDPOINT_PATH:-/itsa/quarterly-updates}"
       HMRC_REQUEST_TIMEOUT_SECONDS: "${HMRC_REQUEST_TIMEOUT_SECONDS:-20}"
       HMRC_DIRECT_FALLBACK_TO_SIMULATION: "${HMRC_DIRECT_FALLBACK_TO_SIMULATION:-false}"
@@ -760,9 +777,13 @@ services:
       - transactions-service
       - documents-service
       - user-profile-service
+      - banking-connector
+      - integrations-service
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       TRANSACTIONS_SERVICE_URL: "${ANALYTICS_TRANSACTIONS_SERVICE_URL:-http://transactions-service/transactions/me}"
+      BANKING_CONNECTOR_SERVICE_URL: "${ANALYTICS_BANKING_CONNECTOR_URL:-http://banking-connector:80}"
+      INTEGRATIONS_SERVICE_URL: "${ANALYTICS_INTEGRATIONS_SERVICE_URL:-http://integrations-service:80}"
       DOCUMENTS_SERVICE_URL: "${ANALYTICS_DOCUMENTS_SERVICE_URL:-http://documents-service/documents}"
       USER_PROFILE_SERVICE_URL: "${ANALYTICS_USER_PROFILE_SERVICE_URL:-http://user-profile-service/profiles/me}"
       TAX_ENGINE_CALCULATE_URL: "${TAX_ENGINE_CALCULATE_URL:-http://tax-engine/calculate}"
@@ -1065,6 +1086,8 @@ services:
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
+      TAX_ENGINE_SERVICE_URL: "${FINOPS_TAX_ENGINE_SERVICE_URL:-http://tax-engine:80}"
+      ANALYTICS_SERVICE_URL: "${FINOPS_ANALYTICS_SERVICE_URL:-http://analytics-service:80}"
       AUTH_SERVICE_INTERNAL_URL: "${FINOPS_AUTH_SERVICE_INTERNAL_URL:-http://auth-service:80}"
       SMTP_HOST: "${SMTP_HOST:-}"
       SMTP_PORT: "${SMTP_PORT:-587}"
@@ -1081,6 +1104,8 @@ services:
       - "8021:8021"
     depends_on:
       - redis-master
+      - tax-engine
+      - analytics-service
     networks:
       - default_network
     healthcheck:
@@ -1181,6 +1206,8 @@ services:
       STRIPE_PRICE_BUSINESS: "${STRIPE_PRICE_BUSINESS:-}"
       FRONTEND_URL: "${FRONTEND_URL:-http://localhost:3000}"
       AUTH_SERVICE_URL: "http://auth-service:80"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
+      REFERRAL_SERVICE_INTERNAL_URL: "${REFERRAL_SERVICE_INTERNAL_URL:-http://referral-service:80}"
     ports:
       - "8024:80"
     networks:
@@ -1207,6 +1234,8 @@ services:
     environment:
       AUTH_SECRET_KEY: "${AUTH_SECRET_KEY}"
       DATABASE_URL: "postgresql+asyncpg://user:${POSTGRES_PASSWORD:-password}@postgres-master:5432/db_referral"
+      INTERNAL_SERVICE_SECRET: "${INTERNAL_SERVICE_SECRET:-internal-service-secret-dev-replace}"
+      BILLING_SERVICE_URL: "${BILLING_SERVICE_URL:-http://billing-service:80}"
     networks:
       - default_network
     healthcheck:

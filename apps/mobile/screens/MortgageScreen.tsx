@@ -9,6 +9,7 @@ import {
   TextInput,
   ScrollView,
   Animated,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -85,6 +86,15 @@ export default function MortgageScreen() {
     Array<{ label: string; amount: number }> | null
   >(null);
   const [affordLoading, setAffordLoading] = useState(false);
+  const [affordEmployment, setAffordEmployment] = useState<'employed' | 'self_employed'>('self_employed');
+  const [affordCredit, setAffordCredit] = useState<'clean' | 'minor' | 'adverse'>('clean');
+  const [affordPropertyType, setAffordPropertyType] = useState<
+    'standard_residential' | 'buy_to_let' | 'leasehold_flat'
+  >('standard_residential');
+  const [affordCcjPast6y, setAffordCcjPast6y] = useState(false);
+  const [affordDeposit, setAffordDeposit] = useState('');
+  const [affordApiMaxLoan, setAffordApiMaxLoan] = useState<number | null>(null);
+  const [affordApiMonthly, setAffordApiMonthly] = useState<number | null>(null);
 
   const [propertyValue, setPropertyValue] = useState('');
   const [stampDuty, setStampDuty] = useState<number | null>(null);
@@ -100,12 +110,26 @@ export default function MortgageScreen() {
     try {
       const res = await apiCall('/analytics/mortgage/readiness', {
         method: 'POST',
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          mortgage_type: 'home_mover',
+          employment_profile: 'sole_trader',
+          lender_profile: 'high_street_mainstream',
+          include_adverse_credit_pack: false,
+          max_documents_scan: 200,
+        }),
       });
       if (res.ok) {
-        const data = await res.json();
-        if (data.score != null) setReadinessScore(data.score);
-        if (data.label) setReadinessLabel(data.label);
+        const data = (await res.json()) as {
+          overall_completion_percent?: number;
+          readiness_status?: string;
+        };
+        if (typeof data.overall_completion_percent === 'number') {
+          setReadinessScore(Math.round(data.overall_completion_percent));
+        }
+        const st = data.readiness_status;
+        if (st === 'not_ready') setReadinessLabel('Not ready');
+        else if (st === 'almost_ready') setReadinessLabel('Almost ready');
+        else if (st === 'ready_for_broker_review') setReadinessLabel('Ready for broker review');
       }
     } catch {
       // keep defaults
@@ -120,29 +144,48 @@ export default function MortgageScreen() {
       return;
     }
     setAffordLoading(true);
+    setAffordApiMaxLoan(null);
+    setAffordApiMonthly(null);
+    const incomeNum = parseFloat(income.replace(/,/g, ''));
+    const priceRaw = propertyValue.trim() ? parseFloat(propertyValue.replace(/,/g, '')) : NaN;
+    const depRaw = affordDeposit.trim() ? parseFloat(affordDeposit.replace(/,/g, '')) : NaN;
+    const body = {
+      annual_income_gbp: incomeNum,
+      employment: affordEmployment,
+      property_price_gbp: !Number.isNaN(priceRaw) && priceRaw > 0 ? priceRaw : null,
+      deposit_gbp: !Number.isNaN(depRaw) && depRaw >= 0 ? depRaw : null,
+      annual_interest_rate_pct: 5,
+      term_years: 30,
+      first_time_buyer: false,
+      additional_property: false,
+      credit_band: affordCredit,
+      years_trading: null,
+      property_type: affordPropertyType,
+      ccj_in_past_6y: affordCcjPast6y,
+    };
     try {
-      const incomeNum = parseFloat(income);
-      const res = await apiCall('/mortgage/affordability', {
+      const res = await apiCall('/analytics/mortgage/affordability', {
         method: 'POST',
-        body: JSON.stringify({ income: incomeNum }),
+        body: JSON.stringify(body),
       });
-      if (res.ok) {
-        const data = await res.json();
-        setAffordabilityResults(data.scenarios || [
-          { label: 'Conservative (3x)', amount: incomeNum * 3 },
-          { label: 'Standard (4x)', amount: incomeNum * 4 },
-          { label: 'Stretch (4.5x)', amount: incomeNum * 4.5 },
-        ]);
+      const data = (await res.json()) as {
+        lender_scenarios?: Array<{ label: string; max_loan_from_income_gbp: number; illustrative_fit_score: number }>;
+        max_loan_from_income_gbp?: number;
+        monthly_payment_gbp?: number;
+      };
+      if (res.ok && Array.isArray(data.lender_scenarios)) {
+        setAffordApiMaxLoan(typeof data.max_loan_from_income_gbp === 'number' ? data.max_loan_from_income_gbp : null);
+        setAffordApiMonthly(typeof data.monthly_payment_gbp === 'number' ? data.monthly_payment_gbp : null);
+        setAffordabilityResults(
+          data.lender_scenarios.slice(0, 6).map((s) => ({
+            label: `${s.label} (fit ${s.illustrative_fit_score})`,
+            amount: s.max_loan_from_income_gbp,
+          }))
+        );
       } else {
-        const incomeNum2 = parseFloat(income);
-        setAffordabilityResults([
-          { label: 'Conservative (3x)', amount: incomeNum2 * 3 },
-          { label: 'Standard (4x)', amount: incomeNum2 * 4 },
-          { label: 'Stretch (4.5x)', amount: incomeNum2 * 4.5 },
-        ]);
+        throw new Error('affordability failed');
       }
     } catch {
-      const incomeNum = parseFloat(income);
       setAffordabilityResults([
         { label: 'Conservative (3x)', amount: incomeNum * 3 },
         { label: 'Standard (4x)', amount: incomeNum * 4 },
@@ -151,7 +194,15 @@ export default function MortgageScreen() {
     } finally {
       setAffordLoading(false);
     }
-  }, [income]);
+  }, [
+    income,
+    propertyValue,
+    affordDeposit,
+    affordEmployment,
+    affordCredit,
+    affordPropertyType,
+    affordCcjPast6y,
+  ]);
 
   const calculateStampDuty = useCallback(async () => {
     if (!propertyValue) {
@@ -161,9 +212,13 @@ export default function MortgageScreen() {
     setStampLoading(true);
     try {
       const val = parseFloat(propertyValue);
-      const res = await apiCall('/mortgage/stamp-duty', {
+      const q = new URLSearchParams({
+        property_value: String(val),
+        is_first_time_buyer: 'false',
+        is_additional_property: 'false',
+      });
+      const res = await apiCall(`/analytics/mortgage/stamp-duty?${q.toString()}`, {
         method: 'POST',
-        body: JSON.stringify({ property_value: val }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -180,14 +235,40 @@ export default function MortgageScreen() {
 
   const matchLenders = useCallback(async () => {
     setLenderLoading(true);
+    const inc = parseFloat(income.replace(/,/g, '')) || 55_000;
+    const pv = parseFloat(propertyValue.replace(/,/g, '')) || 300_000;
+    const dep = Math.min(Math.max(Math.round(pv * 0.1), 0), pv * 0.95);
+    const q = new URLSearchParams({
+      annual_income: String(inc),
+      deposit_available: String(dep),
+      property_value: String(pv),
+      trading_years: '2',
+      has_sa302: 'true',
+      has_adverse_credit: 'false',
+      interest_rate: '5',
+      mortgage_term_years: '25',
+    });
     try {
-      const res = await apiCall('/mortgage/lender-match', {
+      const res = await apiCall(`/analytics/mortgage/lender-match?${q.toString()}`, {
         method: 'POST',
-        body: JSON.stringify({}),
       });
       if (res.ok) {
-        const data = await res.json();
-        setLenders(data.lenders || MOCK_LENDERS);
+        const data = (await res.json()) as Array<{
+          name: string;
+          income_multiple: number;
+          max_ltv: number;
+        }>;
+        if (Array.isArray(data) && data.length > 0) {
+          setLenders(
+            data.slice(0, 8).map((row) => ({
+              name: row.name,
+              rate: `${row.income_multiple}x income`,
+              max_ltv: `${row.max_ltv}%`,
+            }))
+          );
+        } else {
+          setLenders(MOCK_LENDERS);
+        }
       } else {
         setLenders(MOCK_LENDERS);
       }
@@ -196,7 +277,7 @@ export default function MortgageScreen() {
     } finally {
       setLenderLoading(false);
     }
-  }, []);
+  }, [income, propertyValue]);
 
   const toggleChecklist = (index: number) => {
     setChecklist((prev) =>
@@ -208,8 +289,19 @@ export default function MortgageScreen() {
     readinessScore >= 80 ? colors.income : readinessScore >= 50 ? colors.warning : colors.expense;
   const completedChecklist = checklist.filter((c) => c.done).length;
 
-  const maxBorrow = income ? parseFloat(income) * 4.5 : null;
-  const monthlyPayment = maxBorrow ? Math.round((maxBorrow * 0.058) / 12) : null;
+  const incomeNumHero = income ? parseFloat(income.replace(/,/g, '')) : NaN;
+  const maxBorrow =
+    affordApiMaxLoan != null && !Number.isNaN(affordApiMaxLoan)
+      ? affordApiMaxLoan
+      : !Number.isNaN(incomeNumHero) && incomeNumHero > 0
+        ? incomeNumHero * 4.5
+        : null;
+  const monthlyPayment =
+    affordApiMonthly != null && !Number.isNaN(affordApiMonthly)
+      ? Math.round(affordApiMonthly)
+      : maxBorrow
+        ? Math.round((maxBorrow * 0.058) / 12)
+        : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -270,6 +362,79 @@ export default function MortgageScreen() {
             placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
           />
+          <Text style={styles.inputLabel}>Employment (for multiple)</Text>
+          <View style={styles.chipRow}>
+            {(
+              [
+                { v: 'self_employed' as const, t: 'Self-employed' },
+                { v: 'employed' as const, t: 'Employed' },
+              ]
+            ).map(({ v, t }) => (
+              <TouchableOpacity
+                key={v}
+                style={[styles.chip, affordEmployment === v && styles.chipOn]}
+                onPress={() => setAffordEmployment(v)}
+              >
+                <Text style={[styles.chipText, affordEmployment === v && styles.chipTextOn]}>{t}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.inputLabel}>Illustrative credit</Text>
+          <View style={styles.chipRow}>
+            {(
+              [
+                { v: 'clean' as const, t: 'Clean' },
+                { v: 'minor' as const, t: 'Minor' },
+                { v: 'adverse' as const, t: 'Adverse' },
+              ]
+            ).map(({ v, t }) => (
+              <TouchableOpacity
+                key={v}
+                style={[styles.chip, affordCredit === v && styles.chipOn]}
+                onPress={() => setAffordCredit(v)}
+              >
+                <Text style={[styles.chipText, affordCredit === v && styles.chipTextOn]}>{t}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={styles.inputLabel}>Property type (fit model)</Text>
+          <View style={styles.chipWrap}>
+            {(
+              [
+                { v: 'standard_residential' as const, t: 'House / res.' },
+                { v: 'leasehold_flat' as const, t: 'Leasehold flat' },
+                { v: 'buy_to_let' as const, t: 'BTL' },
+              ]
+            ).map(({ v, t }) => (
+              <TouchableOpacity
+                key={v}
+                style={[styles.chip, affordPropertyType === v && styles.chipOn]}
+                onPress={() => setAffordPropertyType(v)}
+              >
+                <Text style={[styles.chipText, affordPropertyType === v && styles.chipTextOn]}>{t}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>CCJ in past 6 years (self-reported)</Text>
+            <Switch
+              value={affordCcjPast6y}
+              onValueChange={setAffordCcjPast6y}
+              trackColor={{ false: colors.border, true: colors.accentTeal }}
+            />
+          </View>
+          <Text style={styles.inputLabel}>Deposit (£, optional)</Text>
+          <TextInput
+            style={styles.input}
+            value={affordDeposit}
+            onChangeText={setAffordDeposit}
+            placeholder="For LTV with property value below"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="numeric"
+          />
+          <Text style={styles.fieldHint}>
+            Optional: set Property value in Stamp Duty section for price-based LTV and payments.
+          </Text>
           {affordabilityResults && (
             <View style={styles.scenarioList}>
               {affordabilityResults.map((s, i) => (
@@ -554,6 +719,56 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  chipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: spacing.md,
+  },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bgElevated,
+  },
+  chipOn: {
+    borderColor: colors.accentTeal,
+    backgroundColor: 'rgba(13,148,136,0.12)',
+  },
+  chipText: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    fontWeight: '600',
+  },
+  chipTextOn: {
+    color: colors.accentTeal,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  switchLabel: {
+    flex: 1,
+    fontSize: fontSize.sm,
+    color: colors.text,
+    paddingRight: spacing.md,
+  },
+  fieldHint: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginBottom: spacing.md,
   },
   input: {
     backgroundColor: colors.bgElevated,

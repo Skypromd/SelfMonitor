@@ -71,6 +71,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
 
   useEffect(() => {
     if (!accessToken || !referralCode.trim()) return;
+    if (typeof router.query.ref === 'string' && router.query.ref.trim()) return;
     if (referralAppliedRef.current) return;
     referralAppliedRef.current = true;
     let cancelled = false;
@@ -106,7 +107,7 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, referralCode]);
+  }, [accessToken, referralCode, router.query.ref]);
 
   // ── Step 3: Google Authenticator / TOTP ──────────────────────────────────
   const [mfaSecret, setMfaSecret] = useState('');
@@ -133,10 +134,12 @@ export default function RegisterPage({ onLoginSuccess }: RegisterPageProps) {
     setError('');
     setLoading(true);
     try {
+      const regBody: Record<string, string> = { email, password, plan };
+      if (referralCode.trim()) regBody.ref = referralCode.trim().toUpperCase();
       const regRes = await fetch(`${AUTH_SERVICE_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, plan }),
+        body: JSON.stringify(regBody),
       });
       const regData = await regRes.json();
       if (!regRes.ok) throw new Error(regData.detail || 'Registration failed');

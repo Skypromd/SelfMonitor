@@ -255,7 +255,13 @@
     "exported_tax": "Sumarul taxelor a fost exportat.",
     "exported_documents": "Documentele au fost exportate.",
     "export_error": "Export eșuat.",
-    "offline_error": "Ești offline. Exportă când ești online."
+    "offline_error": "Ești offline. Exportă când ești online.",
+    "cis_evidence_link": "Link descărcare pachet dovezi CIS",
+    "cis_evidence_shared": "Pachet dovezi CIS — URL pentru contabil (expiră conform serverului):",
+    "cis_evidence_note": "Distribuie doar pe un canal securizat. Linkul funcționează fără autentificare.",
+    "cis_evidence_done": "Link trimis.",
+    "cis_evidence_plan": "Pachetul CIS necesită plan Growth+.",
+    "cis_evidence_failed": "Nu s-a putut crea linkul."
   },
   "assistant": {
     "title": "Asistent AI",
@@ -311,6 +317,7 @@
   "transactions": {
     "title": "Tranzacții",
     "subtitle": "Categorisește și urmărește veniturile și cheltuielile.",
+    "business_scope": "Afacere",
     "empty_state": "Încă nu există tranzacții.",
     "connect_bank": "Conectează o bancă",
     "csv_import": "Import CSV",
@@ -476,7 +483,18 @@
     "save_error": "Nu s-a putut actualiza abonamentul.",
     "saved_offline": "Salvat offline. Se sincronizează când ești online.",
     "active_label": "Activ",
-    "trial_left": "Proba se încheie în"
+    "trial_left": "Proba se încheie în",
+    "stripe_card_title": "Abonament plătit (Stripe)",
+    "stripe_plan_label": "Plan",
+    "stripe_status_label": "Stare",
+    "stripe_period_end": "Perioada curentă se încheie",
+    "account_credit_label": "Credit cont",
+    "consult_sessions_label": "Ședințe disponibile cu contabilul",
+    "consult_section_hint": "Opțional: ședință plătită de revizuire CIS (programare prin suport).",
+    "consult_buy": "Cumpără ședință",
+    "consult_checkout_loading": "Se deschide plata…",
+    "consult_checkout_error": "Nu s-a putut porni plata.",
+    "billing_load_error": "Nu s-au putut încărca detaliile Stripe."
   },
   "settings": {
     "title": "Setări",

@@ -14,8 +14,15 @@ from typing import Any, Dict, List, Literal, Optional, cast
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
+
+for parent in Path(__file__).resolve().parents:
+    if (parent / "libs").exists():
+        parent_str = str(parent)
+        if parent_str not in sys.path:
+            sys.path.append(parent_str)
+        break
 
 from .companies_house import search_companies, get_company_profile, CompanySearchResult, CompanyProfile
 from .hmrc_client_context import (
@@ -34,6 +41,13 @@ from .hmrc_apis import (
     VATReturn, VATReturnResponse, submit_vat_return_simulated,
     VATObligation, get_vat_obligations_simulated,
 )
+from .hmrc_individual_calculations import (
+    list_self_assessment_calculations,
+    normalize_nino,
+    retrieve_self_assessment_calculation,
+    trigger_self_assessment_calculation,
+    validate_tax_year_hyphen,
+)
 from .hmrc_mtd import (
     HMRCMTDQuarterlyReport,
     HMRCMTDQuarterlyReportSpec,
@@ -45,17 +59,11 @@ from .hmrc_mtd import (
     validate_quarterly_report,
 )
 
-for parent in Path(__file__).resolve().parents:
-    if (parent / "libs").exists():
-        parent_str = str(parent)
-        if parent_str not in sys.path:
-            sys.path.append(parent_str)
-        break
-
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 from libs.shared_auth.plan_limits import strict_hmrc_fraud_client_context_required
 from libs.shared_cis.audit_actions import CISAuditAction
 from libs.shared_compliance.audit_client import post_audit_event
+from libs.shared_mtd.audit_actions import MTDAuditAction
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -99,7 +107,11 @@ HMRC_DIRECT_SUBMISSION_ENABLED = os.getenv("HMRC_DIRECT_SUBMISSION_ENABLED", "fa
 HMRC_OAUTH_TOKEN_URL = _HMRC_RESOLVED_TOKEN
 HMRC_OAUTH_CLIENT_ID = os.getenv("HMRC_OAUTH_CLIENT_ID", "")
 HMRC_OAUTH_CLIENT_SECRET = os.getenv("HMRC_OAUTH_CLIENT_SECRET", "")
-HMRC_OAUTH_SCOPE = os.getenv("HMRC_OAUTH_SCOPE", "write:self-assessment")
+HMRC_OAUTH_SCOPE = os.getenv("HMRC_OAUTH_SCOPE", "read:self-assessment write:self-assessment")
+HMRC_INDIVIDUAL_CALCULATIONS_ACCEPT = os.getenv(
+    "HMRC_INDIVIDUAL_CALCULATIONS_ACCEPT",
+    "application/vnd.hmrc.8.0+json",
+).strip()
 HMRC_QUARTERLY_ENDPOINT_PATH = os.getenv(
     "HMRC_QUARTERLY_ENDPOINT_PATH",
     "/itsa/quarterly-updates",
@@ -151,6 +163,21 @@ HMRC_SLO_SUCCESS_RATE_TARGET_PERCENT = _parse_non_negative_float_env("HMRC_SLO_S
 HMRC_SLO_P95_LATENCY_TARGET_MS = _parse_non_negative_float_env("HMRC_SLO_P95_LATENCY_TARGET_MS", 2500.0)
 HMRC_SUBMISSION_EVENTS: deque[dict[str, Any]] = deque(maxlen=HMRC_SLO_WINDOW_SIZE)
 
+MTD_WF_DRAFT = "draft"
+MTD_WF_READY_ACCT = "ready_for_accountant_review"
+MTD_WF_ACCT_DONE = "accountant_reviewed"
+MTD_WF_READY_USER = "ready_for_user_confirm"
+MTD_WF_SUBMITTED = "submitted"
+MTD_WORKFLOW_STATUSES: frozenset[str] = frozenset(
+    {
+        MTD_WF_DRAFT,
+        MTD_WF_READY_ACCT,
+        MTD_WF_ACCT_DONE,
+        MTD_WF_READY_USER,
+        MTD_WF_SUBMITTED,
+    }
+)
+
 # --- SQLite / local DB ---
 INTEGRATIONS_DB_PATH = os.getenv(
     "INTEGRATIONS_DB_PATH",
@@ -182,11 +209,29 @@ class MTDQuarterlyDraftRequest(BaseModel):
     client_context: HMRCFraudClientContext | None = None
 
 
+class InternalMtdQuarterlyDraftRequest(BaseModel):
+    user_id: str = Field(min_length=3, max_length=320)
+    report: HMRCMTDQuarterlyReport
+    client_context: HMRCFraudClientContext | None = None
+
+
 class MTDQuarterlyDraftResponse(BaseModel):
     draft_id: uuid.UUID
     report_hash: str
     policy_version: str
     expires_at: datetime.datetime
+
+
+class MTDDraftLatestResponse(BaseModel):
+    draft_id: uuid.UUID | None = None
+    workflow_status: str | None = None
+    expires_at: datetime.datetime | None = None
+    quarter: str | None = None
+    report_hash: str | None = None
+
+
+class MTDDraftWorkflowTransitionBody(BaseModel):
+    target_status: Literal["ready_for_accountant_review", "accountant_reviewed"]
 
 
 class MTDQuarterlyConfirmRequest(BaseModel):
@@ -200,6 +245,77 @@ class MTDQuarterlyConfirmResponse(BaseModel):
     expires_at: datetime.datetime
 
 
+def _require_internal_service_token(x_internal_token: str | None) -> None:
+    secret = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="internal_calls_not_configured")
+    if not x_internal_token or x_internal_token != secret:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="forbidden")
+
+
+def _persist_mtd_quarterly_draft_core(
+    *,
+    user_id: str,
+    report: HMRCMTDQuarterlyReport,
+    http_request: Request,
+    client_context: HMRCFraudClientContext | None,
+) -> MTDQuarterlyDraftResponse:
+    errors = validate_quarterly_report(report)
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid HMRC MTD quarterly report format: {'; '.join(errors)}",
+        )
+    report_hash = compute_quarterly_report_fingerprint(report)
+    fraud_headers, conn_method = build_fraud_prevention_headers(
+        user_id=user_id,
+        client_context=client_context,
+        inbound=http_request,
+    )
+    _log_mtd_fraud_audit(
+        user_id=user_id,
+        stage="draft",
+        connection_method=conn_method,
+        fraud_headers=fraud_headers,
+        client_context=client_context,
+        report_hash=report_hash,
+        forwarded_observed=json.dumps(observed_inbound_client_metadata(http_request), default=str),
+    )
+    report_json = report.model_dump_json()
+    now = _utc_now()
+    expires = now + datetime.timedelta(hours=HMRC_MTD_DRAFT_TTL_HOURS)
+    draft_id = uuid.uuid4()
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO mtd_quarterly_drafts (
+                    draft_id, user_id, report_json, report_hash, policy_version, created_at, expires_at, workflow_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(draft_id),
+                    user_id,
+                    report_json,
+                    report_hash,
+                    POLICY_SPEC_VERSION,
+                    now.isoformat(),
+                    expires.isoformat(),
+                    MTD_WF_DRAFT,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return MTDQuarterlyDraftResponse(
+        draft_id=draft_id,
+        report_hash=report_hash,
+        policy_version=POLICY_SPEC_VERSION,
+        expires_at=expires,
+    )
+
+
 def _connect() -> sqlite3.Connection:
     conn = sqlite3.connect(INTEGRATIONS_DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -208,6 +324,39 @@ def _connect() -> sqlite3.Connection:
 
 def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
+
+
+def _normalize_mtd_workflow(raw: str | None) -> str:
+    s = (raw or "").strip()
+    if s in MTD_WORKFLOW_STATUSES:
+        return s
+    return MTD_WF_DRAFT
+
+
+def _mtd_draft_workflow_transition_allowed(current: str, target: str) -> bool:
+    cur = _normalize_mtd_workflow(current)
+    if target == MTD_WF_READY_ACCT:
+        return cur == MTD_WF_DRAFT
+    if target == MTD_WF_ACCT_DONE:
+        return cur == MTD_WF_READY_ACCT
+    return False
+
+
+def _mark_draft_workflow_submitted(draft_id: str, user_id: str) -> None:
+    with db_lock:
+        conn = _connect()
+        try:
+            conn.execute(
+                """
+                UPDATE mtd_quarterly_drafts
+                SET workflow_status = ?
+                WHERE draft_id = ? AND user_id = ?
+                """,
+                (MTD_WF_SUBMITTED, draft_id, user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
 
 def _log_mtd_fraud_audit(
@@ -273,7 +422,7 @@ def _log_mtd_fraud_audit(
 def _require_and_consume_mtd_confirmation(
     mtd_submission: HMRCMTDQuarterlySubmissionRequest,
     user_id: str,
-) -> None:
+) -> str:
     token = (mtd_submission.confirmation_token or "").strip()
     if not token:
         raise HTTPException(
@@ -291,11 +440,13 @@ def _require_and_consume_mtd_confirmation(
         try:
             row = conn.execute(
                 """
-                SELECT user_id, report_hash, expires_at, consumed_at
-                FROM mtd_quarterly_confirmation_tokens
-                WHERE token = ?
+                SELECT t.user_id, t.report_hash, t.expires_at, t.consumed_at, t.draft_id,
+                       COALESCE(d.workflow_status, ?) AS workflow_status
+                FROM mtd_quarterly_confirmation_tokens t
+                INNER JOIN mtd_quarterly_drafts d ON d.draft_id = t.draft_id
+                WHERE t.token = ?
                 """,
-                (token,),
+                (MTD_WF_DRAFT, token),
             ).fetchone()
             if not row:
                 raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid confirmation token.")
@@ -320,11 +471,21 @@ def _require_and_consume_mtd_confirmation(
                     status.HTTP_400_BAD_REQUEST,
                     detail="Report payload does not match confirmed draft (hash mismatch).",
                 )
+            wf = _normalize_mtd_workflow(row["workflow_status"])
+            if wf != MTD_WF_READY_USER:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Quarterly draft workflow must be ready_for_user_confirm before HMRC submit "
+                        f"(current: {wf}). Complete accountant review steps or POST .../confirm when eligible."
+                    ),
+                )
             conn.execute(
                 "UPDATE mtd_quarterly_confirmation_tokens SET consumed_at = ? WHERE token = ?",
                 (now.isoformat(), token),
             )
             conn.commit()
+            return str(row["draft_id"])
         finally:
             conn.close()
 
@@ -356,10 +517,16 @@ def init_integrations_db() -> None:
                 report_hash TEXT NOT NULL,
                 policy_version TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL
+                expires_at TEXT NOT NULL,
+                workflow_status TEXT NOT NULL DEFAULT 'draft'
             )
             """
         )
+        pragma_cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(mtd_quarterly_drafts)").fetchall()}
+        if "workflow_status" not in pragma_cols:
+            conn.execute(
+                "ALTER TABLE mtd_quarterly_drafts ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'draft'"
+            )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS mtd_quarterly_confirmation_tokens (
@@ -732,58 +899,30 @@ async def create_hmrc_mtd_quarterly_draft(
     http_request: Request,
     user_id: str = Depends(get_current_user_id),
 ):
-    errors = validate_quarterly_report(body.report)
-    if errors:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid HMRC MTD quarterly report format: {'; '.join(errors)}",
-        )
-    report_hash = compute_quarterly_report_fingerprint(body.report)
-    fraud_headers, conn_method = build_fraud_prevention_headers(
+    return _persist_mtd_quarterly_draft_core(
         user_id=user_id,
+        report=body.report,
+        http_request=http_request,
         client_context=body.client_context,
-        inbound=http_request,
     )
-    _log_mtd_fraud_audit(
-        user_id=user_id,
-        stage="draft",
-        connection_method=conn_method,
-        fraud_headers=fraud_headers,
+
+
+@app.post(
+    "/internal/hmrc/mtd/quarterly-update/draft",
+    response_model=MTDQuarterlyDraftResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def internal_create_hmrc_mtd_quarterly_draft(
+    body: InternalMtdQuarterlyDraftRequest,
+    http_request: Request,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+):
+    _require_internal_service_token(x_internal_token)
+    return _persist_mtd_quarterly_draft_core(
+        user_id=body.user_id.strip(),
+        report=body.report,
+        http_request=http_request,
         client_context=body.client_context,
-        report_hash=report_hash,
-        forwarded_observed=json.dumps(observed_inbound_client_metadata(http_request), default=str),
-    )
-    report_json = body.report.model_dump_json()
-    now = _utc_now()
-    expires = now + datetime.timedelta(hours=HMRC_MTD_DRAFT_TTL_HOURS)
-    draft_id = uuid.uuid4()
-    with db_lock:
-        conn = _connect()
-        try:
-            conn.execute(
-                """
-                INSERT INTO mtd_quarterly_drafts (
-                    draft_id, user_id, report_json, report_hash, policy_version, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(draft_id),
-                    user_id,
-                    report_json,
-                    report_hash,
-                    POLICY_SPEC_VERSION,
-                    now.isoformat(),
-                    expires.isoformat(),
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-    return MTDQuarterlyDraftResponse(
-        draft_id=draft_id,
-        report_hash=report_hash,
-        policy_version=POLICY_SPEC_VERSION,
-        expires_at=expires,
     )
 
 
@@ -804,11 +943,12 @@ async def confirm_hmrc_mtd_quarterly_draft(
         try:
             row = conn.execute(
                 """
-                SELECT user_id, report_hash, policy_version, expires_at
+                SELECT user_id, report_hash, policy_version, expires_at,
+                       COALESCE(workflow_status, ?) AS workflow_status
                 FROM mtd_quarterly_drafts
                 WHERE draft_id = ?
                 """,
-                (str(body.draft_id),),
+                (MTD_WF_DRAFT, str(body.draft_id)),
             ).fetchone()
             if not row:
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Draft not found.")
@@ -821,6 +961,19 @@ async def confirm_hmrc_mtd_quarterly_draft(
             draft_exp = datetime.datetime.fromisoformat(row["expires_at"])
             if draft_exp < now:
                 raise HTTPException(status.HTTP_410_GONE, detail="Draft expired.")
+            wf = _normalize_mtd_workflow(row["workflow_status"])
+            if wf == MTD_WF_READY_ACCT:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    detail="Draft is with your accountant for review; confirm after accountant_reviewed.",
+                )
+            if wf == MTD_WF_SUBMITTED:
+                raise HTTPException(status.HTTP_410_GONE, detail="Draft already submitted.")
+            if wf not in (MTD_WF_DRAFT, MTD_WF_ACCT_DONE, MTD_WF_READY_USER):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    detail=f"Cannot confirm draft in workflow state: {wf}",
+                )
             fraud_headers, conn_method = build_fraud_prevention_headers(
                 user_id=user_id,
                 client_context=body.client_context,
@@ -853,6 +1006,10 @@ async def confirm_hmrc_mtd_quarterly_draft(
                     confirm_exp.isoformat(),
                 ),
             )
+            conn.execute(
+                "UPDATE mtd_quarterly_drafts SET workflow_status = ? WHERE draft_id = ?",
+                (MTD_WF_READY_USER, str(body.draft_id)),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -861,6 +1018,89 @@ async def confirm_hmrc_mtd_quarterly_draft(
         policy_version=policy_version,
         expires_at=confirm_exp,
     )
+
+
+@app.get(
+    "/integrations/hmrc/mtd/quarterly-update/draft/latest",
+    response_model=MTDDraftLatestResponse,
+)
+async def get_latest_mtd_quarterly_draft(user_id: str = Depends(get_current_user_id)):
+    now_iso = _utc_now().isoformat()
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT draft_id, workflow_status, expires_at, report_json, report_hash
+                FROM mtd_quarterly_drafts
+                WHERE user_id = ? AND datetime(expires_at) > datetime(?)
+                ORDER BY datetime(created_at) DESC
+                LIMIT 1
+                """,
+                (user_id, now_iso),
+            ).fetchone()
+        finally:
+            conn.close()
+    if not row:
+        return MTDDraftLatestResponse()
+    quarter: str | None = None
+    try:
+        parsed = json.loads(row["report_json"] or "{}")
+        period = parsed.get("period") or {}
+        q = period.get("quarter")
+        quarter = str(q) if q is not None else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        quarter = None
+    return MTDDraftLatestResponse(
+        draft_id=uuid.UUID(str(row["draft_id"])),
+        workflow_status=_normalize_mtd_workflow(row["workflow_status"]),
+        expires_at=datetime.datetime.fromisoformat(row["expires_at"]),
+        quarter=quarter,
+        report_hash=row["report_hash"],
+    )
+
+
+@app.post(
+    "/integrations/hmrc/mtd/quarterly-update/draft/{draft_id}/workflow",
+    status_code=status.HTTP_200_OK,
+)
+async def transition_mtd_draft_workflow(
+    draft_id: uuid.UUID,
+    body: MTDDraftWorkflowTransitionBody,
+    user_id: str = Depends(get_current_user_id),
+):
+    with db_lock:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT COALESCE(workflow_status, ?) AS workflow_status
+                FROM mtd_quarterly_drafts
+                WHERE draft_id = ? AND user_id = ?
+                """,
+                (MTD_WF_DRAFT, str(draft_id), user_id),
+            ).fetchone()
+            if not row:
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Draft not found.")
+            cur = _normalize_mtd_workflow(row["workflow_status"])
+            tgt = body.target_status
+            if not _mtd_draft_workflow_transition_allowed(cur, tgt):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    detail=f"Workflow transition {cur!r} -> {tgt!r} is not allowed.",
+                )
+            conn.execute(
+                """
+                UPDATE mtd_quarterly_drafts
+                SET workflow_status = ?
+                WHERE draft_id = ? AND user_id = ?
+                """,
+                (tgt, str(draft_id), user_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return {"draft_id": str(draft_id), "workflow_status": body.target_status}
 
 
 @app.post(
@@ -881,8 +1121,9 @@ async def submit_hmrc_mtd_quarterly_update(
             and strict_hmrc_fraud_client_context_required(bearer_token)
         ),
     )
+    consumed_draft_id: str | None = None
     if HMRC_REQUIRE_EXPLICIT_CONFIRM:
-        _require_and_consume_mtd_confirmation(body, user_id)
+        consumed_draft_id = _require_and_consume_mtd_confirmation(body, user_id)
     cis_disc = body.report.cis_disclosure
     unverified_cis = (
         cis_disc is not None and cis_disc.credit_self_attested_unverified_gbp > 0.01
@@ -1059,6 +1300,26 @@ async def submit_hmrc_mtd_quarterly_update(
         transmission_mode=result.transmission_mode,
         used_fallback=used_fallback,
     )
+    if consumed_draft_id and result.status != "failed":
+        _mark_draft_workflow_submitted(consumed_draft_id, user_id)
+    if COMPLIANCE_SERVICE_URL and result.status != "failed":
+        await post_audit_event(
+            compliance_base_url=COMPLIANCE_SERVICE_URL,
+            bearer_token=bearer_token,
+            user_id=user_id,
+            action=MTDAuditAction.MTD_QUARTERLY_SUBMITTED,
+            details={
+                "correlation_id": body.correlation_id,
+                "quarter": body.report.period.quarter,
+                "tax_year_start": body.report.period.tax_year_start.isoformat(),
+                "tax_year_end": body.report.period.tax_year_end.isoformat(),
+                "transmission_mode": result.transmission_mode,
+                "hmrc_receipt_reference": result.hmrc_receipt_reference,
+                "report_hash": report_hash,
+                "used_fallback": used_fallback,
+                "submission_status": result.status,
+            },
+        )
     return result
 
 
@@ -1113,6 +1374,7 @@ class FinalDeclarationStatus(BaseModel):
 async def submit_final_declaration(
     request: FinalDeclarationRequest,
     user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
 ):
     if request.tax_year_end != datetime.date(request.tax_year_start.year + 1, 4, 5):
         raise HTTPException(status_code=400, detail="tax_year_end must be 5 April following tax_year_start")
@@ -1148,9 +1410,25 @@ async def submit_final_declaration(
 
     receipt_ref = f"HMRC-FD-{datetime.datetime.now(datetime.UTC):%Y%m%d%H%M%S}-{uuid.uuid4().hex[:8]}"
     tax_year_str = f"{request.tax_year_start.year}/{request.tax_year_end.year}"
-
+    decl_status: Literal["accepted", "pending", "rejected"] = (
+        "accepted" if not HMRC_DIRECT_SUBMISSION_ENABLED else "pending"
+    )
+    if COMPLIANCE_SERVICE_URL:
+        await post_audit_event(
+            compliance_base_url=COMPLIANCE_SERVICE_URL,
+            bearer_token=bearer_token,
+            user_id=user_id,
+            action=MTDAuditAction.MTD_FINAL_DECLARATION_SUBMITTED,
+            details={
+                "tax_year": tax_year_str,
+                "declaration_status": decl_status,
+                "hmrc_receipt_reference": receipt_ref,
+                "total_tax_due": total_tax,
+                "hmrc_direct_submission_enabled": HMRC_DIRECT_SUBMISSION_ENABLED,
+            },
+        )
     return FinalDeclarationStatus(
-        status="accepted" if not HMRC_DIRECT_SUBMISSION_ENABLED else "pending",
+        status=decl_status,
         message=f"Final declaration for tax year {tax_year_str} accepted. Total tax due: \u00a3{total_tax:.2f}",
         tax_year=tax_year_str,
         total_tax_due=total_tax,
@@ -1288,6 +1566,105 @@ async def trigger_tax_calculation(
 ):
     """Trigger in-year tax calculation estimate (minimum functionality requirement)"""
     return calculate_tax_simulated(total_income, total_deductions, tax_year)
+
+
+class SelfAssessmentCalculationTriggerBody(BaseModel):
+    calculation_type: Literal["in-year", "intent-to-finalise", "end-of-year"] = "in-year"
+
+
+@app.get("/integrations/hmrc/self-assessment/{tax_year}/calculations")
+async def hmrc_self_assessment_calculations_list(
+    tax_year: str,
+    nino: str = Query(..., description="UK National Insurance number (9 letters/digits, spaces optional)."),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """
+    List Self Assessment tax calculations for a tax year (HMRC Individual Calculations API).
+    tax_year path format: 2024-25 (hyphen).
+    """
+    try:
+        validate_tax_year_hyphen(tax_year)
+        normalize_nino(nino)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return await list_self_assessment_calculations(
+        tax_year=tax_year,
+        nino=nino,
+        hmrc_direct_submission_enabled=HMRC_DIRECT_SUBMISSION_ENABLED,
+        hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
+        hmrc_oauth_token_url=HMRC_OAUTH_TOKEN_URL,
+        hmrc_oauth_client_id=HMRC_OAUTH_CLIENT_ID,
+        hmrc_oauth_client_secret=HMRC_OAUTH_CLIENT_SECRET,
+        hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
+        request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
+        hmrc_http_max_retries=HMRC_HTTP_MAX_RETRIES,
+        hmrc_http_retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
+        accept_header=HMRC_INDIVIDUAL_CALCULATIONS_ACCEPT,
+    )
+
+
+@app.post("/integrations/hmrc/self-assessment/{tax_year}/calculations/trigger")
+async def hmrc_self_assessment_calculation_trigger(
+    tax_year: str,
+    body: SelfAssessmentCalculationTriggerBody,
+    nino: str = Query(..., description="UK National Insurance number (9 characters)."),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Trigger a Self Assessment tax calculation (in-year, intent-to-finalise, or end-of-year)."""
+    try:
+        validate_tax_year_hyphen(tax_year)
+        normalize_nino(nino)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return await trigger_self_assessment_calculation(
+        tax_year=tax_year,
+        nino=nino,
+        calculation_type=body.calculation_type,
+        hmrc_direct_submission_enabled=HMRC_DIRECT_SUBMISSION_ENABLED,
+        hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
+        hmrc_oauth_token_url=HMRC_OAUTH_TOKEN_URL,
+        hmrc_oauth_client_id=HMRC_OAUTH_CLIENT_ID,
+        hmrc_oauth_client_secret=HMRC_OAUTH_CLIENT_SECRET,
+        hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
+        request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
+        hmrc_http_max_retries=HMRC_HTTP_MAX_RETRIES,
+        hmrc_http_retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
+        accept_header=HMRC_INDIVIDUAL_CALCULATIONS_ACCEPT,
+    )
+
+
+@app.get("/integrations/hmrc/self-assessment/{tax_year}/calculations/{calculation_id}")
+async def hmrc_self_assessment_calculation_retrieve(
+    tax_year: str,
+    calculation_id: str,
+    nino: str = Query(..., description="UK National Insurance number (9 characters)."),
+    _user_id: str = Depends(get_current_user_id),
+):
+    """Retrieve a Self Assessment tax calculation by ID (full JSON from HMRC when direct mode is on)."""
+    try:
+        validate_tax_year_hyphen(tax_year)
+        normalize_nino(nino)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    try:
+        return await retrieve_self_assessment_calculation(
+            tax_year=tax_year,
+            nino=nino,
+            calculation_id=calculation_id,
+            hmrc_direct_submission_enabled=HMRC_DIRECT_SUBMISSION_ENABLED,
+            hmrc_direct_api_base_url=HMRC_DIRECT_API_BASE_URL,
+            hmrc_oauth_token_url=HMRC_OAUTH_TOKEN_URL,
+            hmrc_oauth_client_id=HMRC_OAUTH_CLIENT_ID,
+            hmrc_oauth_client_secret=HMRC_OAUTH_CLIENT_SECRET,
+            hmrc_oauth_scope=HMRC_OAUTH_SCOPE,
+            request_timeout_seconds=HMRC_REQUEST_TIMEOUT_SECONDS,
+            hmrc_http_max_retries=HMRC_HTTP_MAX_RETRIES,
+            hmrc_http_retry_backoff_seconds=HMRC_HTTP_RETRY_BACKOFF_SECONDS,
+            accept_header=HMRC_INDIVIDUAL_CALCULATIONS_ACCEPT,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
 
 @app.post("/integrations/hmrc/mtd/losses", response_model=LossRecord, status_code=201)
 async def record_loss(

@@ -111,7 +111,7 @@ async def get_pricing_plans():
             annual_discount_percent=0,
             limits={
                 UsageMetric.BANK_CONNECTIONS: 1,
-                UsageMetric.TRANSACTIONS_PROCESSED: 200,
+                UsageMetric.TRANSACTIONS_PROCESSED: 20,
                 UsageMetric.DOCUMENTS_UPLOADED: 10,
                 UsageMetric.TAX_CALCULATIONS: 2,
                 UsageMetric.API_CALLS: 0,
@@ -119,7 +119,7 @@ async def get_pricing_plans():
             },
             features=[
                 "1 bank connection",
-                "200 transactions/month",
+                "20 transactions/month",
                 "Manual categorization",
                 "Basic tax calculation",
                 "Email support"
@@ -135,16 +135,16 @@ async def get_pricing_plans():
             annual_price_gbp=120,  # ~17% vs 12×12
             annual_discount_percent=17,
             limits={
-                UsageMetric.BANK_CONNECTIONS: 1,
-                UsageMetric.TRANSACTIONS_PROCESSED: 500,
+                UsageMetric.BANK_CONNECTIONS: 3,
+                UsageMetric.TRANSACTIONS_PROCESSED: 999999,
                 UsageMetric.DOCUMENTS_UPLOADED: 50,
                 UsageMetric.TAX_CALCULATIONS: 12,
                 UsageMetric.API_CALLS: 100,
                 UsageMetric.TEAM_MEMBERS: 1
             },
             features=[
-                "1 bank connection (tiered daily sync)",
-                "500 transactions/month",
+                "3 bank connections (tiered daily sync)",
+                "Unlimited transactions/month (fair-use cap in product)",
                 "CIS refund tracker & statements",
                 "HMRC MTD guided workflow (confirm before submit)",
                 "Receipt OCR",

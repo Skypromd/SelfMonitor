@@ -11,6 +11,7 @@ Handles background analytical tasks and data analysis.
 | GET | /jobs/{job_id} | Yes | Retrieve the status of a specific job |
 | POST | /forecast/cash-flow | Yes | Generate a cash-flow forecast |
 | GET | /reports/mortgage-readiness | Yes | Generate a mortgage readiness PDF report |
+| POST | /mortgage/broker-bundle.zip | Yes | ZIP: pack index, money preview, optional bank CSV, `hmrc-official-tax-evidence-steps.txt` (gov.uk PTA / SA302), optional HMRC JSON (see query params) |
 | GET | /api/v1/marketplace/revenue | No | API marketplace revenue dashboard |
 
 ## Environment Variables
@@ -22,6 +23,8 @@ Handles background analytical tasks and data analysis.
 | ANALYTICS_JOB_DURATION_SECONDS | No | 0.2 | Simulated job processing duration |
 | API_MARKETPLACE_ENABLED | No | true | Enable/disable the API marketplace |
 | TRANSACTIONS_SERVICE_URL | No | - | URL of the transactions service |
+| BANKING_CONNECTOR_SERVICE_URL | No | `http://banking-connector:80` | Base URL for `/exports/statement-csv` when building broker-bundle ZIP |
+| INTEGRATIONS_SERVICE_URL | No | `http://integrations-service:80` | Base URL for HMRC MTD `tax-calculation` when adding `hmrc-income-tax-estimate.json` to broker-bundle ZIP |
 
 ## Running Locally
 

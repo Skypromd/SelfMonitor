@@ -16,6 +16,7 @@ for module_name in list(sys.modules):
 
 from app.main import app
 from app.database import get_db, Base
+from app import crud
 
 # --- Test Database Setup ---
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -67,6 +68,8 @@ async def test_record_and_query_audit_events(db_session):
     data1 = response1.json()
     assert data1["user_id"] == "user_1"
     assert data1["action"] == "login.success"
+    assert data1["prev_chain_hash"] == crud.GENESIS_CHAIN_HASH
+    assert len(data1["chain_hash"]) == 64
 
     # 2. Record an event for user_2
     client.post(
@@ -222,3 +225,28 @@ async def test_health_check(db_session):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_audit_event_chain_links_successive_rows(db_session):
+    """Each new event for the same user chains from the previous chain_hash."""
+    headers = auth_headers("chain-user")
+    r1 = client.post(
+        "/audit-events",
+        headers=headers,
+        json={"user_id": "chain-user", "action": "first"},
+    )
+    r2 = client.post(
+        "/audit-events",
+        headers=headers,
+        json={"user_id": "chain-user", "action": "second"},
+    )
+    assert r1.status_code == 201
+    assert r2.status_code == 201
+    d1 = r1.json()
+    d2 = r2.json()
+    assert d1["prev_chain_hash"] == crud.GENESIS_CHAIN_HASH
+    assert len(d1["chain_hash"]) == 64
+    assert d2["prev_chain_hash"] == d1["chain_hash"]
+    assert len(d2["chain_hash"]) == 64
+    assert d2["chain_hash"] != d1["chain_hash"]

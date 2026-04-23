@@ -25,7 +25,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt  # type: ignore[import-untyped]
 from passlib.context import CryptContext  # type: ignore[import-untyped]
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, EmailStr, Field
 
 from app.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -38,6 +38,7 @@ from app.config import (
     AUTH_DB_PATH,
     COMPLIANCE_SERVICE_URL,
     INTERNAL_SERVICE_SECRET,
+    REFERRAL_SERVICE_URL,
     LOCKOUT_THRESHOLD,
     REQUIRE_ADMIN_2FA,
     SECRET_KEY,
@@ -165,9 +166,15 @@ def create_access_token(
 
 
 class UserCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     plan: str = "free"
+    referral_code: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("ref", "referral_code"),
+    )
 
 
 class User(BaseModel):
@@ -633,6 +640,23 @@ async def register(user_in: UserCreate):
     valid_plans = {"free", "starter", "growth", "pro", "business"}
     plan = user_in.plan if user_in.plan in valid_plans else "free"
     create_subscription(user_email, plan)
+    ref = (user_in.referral_code or "").strip()
+    if ref and INTERNAL_SERVICE_SECRET:
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(
+                    f"{REFERRAL_SERVICE_URL}/internal/apply-signup-referral",
+                    json={"referee_email": user_email, "code": ref},
+                    headers={"X-Internal-Token": INTERNAL_SERVICE_SECRET},
+                )
+            if resp.status_code >= 400:
+                logger.warning(
+                    "referral apply on signup failed: %s %s",
+                    resp.status_code,
+                    (resp.text or "")[:400],
+                )
+        except Exception as exc:
+            logger.warning("referral apply on signup error: %s", exc)
     return User(
         email=user_email, is_active=True, is_admin=False, is_two_factor_enabled=False
     )
@@ -1629,7 +1653,7 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
     "free": {
         "bank_connections": 1,
         "bank_sync_daily_limit": 0,
-        "transactions_per_month": 200,
+        "transactions_per_month": 20,
         "storage_limit_gb": 1,
         "transaction_history_months": 3,
         "ai_categorization": False,
@@ -1651,9 +1675,9 @@ PLAN_FEATURES: dict[str, dict[str, Any]] = {  # cspell:ignore hmrc
         "evidence_pack_tier": "none",
     },
     "starter": {
-        "bank_connections": 1,
+        "bank_connections": 3,
         "bank_sync_daily_limit": 1,
-        "transactions_per_month": 500,
+        "transactions_per_month": 999999,
         "storage_limit_gb": 2,
         "transaction_history_months": 3,
         "ai_categorization": True,
@@ -1928,6 +1952,26 @@ async def check_feature_access(
 
 
 init_auth_db()
+
+
+def _log_production_hardening_warnings() -> None:
+    profile = (
+        (os.getenv("DEPLOYMENT_PROFILE") or os.getenv("APP_ENV") or "")
+        .strip()
+        .lower()
+    )
+    if profile in ("production", "prod") and AUTH_BOOTSTRAP_ADMIN:
+        logger.critical(
+            "AUTH_BOOTSTRAP_ADMIN is true while DEPLOYMENT_PROFILE/APP_ENV indicates production. "
+            "Set AUTH_BOOTSTRAP_ADMIN=false after the first admin exists (docs/GO_LIVE_CHECKLIST.md)."
+        )
+    if profile in ("production", "prod") and VERIFICATION_CODES_DEBUG:
+        logger.critical(
+            "AUTH_EMAIL_VERIFICATION_DEBUG_RETURN_CODE is enabled under production profile; disable for live traffic."
+        )
+
+
+_log_production_hardening_warnings()
 
 # === ENTERPRISE FEATURES ===
 

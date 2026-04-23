@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import {
   Bar,
   BarChart,
@@ -130,40 +130,77 @@ function formatGbp(n: number): string {
   return `£${abs}`;
 }
 
+function buildFinopsDashboardWsUrl(): string | null {
+  if (typeof window === 'undefined') return null;
+  let httpBase = (process.env.NEXT_PUBLIC_API_GATEWAY_URL || '').trim();
+  if (!httpBase.startsWith('http')) {
+    if (window.location.hostname === 'localhost') {
+      httpBase = 'http://localhost:8000/api';
+    } else {
+      return null;
+    }
+  }
+  const base = httpBase.replace(/\/?$/, '');
+  const u = new URL(base.endsWith('/api') ? base : `${base}/api`);
+  u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
+  u.pathname = '/api/finops/ws/dashboard/live';
+  u.search = '';
+  u.hash = '';
+  return u.toString();
+}
+
 function ProfitPulseStrip({ token }: { token: string }) {
   const [data, setData] = useState<ProfitPulseData | null>(null);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const response = await fetch(
-          `${ANALYTICS_SERVICE_URL}/insights/profit-pulse?include_tax_estimate=1`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (!response.ok) {
-          throw new Error('Profit pulse unavailable');
-        }
-        const json = (await response.json()) as ProfitPulseData;
-        if (!cancelled) {
-          setData(json);
-          setError('');
-        }
-      } catch (err: unknown) {
-        if (!cancelled) {
-          const details = err instanceof Error ? err.message : 'Profit pulse unavailable';
-          setError(details);
-        }
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch(
+        `${ANALYTICS_SERVICE_URL}/insights/profit-pulse?include_tax_estimate=1`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!response.ok) {
+        throw new Error('Profit pulse unavailable');
       }
-    };
-    void load();
-    const id = setInterval(() => void load(), 55000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
+      const json = (await response.json()) as ProfitPulseData;
+      setData(json);
+      setError('');
+    } catch (err: unknown) {
+      const details = err instanceof Error ? err.message : 'Profit pulse unavailable';
+      setError(details);
+    }
   }, [token]);
+
+  useEffect(() => {
+    void load();
+    const id = setInterval(() => void load(), 120000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  useEffect(() => {
+    const wsUrl = buildFinopsDashboardWsUrl();
+    if (!wsUrl || !token) return undefined;
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        ws?.send(`Bearer ${token}`);
+      };
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(String(ev.data)) as { type?: string };
+          if (msg.type === 'transactions_updated') void load();
+        } catch {
+          /* ignore */
+        }
+      };
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      ws?.close();
+    };
+  }, [token, load]);
 
   if (error) {
     return (
@@ -229,7 +266,7 @@ function ProfitPulseStrip({ token }: { token: string }) {
           <CartesianGrid strokeDasharray="3 3" />
           <XAxis dataKey="label" tick={{ fontSize: 11 }} />
           <YAxis tick={{ fontSize: 11 }} />
-          <Tooltip formatter={(value: number) => formatGbp(value)} />
+          <Tooltip formatter={(value) => formatGbp(typeof value === 'number' ? value : 0)} />
           <Legend />
           <Bar dataKey="profit" fill="var(--lp-accent-teal, #0d9488)" name="Net profit" radius={[4, 4, 0, 0]} />
         </BarChart>

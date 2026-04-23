@@ -28,6 +28,41 @@ async def get_referral_code_by_code(db: AsyncSession, code: str) -> Optional[mod
     )
     return result.scalar_one_or_none()
 
+async def count_usages_for_referred_user(db: AsyncSession, referred_user_id: str) -> int:
+    result = await db.execute(
+        select(func.count(models.ReferralUsage.id)).where(
+            models.ReferralUsage.referred_user_id == referred_user_id
+        )
+    )
+    return int(result.scalar() or 0)
+
+
+async def top_referrers_in_month(
+    db: AsyncSession, year: int, month: int, limit: int = 10
+) -> list[dict]:
+    start = datetime(year, month, 1, 0, 0, 0, tzinfo=timezone.utc)
+    if month == 12:
+        end = datetime(year + 1, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    else:
+        end = datetime(year, month + 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    result = await db.execute(
+        select(
+            models.ReferralUsage.referrer_user_id.label("user_id"),
+            func.count(models.ReferralUsage.id).label("referral_count"),
+        )
+        .where(models.ReferralUsage.created_at >= start)
+        .where(models.ReferralUsage.created_at < end)
+        .group_by(models.ReferralUsage.referrer_user_id)
+        .order_by(func.count(models.ReferralUsage.id).desc())
+        .limit(limit)
+    )
+    rows = result.all()
+    return [
+        {"user_id": str(r.user_id), "referral_count": int(r.referral_count or 0)}
+        for r in rows
+    ]
+
+
 async def get_referral_usage_count(db: AsyncSession, referral_code_id: uuid.UUID) -> int:
     result = await db.execute(
         select(func.count(models.ReferralUsage.id))

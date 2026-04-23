@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -12,6 +13,7 @@ import ListItem from '../components/ListItem';
 import Badge from '../components/Badge';
 import FadeInView from '../components/FadeInView';
 import { apiRequest } from '../services/api';
+import { readStoredTransactionsBusinessId } from '../services/transactionsBusinessStorage';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
@@ -42,6 +44,17 @@ export default function RulesScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isApplying, setIsApplying] = useState(false);
+  const [transactionsBusinessId, setTransactionsBusinessId] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setTransactionsBusinessId(null);
+        return;
+      }
+      void readStoredTransactionsBusinessId(token).then(setTransactionsBusinessId);
+    }, [token]),
+  );
 
   const categoryOptions = useMemo(() => ([
     { value: 'income', label: t('rules.category_income') },
@@ -115,7 +128,10 @@ export default function RulesScreen() {
     }
     setIsApplying(true);
     try {
-      const response = await apiRequest('/transactions/transactions/me', { token });
+      const response = await apiRequest('/transactions/transactions/me', {
+        token,
+        businessId: transactionsBusinessId,
+      });
       if (!response.ok) throw new Error();
       const data: Transaction[] = await response.json();
       let updated = 0;
@@ -136,6 +152,7 @@ export default function RulesScreen() {
         const updateResponse = await apiRequest(`/transactions/transactions/${txn.id}`, {
           method: 'PATCH',
           token,
+          businessId: transactionsBusinessId,
           body: JSON.stringify({ category: match.category }),
         });
         if (updateResponse.ok) {

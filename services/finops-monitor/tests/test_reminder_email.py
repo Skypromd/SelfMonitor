@@ -30,17 +30,18 @@ def test_process_user_day_tier_three_includes_draft_prep_hint():
     async def _run() -> None:
         redis = AsyncMock()
         next_q = SimpleNamespace(label="Q1 2026/27", submission_deadline=date(2026, 8, 5))
-        with patch("app.mtd.reminder_email._send_reminder_channels", new_callable=AsyncMock) as send:
-            with patch("app.mtd.reminder_email.get_next_deadline", return_value=next_q):
-                with patch("app.mtd.reminder_email.QuarterlyAccumulator") as acc_cls:
-                    acc_inst = acc_cls.return_value
-                    acc_inst.get = AsyncMock(return_value={"status": ""})
-                    await process_user_day(
-                        redis,
-                        user_id="user@example.com",
-                        to_email="user@example.com",
-                        today=date(2026, 8, 2),
-                    )
+        with patch("app.mtd.reminder_email.try_mtd_auto_draft_for_upcoming_deadline", new_callable=AsyncMock):
+            with patch("app.mtd.reminder_email._send_reminder_channels", new_callable=AsyncMock) as send:
+                with patch("app.mtd.reminder_email.get_next_deadline", return_value=next_q):
+                    with patch("app.mtd.reminder_email.QuarterlyAccumulator") as acc_cls:
+                        acc_inst = acc_cls.return_value
+                        acc_inst.get = AsyncMock(return_value={"status": ""})
+                        await process_user_day(
+                            redis,
+                            user_id="user@example.com",
+                            to_email="user@example.com",
+                            today=date(2026, 8, 2),
+                        )
         tier3 = [c for c in send.call_args_list if c.kwargs.get("kind") == "tier-3"]
         assert len(tier3) == 1
         assert "draft" in tier3[0].kwargs["body"].lower()

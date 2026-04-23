@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
@@ -149,8 +150,14 @@ type MortgageAffordabilityResponse = {
   annual_interest_rate_pct: number;
   baseline_income_multiple: number;
   credit_band: string;
+  credit_band_effective: string;
+  property_type: string;
+  ccj_in_past_6y: boolean;
+  planner_notes: string[];
   deposit_pct_computed: number | null;
   disclaimer: string;
+  illustrative_lenders_as_of: string;
+  illustrative_lenders_pack_version: number;
   employed_planning_multiple: number;
   employment: string;
   first_time_buyer: boolean;
@@ -198,6 +205,65 @@ type MortgageProgressResponse = {
   steps: MortgageProgressStep[];
 };
 
+type MortgageMoneyPreviewMonthRow = {
+  expenditure_gbp: number;
+  income_gbp: number;
+  month: string;
+  net_gbp: number;
+};
+
+type MortgageMoneyPreviewTaxYearRow = {
+  expenditure_gbp: number;
+  income_gbp: number;
+  net_profit_gbp: number;
+  period_end: string | null;
+  period_start: string | null;
+  tax_year: string;
+};
+
+type MortgageMoneyPreviewResponse = {
+  disclaimer: string;
+  monthly_income_and_expenditure: MortgageMoneyPreviewMonthRow[];
+  months_requested: number;
+  tax_year_summaries: MortgageMoneyPreviewTaxYearRow[];
+  window_end: string;
+  window_start: string;
+};
+
+function csvEscapeCell(value: string): string {
+  if (/[",\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function buildMoneyPreviewCsv(data: MortgageMoneyPreviewResponse): string {
+  const lines: string[] = [];
+  lines.push(csvEscapeCell('Disclaimer') + ',' + csvEscapeCell(data.disclaimer));
+  lines.push(`window_start,${csvEscapeCell(data.window_start)}`);
+  lines.push(`window_end,${csvEscapeCell(data.window_end)}`);
+  lines.push('');
+  lines.push('month,income_gbp,expenditure_gbp,net_gbp');
+  for (const r of data.monthly_income_and_expenditure) {
+    lines.push([r.month, r.income_gbp, r.expenditure_gbp, r.net_gbp].join(','));
+  }
+  lines.push('');
+  lines.push('tax_year,period_start,period_end,income_gbp,expenditure_gbp,net_profit_gbp');
+  for (const r of data.tax_year_summaries) {
+    lines.push(
+      [
+        csvEscapeCell(r.tax_year),
+        r.period_start ?? '',
+        r.period_end ?? '',
+        r.income_gbp,
+        r.expenditure_gbp,
+        r.net_profit_gbp,
+      ].join(',')
+    );
+  }
+  return lines.join('\r\n');
+}
+
 const EMPLOYMENT_PROFILE_OPTIONS = [
   { label: 'Self-employed sole trader', value: 'sole_trader' },
   { label: 'Limited company director', value: 'limited_company_director' },
@@ -213,6 +279,8 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [isBuildingMatrix, setIsBuildingMatrix] = useState(false);
   const [isExportingPackJson, setIsExportingPackJson] = useState(false);
   const [isExportingPackPdf, setIsExportingPackPdf] = useState(false);
+  const [isDownloadingBrokerZip, setIsDownloadingBrokerZip] = useState(false);
+  const [brokerBundleNino, setBrokerBundleNino] = useState('');
   const [isLoadingMortgageTypes, setIsLoadingMortgageTypes] = useState(true);
   const [isLoadingLenderProfiles, setIsLoadingLenderProfiles] = useState(true);
   const [mortgageTypes, setMortgageTypes] = useState<MortgageTypeSummary[]>([]);
@@ -240,6 +308,10 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [affordFtb, setAffordFtb] = useState(false);
   const [affordAdditional, setAffordAdditional] = useState(false);
   const [affordCredit, setAffordCredit] = useState<'clean' | 'minor' | 'adverse'>('clean');
+  const [affordPropertyType, setAffordPropertyType] = useState<
+    'standard_residential' | 'buy_to_let' | 'leasehold_flat'
+  >('standard_residential');
+  const [affordCcjPast6y, setAffordCcjPast6y] = useState(false);
   const [affordYearsTrading, setAffordYearsTrading] = useState('');
   const [affordResult, setAffordResult] = useState<MortgageAffordabilityResponse | null>(null);
   const [affordLoading, setAffordLoading] = useState(false);
@@ -255,6 +327,11 @@ export default function ReportsPage({ token }: ReportsPageProps) {
   const [progLoading, setProgLoading] = useState(false);
   const [progResult, setProgResult] = useState<MortgageProgressResponse | null>(null);
   const [progError, setProgError] = useState('');
+  const [moneyPreviewMonths, setMoneyPreviewMonths] = useState(12);
+  const [moneyPreviewTaxYears, setMoneyPreviewTaxYears] = useState(3);
+  const [moneyPreviewLoading, setMoneyPreviewLoading] = useState(false);
+  const [moneyPreviewError, setMoneyPreviewError] = useState('');
+  const [moneyPreviewResult, setMoneyPreviewResult] = useState<MortgageMoneyPreviewResponse | null>(null);
   const { formatNumber, t } = useTranslation();
 
   useEffect(() => {
@@ -350,6 +427,8 @@ export default function ReportsPage({ token }: ReportsPageProps) {
           additional_property: affordAdditional,
           credit_band: affordCredit,
           years_trading: yearsTrading,
+          property_type: affordPropertyType,
+          ccj_in_past_6y: affordCcjPast6y,
         }),
       });
       const payload = (await res.json()) as MortgageAffordabilityResponse | { detail?: string };
@@ -631,6 +710,119 @@ export default function ReportsPage({ token }: ReportsPageProps) {
     }
   };
 
+  const handleDownloadBrokerBundleZip = async () => {
+    setMatrixError('');
+    if (!selectedMortgageType || !selectedLenderProfile) {
+      setMatrixError('Select mortgage and lender profile first.');
+      return;
+    }
+    setIsDownloadingBrokerZip(true);
+    try {
+      const months = Math.min(36, Math.max(1, Math.floor(Number(moneyPreviewMonths)) || 12));
+      const taxYears = Math.min(6, Math.max(1, Math.floor(Number(moneyPreviewTaxYears)) || 3));
+      const params = new URLSearchParams({
+        months: String(months),
+        tax_years: String(taxYears),
+        statement_days: '180',
+        include_bank_statement_csv: 'true',
+      });
+      const ninoCompact = brokerBundleNino.replace(/\s/g, '').toUpperCase();
+      if (ninoCompact.length === 9) {
+        params.set('include_hmrc_individual_calculation', 'true');
+        params.set('hmrc_nino', ninoCompact);
+      }
+      const response = await fetch(
+        `${ANALYTICS_SERVICE_URL}/mortgage/broker-bundle.zip?${params.toString()}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(buildMortgagePayload()),
+        }
+      );
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        throw new Error(
+          typeof (errBody as { detail?: string }).detail === 'string'
+            ? (errBody as { detail: string }).detail
+            : 'Failed to download broker bundle'
+        );
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `broker-bundle-${selectedMortgageType}-${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setMatrixError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setIsDownloadingBrokerZip(false);
+    }
+  };
+
+  const handleLoadMoneyPreview = async () => {
+    setMoneyPreviewError('');
+    setMoneyPreviewLoading(true);
+    try {
+      const months = Math.min(36, Math.max(1, Math.floor(Number(moneyPreviewMonths)) || 12));
+      const taxYears = Math.min(6, Math.max(1, Math.floor(Number(moneyPreviewTaxYears)) || 3));
+      const params = new URLSearchParams({
+        months: String(months),
+        tax_years: String(taxYears),
+      });
+      const response = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/money-preview?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json()) as MortgageMoneyPreviewResponse | { detail?: string };
+      if (!response.ok) {
+        throw new Error('detail' in payload && payload.detail ? payload.detail : 'Failed to load money preview');
+      }
+      setMoneyPreviewResult(payload as MortgageMoneyPreviewResponse);
+    } catch (err) {
+      setMoneyPreviewResult(null);
+      setMoneyPreviewError(err instanceof Error ? err.message : 'Unexpected error');
+    } finally {
+      setMoneyPreviewLoading(false);
+    }
+  };
+
+  const handleDownloadMoneyPreviewJson = () => {
+    if (!moneyPreviewResult) {
+      return;
+    }
+    const jsonBlob = new Blob([JSON.stringify(moneyPreviewResult, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(jsonBlob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `mortgage-money-preview-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadMoneyPreviewCsv = () => {
+    if (!moneyPreviewResult) {
+      return;
+    }
+    const csv = buildMoneyPreviewCsv(moneyPreviewResult);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `mortgage-money-preview-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className={styles.pageContainer}>
       <h1>{t('nav.reports')}</h1>
@@ -737,6 +929,27 @@ export default function ReportsPage({ token }: ReportsPageProps) {
             />
           </label>
           <label className={styles.filterField}>
+            <span>Property type (illustrative fit)</span>
+            <select
+              className={styles.categorySelect}
+              value={affordPropertyType}
+              onChange={(e) =>
+                setAffordPropertyType(e.target.value as typeof affordPropertyType)
+              }
+            >
+              <option value="standard_residential">House / standard residential</option>
+              <option value="leasehold_flat">Leasehold flat</option>
+              <option value="buy_to_let">Buy-to-let</option>
+            </select>
+          </label>
+          <label className={styles.filterField}>
+            <span>Credit file (self-reported)</span>
+            <label className={styles.checkboxPill}>
+              <input checked={affordCcjPast6y} onChange={(e) => setAffordCcjPast6y(e.target.checked)} type="checkbox" />
+              CCJ in past 6 years (tilts illustrative fit when your credit selection is clean)
+            </label>
+          </label>
+          <label className={styles.filterField}>
             <span>SDLT / buyer</span>
             <label className={styles.checkboxPill}>
               <input checked={affordFtb} onChange={(e) => setAffordFtb(e.target.checked)} type="checkbox" />
@@ -760,6 +973,23 @@ export default function ReportsPage({ token }: ReportsPageProps) {
         {affordResult && (
           <div className={styles.resultsContainer} style={{ marginTop: 16 }}>
             <p style={{ fontSize: '0.85rem', color: 'var(--lp-text-muted)' }}>{affordResult.disclaimer}</p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--lp-text-muted)', marginTop: '0.35rem' }}>
+              Illustrative lender pack as of {affordResult.illustrative_lenders_as_of} (v{affordResult.illustrative_lenders_pack_version}).
+            </p>
+            {affordResult.credit_band_effective && affordResult.credit_band_effective !== affordResult.credit_band && (
+              <p style={{ fontSize: '0.82rem', marginTop: 8 }}>
+                Illustrative credit band used for lender ordering: <strong>{affordResult.credit_band_effective}</strong>{' '}
+                (you selected {affordResult.credit_band}
+                {affordResult.ccj_in_past_6y ? '; CCJ in past 6y' : ''}).
+              </p>
+            )}
+            {Array.isArray(affordResult.planner_notes) && affordResult.planner_notes.length > 0 && (
+              <ul style={{ fontSize: '0.82rem', marginTop: 8, color: 'var(--lp-text-muted)' }}>
+                {affordResult.planner_notes.map((n, i) => (
+                  <li key={i}>{n}</li>
+                ))}
+              </ul>
+            )}
             <ul style={{ fontSize: '0.9rem', lineHeight: 1.6 }}>
               <li>
                 Max loan (baseline multiple {affordResult.baseline_income_multiple}×):{' '}
@@ -830,6 +1060,10 @@ export default function ReportsPage({ token }: ReportsPageProps) {
         <h2>Road to mortgage (tracker)</h2>
         <p className={styles.tableCaption}>
           Informational steps only — not a lender timeline. Backend can enrich months of bank data and document count when you refresh.
+        </p>
+        <p className={styles.tableCaption} style={{ marginTop: 0 }}>
+          <Link href="/assistant?mode=mortgage">Open AI assistant in mortgage mode</Link> for UK self-employed context
+          (informational, not regulated advice).
         </p>
         <div className={styles.adminFiltersGrid}>
           <label className={styles.filterField}>
@@ -1080,6 +1314,161 @@ export default function ReportsPage({ token }: ReportsPageProps) {
               >
                 {isExportingPackPdf ? 'Exporting PDF...' : 'Export pack index PDF'}
               </button>
+              <button
+                className={styles.button}
+                disabled={isDownloadingBrokerZip}
+                onClick={handleDownloadBrokerBundleZip}
+                type="button"
+              >
+                {isDownloadingBrokerZip ? 'Building ZIP...' : 'Download broker starter bundle (ZIP)'}
+              </button>
+            </div>
+            <div className={styles.adminFiltersGrid} style={{ marginTop: 10 }}>
+              <label className={styles.filterField}>
+                <span>HMRC NINO (optional — adds Individual Calculation JSON to the ZIP)</span>
+                <input
+                  className={styles.categorySelect}
+                  maxLength={14}
+                  onChange={(e) => setBrokerBundleNino(e.target.value)}
+                  placeholder="9 characters, e.g. QQ123456C"
+                  type="text"
+                  value={brokerBundleNino}
+                />
+              </label>
+            </div>
+            <p className={styles.tableCaption} style={{ marginTop: 6, marginBottom: 0 }}>
+              Every broker ZIP includes <code>hmrc-official-tax-evidence-steps.txt</code> with steps to obtain official
+              HMRC PDFs (not generated by MyNetTax). Quick links:{' '}
+              <a href="https://www.gov.uk/personal-tax-account" rel="noopener noreferrer" target="_blank">
+                Personal Tax Account
+              </a>
+              {' · '}
+              <a href="https://www.gov.uk/sa302-tax-calculation" rel="noopener noreferrer" target="_blank">
+                SA302 / tax calculation
+              </a>
+              . Upload saved PDFs on the <Link href="/documents">Documents</Link> page so they count toward your mortgage pack checklist.
+            </p>
+            <div style={{ marginTop: 20 }}>
+              <h3 style={{ margin: '0 0 8px 0' }}>Linked bank money preview</h3>
+              <p className={styles.tableCaption} style={{ marginBottom: 12 }}>
+                Illustrative monthly income and expenditure plus UK tax-year rollups from linked bank transactions
+                (analytics-service). Not statutory accounts or HMRC figures; confirm requirements with your broker.
+              </p>
+              <div className={styles.adminFiltersGrid}>
+                <label className={styles.filterField}>
+                  <span>Lookback months (1–36)</span>
+                  <input
+                    className={styles.categorySelect}
+                    max={36}
+                    min={1}
+                    onChange={(e) => setMoneyPreviewMonths(Number(e.target.value))}
+                    type="number"
+                    value={moneyPreviewMonths}
+                  />
+                </label>
+                <label className={styles.filterField}>
+                  <span>Tax years (1–6)</span>
+                  <input
+                    className={styles.categorySelect}
+                    max={6}
+                    min={1}
+                    onChange={(e) => setMoneyPreviewTaxYears(Number(e.target.value))}
+                    type="number"
+                    value={moneyPreviewTaxYears}
+                  />
+                </label>
+              </div>
+              <div className={styles.adminActionsRow}>
+                <button className={styles.button} disabled={moneyPreviewLoading} onClick={handleLoadMoneyPreview} type="button">
+                  {moneyPreviewLoading ? 'Loading preview...' : 'Load money preview'}
+                </button>
+                <button
+                  className={styles.button}
+                  disabled={!moneyPreviewResult}
+                  onClick={handleDownloadMoneyPreviewJson}
+                  type="button"
+                >
+                  Download preview JSON
+                </button>
+                <button
+                  className={styles.button}
+                  disabled={!moneyPreviewResult}
+                  onClick={handleDownloadMoneyPreviewCsv}
+                  type="button"
+                >
+                  Download preview CSV
+                </button>
+              </div>
+              {moneyPreviewError && <p className={styles.error}>{moneyPreviewError}</p>}
+              {moneyPreviewResult ? (
+                <div className={styles.resultsContainer} style={{ marginTop: 16 }}>
+                  <p className={styles.tableCaption}>{moneyPreviewResult.disclaimer}</p>
+                  <p className={styles.tableCaption}>
+                    Window {moneyPreviewResult.window_start} → {moneyPreviewResult.window_end} (months requested:{' '}
+                    {moneyPreviewResult.months_requested})
+                  </p>
+                  <h4 style={{ marginTop: 16 }}>Monthly income and expenditure</h4>
+                  {moneyPreviewResult.monthly_income_and_expenditure.length === 0 ? (
+                    <p className={styles.tableCaption}>No transactions in this window.</p>
+                  ) : (
+                    <div className={styles.tableResponsive}>
+                      <table className={styles.table}>
+                        <thead>
+                          <tr>
+                            <th>Month</th>
+                            <th>Income (GBP)</th>
+                            <th>Expenditure (GBP)</th>
+                            <th>Net (GBP)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {moneyPreviewResult.monthly_income_and_expenditure.map((row) => (
+                            <tr key={row.month}>
+                              <td>{row.month}</td>
+                              <td>{formatNumber(row.income_gbp, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
+                              <td>{formatNumber(row.expenditure_gbp, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
+                              <td>{formatNumber(row.net_gbp, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <h4 style={{ marginTop: 16 }}>UK tax year summaries</h4>
+                  {moneyPreviewResult.tax_year_summaries.length === 0 ? (
+                    <p className={styles.tableCaption}>No tax-year aggregates yet.</p>
+                  ) : (
+                    <div className={styles.tableResponsive}>
+                      <table className={styles.table}>
+                        <thead>
+                          <tr>
+                            <th>Tax year</th>
+                            <th>Period</th>
+                            <th>Income (GBP)</th>
+                            <th>Expenditure (GBP)</th>
+                            <th>Net profit (GBP)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {moneyPreviewResult.tax_year_summaries.map((row) => (
+                            <tr key={row.tax_year}>
+                              <td>{row.tax_year}</td>
+                              <td>
+                                {row.period_start && row.period_end
+                                  ? `${row.period_start} → ${row.period_end}`
+                                  : '—'}
+                              </td>
+                              <td>{formatNumber(row.income_gbp, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
+                              <td>{formatNumber(row.expenditure_gbp, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
+                              <td>{formatNumber(row.net_profit_gbp, { maximumFractionDigits: 2, minimumFractionDigits: 2 })}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
             {checklistError && <p className={styles.error}>{checklistError}</p>}
             {readinessError && <p className={styles.error}>{readinessError}</p>}

@@ -12,3 +12,5 @@ class AuditEvent(Base):
     user_id = Column(String, nullable=False, index=True)
     action = Column(String, nullable=False, index=True)
     details = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
+    prev_chain_hash = Column(String(64), nullable=True)
+    chain_hash = Column(String(64), nullable=True)

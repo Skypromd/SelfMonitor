@@ -17,6 +17,7 @@ from fastapi.testclient import TestClient
 
 # Must be set before importing app.main
 os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key-for-finops")
+os.environ.setdefault("INTERNAL_SERVICE_SECRET", "finops-internal-test-secret")
 
 # ── MTD deadline tests ─────────────────────────────────────────────────────────
 
@@ -215,3 +216,18 @@ def test_status_endpoint(client):
     body = r.json()
     assert "days_until_deadline" in body
     assert "next_deadline" in body
+
+
+def test_internal_notify_invoice_paid_forbidden(client):
+    r = client.post(
+        "/internal/notify-invoice-paid",
+        json={
+            "user_id": "seller@example.com",
+            "invoice_id": "11111111-1111-1111-1111-111111111111",
+            "invoice_number": "INV-001",
+            "amount_gbp": "500.00",
+            "checkout_session_id": "cs_test_abc",
+        },
+        headers={"X-Internal-Token": "wrong-token"},
+    )
+    assert r.status_code == 403

@@ -2,6 +2,17 @@
 
 Использовать перед первым прод‑трафиком или крупным релизом. Детали — в ссылках.
 
+## Фаза 0 (до первого пользователя) — синхрон с `ROADMAP_TODO.md`
+
+Операционные шаги, которые не автоматизируются кодом:
+
+- [ ] **Секреты в `.env`:** не использовать `change_me_*` в проде. Сгенерировать, например:
+  - `python scripts/print_phase0_secrets.py` — выводит `POSTGRES_PASSWORD`, `AUTH_SECRET_KEY` (≥128 hex символов), `VAULT_DEV_ROOT_TOKEN_ID`, `INTERNAL_SERVICE_SECRET`, `MINIO_ROOT_PASSWORD`
+  - либо вручную: `openssl rand -hex 32` (пароли БД / vault), `openssl rand -hex 64` (JWT signing key)
+- [ ] После первого входа админа: **`AUTH_BOOTSTRAP_ADMIN=false`** (см. корень `.env.example`). В prod-профиле при включённом bootstrap auth-service пишет **critical** в лог.
+- [ ] **Firewall / VPC:** наружу только **80/443**; Postgres, Redis, Vault, внутренние порты сервисов — недоступны из интернета (см. `docs/COMPOSE_PRODUCTION.md` при наличии).
+- [ ] **Stripe / HMRC / домен** — по чеклисту в `ROADMAP_TODO.md` (ключи, sandbox, DNS, TLS).
+
 ## За 48 часов
 
 - [ ] **Scope:** согласован **`docs/production-scope.md`**, команда понимает **`docs/non-goals.md`**.

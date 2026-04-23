@@ -36,6 +36,7 @@ async def count_transactions_in_calendar_month(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     ref: datetime.date | None = None,
 ) -> int:
     """Count rows for user in ref's calendar month (inclusive start, exclusive next month)."""
@@ -51,6 +52,7 @@ async def count_transactions_in_calendar_month(
         .select_from(models.Transaction)
         .where(
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
             models.Transaction.date >= start,
             models.Transaction.date < end,
         )
@@ -121,6 +123,7 @@ async def _list_non_draft_candidates_for_receipt(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     draft_transaction: models.Transaction,
     candidate_limit: int,
     include_ignored: bool = False,
@@ -142,6 +145,7 @@ async def _list_non_draft_candidates_for_receipt(
         select(models.Transaction)
         .filter(
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
             models.Transaction.id != draft_transaction.id,
             models.Transaction.provider_transaction_id.not_like(f"{RECEIPT_DRAFT_PREFIX}%"),
             models.Transaction.currency == draft_transaction.currency,
@@ -199,6 +203,7 @@ async def _find_matching_receipt_draft(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     imported_transaction: schemas.TransactionBase,
 ) -> models.Transaction | None:
     start_date = imported_transaction.date - datetime.timedelta(days=3)
@@ -207,6 +212,7 @@ async def _find_matching_receipt_draft(
         select(models.Transaction)
         .filter(
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
             models.Transaction.provider_transaction_id.like(f"{RECEIPT_DRAFT_PREFIX}%"),
             (models.Transaction.reconciliation_status != "ignored") | (models.Transaction.reconciliation_status.is_(None)),
             models.Transaction.currency == imported_transaction.currency.upper(),
@@ -252,6 +258,7 @@ async def create_transactions(
     db: AsyncSession,
     user_id: str,
     account_id: uuid.UUID,
+    business_id: uuid.UUID,
     transactions: List[schemas.TransactionBase],
 ) -> dict[str, int]:
     """
@@ -271,6 +278,7 @@ async def create_transactions(
         existing_result = await db.execute(
             select(models.Transaction).filter(
                 models.Transaction.user_id == user_id,
+                models.Transaction.business_id == business_id,
                 models.Transaction.provider_transaction_id == t.provider_transaction_id,
             )
         )
@@ -297,6 +305,7 @@ async def create_transactions(
         db.add(
             models.Transaction(
                 user_id=user_id,
+                business_id=business_id,
                 account_id=account_id,
                 provider_transaction_id=t.provider_transaction_id,
                 date=t.date,
@@ -333,12 +342,14 @@ async def create_or_get_receipt_draft_transaction(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     payload: schemas.ReceiptDraftCreateRequest,
 ) -> tuple[models.Transaction, bool]:
     provider_transaction_id = f"{RECEIPT_DRAFT_PREFIX}{payload.document_id}"
     existing = await db.execute(
         select(models.Transaction).filter(
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
             models.Transaction.provider_transaction_id == provider_transaction_id,
         )
     )
@@ -352,6 +363,7 @@ async def create_or_get_receipt_draft_transaction(
 
     db_transaction = models.Transaction(
         user_id=user_id,
+        business_id=business_id,
         account_id=_receipt_draft_account_id(user_id),
         provider_transaction_id=provider_transaction_id,
         date=payload.transaction_date,
@@ -372,6 +384,7 @@ async def update_receipt_draft(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     draft_transaction_id: uuid.UUID,
     payload: schemas.ReceiptDraftUpdateRequest,
 ) -> models.Transaction | None:
@@ -379,6 +392,7 @@ async def update_receipt_draft(
         select(models.Transaction).filter(
             models.Transaction.id == draft_transaction_id,
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
             models.Transaction.provider_transaction_id.like(f"{RECEIPT_DRAFT_PREFIX}%"),
         )
     )
@@ -415,6 +429,7 @@ async def list_unmatched_receipt_drafts(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     limit: int = 25,
     offset: int = 0,
     candidate_limit: int = 5,
@@ -427,6 +442,7 @@ async def list_unmatched_receipt_drafts(
         select(models.Transaction)
         .filter(
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
             models.Transaction.provider_transaction_id.like(f"{RECEIPT_DRAFT_PREFIX}%"),
         )
         .order_by(models.Transaction.date.desc(), models.Transaction.id.desc())
@@ -465,6 +481,7 @@ async def get_receipt_draft_candidates(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     draft_transaction_id: uuid.UUID,
     limit: int = 20,
     include_ignored: bool = True,
@@ -476,6 +493,7 @@ async def get_receipt_draft_candidates(
         select(models.Transaction).filter(
             models.Transaction.id == draft_transaction_id,
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
         )
     )
     draft_transaction = draft_result.scalars().first()
@@ -485,6 +503,7 @@ async def get_receipt_draft_candidates(
     candidates = await _list_non_draft_candidates_for_receipt(
         db,
         user_id=user_id,
+        business_id=business_id,
         draft_transaction=draft_transaction,
         candidate_limit=limit,
         include_ignored=include_ignored,
@@ -499,6 +518,7 @@ async def ignore_receipt_draft_candidate(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     draft_transaction_id: uuid.UUID,
     target_transaction_id: uuid.UUID,
 ) -> models.Transaction:
@@ -506,6 +526,7 @@ async def ignore_receipt_draft_candidate(
         select(models.Transaction).filter(
             models.Transaction.id == draft_transaction_id,
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
         )
     )
     draft_transaction = draft_result.scalars().first()
@@ -518,6 +539,7 @@ async def ignore_receipt_draft_candidate(
         select(models.Transaction).filter(
             models.Transaction.id == target_transaction_id,
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
         )
     )
     target_transaction = target_result.scalars().first()
@@ -540,6 +562,7 @@ async def set_receipt_draft_status(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     draft_transaction_id: uuid.UUID,
     status: str,
 ) -> models.Transaction:
@@ -550,6 +573,7 @@ async def set_receipt_draft_status(
         select(models.Transaction).filter(
             models.Transaction.id == draft_transaction_id,
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
         )
     )
     draft_transaction = draft_result.scalars().first()
@@ -570,6 +594,7 @@ async def manual_reconcile_receipt_draft(
     db: AsyncSession,
     *,
     user_id: str,
+    business_id: uuid.UUID,
     draft_transaction_id: uuid.UUID,
     target_transaction_id: uuid.UUID,
 ) -> tuple[models.Transaction, uuid.UUID]:
@@ -577,6 +602,7 @@ async def manual_reconcile_receipt_draft(
         select(models.Transaction).filter(
             models.Transaction.id == draft_transaction_id,
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
         )
     )
     draft_transaction = draft_result.scalars().first()
@@ -589,6 +615,7 @@ async def manual_reconcile_receipt_draft(
         select(models.Transaction).filter(
             models.Transaction.id == target_transaction_id,
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
         )
     )
     target_transaction = target_result.scalars().first()
@@ -600,6 +627,7 @@ async def manual_reconcile_receipt_draft(
     conflict_result = await db.execute(
         select(models.Transaction).filter(
             models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
             models.Transaction.provider_transaction_id == target_transaction.provider_transaction_id,
             models.Transaction.id != draft_transaction.id,
             models.Transaction.id != target_transaction.id,
@@ -609,6 +637,9 @@ async def manual_reconcile_receipt_draft(
         raise ValueError("target_provider_conflict")
 
     preserved_category = draft_transaction.category or target_transaction.category
+    draft_transaction.business_id = (
+        target_transaction.business_id or draft_transaction.business_id
+    )
     draft_transaction.account_id = target_transaction.account_id
     draft_transaction.provider_transaction_id = target_transaction.provider_transaction_id
     draft_transaction.date = target_transaction.date
@@ -625,31 +656,52 @@ async def manual_reconcile_receipt_draft(
     await db.refresh(draft_transaction)
     return draft_transaction, removed_id
 
-async def get_transactions_by_account(db: AsyncSession, user_id: str, account_id: uuid.UUID):
+async def get_transactions_by_account(
+    db: AsyncSession, user_id: str, account_id: uuid.UUID, business_id: uuid.UUID
+):
     """Fetches all transactions for a specific account belonging to a user."""
     result = await db.execute(
         select(models.Transaction)
-        .filter(models.Transaction.user_id == user_id, models.Transaction.account_id == account_id)
+        .filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
+            models.Transaction.account_id == account_id,
+        )
         .order_by(models.Transaction.date.desc())
     )
     return result.scalars().all()
 
-async def get_transactions_by_user(db: AsyncSession, user_id: str, skip: int = 0, limit: int = 50):
+async def get_transactions_by_user(
+    db: AsyncSession, user_id: str, business_id: uuid.UUID, skip: int = 0, limit: int = 50
+):
     """Fetches all transactions for a specific user across all their accounts."""
     result = await db.execute(
         select(models.Transaction)
-        .filter(models.Transaction.user_id == user_id)
+        .filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
+        )
         .order_by(models.Transaction.date.desc())
         .offset(skip)
         .limit(limit)
     )
     return result.scalars().all()
 
-async def update_transaction(db: AsyncSession, user_id: str, transaction_id: uuid.UUID, update_request: schemas.TransactionUpdateRequest):
+async def update_transaction(
+    db: AsyncSession,
+    user_id: str,
+    business_id: uuid.UUID,
+    transaction_id: uuid.UUID,
+    update_request: schemas.TransactionUpdateRequest,
+):
     """Updates the category/tax fields of a single transaction."""
     result = await db.execute(
         select(models.Transaction)
-        .filter(models.Transaction.id == transaction_id, models.Transaction.user_id == user_id)
+        .filter(
+            models.Transaction.id == transaction_id,
+            models.Transaction.user_id == user_id,
+            models.Transaction.business_id == business_id,
+        )
     )
     db_transaction = result.scalars().first()
 

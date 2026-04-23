@@ -1,21 +1,15 @@
 import datetime
-import io
 import json
 import logging
 import os
+
+import httpx
 import sys
 import uuid
-import zipfile
+
+from jose import jwt as jose_jwt
 from pathlib import Path
 from typing import List
-
-from fastapi import Depends, FastAPI, HTTPException, Query, Response, status
-from fastapi.responses import StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from . import cis_refund_tracker, crud, crud_cis, models, schemas
-from .database import get_db
-from .telemetry import setup_telemetry
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "libs").exists():
@@ -24,11 +18,22 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from libs.shared_auth.internal_jwt import build_receipt_draft_create_user_id_dependency
 from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
 from libs.shared_auth.plan_enforcement_log import log_plan_enforcement_denial
 from libs.shared_auth.plan_limits import PlanLimits, get_plan_limits
+from libs.shared_cis.audit_actions import CISAuditAction
+from libs.shared_compliance.audit_client import post_audit_event
 from libs.shared_http.request_id import RequestIdMiddleware, get_request_id
+
+from . import cis_evidence_share
+from . import cis_refund_tracker, crud, crud_business, crud_cis, models, schemas
+from .database import get_db
+from .telemetry import setup_telemetry
 
 app = FastAPI(
     title="Transactions Service",
@@ -41,6 +46,23 @@ app.add_middleware(RequestIdMiddleware)
 KAFKA_ENABLED: bool = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
 logger = logging.getLogger(__name__)
 
+FINOPS_MONITOR_URL = os.getenv("FINOPS_MONITOR_URL", "http://finops-monitor:8021").rstrip("/")
+
+
+async def _notify_finops_dashboard_transaction(user_id: str) -> None:
+    secret = os.environ.get("INTERNAL_SERVICE_SECRET", "").strip()
+    if not secret:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            await client.post(
+                f"{FINOPS_MONITOR_URL}/internal/dashboard-transaction-event",
+                json={"user_id": user_id},
+                headers={"X-Internal-Token": secret},
+            )
+    except Exception as exc:
+        logger.warning("finops dashboard notify failed: %s", exc)
+
 # Instrument the app for OpenTelemetry
 setup_telemetry(app)
 
@@ -48,6 +70,83 @@ get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 if not os.environ.get("INTERNAL_SERVICE_SECRET", "").strip():
     raise RuntimeError("INTERNAL_SERVICE_SECRET must be set and non-empty")
 get_user_id_for_receipt_draft_create = build_receipt_draft_create_user_id_dependency()
+
+
+async def get_active_business_id(
+    user_id: str = Depends(get_current_user_id),
+    x_business_id: str | None = Header(default=None, alias="X-Business-Id"),
+    db: AsyncSession = Depends(get_db),
+) -> uuid.UUID:
+    default_id = crud_business.default_business_uuid(user_id)
+    await crud_business.ensure_default_business(db, user_id, default_id)
+    if not x_business_id or not str(x_business_id).strip():
+        return default_id
+    try:
+        bid = uuid.UUID(str(x_business_id).strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid X-Business-Id") from exc
+    if bid == default_id:
+        return bid
+    if not await crud_business.user_owns_business(db, user_id, bid):
+        raise HTTPException(status_code=404, detail="business not found")
+    return bid
+
+
+def _mint_short_lived_compliance_bearer(user_id: str) -> str | None:
+    secret = os.environ.get("AUTH_SECRET_KEY", "").strip()
+    if not secret:
+        return None
+    exp = int(datetime.datetime.now(datetime.timezone.utc).timestamp()) + 120
+    return jose_jwt.encode({"sub": user_id, "exp": exp}, secret, algorithm="HS256")
+
+
+@app.get("/businesses", response_model=List[schemas.UserBusinessOut])
+async def list_user_businesses(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    default_id = crud_business.default_business_uuid(user_id)
+    await crud_business.ensure_default_business(db, user_id, default_id)
+    return await crud_business.list_businesses(db, user_id)
+
+
+@app.post("/businesses", response_model=schemas.UserBusinessOut, status_code=status.HTTP_201_CREATED)
+async def create_user_business(
+    body: schemas.UserBusinessCreate,
+    user_id: str = Depends(get_current_user_id),
+    limits: PlanLimits = Depends(get_plan_limits),
+    db: AsyncSession = Depends(get_db),
+):
+    if limits.plan != "business":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="multi_business_requires_business_plan",
+        )
+    default_id = crud_business.default_business_uuid(user_id)
+    await crud_business.ensure_default_business(db, user_id, default_id)
+    n = await crud_business.count_businesses(db, user_id)
+    if n >= crud_business.MAX_BUSINESSES_BUSINESS_PLAN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="business_limit_reached",
+        )
+    return await crud_business.create_business(db, user_id=user_id, display_name=body.display_name)
+
+
+@app.patch("/businesses/{business_id}", response_model=schemas.UserBusinessOut)
+async def rename_user_business(
+    business_id: uuid.UUID,
+    body: schemas.UserBusinessRename,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await crud_business.rename_business(
+        db, user_id=user_id, business_id=business_id, display_name=body.display_name
+    )
+    if not row:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="business not found")
+    return row
+
 
 # --- Endpoints ---
 @app.post(
@@ -57,13 +156,17 @@ get_user_id_for_receipt_draft_create = build_receipt_draft_create_user_id_depend
 )
 async def import_transactions(
     request: schemas.TransactionImportRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     bearer_token: str = Depends(get_bearer_token),
     limits: PlanLimits = Depends(get_plan_limits),
     db: AsyncSession = Depends(get_db),
 ):
     """Imports a batch of transactions for an account into the database."""
-    existing_month = await crud.count_transactions_in_calendar_month(db, user_id=user_id)
+    existing_month = await crud.count_transactions_in_calendar_month(
+        db, user_id=user_id, business_id=business_id
+    )
     incoming = len(request.transactions)
     if existing_month + incoming > limits.transactions_per_month_limit:
         log_plan_enforcement_denial(
@@ -97,6 +200,7 @@ async def import_transactions(
             logger.info("cis_suspect_scan after import: %s new task(s)", n)
         except Exception as exc:
             logger.warning("cis_suspect_scan failed: %s", exc)
+        background_tasks.add_task(_notify_finops_dashboard_transaction, user_id)
     return schemas.TransactionImportResponse(
         message="Import request accepted",
         imported_count=import_result["imported_count"],
@@ -109,10 +213,13 @@ async def import_transactions(
 async def get_transactions_for_account(
     account_id: uuid.UUID,
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves all transactions for a specific account belonging to the user from the database."""
-    transactions = await crud.get_transactions_by_account(db, user_id=user_id, account_id=account_id)
+    transactions = await crud.get_transactions_by_account(
+        db, user_id=user_id, account_id=account_id, business_id=business_id
+    )
 
     # Emit analytics event for transaction access
     if KAFKA_ENABLED and hasattr(app, 'emit_event') and transactions:
@@ -137,10 +244,11 @@ async def get_transactions_for_account(
 @app.get("/transactions/me", response_model=List[schemas.Transaction])
 async def get_all_my_transactions(
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db)
 ):
     """Retrieves all transactions for the authenticated user across all accounts."""
-    transactions = await crud.get_transactions_by_user(db, user_id=user_id)
+    transactions = await crud.get_transactions_by_user(db, user_id=user_id, business_id=business_id)
 
     # Emit analytics event for comprehensive transaction access
     if KAFKA_ENABLED and hasattr(app, 'emit_event') and transactions:
@@ -237,11 +345,16 @@ async def update_receipt_draft_transaction(
     draft_transaction_id: uuid.UUID,
     payload: schemas.ReceiptDraftUpdateRequest,
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db),
 ):
     """Updates OCR-corrected fields on a receipt draft (amount, date, vendor, category)."""
     updated = await crud.update_receipt_draft(
-        db, user_id=user_id, draft_transaction_id=draft_transaction_id, payload=payload
+        db,
+        user_id=user_id,
+        business_id=business_id,
+        draft_transaction_id=draft_transaction_id,
+        payload=payload,
     )
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="receipt_draft_not_found")
@@ -255,9 +368,12 @@ async def create_receipt_draft_transaction(
     db: AsyncSession = Depends(get_db),
 ):
     """Creates or reuses a receipt-derived draft transaction for tax expenses."""
+    default_id = crud_business.default_business_uuid(user_id)
+    await crud_business.ensure_default_business(db, user_id, default_id)
     transaction, duplicated = await crud.create_or_get_receipt_draft_transaction(
         db,
         user_id=user_id,
+        business_id=default_id,
         payload=payload,
     )
     return schemas.ReceiptDraftCreateResponse(transaction=transaction, duplicated=duplicated)
@@ -304,12 +420,14 @@ async def get_receipt_draft_candidates(
     search_amount: float | None = Query(default=None, gt=0),
     search_date: datetime.date | None = Query(default=None),
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         draft_transaction, candidates = await crud.get_receipt_draft_candidates(
             db,
             user_id=user_id,
+            business_id=business_id,
             draft_transaction_id=draft_transaction_id,
             limit=limit,
             include_ignored=include_ignored,
@@ -335,12 +453,14 @@ async def ignore_receipt_draft_candidate(
     draft_transaction_id: uuid.UUID,
     payload: schemas.ReceiptDraftIgnoreCandidateRequest,
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         draft_transaction = await crud.ignore_receipt_draft_candidate(
             db,
             user_id=user_id,
+            business_id=business_id,
             draft_transaction_id=draft_transaction_id,
             target_transaction_id=payload.target_transaction_id,
         )
@@ -359,12 +479,14 @@ async def ignore_receipt_draft_candidate(
 async def ignore_receipt_draft(
     draft_transaction_id: uuid.UUID,
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         draft_transaction = await crud.set_receipt_draft_status(
             db,
             user_id=user_id,
+            business_id=business_id,
             draft_transaction_id=draft_transaction_id,
             status="ignored",
         )
@@ -383,12 +505,14 @@ async def ignore_receipt_draft(
 async def reopen_receipt_draft(
     draft_transaction_id: uuid.UUID,
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         draft_transaction = await crud.set_receipt_draft_status(
             db,
             user_id=user_id,
+            business_id=business_id,
             draft_transaction_id=draft_transaction_id,
             status="open",
         )
@@ -408,12 +532,14 @@ async def manual_reconcile_receipt_draft(
     draft_transaction_id: uuid.UUID,
     payload: schemas.ReceiptDraftManualReconcileRequest,
     user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         reconciled, removed_id = await crud.manual_reconcile_receipt_draft(
             db,
             user_id=user_id,
+            business_id=business_id,
             draft_transaction_id=draft_transaction_id,
             target_transaction_id=payload.target_transaction_id,
         )
@@ -687,21 +813,81 @@ async def cis_evidence_zip(
     manifest = await crud_cis.build_evidence_manifest(
         db, user_id=user_id, tier=limits.evidence_pack_tier
     )
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(
-            "cis-evidence-manifest.json",
-            json.dumps(manifest, indent=2, default=str).encode("utf-8"),
-        )
-        notice = (
-            (manifest.get("watermark_unverified_cis") or "")
-            + "\n\n"
-            + (manifest.get("export_legal_notice") or "")
-        )
-        zf.writestr("NOTICE.txt", notice.encode("utf-8"))
-    buf.seek(0)
+    body = cis_evidence_share.zip_bytes_from_manifest(manifest)
     return StreamingResponse(
-        iter([buf.getvalue()]),
+        iter([body]),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="mynettax-cis-evidence-pack.zip"'
+        },
+    )
+
+
+@app.post(
+    "/cis/evidence-pack/share-token",
+    response_model=schemas.EvidenceShareTokenOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def cis_evidence_share_token(
+    user_id: str = Depends(get_current_user_id),
+    bearer_token: str = Depends(get_bearer_token),
+    limits: PlanLimits = Depends(get_plan_limits),
+):
+    if limits.evidence_pack_tier == "none":
+        log_plan_enforcement_denial(
+            user_id=user_id,
+            plan=limits.plan,
+            feature="cis_evidence_pack_share",
+            reason="evidence_tier_none",
+            request_id=get_request_id(),
+            extra={"tier": limits.evidence_pack_tier},
+            compliance_bearer_token=bearer_token,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CIS evidence pack export is not included in your plan. Upgrade to Growth or higher.",
+        )
+    ttl = int(os.getenv("CIS_EVIDENCE_SHARE_TOKEN_HOURS", "72"))
+    token, exp_dt = cis_evidence_share.encode_share_token(
+        user_id=user_id, tier=limits.evidence_pack_tier, ttl_hours=ttl
+    )
+    return schemas.EvidenceShareTokenOut(token=token, expires_at=exp_dt)
+
+
+@app.get("/cis/evidence-pack/shared-zip")
+async def cis_evidence_shared_zip(
+    request: Request,
+    token: str = Query(..., min_length=20),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        payload = cis_evidence_share.decode_share_token(token)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired share link",
+        ) from None
+    user_id = str(payload["user_id"])
+    tier = str(payload["tier"])
+    manifest = await crud_cis.build_evidence_manifest(db, user_id=user_id, tier=tier)
+    body = cis_evidence_share.zip_bytes_from_manifest(manifest)
+    base = crud_cis.COMPLIANCE_SERVICE_URL
+    if base:
+        audit_jwt = _mint_short_lived_compliance_bearer(user_id)
+        if audit_jwt:
+            await post_audit_event(
+                compliance_base_url=base,
+                bearer_token=audit_jwt,
+                user_id=user_id,
+                action=CISAuditAction.CIS_EVIDENCE_PACK_SHARED_DOWNLOAD,
+                details={
+                    "share_jti": payload.get("jti"),
+                    "tier": tier,
+                    "client_host": request.client.host if request.client else None,
+                },
+            )
+    return StreamingResponse(
+        iter([body]),
         media_type="application/zip",
         headers={
             "Content-Disposition": 'attachment; filename="mynettax-cis-evidence-pack.zip"'

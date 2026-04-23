@@ -68,7 +68,8 @@ export default function AssistantPage({ token }: AssistantPageProps) {
 
   useEffect(() => {
     const q = router.query?.mode;
-    if (q === 'mortgage') setMortgageMode(true);
+    if (q === 'mortgage') setAdvisorFocus('mortgage');
+    if (q === 'tax') setAdvisorFocus('tax');
   }, [router.query?.mode]);
 
   useEffect(() => {

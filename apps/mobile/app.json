@@ -28,6 +28,12 @@
     "plugins": [
       "expo-secure-store",
       [
+        "expo-av",
+        {
+          "microphonePermission": "Allow MT to record a short voice note for quick expense capture."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",

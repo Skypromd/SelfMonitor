@@ -1,12 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /** Production: set EXPO_PUBLIC_API_GATEWAY_URL to the public nginx URL (e.g. https://api.example.com/api) — never a raw service port. */
-const API_GATEWAY_URL = process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8080/api';
+export const API_GATEWAY_URL =
+  process.env.EXPO_PUBLIC_API_GATEWAY_URL || 'http://localhost:8080/api';
 const CACHE_PREFIX = 'api.cache.v1.';
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 
 type RequestOptions = RequestInit & {
   token?: string | null;
+  businessId?: string | null;
   cacheKey?: string;
   cacheTtlMs?: number;
 };
@@ -52,6 +54,10 @@ export async function apiRequest(path: string, options: RequestOptions = {}) {
   const headers = new Headers(options.headers || {});
   if (options.token) {
     headers.set('Authorization', `Bearer ${options.token}`);
+  }
+  const bid = options.businessId != null ? String(options.businessId).trim() : '';
+  if (bid) {
+    headers.set('X-Business-Id', bid);
   }
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');

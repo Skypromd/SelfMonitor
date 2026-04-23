@@ -1,4 +1,8 @@
+import datetime
 import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
@@ -84,46 +88,119 @@ def test_initiate_truelayer_returns_truelayer_auth_url():
     assert "response_type=code" in data["consent_url"]
     assert data["provider"].startswith("truelayer")
 
-@pytest.mark.asyncio
-async def test_callback_schedules_celery_task(mocker):
+def test_callback_schedules_celery_task():
     """
     Test that the callback endpoint correctly dispatches a Celery task.
     """
-    # Mock the .delay() method of our Celery task
-    mock_delay = mocker.patch.object(import_transactions_task, 'delay')
-    mock_delay.return_value.id = "task-123"
+    if import_transactions_task is None:
+        pytest.skip("Celery import_transactions_task not available in this environment")
 
-    # Use a dummy code to trigger the endpoint
-    auth_code = "test-auth-code"
-    response = client.get(
-        f"/connections/callback?code={auth_code}&provider_id=mock_bank",
-        headers=get_auth_headers(),
-    )
+    with patch.object(import_transactions_task, "delay") as mock_delay:
+        mock_delay.return_value = MagicMock(id="task-123")
+
+        auth_code = "test-auth-code"
+        response = client.get(
+            f"/connections/callback?code={auth_code}&provider_id=mock_bank",
+            headers=get_auth_headers(),
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "processing"
+        assert "task_id" in data
+        assert data["task_id"] == "task-123"
+
+        mock_delay.assert_called_once()
+
+        call_args = mock_delay.call_args.args
+        account_id_str = call_args[0]
+        task_user_id = call_args[1]
+        task_token = call_args[2]
+        transactions_data = call_args[3]
+
+        assert isinstance(uuid.UUID(account_id_str), uuid.UUID)
+
+        assert task_user_id == TEST_USER_ID
+        assert isinstance(task_token, str)
+        assert len(task_token) > 10
+
+        assert isinstance(transactions_data, list)
+        assert len(transactions_data) == 2
+        assert transactions_data[0]["description"] == "Tesco"
+        assert isinstance(task_token, str) and len(task_token) > 0
+
+
+def test_exports_statement_csv_filters_and_escapes():
+    today = datetime.date.today()
+    tid = str(uuid.uuid4())
+    aid = str(uuid.uuid4())
+    txs = [
+        {
+            "id": tid,
+            "account_id": aid,
+            "user_id": TEST_USER_ID,
+            "provider_transaction_id": "p1",
+            "date": today.isoformat(),
+            "description": 'Pay "Client", Ltd',
+            "amount": -10.5,
+            "currency": "GBP",
+            "category": "food",
+            "tax_category": None,
+            "created_at": "2026-01-01T00:00:00Z",
+        },
+        {
+            "id": str(uuid.uuid4()),
+            "account_id": aid,
+            "user_id": TEST_USER_ID,
+            "provider_transaction_id": "p-old",
+            "date": (today - datetime.timedelta(days=400)).isoformat(),
+            "description": "old",
+            "amount": 1.0,
+            "currency": "GBP",
+            "category": None,
+            "tax_category": None,
+            "created_at": "2026-01-01T00:00:00Z",
+        },
+    ]
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = txs
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client_instance = MagicMock()
+    mock_client_instance.get = AsyncMock(return_value=mock_resp)
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.main.httpx.AsyncClient", return_value=mock_cm):
+        response = client.get("/exports/statement-csv?days=200", headers=get_auth_headers())
 
     assert response.status_code == 200
-    data = response.json()
-    assert data['status'] == 'processing'
-    assert 'task_id' in data
-    assert data['task_id'] == "task-123"
+    assert "text/csv" in response.headers["content-type"]
+    text = response.text
+    assert tid in text
+    assert "p-old" not in text
+    assert '""Client""' in text
+    called_url = mock_client_instance.get.await_args[0][0]
+    assert called_url.endswith("/transactions/me")
 
-    # Check that our mock was called
-    mock_delay.assert_called_once()
 
-    # Verify the contents of the call
-    call_args = mock_delay.call_args.args
-    account_id_str = call_args[0]
-    task_user_id = call_args[1]
-    task_token = call_args[2]
-    transactions_data = call_args[3]
+def test_exports_statement_csv_upstream_error():
+    resp401 = MagicMock()
+    resp401.status_code = 401
+    resp401.json = MagicMock(return_value={"detail": "nope"})
+    err = httpx.HTTPStatusError("x", request=MagicMock(), response=resp401)
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock(side_effect=err)
 
-    # Check that a valid UUID string is passed
-    assert isinstance(uuid.UUID(account_id_str), uuid.UUID)
+    mock_client_instance = MagicMock()
+    mock_client_instance.get = AsyncMock(return_value=mock_resp)
+    mock_cm = MagicMock()
+    mock_cm.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_cm.__aexit__ = AsyncMock(return_value=False)
 
-    assert task_user_id == TEST_USER_ID
-    assert isinstance(task_token, str)
-    assert len(task_token) > 10
+    with patch("app.main.httpx.AsyncClient", return_value=mock_cm):
+        response = client.get("/exports/statement-csv", headers=get_auth_headers())
 
-    assert isinstance(transactions_data, list)
-    assert len(transactions_data) == 2
-    assert transactions_data[0]["description"] == "Tesco"
-    assert isinstance(task_token, str) and len(task_token) > 0
+    assert response.status_code == 401
+    assert response.json()["detail"] == "nope"

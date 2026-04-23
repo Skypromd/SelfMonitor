@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, Pressable, View } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 import Card from '../components/Card';
 import SectionHeader from '../components/SectionHeader';
@@ -10,7 +10,15 @@ import InputField from '../components/InputField';
 import FadeInView from '../components/FadeInView';
 import Badge from '../components/Badge';
 import { apiRequest } from '../services/api';
-import { openBillingPortal } from '../services/billing';
+import {
+  createAccountantConsultCheckout,
+  fetchBillingAddons,
+  fetchBillingSubscription,
+  openBillingPortal,
+  openUrl,
+  type BillingAddonConsult,
+} from '../services/billing';
+import { jwtSub } from '../services/jwtPayload';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { enqueueSubscriptionUpdate } from '../services/offlineQueue';
 import { useAuth } from '../context/AuthContext';
@@ -33,6 +41,55 @@ export default function SubscriptionScreen() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [isCached, setIsCached] = useState(false);
+  const [billingEmail, setBillingEmail] = useState<string | null>(null);
+  const [stripePlan, setStripePlan] = useState<string | null>(null);
+  const [stripeStatus, setStripeStatus] = useState<string | null>(null);
+  const [stripePeriodEnd, setStripePeriodEnd] = useState<number | null>(null);
+  const [accountCreditGbp, setAccountCreditGbp] = useState<number>(0);
+  const [consultSessions, setConsultSessions] = useState<number>(0);
+  const [consultAddon, setConsultAddon] = useState<BillingAddonConsult | null>(null);
+  const [billingLoaded, setBillingLoaded] = useState(false);
+  const [billingError, setBillingError] = useState(false);
+  const [consultCheckoutLoading, setConsultCheckoutLoading] = useState(false);
+
+  const loadBilling = useCallback(async () => {
+    if (!token) return;
+    const email = jwtSub(token);
+    setBillingEmail(email);
+    if (!email) {
+      setBillingLoaded(true);
+      setBillingError(true);
+      return;
+    }
+    setBillingError(false);
+    const [subRes, addons] = await Promise.all([
+      fetchBillingSubscription(email, token),
+      fetchBillingAddons(),
+    ]);
+    if (addons?.accountant_cis_consult?.name) {
+      setConsultAddon(addons.accountant_cis_consult);
+    }
+    if (!subRes.ok || !subRes.data) {
+      setBillingError(true);
+      setBillingLoaded(true);
+      return;
+    }
+    const d = subRes.data;
+    setStripePlan(typeof d.plan === 'string' ? d.plan : null);
+    setStripeStatus(typeof d.status === 'string' ? d.status : null);
+    setStripePeriodEnd(
+      typeof d.current_period_end === 'number' ? d.current_period_end : null,
+    );
+    setAccountCreditGbp(Number(d.account_credit_balance_gbp) || 0);
+    setConsultSessions(Number(d.accountant_consult_sessions_available) || 0);
+    setBillingLoaded(true);
+  }, [token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadBilling();
+    }, [loadBilling]),
+  );
 
   useEffect(() => {
     const fetchSubscription = async () => {
@@ -95,6 +152,26 @@ export default function SubscriptionScreen() {
     const opened = await openBillingPortal();
     if (!opened) {
       setError(t('upgrade.portal_error'));
+    }
+  };
+
+  const handleConsultCheckout = async () => {
+    if (!billingEmail || isOffline) {
+      setError(isOffline ? t('upgrade.offline_error') : t('subscription.billing_load_error'));
+      return;
+    }
+    setConsultCheckoutLoading(true);
+    setError('');
+    try {
+      const res = await createAccountantConsultCheckout(billingEmail);
+      if (!res.ok || !res.checkout_url) {
+        setError(res.detail || t('subscription.consult_checkout_error'));
+        return;
+      }
+      const opened = await openUrl(res.checkout_url);
+      if (!opened) setError(t('subscription.consult_checkout_error'));
+    } finally {
+      setConsultCheckoutLoading(false);
     }
   };
 
@@ -177,6 +254,58 @@ export default function SubscriptionScreen() {
           {message ? <Text style={styles.message}>{message}</Text> : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </Card>
+
+        <Card style={styles.stripeCard}>
+          <Text style={styles.stripeTitle}>{t('subscription.stripe_card_title')}</Text>
+          {!billingLoaded ? (
+            <Text style={styles.info}>{t('common.loading')}</Text>
+          ) : billingError ? (
+            <Text style={styles.billingMuted}>{t('subscription.billing_load_error')}</Text>
+          ) : (
+            <>
+              <Text style={styles.info}>
+                {t('subscription.stripe_plan_label')}: {stripePlan ?? '—'}
+              </Text>
+              <Text style={styles.info}>
+                {t('subscription.stripe_status_label')}: {stripeStatus ?? '—'}
+              </Text>
+              {stripePeriodEnd ? (
+                <Text style={styles.info}>
+                  {t('subscription.stripe_period_end')}:{' '}
+                  {new Date(stripePeriodEnd * 1000).toLocaleDateString()}
+                </Text>
+              ) : null}
+              {accountCreditGbp > 0 ? (
+                <Text style={styles.info}>
+                  {t('subscription.account_credit_label')}: £{accountCreditGbp.toFixed(2)}
+                </Text>
+              ) : null}
+              {consultSessions > 0 ? (
+                <Text style={styles.info}>
+                  {t('subscription.consult_sessions_label')}: {consultSessions}
+                </Text>
+              ) : null}
+              <Text style={styles.billingMuted}>{t('subscription.consult_section_hint')}</Text>
+              {consultAddon?.sla_note ? (
+                <Text style={styles.billingMutedSmall}>{consultAddon.sla_note}</Text>
+              ) : null}
+              <PrimaryButton
+                title={
+                  consultCheckoutLoading
+                    ? t('subscription.consult_checkout_loading')
+                    : consultAddon
+                      ? `${t('subscription.consult_buy')} — £${(consultAddon.amount_pence / 100).toFixed(2)}`
+                      : t('subscription.consult_buy')
+                }
+                onPress={() => void handleConsultCheckout()}
+                variant="secondary"
+                haptic="light"
+                style={styles.secondaryButton}
+                disabled={consultCheckoutLoading || !billingEmail || isOffline}
+              />
+            </>
+          )}
+        </Card>
       </FadeInView>
     </Screen>
   );
@@ -251,5 +380,26 @@ const styles = StyleSheet.create({
   error: {
     marginTop: spacing.md,
     color: colors.danger,
+  },
+  stripeCard: {
+    marginTop: spacing.md,
+  },
+  stripeTitle: {
+    fontWeight: '700',
+    fontSize: 16,
+    color: colors.textPrimary,
+    marginBottom: spacing.sm,
+  },
+  billingMuted: {
+    color: colors.textSecondary,
+    fontSize: 13,
+    marginTop: spacing.sm,
+    lineHeight: 20,
+  },
+  billingMutedSmall: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    marginTop: spacing.xs,
+    lineHeight: 18,
   },
 });

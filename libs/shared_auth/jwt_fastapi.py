@@ -1,8 +1,9 @@
-import os
 from typing import Callable
 
 from fastapi import Depends, Header, HTTPException, status
 from jose import JWTError, jwt
+
+from libs.shared_auth.auth_secret_preflight import resolve_auth_secret_key
 
 DEFAULT_ALGORITHM = "HS256"
 
@@ -13,9 +14,7 @@ def build_jwt_auth_dependencies(
 ) -> tuple[Callable[..., str], Callable[..., str]]:
     """Create FastAPI dependencies for bearer token extraction and JWT subject decoding."""
 
-    secret_key = os.environ[secret_key_env_var].strip()
-    if not secret_key:
-        raise RuntimeError(f"{secret_key_env_var} must be non-empty")
+    secret_key = resolve_auth_secret_key(env_var=secret_key_env_var)
 
     def get_bearer_token(authorization: str | None = Header(default=None)) -> str:
         if not authorization or not authorization.startswith("Bearer "):
@@ -56,9 +55,7 @@ def build_admin_require_dependency(
     required_permission: str | None = None,
 ) -> Callable[..., dict]:
     """SEC.3 — Return a FastAPI dependency that enforces admin/permission check."""
-    secret_key = os.environ[secret_key_env_var].strip()
-    if not secret_key:
-        raise RuntimeError(f"{secret_key_env_var} must be non-empty")
+    secret_key = resolve_auth_secret_key(env_var=secret_key_env_var)
 
     def _check(authorization: str | None = Header(default=None)) -> dict:
         if not authorization or not authorization.startswith("Bearer "):

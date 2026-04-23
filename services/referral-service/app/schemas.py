@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 import datetime
 import uuid
@@ -37,6 +37,11 @@ class ReferralUsage(ReferralUsageCreate):
 
 class ReferralValidation(BaseModel):
     code: str
+
+
+class InternalReferralSignup(BaseModel):
+    referee_email: EmailStr
+    code: str = Field(..., min_length=1, max_length=40)
 
 class ReferralStats(BaseModel):
     total_referrals: int

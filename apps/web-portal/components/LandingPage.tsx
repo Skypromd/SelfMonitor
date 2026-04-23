@@ -163,8 +163,8 @@ const PRICING_PLANS: ReadonlyArray<{
     iconColor: 'var(--lp-accent-teal)',
     price: '£12',
     features: [
-      { icon: Landmark, text: '1 Open Banking connection · 1 sync / day' },
-      { icon: BarChart3, text: 'Up to 500 transactions / month · ~90 days history focus' },
+      { icon: Landmark, text: '3 Open Banking connections · 1 sync / day' },
+      { icon: BarChart3, text: 'Unlimited transactions (fair use cap) · ~90 days history focus' },
       { icon: Sparkles, text: 'CIS refund tracker, statement upload & verified vs unverified flow' },
       { icon: Receipt, text: 'Receipt capture & OCR' },
       { icon: CalendarClock, text: 'HMRC MTD guided submit (draft → confirm) & filing reminders' },
@@ -1273,7 +1273,7 @@ export default function LandingPage() {
               </Link>
               <br />
               <small className={styles.ctaSmall}>
-                Free plan includes 200 transactions/month. Upgrade anytime.
+                Free plan includes 20 transactions/month. Upgrade anytime.
               </small>
             </motion.div>
           </div>

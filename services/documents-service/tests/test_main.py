@@ -78,20 +78,28 @@ def test_get_document_returns_401_without_token():
 
 # --- Upload document ---
 
+@patch("app.main.post_audit_event", new_callable=AsyncMock)
 @patch("app.main.ocr_processing_task")
 @patch("app.main.s3_client")
 @patch("app.main.crud")
-def test_upload_document_success(mock_crud, mock_s3, mock_ocr_task):
+def test_upload_document_success(mock_crud, mock_s3, mock_ocr_task, mock_post_audit):
     fake_doc = _fake_document()
+    mock_crud.total_file_size_bytes_for_user = AsyncMock(return_value=0)
+    mock_crud.count_documents_for_user = AsyncMock(return_value=0)
     mock_crud.create_document = AsyncMock(return_value=fake_doc)
     mock_s3.upload_fileobj = MagicMock()
     mock_ocr_task.delay = MagicMock()
+    mock_post_audit.return_value = True
 
     async def override_get_db():
         yield AsyncMock()
 
     app.dependency_overrides[get_db] = override_get_db
 
+    import app.main as main_mod
+
+    prev_compliance = main_mod.COMPLIANCE_SERVICE_URL
+    main_mod.COMPLIANCE_SERVICE_URL = "http://compliance-service:80"
     try:
         client = TestClient(app)
         response = client.post(
@@ -107,7 +115,13 @@ def test_upload_document_success(mock_crud, mock_s3, mock_ocr_task):
         mock_s3.upload_fileobj.assert_called_once()
         mock_crud.create_document.assert_awaited_once()
         mock_ocr_task.delay.assert_called_once()
+        mock_post_audit.assert_awaited_once()
+        aud = mock_post_audit.await_args.kwargs
+        assert aud["action"] == "document_uploaded"
+        assert aud["user_id"] == USER_ID
+        assert aud["details"]["filename"] == "receipt.pdf"
     finally:
+        main_mod.COMPLIANCE_SERVICE_URL = prev_compliance
         app.dependency_overrides.clear()
 
 
@@ -117,6 +131,8 @@ def test_upload_document_success(mock_crud, mock_s3, mock_ocr_task):
 def test_upload_document_s3_failure(mock_crud, mock_s3, mock_ocr_task):
     from botocore.exceptions import ClientError
 
+    mock_crud.total_file_size_bytes_for_user = AsyncMock(return_value=0)
+    mock_crud.count_documents_for_user = AsyncMock(return_value=0)
     mock_s3.upload_fileobj.side_effect = ClientError(
         {"Error": {"Code": "500", "Message": "S3 error"}}, "PutObject"
     )
@@ -214,3 +230,45 @@ def test_upload_requires_authentication():
         files={"file": ("receipt.pdf", b"x", "application/pdf")},
     )
     assert response.status_code == 401
+
+
+@patch("app.main.post_audit_event", new_callable=AsyncMock)
+@patch("app.main.crud")
+def test_review_document_posts_compliance_audit(mock_crud, mock_post_audit):
+    mock_post_audit.return_value = True
+    doc_id = uuid.uuid4()
+    reviewed = MagicMock(
+        id=doc_id,
+        user_id=USER_ID,
+        filename="receipt.pdf",
+        filepath=f"{USER_ID}/{doc_id}.pdf",
+        status="completed",
+        uploaded_at=datetime.datetime.now(datetime.UTC),
+        extracted_data={"review_status": "ignored", "total_amount": 10.0},
+    )
+    mock_crud.update_document_review = AsyncMock(return_value=reviewed)
+
+    async def override_get_db():
+        yield AsyncMock()
+
+    app.dependency_overrides[get_db] = override_get_db
+    import app.main as main_mod
+
+    prev = main_mod.COMPLIANCE_SERVICE_URL
+    main_mod.COMPLIANCE_SERVICE_URL = "http://compliance:80"
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f"/documents/{doc_id}/review",
+            headers=AUTH_HEADER,
+            json={"review_status": "ignored"},
+        )
+    finally:
+        main_mod.COMPLIANCE_SERVICE_URL = prev
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    mock_post_audit.assert_awaited_once()
+    aud = mock_post_audit.await_args.kwargs
+    assert aud["action"] == "document_review_updated"
+    assert aud["details"]["review_status"] == "ignored"

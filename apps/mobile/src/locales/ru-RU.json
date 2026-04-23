@@ -259,7 +259,13 @@
     "exported_tax": "Сводка экспортирована.",
     "exported_documents": "Документы экспортированы.",
     "export_error": "Ошибка экспорта.",
-    "offline_error": "Нет сети. Экспорт онлайн."
+    "offline_error": "Нет сети. Экспорт онлайн.",
+    "cis_evidence_link": "Ссылка на CIS evidence pack",
+    "cis_evidence_shared": "CIS evidence pack — ссылка для бухгалтера (срок действия задаёт сервер):",
+    "cis_evidence_note": "Передавайте только по защищённому каналу. Ссылка работает без входа в аккаунт.",
+    "cis_evidence_done": "Ссылка отправлена.",
+    "cis_evidence_plan": "CIS evidence pack доступен с тарифа Growth.",
+    "cis_evidence_failed": "Не удалось создать ссылку."
   },
   "assistant": {
     "title": "AI помощник",
@@ -315,6 +321,7 @@
   "transactions": {
     "title": "Транзакции",
     "subtitle": "Категоризируйте доходы и расходы.",
+    "business_scope": "Бизнес",
     "empty_state": "Пока нет транзакций.",
     "connect_bank": "Подключить банк",
     "csv_import": "CSV импорт",
@@ -480,7 +487,18 @@
     "save_error": "Не удалось обновить подписку.",
     "saved_offline": "Сохранено офлайн. Синхронизация позже.",
     "active_label": "Активна",
-    "trial_left": "Пробный период истекает через"
+    "trial_left": "Пробный период истекает через",
+    "stripe_card_title": "Платная подписка (Stripe)",
+    "stripe_plan_label": "План",
+    "stripe_status_label": "Статус",
+    "stripe_period_end": "Текущий период до",
+    "account_credit_label": "Кредит на счёте",
+    "consult_sessions_label": "Доступные сессии с бухгалтером",
+    "consult_section_hint": "Дополнительно: платная сессия проверки CIS (запись через поддержку).",
+    "consult_buy": "Купить сессию",
+    "consult_checkout_loading": "Открываем оплату…",
+    "consult_checkout_error": "Не удалось начать оплату.",
+    "billing_load_error": "Не удалось загрузить данные Stripe."
   },
   "settings": {
     "title": "Настройки",

@@ -1,7 +1,10 @@
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
-import { useNavigation } from '@react-navigation/native';
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Audio } from 'expo-av';
+import * as Haptics from 'expo-haptics';
+import * as Localization from 'expo-localization';
 
 import Badge from '../components/Badge';
 import Card from '../components/Card';
@@ -24,10 +27,13 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
 import { useTranslation } from '../hooks/useTranslation';
 import { apiRequest } from '../services/api';
+import { readStoredTransactionsBusinessId } from '../services/transactionsBusinessStorage';
 import { flushQueue, getQueueCount } from '../services/offlineQueue';
 import { getSyncLogEntries, SyncLogEntry } from '../services/syncLog';
 import type { MainTabParamList } from '../navigation/MainTabs';
 import { colors, spacing } from '../theme';
+import { getVoiceHttpBase } from '../../api';
+import { jwtSub } from '../services/jwtPayload';
 
 type Transaction = {
   amount: number;
@@ -66,10 +72,25 @@ export default function DashboardScreen() {
     uncategorizedExpenses: 0,
   });
   const [mtdBanner, setMtdBanner] = useState<MtdBanner | null>(null);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [transactionsBusinessId, setTransactionsBusinessId] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setTransactionsBusinessId(null);
+        return;
+      }
+      void readStoredTransactionsBusinessId(token).then(setTransactionsBusinessId);
+    }, [token]),
+  );
 
   const loadReadiness = async () => {
     try {
-      const response = await apiRequest('/transactions/transactions/me', { token });
+      const response = await apiRequest('/transactions/transactions/me', {
+        token,
+        businessId: transactionsBusinessId,
+      });
       if (!response.ok) return;
       const data: Transaction[] = await response.json();
       if (!data.length) {
@@ -190,7 +211,7 @@ export default function DashboardScreen() {
     loadQueueCount();
     loadEstimatedTax();
     loadSyncLog();
-  }, [token]);
+  }, [token, transactionsBusinessId]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -206,6 +227,93 @@ export default function DashboardScreen() {
     setLastSync(new Date().toISOString());
     await loadSyncLog();
     setSyncing(false);
+  };
+
+  const handleVoiceExpense = async () => {
+    if (!token || isOffline || voiceBusy) return;
+    const sub = jwtSub(token);
+    if (!sub) {
+      Alert.alert(t('dashboard.voice_title'), t('dashboard.voice_session_error'));
+      return;
+    }
+    setVoiceBusy(true);
+    let recording: Audio.Recording | undefined;
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert(t('dashboard.voice_title'), t('dashboard.voice_permission_denied'));
+        return;
+      }
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+      recording = new Audio.Recording();
+      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      await recording.startAsync();
+      await new Promise<void>(resolve => setTimeout(resolve, 4000));
+      const uri = recording.getURI();
+      await recording.stopAndUnloadAsync();
+      recording = undefined;
+      if (!uri) {
+        throw new Error('Recording failed');
+      }
+      const lang = (Localization.getLocales()[0]?.languageCode ?? 'en').slice(0, 2);
+      const form = new FormData();
+      form.append('user_id', sub);
+      form.append('token', token);
+      form.append('language', lang);
+      form.append('audio', { uri, name: 'clip.m4a', type: 'audio/m4a' } as unknown as Blob);
+      const res = await fetch(`${getVoiceHttpBase()}/voice/transcribe-intent`, {
+        method: 'POST',
+        body: form,
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        detail?: string | string[];
+        text?: string;
+        intent?: { amount: number; category: string; currency: string } | null;
+      };
+      if (!res.ok) {
+        const detail = data.detail;
+        const msg = Array.isArray(detail) ? detail.join(', ') : typeof detail === 'string' ? detail : `HTTP ${res.status}`;
+        Alert.alert(t('dashboard.voice_title'), msg);
+        return;
+      }
+      const intent = data.intent;
+      if (intent && typeof intent.amount === 'number' && intent.category) {
+        const msg = `${intent.category} · ${intent.currency} ${intent.amount.toFixed(2)}`;
+        Alert.alert(t('dashboard.voice_capture_title'), msg, [
+          { text: t('common.ok'), style: 'cancel' },
+          {
+            text: t('dashboard.voice_open_transactions'),
+            onPress: () => navigation.navigate('Transactions' as never),
+          },
+        ]);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } else {
+        const hint = data.text?.trim() ? data.text.trim() : t('dashboard.voice_no_intent');
+        Alert.alert(t('dashboard.voice_title'), hint, [
+          { text: t('common.ok'), style: 'cancel' },
+          {
+            text: t('dashboard.voice_open_transactions'),
+            onPress: () => navigation.navigate('Transactions' as never),
+          },
+        ]);
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      Alert.alert(t('dashboard.voice_title'), message);
+    } finally {
+      if (recording) {
+        try {
+          await recording.stopAndUnloadAsync();
+        } catch {
+          /* already stopped */
+        }
+      }
+      setVoiceBusy(false);
+    }
   };
 
   const readinessLabel = readinessScore >= 80
@@ -267,6 +375,15 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.quickActionItem}>
             <PrimaryButton title={t('dashboard.generate_report')} onPress={() => navigation.navigate('Reports' as never)} variant="secondary" haptic="light" />
+          </View>
+          <View style={styles.quickActionItem}>
+            <PrimaryButton
+              title={voiceBusy ? t('dashboard.voice_recording') : t('dashboard.voice_quick_expense')}
+              onPress={() => void handleVoiceExpense()}
+              variant="secondary"
+              haptic="light"
+              disabled={voiceBusy || isOffline || !token}
+            />
           </View>
         </View>
       </FadeInView>

@@ -43,6 +43,16 @@ const nextConfig = {
         source: '/api/:path*',
         destination: `${origin}/api/:path*`,
       },
+      {
+        source: '/sitemap-seo-tax-calculator.xml',
+        destination: '/sitemap-seo-tax-calculator',
+        locale: false,
+      },
+      {
+        source: '/robots.txt',
+        destination: '/robots-txt',
+        locale: false,
+      },
     ];
   },
 }

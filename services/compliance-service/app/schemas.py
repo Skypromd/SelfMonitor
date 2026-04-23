@@ -11,5 +11,7 @@ class AuditEventCreate(BaseModel):
 class AuditEvent(AuditEventCreate):
     id: uuid.UUID
     timestamp: datetime.datetime
+    prev_chain_hash: Optional[str] = None
+    chain_hash: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

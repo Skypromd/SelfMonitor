@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -10,6 +11,7 @@ import Chip from '../components/Chip';
 import FadeInView from '../components/FadeInView';
 import InfoRow from '../components/InfoRow';
 import { apiRequest } from '../services/api';
+import { readStoredTransactionsBusinessId } from '../services/transactionsBusinessStorage';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from '../hooks/useTranslation';
@@ -41,6 +43,17 @@ export default function AssistantScreen() {
   const [input, setInput] = useState('');
   const [insights, setInsights] = useState<InsightData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [transactionsBusinessId, setTransactionsBusinessId] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!token) {
+        setTransactionsBusinessId(null);
+        return;
+      }
+      void readStoredTransactionsBusinessId(token).then(setTransactionsBusinessId);
+    }, [token]),
+  );
 
   const loadInsights = async () => {
     if (isOffline) {
@@ -104,7 +117,7 @@ export default function AssistantScreen() {
 
   useEffect(() => {
     loadInsights();
-  }, [token, isOffline]);
+  }, [token, isOffline, transactionsBusinessId]);
 
   const promptOptions = [
     t('assistant.prompt_tax'),

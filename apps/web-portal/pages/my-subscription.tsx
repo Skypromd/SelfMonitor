@@ -15,6 +15,14 @@ type SubscriptionInfo = {
   plan: string;
   status: string;
   current_period_end?: number | null;
+  account_credit_balance_gbp?: number;
+  accountant_consult_sessions_available?: number;
+};
+
+type ConsultAddon = {
+  name: string;
+  amount_pence: number;
+  sla_note?: string;
 };
 
 export default function MySubscriptionPage({ token, user }: Props) {
@@ -22,6 +30,8 @@ export default function MySubscriptionPage({ token, user }: Props) {
   const [data, setData] = useState<SubscriptionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [consultAddon, setConsultAddon] = useState<ConsultAddon | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!email) {
@@ -50,6 +60,48 @@ export default function MySubscriptionPage({ token, user }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void fetch(`${BILLING_URL}/addons`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const a = j?.accountant_cis_consult;
+        if (a?.name && typeof a.amount_pence === 'number') {
+          setConsultAddon({
+            name: a.name,
+            amount_pence: a.amount_pence,
+            sla_note: typeof a.sla_note === 'string' ? a.sla_note : undefined,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const startConsultCheckout = async () => {
+    if (!email) return;
+    setCheckoutLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${BILLING_URL}/checkout/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product: 'accountant_cis_consult', email }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(typeof payload.detail === 'string' ? payload.detail : `Checkout failed (${res.status})`);
+      }
+      if (payload.checkout_url) {
+        window.location.href = payload.checkout_url as string;
+        return;
+      }
+      throw new Error('No checkout URL returned');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Checkout failed');
+    } finally {
+      setCheckoutLoading(false);
+    }
+  };
 
   return (
     <>
@@ -89,6 +141,59 @@ export default function MySubscriptionPage({ token, user }: Props) {
                 {new Date(data.current_period_end * 1000).toLocaleDateString()}
               </p>
             ) : null}
+            {(data.account_credit_balance_gbp ?? 0) > 0 ? (
+              <p style={{ margin: '1rem 0 0', fontSize: 13, color: 'var(--lp-text-muted)' }}>
+                Account credit: £{Number(data.account_credit_balance_gbp).toFixed(2)}
+              </p>
+            ) : null}
+            {(data.accountant_consult_sessions_available ?? 0) > 0 ? (
+              <p style={{ margin: '0.75rem 0 0', fontSize: 13, color: 'var(--lp-text-muted)' }}>
+                CIS accountant review sessions available:{' '}
+                <strong style={{ color: 'var(--lp-text)' }}>{data.accountant_consult_sessions_available}</strong>
+              </p>
+            ) : null}
+            <div
+              style={{
+                marginTop: '1.5rem',
+                paddingTop: '1.25rem',
+                borderTop: '1px solid var(--lp-border)',
+              }}
+            >
+              <p style={{ margin: '0 0 0.5rem', fontSize: 13, color: 'var(--lp-text-muted)' }}>
+                Optional add-on
+              </p>
+              <p style={{ margin: '0 0 0.75rem', fontSize: 15, fontWeight: 600 }}>
+                {consultAddon?.name ?? 'CIS accountant review (1 session)'}
+              </p>
+              {consultAddon?.sla_note ? (
+                <p style={{ margin: '0 0 1rem', fontSize: 12, color: 'var(--lp-text-muted)', lineHeight: 1.5 }}>
+                  {consultAddon.sla_note}
+                </p>
+              ) : (
+                <p style={{ margin: '0 0 1rem', fontSize: 12, color: 'var(--lp-text-muted)', lineHeight: 1.5 }}>
+                  Paid review of your CIS evidence or self-attested figures. Scheduling via support after purchase.
+                </p>
+              )}
+              <button
+                type="button"
+                className={styles.button}
+                style={{
+                  border: 'none',
+                  cursor: checkoutLoading ? 'wait' : 'pointer',
+                  opacity: checkoutLoading ? 0.7 : 1,
+                  padding: '0.65rem 1.25rem',
+                  fontSize: 14,
+                }}
+                disabled={checkoutLoading || !email}
+                onClick={() => void startConsultCheckout()}
+              >
+                {checkoutLoading
+                  ? 'Opening checkout…'
+                  : consultAddon
+                    ? `Buy — £${(consultAddon.amount_pence / 100).toFixed(2)}`
+                    : 'Buy session'}
+              </button>
+            </div>
             <div style={{ marginTop: '1.25rem' }}>
               <Link href="/marketplace" style={{ color: 'var(--lp-accent-teal)', fontWeight: 600 }}>
                 Compare plans &amp; upgrades

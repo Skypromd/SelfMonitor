@@ -45,6 +45,7 @@ class EventType:
     MTD_DEADLINE_WARNING = "mtd_deadline_warning"
     MTD_REPORT_READY     = "mtd_report_ready"
     MTD_SUBMITTED        = "mtd_submitted"
+    INVOICE_PAID         = "invoice_paid"
 
 
 # ── connection factory ────────────────────────────────────────────────────────

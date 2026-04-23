@@ -15,6 +15,8 @@ from datetime import date, datetime, timedelta
 
 from . import crud, models, schemas
 from .database import get_db
+from .invoice_smtp import send_client_payment_request_email
+from .notify_finops import notify_seller_invoice_paid
 from .pdf_generator import PDFGenerator
 from .invoice_calculator import InvoiceCalculator
 from .reporting_service import InvoiceReportingService
@@ -596,6 +598,7 @@ async def cancel_recurring_invoice(
 @app.post("/invoices/{invoice_id}/payment-link", tags=["payments"])
 async def create_payment_link(
     invoice_id: str,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -636,6 +639,16 @@ async def create_payment_link(
         link_id=_lid,
         url=url,
     )
+
+    if invoice.client_email:
+        background_tasks.add_task(
+            send_client_payment_request_email,
+            to_email=invoice.client_email,
+            client_name=invoice.client_name or "there",
+            invoice_number=invoice.invoice_number,
+            amount_gbp=float(invoice.total_amount),
+            pay_url=url,
+        )
 
     return {
         "invoice_id": invoice_id,
@@ -714,6 +727,16 @@ async def stripe_invoices_webhook(
     )
     await crud.create_payment(db, inv_str, pdata)
     await crud.update_invoice_status_from_payments(db, inv_str)
+    try:
+        await notify_seller_invoice_paid(
+            user_id=invoice.user_id,
+            invoice_id=inv_str,
+            invoice_number=str(invoice.invoice_number),
+            amount_gbp=str(float(paid_gbp)),
+            checkout_session_id=parsed["checkout_session_id"],
+        )
+    except Exception as exc:
+        logger.warning("seller invoice-paid notify error: %s", exc)
     return {"received": True, "paid_invoice_id": inv_str}
 
 if __name__ == "__main__":

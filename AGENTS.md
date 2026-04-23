@@ -92,7 +92,7 @@ The app targets Expo SDK 51 / React Native 0.74.5. It connects to the backend at
 
 | Service | Port | Description |
 |---|---|---|
-| `services/finops-monitor` | 8021 | Financial ops monitor with MTD/ITSA compliance tracking |
+| `services/finops-monitor` | 8021 | MTD reminders, dashboard WS, invoice-paid notify, tax-tips/referral crons; internal `mortgage-milestones/run`, `mortgage-monthly-digest/run` (Road to mortgage) |
 | `services/mtd-agent` | 8022 | HMRC MTD workflow agent; **POST /mtd/prepare** proxies **tax-engine** for transaction-backed figures + shared MTD JSON; **submit only after explicit user confirmation** (same rule as `integrations-service`) |
 | `services/voice-gateway` | 8023 | Voice gateway (STT/TTS, WebSocket streaming) |
 | `services/ai-agent-service` | 80 | SelfMate AI agent — memory, tools, multi-language |

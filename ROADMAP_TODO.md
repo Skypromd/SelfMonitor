@@ -69,7 +69,7 @@
 - [x] 200+ строк merchant-паттернов UK + расширяемый список; Amazon/eBay → `cost_of_goods`, банки → `bank_charges`, доставка еды и т.д.
 - [x] Fallback: `categorization-service` (`/categorize`, LLM при наличии ключа)
 - [x] UI: смена категории → `POST /categorization/learn` (web + mobile; mobile также после flush офлайн-очереди)
-- [ ] Подготовить данные для ML модели (фаза 2)
+- [x] Подготовить данные для ML модели (фаза 2) — `scripts/export_categorization_training_sample.py` → CSV из `CATEGORIZATION_MERCHANT_RULES_PATH` (или локальный JSON)
 
 ### 1.3 Receipt OCR
 - [x] Заменить LocalStack Textract mock на реальный AWS Textract — конфиг в `.env.example` (без endpoint URL + ключи/роль; `DOCUMENTS_OCR_TEXTRACT_API=expense`)
@@ -92,6 +92,7 @@
 - [x] Отдельный CSV «MTD-style digital records» на `tax-preparation.tsx` (дата, income/expense, категория, VAT из текста описания, id) — не файл API-отправки в HMRC
 
 ### 1.6 Мобильное приложение в App Store / Google Play
+- [x] Экран **Subscription**: данные **billing-service** (`/billing/subscription/{email}`, `/billing/addons`) + покупка **CIS accountant consult** через `POST /billing/checkout/session` → Stripe Checkout (тот же шлюз `EXPO_PUBLIC_API_GATEWAY_URL`, что и остальные API); **`useFocusEffect`** — обновление Stripe-блока при каждом возврате на экран (после браузера/Checkout).
 - [ ] Apple Developer Account ($99/год)
 - [ ] Google Play Developer Account ($25 единоразово)
 - [ ] `eas build --platform ios` + `eas build --platform android`
@@ -131,16 +132,18 @@
   - [x] NatWest-style: 2 года, 4×, contractors note
   - [x] Specialist (illustrative): Kensington, Pepper Money, Together — в `POST /mortgage/affordability`
 - [x] Иллюстративный **matching**: `credit_band` (clean / minor / adverse), `years_trading`, авто **deposit %** → `illustrative_fit_score` + причины, сортировка сценариев (не % одобрения)
-- [ ] Фильтры: property type, детальный credit file / CCJ (расширение)
-- [ ] Обновление данных кредиторов каждый квартал
+- [x] Фильтры: property type (residential / leasehold flat / BTL), CCJ past 6y self-report — `POST /mortgage/affordability` + Reports UI; `planner_notes` + `credit_band_effective`
+- [x] Обновление данных кредиторов каждый квартал — в ответе `POST /mortgage/affordability`: `illustrative_lenders_as_of` + `illustrative_lenders_pack_version` (bump в `mortgage_affordability.py` при пересмотре сценариев)
 
 ### 1.5.4 Document Auto-fill
-- [ ] SA302 — уже генерируем через HMRC integration → автоприложить к mortgage pack
-- [ ] Tax Year Overview — автозапрос через HMRC API
-- [ ] Income & Expenditure form — автозаполнение из transactions-service
-- [ ] Bank statements — экспорт из banking-connector за последние 6 месяцев
-- [ ] Business accounts summary — из analytics-service (P&L за 2-3 года)
-- [ ] Один клик → готовый пакет документов для broker-а
+- [x] SA302 (часть) — в broker ZIP: `hmrc-mortgage-document-status.json` (совпадения имён файлов с SA302/TY overview) + `hmrc-income-tax-estimate.json` через `POST …/integrations/hmrc/mtd/tax-calculation` (симуляция/песочница; **не** официальный PDF HMRC)
+- [x] Tax Year Overview (часть) — JSON расчёта через HMRC **Individual Calculations** API: `GET/POST …/integrations/hmrc/self-assessment/{tax_year}/calculations…` (integrations-service; при `HMRC_DIRECT_SUBMISSION_ENABLED` — реальный HMRC); broker ZIP опционально с NINO → `hmrc-individual-calculation.json`
+- [x] Tax Year Overview — официальный **PDF** из PTA: в broker ZIP `hmrc-official-tax-evidence-steps.txt` (gov.uk PTA + SA302 guidance) + загрузка PDF в Documents (чеклист); не автозагрузка (нет HMRC API)
+- [ ] Tax Year Overview — автоматическая выгрузка PDF из PTA без входа пользователя на gov.uk (только если появится поддерживаемый HMRC/OAuth документ-flow)
+- [x] Income & Expenditure form — иллюстративный preview из linked bank: `GET /mortgage/money-preview` (analytics → transactions-service); UI Reports → «Linked bank money preview» + JSON/CSV (не statutory)
+- [x] Bank statements — CSV из banking-connector: `GET /exports/statement-csv` (rolling window, default 180d); данные из `transactions/me` после ручного sync; UI на `/connect-bank`
+- [x] Business accounts summary — UK tax-year P&L rollups в том же `GET /mortgage/money-preview` (до 6 лет; illustrative, не certified accounts)
+- [x] Один клик → стартовый пакет для broker-а: `POST /mortgage/broker-bundle.zip` (pack index JSON + money preview JSON + optional CSV из banking-connector); UI Reports — «Download broker starter bundle (ZIP)»
 
 ### 1.5.5 Broker Marketplace
 - [ ] Партнёрство с 10-20 mortgage brokers специализирующихся на self-employed
@@ -155,8 +158,8 @@
 - [x] Авто-сигналы: месяцы банковской истории + число документов (если `include_backend_signals` и сервисы доступны)
 - [x] Текущий шаг: первый незавершённый; депозит с **progress_ratio**; ETA депозита при monthly savings
 - [x] Web **Reports**: блок «Road to mortgage», кнопка **Use last readiness %**
-- [ ] Push / email при milestone — не делали
-- [ ] Ежемесячный email прогресса — не делали
+- [x] Push / email при смене шага Road to mortgage (finops weekly + `POST /internal/mortgage-milestones/run`; первый замер без рассылки; дедуп перехода; при ошибке SMTP/push — сброс дедупа и повтор на следующем запуске; без каналов — только обновление шага в Redis)
+- [x] Ежемесячный сводный email/push прогресса ипотеки (finops 10-го числа 09:35 UTC + `POST /internal/mortgage-monthly-digest/run`; дедуп `mortgage:monthly_digest:*`)
 
 ---
 
@@ -169,19 +172,19 @@
 - [x] UI: `/assistant` — Focus «UK tax», ссылка с `tax-preparation` на `/assistant?mode=tax`
 
 ### 2.2 Voice input
-- [ ] Интент-парсер: распознать "заплатил 50 фунтов за бензин" → {amount: 50, category: Fuel, currency: GBP}
-- [ ] Поддержка 4 языков: EN, PL, RO, UK
-- [ ] Интеграция с voice-gateway (STT уже есть)
-- [ ] Мобильное приложение: кнопка микрофона на главном экране
+- [x] Интент-парсер: распознать "заплатил 50 фунтов за бензин" → {amount: 50, category: Fuel, currency: GBP} — `parse_expense_intent`, `POST /voice/quick-intent`, `POST /voice/transcribe-intent`
+- [x] Поддержка 4 языков: EN, PL, RO, UK — ключевые слова в `expense_intent.py` + тесты
+- [x] Интеграция с voice-gateway (STT уже есть)
+- [x] Мобильное приложение: кнопка микрофона на главном экране — `screens/DashboardScreen.tsx` (4s запись → transcribe-intent)
 
 ### 2.3 MTD prep reminders (no auto-submit)
 - [x] За **3 дня** до дедлайна: письмо/push дополняется текстом «подготовьте черновик / review → confirm → submit»; флаг `mtd_draft_prep_hint` в событии Redis
-- [ ] Автосбор черновика quarterly в БД без входа пользователя — не делали (только напоминание открыть flow)
+- [x] Автосбор черновика quarterly в БД без входа пользователя — finops tier‑3 → tax-engine `/internal/mtd/auto-draft-quarterly` → integrations `/internal/hmrc/mtd/quarterly-update/draft` (JWT mint + business retention для расчёта; dedup Redis)
 - [x] **Нет** фоновой подачи в HMRC (как и раньше)
 - [x] Напоминания tier 14/7/3/1 не шлются, если квартал уже `submitted` (исправлена логика tier-1)
 
 ### 2.4 Real-time profit dashboard
-- [ ] WebSocket endpoint: новая транзакция → push на дашборд (пока: polling ~55s на `dashboard.tsx`)
+- [x] WebSocket endpoint: новая транзакция → push на дашборд (`/api/finops/ws/dashboard/live`, finops + transactions notify)
 - [x] Виджеты: "Profit today", "Profit this week", "Tax owed so far" (`GET /insights/profit-pulse`, tax-engine YTD при `include_tax_estimate`)
 - [x] Графики: недельный net profit (8 недель, Recharts) на дашборде
 - [x] Сравнение с прошлым годом: delta по той же календарной неделе (~364 дня назад)
@@ -190,30 +193,62 @@
 - [x] База подсказок: trading allowance, flat-rate home office (~£312/г), mileage, phone split — `GET /insights/tax-savings`
 - [x] Персонализация по категориям транзакций за выбранный tax year (`start_date` / `end_date`)
 - [x] Web: блок «Tax-saving ideas» на `tax-preparation.tsx`
-- [ ] Push раз в месяц — не делали
+- [x] Push раз в месяц — `finops-monitor` cron 15-го числа 09:10 UTC, Expo dedup `tax_tips:monthly_push:*`, текст → Tax preparation
 
 ### 2.6 Instant invoice payments
 - [x] Stripe Payment Links: `POST /invoices/{id}/payment-link` (Stripe Payment Link API), UI «Pay link» / иконка на `invoices.tsx`
-- [ ] Клиент получает email → нажимает "Pay now" → оплата картой — не делали (только копирование ссылки)
+- [x] Клиент получает email при создании ссылки (если `client_email` + SMTP); ссылка «Pay now» в письме
 - [x] Webhook: `POST /webhooks/stripe/invoices` — `checkout.session.completed` → запись оплаты (Stripe) + статус paid через `update_invoice_status_from_payments`
-- [ ] Уведомление юзеру: "Invoice #INV-001 paid! £500 received" — не делали (push/email)
+- [x] Уведомление продавцу: email + Expo push через `POST /internal/notify-invoice-paid` (finops-monitor), dedup по `checkout_session_id`
 
 ---
 
 ## Фаза 3: "Viral growth" (10-16 недель)
 
 ### 3.1 Реферальная программа 2.0
-- [ ] £25 credit за каждого приглашённого друга (обоим) — модель `reward_amount` в referral-service; начисление в billing — отдельно
-- [ ] Месяц Pro бесплатно для топ-10 рефереров каждый месяц
+- [x] £25 credit за каждого приглашённого друга (обоим) — `POST /internal/account-credit` (billing), idempotency `referral-{usage_id}-referrer|referee`; signup `?ref=` → `POST /internal/apply-signup-referral`; `validate-referral` тоже начисляет
+- [x] Месяц Pro бесплатно для топ-10 рефереров — billing cron 1-го числа 07:00 UTC: `GET /internal/top-referrers` (прошлый месяц) → `referral_leaderboard_pro_until` конец текущего месяца; `GET /subscription/{email}` отдаёт effective `pro` для free/starter/growth
 - [x] Leaderboard: `GET /leaderboard` + позиция пользователя; web `referrals.tsx` (поля `referral_count` / `total_earned`)
 - [x] Sharing: ссылка `{origin}/register?ref=CODE&plan=starter`, QR (api.qrserver.com), `GET /me/referral-code`
-- [ ] Email-кампания существующим юзерам: "Invite a friend, get £25"
+- [x] Email-кампания: finops cron 5-го числа 10:15 UTC, dedup `marketing:referral_invite:*`, SMTP как MTD reminders
 
 ### 3.2 Бесплатный MTD калькулятор (SEO-магнит)
 - [x] Лендинг: `/tax-calculator-uk` + `POST /public/self-employed-estimate` (tax-engine, без JWT)
 - [x] Без регистрации: доход/расходы → Income Tax + NI + SL + take-home (модель `calculate_self_employed_tax`, 2025/26-style)
 - [x] CTA на странице → `/register`
-- [ ] SEO на 10 языках: отдельные локализованные лендинги — не делали (страница EN)
+- [x] SEO на 10 языках: отдельные локализованные лендинги — `/tax-calculator-uk` (EN) + `/tax-calculator-uk/{pl,ro,uk,ru,es,it,pt,tr,bn}`; `hreflang`/`canonical` при `NEXT_PUBLIC_SITE_ORIGIN`; детальный чеклист ниже
+
+#### 3.2 Языковой TODO (лендинги калькулятора)
+
+**Политика перевода (смысл + UK-практика)**
+
+- Переводим **смысл и контекст**: вводные абзацы, пояснения к полям, дисклеймеры, CTA, «как читать результат» — так, чтобы носитель языка понял риски и ограничения без потери точности.
+- **Не переводим** (оставляем **латиницей / как в UK**): официальные имена и аббревиатуры **HMRC**, **MTD**, **Self Assessment**, **ITSA** (если используете в копи), **NI** (National Insurance), **Student Loan**, валюта и суммы **£ / GBP**, ссылки **gov.uk**, названия продуктов в интерфейсе, если они совпадают с тем, что пользователь увидит в письмах от HMRC/в англоязычном кабинете.
+- **Глоссарий при первом упоминании** (мировая практика для регулируемых тем): короткий родной эквивалент + **оригинал в скобках**, напр. польск. вводка + «*Income Tax (подоходный налог в системе UK)*» — дальше по тексту можно **Income Tax**, чтобы не плодить неофициальные «канцеляризмы», которых нет в законе.
+- **SEO**: заголовок и description локализуются под запросы диаспоры; в теле допустимы **гибридные** формулировки (*self employed*, *UK tax*), потому что так реально ищут; не подменять официальные термины вымышленными ключами.
+- **Редактор**: носитель языка + сверка с EN-оригиналом по чеклисту терминов; юридический дисклеймер — не «литературный», а **юридически эквивалентный по смыслу** (не обещать консультацию).
+
+**Общая инфраструктура (один раз)**
+
+- [x] Стратегия URL: префикс `/tax-calculator-uk/[lang]` (код: `pages/tax-calculator-uk/[lang].tsx`)
+- [x] Общий React-компонент калькулятора + вынесенные строки/копирайт по локали (`components/TaxCalculatorPublic.tsx`, `lib/taxCalculatorSeoCopy.ts`)
+- [x] `<title>` / meta description / OG на каждую локаль
+- [x] `hreflang` + `canonical` между EN и локалями (при заданном `NEXT_PUBLIC_SITE_ORIGIN` в `.env.example`)
+- [x] Публикация в `sitemap.xml` (+ при необходимости `robots.txt`) — `/sitemap-seo-tax-calculator.xml` (rewrite → SSR XML), `/robots.txt` → `Sitemap: …/sitemap-seo-tax-calculator.xml`; `locale: false` в `next.config.js` rewrites
+- [ ] Юридический блок: «информация, не совет» — проверенный перевод / локальный редактор (черновик копи в коде; финальный legal review)
+
+**По языкам** (каждый: уникальный вводный текст + SEO-ключи + ревью дисклеймера; калькулятор тот же API)
+
+- [x] **EN** — `/tax-calculator-uk` (база)
+- [x] **PL**
+- [x] **RO**
+- [x] **UA**
+- [x] **RU**
+- [x] **ES**
+- [x] **IT**
+- [x] **PT**
+- [x] **TR**
+- [x] **BN**
 
 ### 3.3 Партнёрство с accountants
 - [ ] Accountant portal: бухгалтер видит всех клиентов, их данные, подачи
@@ -234,11 +269,10 @@
 - [ ] Cross-promotion в Facebook группах диаспор
 
 ### 3.6 Freemium модель
-- [ ] Free: 20 транзакций/мес, 1 банк, базовый дашборд, no MTD submission
-- [ ] Starter £9: unlimited транзакции, MTD quarterly, 3 банка
-- [ ] Growth £12: + invoice payments, AI advisor
-- [ ] Pro £15: + voice input, auto-submission, priority support
-- [ ] Business £25: + multi-business, accountant access, API
+- [x] Free: **20** транзакций/мес — `PLAN_FEATURES["free"]` в **auth-service** + fallback `_DEFAULT_FREE` в **`libs/shared_auth/plan_limits`** (JWT `transactions_per_month_limit`); **1 банк** / **no MTD direct** уже в тех же лимитах.
+- [x] Starter (лимиты в коде): **3** банка, **999999** tx/мес (практический unlimited), MTD guided (`hmrc_submission`), 1×/day sync — `PLAN_FEATURES["starter"]` + fallback-мапы **`_BANK_CONNECTIONS_BY_PLAN`** / **`_TRANSACTIONS_PER_MONTH_BY_PLAN`** в `plan_limits`. Публичные £ — **billing** `PLANS` / лендинг (£12 ex VAT).
+- [x] Growth / Pro: лимиты и флаги — `PLAN_FEATURES`; публичный прайс и копирайт — лендинг + **pricing-engine** `GET /pricing-plans`.
+- [x] Business: **multi-business (MVP)** — **transactions-service**: `user_businesses` + `transactions.business_id`, опциональный заголовок **`X-Business-Id`**, `GET/POST/PATCH /businesses` (второй+ бизнес только при `plan=business`, макс. **10**); импорт/списки транзакций и receipt-draft учитывают бизнес. **CIS / refund-tracker** пока по-прежнему на весь `user_id` без разреза по бизнесу.
 
 ---
 
@@ -263,10 +297,10 @@
 - [ ] Уникальная фича — ни один конкурент не делает
 
 ### 4.4 Multi-business
-- [ ] Один аккаунт = несколько бизнесов (Uber + Etsy + freelance)
-- [ ] Раздельный учёт доходов/расходов
-- [ ] Объединённый tax report
-- [ ] FreeAgent НЕ умеет — конкурентное преимущество
+- [x] Один аккаунт = несколько бизнесов — **MVP в transactions-service** (см. §3.6 Business).
+- [x] Раздельный учёт **транзакций** (и receipt-flow) по `business_id`; Primary-бизнес по умолчанию (детерминированный UUID).
+- [ ] Объединённый tax report по всем бизнесам + раздельный MTD по юрлицам — **не** в MVP.
+- [ ] FreeAgent НЕ умеет — конкурентное преимущество (маркетинг; после полного tax-split)
 
 ### 4.5 Accountant portal
 - [ ] Расширить support-portal для бухгалтеров
@@ -327,11 +361,14 @@ Break-even: ~30-45 платящих юзеров на Starter (£9/мес)
 
 ### P0 Security & audit (продолжить)
 
-- [ ] Fail-fast **AUTH_SECRET_KEY** везде (нет дефолтов); preflight длина/энтропия секрета при старте в prod-профиле.
-- [ ] Append-only audit + hash-chain по `user_id` (расширение **compliance-service** или отдельное хранилище).
+- [x] Fail-fast **AUTH_SECRET_KEY** — `libs/shared_auth/auth_secret_preflight.py` + `jwt_fastapi` / `plan_limits`; при `DEPLOYMENT_PROFILE|APP_ENV` = production/prod или `AUTH_SECRET_KEY_PREFLIGHT_STRICT=1` — длина ≥32, иначе задать `AUTH_ALLOW_WEAK_JWT_SECRET=1` (как auth-service); **support-ai-service** — только `os.environ`, без пустого дефолта
+- [x] Единый preflight в **auth-service** — `app/config.py` вызывает `resolve_auth_secret_key()` + прежнее правило ≥32 символа без `AUTH_ALLOW_WEAK_JWT_SECRET`; Docker **context: .** + `libs/` в образе; тесты добавляют корень репо в `sys.path`
+- [x] Per-user **hash-chain** для `audit_events` в **compliance-service** (`prev_chain_hash`, `chain_hash`, SHA-256 над предыдущим хэшем + каноническим JSON; genesis = 64×`0`); старые строки без цепочки остаются `NULL` / следующее событие цепляется от genesis. Append-only по API (без update/delete событий).
 - [x] **`CISAuditAction`** → `POST .../audit-events` из **transactions-service** (`crud_cis`, shared `post_audit_event`) при ключевых шагах.
 - [x] Событие **`cis_unverified_submit_confirmed`** в compliance при ack на quarterly submit — **integrations-service** (если задан `COMPLIANCE_SERVICE_URL`).
-- [ ] Писать audit из **documents-service** / **tax-engine** там, где UX ещё не прокинут.
+- [x] **`mtd_quarterly_submitted`**, **`mtd_final_declaration_submitted`** — **integrations-service** после успешного quarterly / при приёме final-declaration (`COMPLIANCE_SERVICE_URL`).
+- [x] Писать audit из **documents-service** — `POST /documents/upload` → `document_uploaded`; `PATCH /documents/{id}/review` → `document_review_updated` (если `COMPLIANCE_SERVICE_URL` / `DOCUMENTS_COMPLIANCE_SERVICE_URL` задан)
+- [x] Писать audit из **tax-engine** — `POST /calculate` (`tax_calculate`), `POST /mtd/prepare` (`tax_mtd_prepare`), `POST /calculate-and-submit` (`tax_calculate_and_submit`); внутренние вызовы `calculate_tax` (prepare, auto-draft, submit) не дублируют `tax_calculate` через `contextvars`
 
 ### CIS UX & данные (продолжить)
 
@@ -350,9 +387,9 @@ Break-even: ~30-45 платящих юзеров на Starter (£9/мес)
 ### Accountant consult (максимальный план)
 
 - [x] API **delegation** в transactions-service (`POST/GET /accountant/delegations`; **`can_submit_hmrc`** пока жёстко запрещён).
-- [ ] Статусы отчёта: draft → ready_for_accountant_review → accountant_reviewed → ready_for_user_confirm → submitted (UI + enforcement).
-- [ ] MVP: кнопка **Request accountant review** + шаринг evidence pack (signed URLs, audit на скачивание).
-- [ ] Billing: опционально консультация / SLA через **billing-service**.
+- [x] Статусы отчёта: draft → ready_for_accountant_review → accountant_reviewed → ready_for_user_confirm → submitted (**integrations-service** SQLite `workflow_status`; transition + latest API; confirm/submit enforcement; **tax-preparation** UI + demo «Mark accountant reviewed»).
+- [x] MVP: **Accountant download link** (signed token `POST /cis/evidence-pack/share-token`, `GET /cis/evidence-pack/shared-zip?token=…`, HS256 с `INTERNAL_SERVICE_SECRET`; compliance **`cis_evidence_pack_shared_download`** при `COMPLIANCE_SERVICE_URL`); UI на **transactions** — копирование полного URL в буфер.
+- [x] Billing: опционально консультация / SLA через **billing-service** — `GET /addons`, `POST /checkout/session` с `product: accountant_cis_consult` (Stripe `mode=payment`), webhook → кредиты сессий; `GET /subscription/{email}` → `accountant_consult_sessions_available`; `POST /internal/accountant-consult-session`; UI **my-subscription** + success/cancel pages.
 
 ### Чеклист доводки CIS variant B
 
