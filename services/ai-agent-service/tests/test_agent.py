@@ -9,6 +9,7 @@ from typing import Any, Dict
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+
 from app.agent.conversation_manager import ConversationManager
 from app.agent.selfmate_agent import AgentResponse, SelfMateAgent
 from app.memory.memory_manager import MemoryManager
@@ -312,9 +313,6 @@ class TestMemoryManager:
     @pytest.mark.asyncio
     async def test_store_and_retrieve_user_profile(self, test_user_id: str):
         """Test storing and retrieving user profile"""
-        import json
-        from unittest.mock import AsyncMock
-
         manager = MemoryManager(redis_url="redis://localhost:6379", vector_db_url="http://localhost:8080")
 
         # Inject a simple in-memory mock redis so no real connection is needed

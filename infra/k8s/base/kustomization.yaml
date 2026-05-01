@@ -37,7 +37,7 @@ resources:
   - database/redis-deployment.yaml
   - database/redis-service.yaml
   
-  # Core Services (19 microservices + AI agent)
+  # Core Services (37 microservices + AI agent)
   - services/auth-service.yaml
   - services/user-profile-service.yaml
   - services/transactions-service.yaml
@@ -58,6 +58,25 @@ resources:
   - services/business-intelligence.yaml
   - services/fraud-detection.yaml
   - services/predictive-analytics.yaml
+  - services/agent-service.yaml
+  - services/billing-service.yaml
+  - services/cost-optimization.yaml
+  - services/customer-success.yaml
+  - services/finops-monitor.yaml
+  - services/invoice-service.yaml
+  - services/mtd-agent.yaml
+  - services/recommendation-engine.yaml
+  - services/referral-service.yaml
+  - services/support-ai-service.yaml
+  - services/tenant-router.yaml
+  - services/voice-gateway.yaml
+  - services/pricing-engine.yaml
+  - services/security-operations.yaml
+  - services/international-expansion.yaml
+  - services/ipo-readiness.yaml
+  - services/graphql-gateway.yaml
+  - services/security-service.yaml
+  - services/strategic-partnerships.yaml
   
   # Gateway and Load Balancing
   - gateway/nginx-configmap.yaml

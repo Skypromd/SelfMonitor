@@ -1,8 +1,11 @@
-from pydantic import BaseModel, EmailStr, validator, Field
-from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import List, Optional
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field
+
 
 class InvoiceStatus(str, Enum):
     DRAFT = "draft"
@@ -26,6 +29,42 @@ class RecurrenceFrequency(str, Enum):
     MONTHLY = "monthly"
     QUARTERLY = "quarterly"
     ANNUALLY = "annually"
+
+# === CLIENT SCHEMAS ===
+
+class ClientBase(BaseModel):
+    name: str = Field(..., max_length=200)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(None, max_length=30)
+    address: Optional[str] = Field(None, max_length=1000)
+    vat_number: Optional[str] = Field(None, max_length=50)
+    website: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class ClientCreate(ClientBase):
+    pass
+
+
+class ClientUpdate(BaseModel):
+    name: Optional[str] = Field(None, max_length=200)
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = Field(None, max_length=30)
+    address: Optional[str] = Field(None, max_length=1000)
+    vat_number: Optional[str] = Field(None, max_length=50)
+    website: Optional[str] = Field(None, max_length=200)
+    notes: Optional[str] = Field(None, max_length=2000)
+
+
+class ClientResponse(ClientBase):
+    id: UUID
+    user_id: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 
 # === LINE ITEM SCHEMAS ===
 class InvoiceLineItemBase(BaseModel):
@@ -91,6 +130,7 @@ class InvoiceBase(BaseModel):
 
 class InvoiceCreate(InvoiceBase):
     company_id: Optional[str] = Field(None, description="Company ID for multi-company")
+    client_id: Optional[UUID] = Field(None, description="Client from address book — auto-fills client fields")
     line_items: List[InvoiceLineItemCreate] = Field(..., min_items=1, description="Invoice line items")
     template_id: Optional[str] = Field(None, description="Invoice template to use")
 

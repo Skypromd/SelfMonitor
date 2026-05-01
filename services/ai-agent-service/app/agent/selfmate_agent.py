@@ -5,29 +5,12 @@ This is the core AI agent that provides personalized financial advice,
 automates tasks, and helps users achieve their financial goals.
 """
 
-import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from typing import Any, Dict, List, Optional
 
 import openai  # type: ignore
-
-# LangChain is an optional dependency — guard the import so the service
-# still starts when the package is absent (e.g. in unit-test environments).
-try:
-    from langchain.agents import AgentExecutor  # type: ignore
-    from langchain.agents.openai_assistant import (
-        OpenAIAssistantRunnable,  # type: ignore
-    )
-    from langchain.memory import ConversationBufferWindowMemory  # type: ignore
-    from langchain.schema import AIMessage, HumanMessage, SystemMessage  # type: ignore
-    from langchain.tools import BaseTool  # type: ignore
-except ImportError:  # pragma: no cover
-    AgentExecutor = None  # type: ignore
-    OpenAIAssistantRunnable = None  # type: ignore
-    ConversationBufferWindowMemory = None  # type: ignore
-    AIMessage = HumanMessage = SystemMessage = None  # type: ignore
-    BaseTool = None  # type: ignore
 
 from ..memory.memory_manager import MemoryManager
 from ..tools.tool_registry import ToolRegistry
@@ -262,7 +245,7 @@ class SelfMateAgent:
 
         except Exception as e:
             self._update_performance_metrics(0, False)
-            raise Exception(f"Agent processing error: {str(e)}")
+            raise RuntimeError(f"Agent processing error: {str(e)}")
 
     async def _analyze_message_intent(
         self,
@@ -273,7 +256,7 @@ class SelfMateAgent:
         """Analyze user message to understand intent and classify request type"""
 
         lang_instruction = _language_instruction(language)
-        system_prompt = f"""
+        system_prompt = """
         You are analyzing user messages to understand their financial intent.
         Classify the message into these categories and extract key information:
 
@@ -322,7 +305,7 @@ class SelfMateAgent:
                 "data_requirements": []
             }
 
-    async def _generate_response(
+    async def _generate_response(  # pylint: disable=too-many-positional-arguments
         self,
         user_id: str,
         message: str,

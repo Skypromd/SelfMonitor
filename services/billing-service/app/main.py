@@ -1,12 +1,12 @@
 """
-Billing Service — Internal accounting + Stripe integration for MyNetTax
+Billing Service — Internal accounting + Stripe integration for SelfMonitor
 Handles checkout sessions, webhooks, subscription management, invoice generation,
 automatic invoice dispatch (SMTP), payment tracking, and revenue analytics.
 
 Dev mode: if STRIPE_SECRET_KEY is not set, returns a mock checkout URL pointing
 directly to the registration page (no actual payment is taken).
 """
-import calendar
+from collections import defaultdict
 import datetime
 import email.mime.multipart
 import email.mime.text
@@ -15,22 +15,16 @@ import logging
 import os
 import smtplib
 import sqlite3
-import threading
 import time
+from typing import Optional
 import uuid
-from collections import defaultdict
-from typing import Annotated, Any, Dict, List, Literal, Optional
 
-import httpx
-import stripe
-from jose import JWTError, jwt  # type: ignore[import-untyped]
-from apscheduler.schedulers.background import (
-    BackgroundScheduler,  # type: ignore[import-untyped]
-)
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
+from apscheduler.schedulers.background import BackgroundScheduler  # type: ignore[import-untyped]
+from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
+import stripe
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +33,7 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://auth-service:80")
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"].strip()
-if not AUTH_SECRET_KEY:
-    raise RuntimeError("AUTH_SECRET_KEY must be non-empty")
-COMPLIANCE_SERVICE_URL = os.getenv("COMPLIANCE_SERVICE_URL", "http://compliance-service:80")
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "")
 DEV_MODE = not bool(STRIPE_SECRET_KEY)
 
 # ── SMTP ───────────────────────────────────────────────────────────────────────
@@ -55,11 +46,6 @@ SMTP_FROM = os.getenv("SMTP_FROM", SMTP_USER)
 if not DEV_MODE:
     stripe.api_key = STRIPE_SECRET_KEY
 
-INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
-REFERRAL_SERVICE_INTERNAL_URL = os.getenv(
-    "REFERRAL_SERVICE_INTERNAL_URL", "http://referral-service:80"
-).rstrip("/")
-
 DB_PATH = os.getenv(
     "BILLING_DB_PATH",
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "billing.db"),
@@ -68,19 +54,12 @@ DB_PATH = os.getenv(
 # ── Plan definitions ──────────────────────────────────────────────────────────
 PLANS: dict[str, dict] = {
     "free":         {"name": "Free",         "amount": 0,    "currency": "gbp", "interval": None,    "price_id": os.getenv("STRIPE_PRICE_FREE", "")},
-    "starter":      {"name": "Starter",      "amount": 1200, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_STARTER", "")},
-    "growth":       {"name": "Growth",       "amount": 1500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_GROWTH", "")},
-    "pro":          {"name": "Pro",          "amount": 1800, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_PRO", "")},
-    "business":     {"name": "Business",     "amount": 2800, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_BUSINESS", "")},
+    "starter":      {"name": "Starter",      "amount": 900,  "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_STARTER", "")},
+    "growth":       {"name": "Growth",       "amount": 1200, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_GROWTH", "")},
+    "pro":          {"name": "Pro",          "amount": 1500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_PRO", "")},
+    "business":     {"name": "Business",     "amount": 2500, "currency": "gbp", "interval": "month", "price_id": os.getenv("STRIPE_PRICE_BUSINESS", "")},
 }
 PLAN_AMOUNT_GBP = {k: v["amount"] / 100 for k, v in PLANS.items()}
-
-ACCOUNTANT_CIS_CONSULT_AMOUNT_PENCE = max(
-    100, int(os.getenv("ACCOUNTANT_CIS_CONSULT_AMOUNT_PENCE", "4900"))
-)
-STRIPE_PRICE_ACCOUNTANT_CIS_CONSULT = os.getenv(
-    "STRIPE_PRICE_ACCOUNTANT_CIS_CONSULT", ""
-).strip()
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -89,199 +68,21 @@ app = FastAPI(
     version="2.0.0",
 )
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
 Instrumentator().instrument(app).expose(app)
 
-
-def _decode_billing_jwt(authorization: str | None) -> dict[str, Any]:
-    if not AUTH_SECRET_KEY:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AUTH_SECRET_KEY is not configured",
-        )
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
-    token = authorization[7:].strip()
-    try:
-        return jwt.decode(token, AUTH_SECRET_KEY, algorithms=["HS256"])
-    except JWTError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid authentication token",
-        ) from exc
-
-
-def _jwt_allows_billing_admin(payload: dict[str, Any]) -> bool:
-    if payload.get("is_admin"):
-        return True
-    perms = payload.get("perms")
-    if isinstance(perms, list) and "*" in {str(p) for p in perms}:
-        return True
-    scopes = payload.get("scopes")
-    if not isinstance(scopes, list):
-        return False
-    s = {str(x) for x in scopes}
-    return "billing:*" in s or "billing:read" in s
-
-
-def require_billing_admin(
-    authorization: str | None = Header(default=None),
-) -> dict[str, Any]:
-    payload = _decode_billing_jwt(authorization)
-    if not _jwt_allows_billing_admin(payload):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-        )
-    return payload
-
-
-def _claim_stripe_webhook_event(event_id: str) -> bool:
-    """Return True if this is the first time we see event_id (should process)."""
-    if not event_id:
-        return True
-    try:
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO stripe_webhook_events (event_id, received_at) VALUES (?, ?)",
-                (event_id, int(time.time())),
-            )
-            conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
-
-
 # ── Database ───────────────────────────────────────────────────────────────────
 def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
-
-
-def _migrate_subscription_columns(conn: sqlite3.Connection) -> None:
-    rows = conn.execute("PRAGMA table_info(subscriptions)").fetchall()
-    cols = {r[1] for r in rows}
-    if "referral_leaderboard_pro_until" not in cols:
-        conn.execute(
-            "ALTER TABLE subscriptions ADD COLUMN referral_leaderboard_pro_until INTEGER"
-        )
-
-
-def _get_account_credit_balance(conn: sqlite3.Connection, email: str) -> float:
-    row = conn.execute(
-        "SELECT balance_gbp FROM account_credits WHERE email=?",
-        (email.lower().strip(),),
-    ).fetchone()
-    if not row:
-        return 0.0
-    return float(row[0] or 0.0)
-
-
-def add_account_credit(
-    *,
-    email: str,
-    amount_gbp: float,
-    idempotency_key: str,
-    reason: str = "",
-) -> bool:
-    """Credit billing balance; idempotent per idempotency_key. Returns True if applied."""
-    if amount_gbp <= 0 or amount_gbp > 500:
-        raise ValueError("amount_gbp out of range")
-    em = email.lower().strip()
-    key = idempotency_key.strip()
-    if not em or "@" not in em or not key:
-        raise ValueError("invalid email or idempotency_key")
-    now = int(time.time())
-    lid = str(uuid.uuid4())
-    with get_db() as conn:
-        try:
-            conn.execute(
-                "INSERT INTO credit_ledger (id, idempotency_key, email, amount_gbp, reason, created_at) VALUES (?,?,?,?,?,?)",
-                (lid, key, em, amount_gbp, reason[:200], now),
-            )
-        except sqlite3.IntegrityError:
-            return False
-        row = conn.execute("SELECT balance_gbp FROM account_credits WHERE email=?", (em,)).fetchone()
-        if row:
-            new_bal = float(row[0] or 0) + amount_gbp
-            conn.execute(
-                "UPDATE account_credits SET balance_gbp=?, updated_at=? WHERE email=?",
-                (new_bal, now, em),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO account_credits (email, balance_gbp, updated_at) VALUES (?,?,?)",
-                (em, amount_gbp, now),
-            )
-        conn.commit()
-    return True
-
-
-def _get_accountant_consult_balance(conn: sqlite3.Connection, email: str) -> int:
-    row = conn.execute(
-        "SELECT balance FROM accountant_consult_sessions WHERE email=?",
-        (email.lower().strip(),),
-    ).fetchone()
-    if not row:
-        return 0
-    return int(row[0] or 0)
-
-
-def add_accountant_consult_sessions(
-    *,
-    email: str,
-    sessions: int,
-    idempotency_key: str,
-    reason: str = "",
-) -> bool:
-    """Grant CIS accountant consult session credits; idempotent per idempotency_key."""
-    if sessions < 1 or sessions > 20:
-        raise ValueError("sessions out of range (1-20)")
-    em = email.lower().strip()
-    key = idempotency_key.strip()
-    if not em or "@" not in em or not key:
-        raise ValueError("invalid email or idempotency_key")
-    now = int(time.time())
-    lid = str(uuid.uuid4())
-    with get_db() as conn:
-        try:
-            conn.execute(
-                "INSERT INTO accountant_consult_ledger (id, idempotency_key, email, sessions_added, reason, created_at) "
-                "VALUES (?,?,?,?,?,?)",
-                (lid, key, em, sessions, reason[:200], now),
-            )
-        except sqlite3.IntegrityError:
-            return False
-        row = conn.execute(
-            "SELECT balance FROM accountant_consult_sessions WHERE email=?",
-            (em,),
-        ).fetchone()
-        if row:
-            new_b = int(row[0] or 0) + sessions
-            conn.execute(
-                "UPDATE accountant_consult_sessions SET balance=?, updated_at=? WHERE email=?",
-                (new_b, now, em),
-            )
-        else:
-            conn.execute(
-                "INSERT INTO accountant_consult_sessions (email, balance, updated_at) VALUES (?,?,?)",
-                (em, sessions, now),
-            )
-        conn.commit()
-    return True
 
 
 def init_db() -> None:
@@ -344,47 +145,6 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pay_invoice ON payments(invoice_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_pay_email   ON payments(user_email)")
 
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS stripe_webhook_events (
-                event_id TEXT PRIMARY KEY,
-                received_at INTEGER NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS account_credits (
-                email TEXT PRIMARY KEY,
-                balance_gbp REAL NOT NULL DEFAULT 0,
-                updated_at INTEGER NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS credit_ledger (
-                id TEXT PRIMARY KEY,
-                idempotency_key TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL,
-                amount_gbp REAL NOT NULL,
-                reason TEXT,
-                created_at INTEGER NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS accountant_consult_sessions (
-                email TEXT PRIMARY KEY,
-                balance INTEGER NOT NULL DEFAULT 0,
-                updated_at INTEGER NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS accountant_consult_ledger (
-                id TEXT PRIMARY KEY,
-                idempotency_key TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL,
-                sessions_added INTEGER NOT NULL DEFAULT 1,
-                reason TEXT,
-                created_at INTEGER NOT NULL
-            )
-        """)
-        _migrate_subscription_columns(conn)
         conn.commit()
 
     # Seed demo data when DB is empty (dev / fresh install)
@@ -415,12 +175,12 @@ def _seed_demo_data() -> None:
         ]
 
         sub_ids = {}
-        for email, plan, status, created in demo_subs:
+        for sub_email, plan, status, created in demo_subs:
             cur = conn.execute(
                 "INSERT INTO subscriptions (email,plan,status,created_at,updated_at) VALUES (?,?,?,?,?)",
-                (email, plan, status, created, now)
+                (sub_email, plan, status, created, now)
             )
-            sub_ids[email] = cur.lastrowid
+            sub_ids[sub_email] = cur.lastrowid
 
         # Generate retroactive monthly invoices for each active/past sub
         inv_rows = []
@@ -428,7 +188,7 @@ def _seed_demo_data() -> None:
         today = datetime.date.today()
         inv_counter = 1
 
-        for email, plan, status, created in demo_subs:
+        for sub_email, plan, status, created in demo_subs:
             amount = PLAN_AMOUNT_GBP.get(plan, 0)
             if amount == 0:
                 continue
@@ -447,22 +207,22 @@ def _seed_demo_data() -> None:
                     sent_at = str(cur_date)
                 elif due < today:
                     inv_status = "overdue" if status != "active" else "paid"
-                    paid_at = str(due) if inv_status == "paid" else None
+                    paid_at: Optional[str] = str(due) if inv_status == "paid" else None
                     sent_at = str(cur_date)
                 else:
                     inv_status = "sent" if status == "active" else "pending"
                     paid_at = None
-                    sent_at = str(cur_date) if inv_status == "sent" else None
+                    sent_at: Optional[str] = str(cur_date) if inv_status == "sent" else None
 
                 inv_rows.append((
-                    inv_id, inv_num, sub_ids[email], email, plan, amount, "GBP",
+                    inv_id, inv_num, sub_ids[sub_email], sub_email, plan, amount, "GBP",
                     inv_status, str(cur_date), str(period_end), str(due),
                     paid_at, sent_at, None, str(cur_date)
                 ))
 
                 if inv_status == "paid":
                     pay_rows.append((
-                        str(uuid.uuid4()), inv_id, email, amount, "GBP", "stripe", "success",
+                        str(uuid.uuid4()), inv_id, sub_email, amount, "GBP", "stripe", "success",
                         f"ch_{uuid.uuid4().hex[:16]}", str(paid_at)
                     ))
 
@@ -540,21 +300,22 @@ def _next_invoice_number(conn: sqlite3.Connection) -> str:
     return f"INV-{n:05d}"
 
 
-def _send_invoice_email(to_email: str, inv_num: str, plan: str, amount: float, period: str, due: str) -> None:
+def _send_invoice_email(  # pylint: disable=too-many-positional-arguments
+        to_email: str, inv_num: str, plan: str, amount: float, period: str, due: str) -> None:
     if not (SMTP_HOST and SMTP_USER and SMTP_PASSWORD):
         logger.info("SMTP not configured — invoice %s not emailed to %s", inv_num, to_email)
         return
 
     amount_str = f"£{amount:.2f}"
     msg = email.mime.multipart.MIMEMultipart("alternative")
-    msg["Subject"] = f"MyNetTax Invoice {inv_num} — {amount_str}"
+    msg["Subject"] = f"SelfMonitor Invoice {inv_num} — {amount_str}"
     msg["From"] = SMTP_FROM or SMTP_USER
     msg["To"] = to_email
 
     html = f"""
     <html><body style="font-family:Arial,sans-serif;background:#0f172a;color:#e2e8f0;padding:32px">
     <div style="max-width:520px;margin:0 auto;background:#1e293b;border-radius:12px;padding:32px">
-      <h1 style="color:#14b8a6;margin:0 0 4px">MyNetTax</h1>
+      <h1 style="color:#14b8a6;margin:0 0 4px">SelfMonitor</h1>
       <p style="color:#64748b;margin:0 0 24px;font-size:14px">Monthly Invoice</p>
       <hr style="border:none;border-top:1px solid #334155;margin-bottom:24px">
       <table style="width:100%;font-size:15px">
@@ -567,7 +328,7 @@ def _send_invoice_email(to_email: str, inv_num: str, plan: str, amount: float, p
             <td style="text-align:right;font-size:22px;font-weight:700;color:#14b8a6">{amount_str}</td></tr>
       </table>
       <p style="margin-top:28px;font-size:13px;color:#64748b">
-        Thank you for using MyNetTax. Log in at
+        Thank you for using SelfMonitor. Log in at
         <a href="http://localhost:3000" style="color:#14b8a6">localhost:3000</a>
         to view your billing history.
       </p>
@@ -585,84 +346,12 @@ def _send_invoice_email(to_email: str, inv_num: str, plan: str, amount: float, p
 _scheduler: Optional[BackgroundScheduler] = None
 
 
-def _utc_end_of_month_timestamp(year: int, month: int) -> int:
-    last_day = calendar.monthrange(year, month)[1]
-    dt = datetime.datetime(
-        year, month, last_day, 23, 59, 59, tzinfo=datetime.timezone.utc
-    )
-    return int(dt.timestamp())
-
-
-def _grant_leaderboard_pro_bonus_job() -> None:
-    """First day of month: top referrers last calendar month get in-app Pro until month-end."""
-    secret = INTERNAL_SERVICE_SECRET
-    base = REFERRAL_SERVICE_INTERNAL_URL
-    if not secret:
-        logger.warning("leaderboard bonus skipped: INTERNAL_SERVICE_SECRET unset")
-        return
-    today = datetime.date.today()
-    first = today.replace(day=1)
-    prev_last = first - datetime.timedelta(days=1)
-    py, pm = prev_last.year, prev_last.month
-    try:
-        with httpx.Client(timeout=30.0) as client:
-            r = client.get(
-                f"{base}/internal/top-referrers",
-                params={"year": py, "month": pm, "limit": 10},
-                headers={"X-Internal-Token": secret},
-            )
-            r.raise_for_status()
-            payload = r.json()
-    except Exception as exc:
-        logger.warning("leaderboard bonus referral fetch failed: %s", exc)
-        return
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not isinstance(items, list) or not items:
-        logger.info("leaderboard bonus: no referrers for %s-%s", py, pm)
-        return
-    grant_until = _utc_end_of_month_timestamp(today.year, today.month)
-    now = int(time.time())
-    with get_db() as conn:
-        for it in items:
-            uid = str((it or {}).get("user_id") or "").lower().strip()
-            if not uid or "@" not in uid:
-                continue
-            row = conn.execute(
-                "SELECT id FROM subscriptions WHERE email=?", (uid,)
-            ).fetchone()
-            if row:
-                conn.execute(
-                    "UPDATE subscriptions SET referral_leaderboard_pro_until=?, updated_at=? "
-                    "WHERE email=? AND plan != 'business'",
-                    (grant_until, now, uid),
-                )
-            else:
-                conn.execute(
-                    "INSERT INTO subscriptions (email,plan,status,stripe_customer_id,"
-                    "stripe_subscription_id,stripe_session_id,current_period_end,"
-                    "referral_leaderboard_pro_until,created_at,updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (uid, "free", "active", "", "", "", None, grant_until, now, now),
-                )
-        conn.commit()
-    logger.info("leaderboard Pro bonus applied to %s user(s)", len(items))
-
-
 @app.on_event("startup")
 def startup() -> None:
     global _scheduler
     init_db()
     _scheduler = BackgroundScheduler()
     _scheduler.add_job(_auto_generate_invoices, "cron", hour=6, minute=0)
-    _scheduler.add_job(
-        _grant_leaderboard_pro_bonus_job,
-        "cron",
-        day=1,
-        hour=7,
-        minute=0,
-        id="referral_leaderboard_pro",
-        replace_existing=True,
-    )
     _scheduler.start()
     if DEV_MODE:
         logger.warning("Billing service in DEV MODE — no live Stripe payments.")
@@ -678,9 +367,8 @@ def shutdown() -> None:
 # ── Schemas ────────────────────────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 class CheckoutRequest(BaseModel):
-    plan: Optional[str] = None
+    plan: str
     email: Optional[str] = None
-    product: Literal["subscription", "accountant_cis_consult"] = "subscription"
 
 
 class CheckoutResponse(BaseModel):
@@ -694,22 +382,6 @@ class SubscriptionInfo(BaseModel):
     plan: str
     status: str
     current_period_end: Optional[int] = None
-    account_credit_balance_gbp: float = 0.0
-    accountant_consult_sessions_available: int = 0
-
-
-class AccountCreditIn(BaseModel):
-    email: str
-    amount_gbp: float = Field(gt=0, le=500)
-    idempotency_key: str = Field(min_length=4, max_length=200)
-    reason: str = ""
-
-
-class AccountantConsultGrantIn(BaseModel):
-    email: str
-    sessions: int = Field(default=1, ge=1, le=20)
-    idempotency_key: str = Field(min_length=4, max_length=200)
-    reason: str = ""
 
 
 class InvoiceCreate(BaseModel):
@@ -751,77 +423,11 @@ def list_plans() -> dict:
     }
 
 
-@app.get("/addons")
-def list_addons() -> dict[str, Any]:
-    return {
-        "accountant_cis_consult": {
-            "name": "CIS accountant review (1 session)",
-            "amount_pence": ACCOUNTANT_CIS_CONSULT_AMOUNT_PENCE,
-            "currency": "gbp",
-            "checkout_product": "accountant_cis_consult",
-            "sla_note": (
-                "After purchase, email support with your account email to schedule. "
-                "Typical response within 3 UK business days; subject to accountant availability."
-            ),
-        }
-    }
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ── Stripe checkout ────────────────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
-def _create_accountant_consult_checkout(email: Optional[str]) -> CheckoutResponse:
-    success_url = (
-        f"{FRONTEND_URL}/checkout-success?product=accountant_cis_consult&session_id={{CHECKOUT_SESSION_ID}}"
-    )
-    cancel_url = f"{FRONTEND_URL}/checkout-cancel?product=accountant_cis_consult"
-    if DEV_MODE:
-        mock_id = f"dev_session_consult_{int(time.time())}"
-        return CheckoutResponse(
-            checkout_url=f"{FRONTEND_URL}/checkout-success?product=accountant_cis_consult&session_id={mock_id}&dev=1",
-            session_id=mock_id,
-            dev_mode=True,
-        )
-    if not email or "@" not in email.strip():
-        raise HTTPException(
-            status_code=400,
-            detail="email is required for accountant consult checkout",
-        )
-    em = email.strip()
-    try:
-        params: dict[str, Any] = {
-            "mode": "payment",
-            "success_url": success_url,
-            "cancel_url": cancel_url,
-            "metadata": {"product": "accountant_cis_consult", "sessions_granted": "1"},
-            "customer_email": em,
-        }
-        if STRIPE_PRICE_ACCOUNTANT_CIS_CONSULT:
-            params["line_items"] = [{"price": STRIPE_PRICE_ACCOUNTANT_CIS_CONSULT, "quantity": 1}]
-        else:
-            params["line_items"] = [{
-                "price_data": {
-                    "currency": "gbp",
-                    "unit_amount": ACCOUNTANT_CIS_CONSULT_AMOUNT_PENCE,
-                    "product_data": {
-                        "name": "MyNetTax CIS accountant review (1 session)",
-                        "description": "Review of CIS evidence / self-attested figures; schedule via support.",
-                    },
-                },
-                "quantity": 1,
-            }]
-        session = stripe.checkout.Session.create(**params)
-        return CheckoutResponse(checkout_url=session.url, session_id=session.id, dev_mode=False)
-    except stripe.StripeError as exc:
-        raise HTTPException(status_code=502, detail=f"Stripe error: {str(exc)}") from exc
-
-
 @app.post("/checkout/session", response_model=CheckoutResponse)
 async def create_checkout_session(body: CheckoutRequest) -> CheckoutResponse:
-    if body.product == "accountant_cis_consult":
-        return _create_accountant_consult_checkout(body.email)
-    if not body.plan:
-        raise HTTPException(status_code=400, detail="plan is required for subscription checkout")
     plan_key = body.plan.lower()
     plan = PLANS.get(plan_key)
     if plan is None:
@@ -848,11 +454,11 @@ async def create_checkout_session(body: CheckoutRequest) -> CheckoutResponse:
         if plan.get("price_id"):
             params["line_items"] = [{"price": plan["price_id"], "quantity": 1}]
         else:
-            params["line_items"] = [{"price_data": {"currency": plan["currency"], "unit_amount": plan["amount"], "recurring": {"interval": plan["interval"]}, "product_data": {"name": f"MyNetTax {plan['name']}"}}, "quantity": 1}]
+            params["line_items"] = [{"price_data": {"currency": plan["currency"], "unit_amount": plan["amount"], "recurring": {"interval": plan["interval"]}, "product_data": {"name": f"SelfMonitor {plan['name']}"}}, "quantity": 1}]
         if body.email:
             params["customer_email"] = body.email
         session = stripe.checkout.Session.create(**params)
-        return CheckoutResponse(checkout_url=session.url, session_id=session.id, dev_mode=False)
+        return CheckoutResponse(checkout_url=session.url or "", session_id=session.id, dev_mode=False)
     except stripe.StripeError as exc:
         raise HTTPException(status_code=502, detail=f"Stripe error: {str(exc)}") from exc
 
@@ -863,186 +469,42 @@ async def stripe_webhook(
     stripe_signature: Optional[str] = Header(None, alias="stripe-signature"),
 ) -> dict:
     payload = await request.body()
-
-    if not DEV_MODE:
-        if not STRIPE_WEBHOOK_SECRET:
-            raise HTTPException(
-                status_code=503,
-                detail="STRIPE_WEBHOOK_SECRET must be set when STRIPE_SECRET_KEY is configured.",
-            )
-        if not stripe_signature:
-            raise HTTPException(
-                status_code=400,
-                detail="Missing Stripe-Signature header",
-            )
+    if STRIPE_WEBHOOK_SECRET and stripe_signature:
         try:
-            event = stripe.Webhook.construct_event(
-                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
-            )
+            event = stripe.Webhook.construct_event(payload, stripe_signature, STRIPE_WEBHOOK_SECRET)
         except stripe.SignatureVerificationError as exc:
             raise HTTPException(status_code=400, detail="Invalid signature") from exc
-        event_id = str(getattr(event, "id", "") or "")
-        event_type = str(event.type)
-        so = event.data.object
-    elif STRIPE_WEBHOOK_SECRET and stripe_signature:
-        try:
-            event = stripe.Webhook.construct_event(
-                payload, stripe_signature, STRIPE_WEBHOOK_SECRET
-            )
-        except stripe.SignatureVerificationError as exc:
-            raise HTTPException(status_code=400, detail="Invalid signature") from exc
-        event_id = str(getattr(event, "id", "") or "")
-        event_type = str(event.type)
-        so = event.data.object
     else:
         try:
-            event_dict = json.loads(payload)
+            event = json.loads(payload)
         except Exception:
             return {"status": "ignored"}
-        event_id = str(event_dict.get("id") or "")
-        event_type = str(event_dict.get("type") or "")
-        so = (event_dict.get("data") or {}).get("object") or {}
 
-    if event_id and not _claim_stripe_webhook_event(event_id):
-        logger.info("stripe webhook duplicate event_id=%s", event_id)
-        return {"status": "ok", "duplicate": True}
+    event_type = event.get("type") if isinstance(event, dict) else event.type
 
     if event_type == "checkout.session.completed":
-        md = so.get("metadata") or {}
-        customer_email = so.get("customer_email") or (so.get("customer_details") or {}).get(
-            "email", ""
-        )
-        sess_id = str(so.get("id") or "")
-        if md.get("product") == "accountant_cis_consult":
-            if customer_email and sess_id:
-                try:
-                    n = int(str(md.get("sessions_granted") or "1") or "1")
-                except ValueError:
-                    n = 1
-                n = max(1, min(20, n))
-                try:
-                    add_accountant_consult_sessions(
-                        email=customer_email,
-                        sessions=n,
-                        idempotency_key=f"stripe_checkout:{sess_id}",
-                        reason="stripe_checkout_payment",
-                    )
-                except ValueError as exc:
-                    logger.warning("accountant consult grant skipped: %s", exc)
-        elif customer_email:
-            plan = md.get("plan", "starter")
-            _upsert_subscription(
-                email=customer_email,
-                plan=plan,
-                status="trialing" if so.get("subscription") else "active",
-                stripe_customer_id=so.get("customer", ""),
-                stripe_subscription_id=so.get("subscription", ""),
-                stripe_session_id=sess_id,
-            )
+        so = event["data"]["object"] if isinstance(event, dict) else event.data.object
+        customer_email = so.get("customer_email") or so.get("customer_details", {}).get("email", "")
+        plan = so.get("metadata", {}).get("plan", "starter")
+        if customer_email:
+            _upsert_subscription(email=customer_email, plan=plan, status="trialing" if so.get("subscription") else "active", stripe_customer_id=so.get("customer", ""), stripe_subscription_id=so.get("subscription", ""), stripe_session_id=so.get("id", ""))
 
     elif event_type in ("customer.subscription.updated", "customer.subscription.deleted"):
+        so = event["data"]["object"] if isinstance(event, dict) else event.data.object
         with get_db() as conn:
-            conn.execute(
-                "UPDATE subscriptions SET status=?,current_period_end=?,updated_at=? WHERE stripe_subscription_id=?",
-                (
-                    so.get("status", "inactive"),
-                    so.get("current_period_end"),
-                    int(time.time()),
-                    so.get("id", ""),
-                ),
-            )
+            conn.execute("UPDATE subscriptions SET status=?,current_period_end=?,updated_at=? WHERE stripe_subscription_id=?", (so.get("status","inactive"), so.get("current_period_end"), int(time.time()), so.get("id","")))
             conn.commit()
 
     return {"status": "ok"}
 
 
 @app.get("/subscription/{email}", response_model=SubscriptionInfo)
-def get_subscription(
-    email: str,
-    authorization: str | None = Header(default=None),
-) -> SubscriptionInfo:
-    payload = _decode_billing_jwt(authorization)
-    sub_claim = payload.get("sub")
-    if not (payload.get("is_admin") or sub_claim == email):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot read another user's subscription",
-        )
-    em = email.lower().strip()
+def get_subscription(email: str) -> SubscriptionInfo:
     with get_db() as conn:
-        cred = _get_account_credit_balance(conn, em)
-        consult = _get_accountant_consult_balance(conn, em)
-        row = conn.execute(
-            "SELECT * FROM subscriptions WHERE email=? ORDER BY updated_at DESC LIMIT 1",
-            (em,),
-        ).fetchone()
+        row = conn.execute("SELECT * FROM subscriptions WHERE email=? ORDER BY updated_at DESC LIMIT 1", (email,)).fetchone()
     if not row:
-        return SubscriptionInfo(
-            email=em,
-            plan="free",
-            status="none",
-            account_credit_balance_gbp=cred,
-            accountant_consult_sessions_available=consult,
-        )
-    plan = str(row["plan"] or "free")
-    bonus_until = row["referral_leaderboard_pro_until"]
-    if bonus_until is not None and int(bonus_until) > int(time.time()):
-        if plan in ("free", "starter", "growth"):
-            plan = "pro"
-    return SubscriptionInfo(
-        email=em,
-        plan=plan,
-        status=row["status"],
-        current_period_end=row["current_period_end"],
-        account_credit_balance_gbp=cred,
-        accountant_consult_sessions_available=consult,
-    )
-
-
-@app.post("/internal/account-credit")
-def internal_account_credit(
-    body: AccountCreditIn,
-    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
-) -> dict[str, Any]:
-    if not INTERNAL_SERVICE_SECRET:
-        raise HTTPException(
-            status_code=503, detail="internal_calls_not_configured"
-        )
-    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=403, detail="forbidden")
-    try:
-        applied = add_account_credit(
-            email=body.email,
-            amount_gbp=body.amount_gbp,
-            idempotency_key=body.idempotency_key,
-            reason=body.reason or "",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"applied": applied}
-
-
-@app.post("/internal/accountant-consult-session")
-def internal_accountant_consult_session(
-    body: AccountantConsultGrantIn,
-    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
-) -> dict[str, Any]:
-    if not INTERNAL_SERVICE_SECRET:
-        raise HTTPException(
-            status_code=503, detail="internal_calls_not_configured"
-        )
-    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=403, detail="forbidden")
-    try:
-        applied = add_accountant_consult_sessions(
-            email=body.email,
-            sessions=body.sessions,
-            idempotency_key=body.idempotency_key,
-            reason=body.reason or "",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"applied": applied}
+        return SubscriptionInfo(email=email, plan="free", status="none")
+    return SubscriptionInfo(email=email, plan=row["plan"], status=row["status"], current_period_end=row["current_period_end"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1050,7 +512,7 @@ def internal_accountant_consult_session(
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/subscriptions")
 async def list_subscriptions(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
+    request: Request,
     status: Optional[str] = None,
     plan: Optional[str] = None,
     limit: int = 100,
@@ -1059,9 +521,11 @@ async def list_subscriptions(
     q = "SELECT * FROM subscriptions WHERE 1=1"
     params: list = []
     if status:
-        q += " AND status=?"; params.append(status)
+        q += " AND status=?"
+        params.append(status)
     if plan:
-        q += " AND plan=?"; params.append(plan)
+        q += " AND plan=?"
+        params.append(plan)
     q += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params += [limit, offset]
 
@@ -1080,7 +544,6 @@ async def list_subscriptions(
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/invoices")
 async def list_invoices(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
     user_email: Optional[str] = None,
     status: Optional[str] = None,
     plan: Optional[str] = None,
@@ -1090,11 +553,14 @@ async def list_invoices(
     q = "SELECT * FROM invoices WHERE 1=1"
     params: list = []
     if user_email:
-        q += " AND user_email=?"; params.append(user_email)
+        q += " AND user_email=?"
+        params.append(user_email)
     if status:
-        q += " AND status=?"; params.append(status)
+        q += " AND status=?"
+        params.append(status)
     if plan:
-        q += " AND plan=?"; params.append(plan)
+        q += " AND plan=?"
+        params.append(plan)
     q += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params += [limit, offset]
 
@@ -1106,10 +572,7 @@ async def list_invoices(
 
 
 @app.post("/invoices")
-async def create_invoice(
-    body: InvoiceCreate,
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def create_invoice(body: InvoiceCreate) -> dict:
     today = datetime.date.today()
     amount = body.amount if body.amount is not None else PLAN_AMOUNT_GBP.get(body.plan, 0)
     period_start = body.period_start or str(today.replace(day=1))
@@ -1137,11 +600,7 @@ async def create_invoice(
 
 
 @app.patch("/invoices/{invoice_id}")
-async def update_invoice(
-    invoice_id: str,
-    body: InvoicePatch,
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def update_invoice(invoice_id: str, body: InvoicePatch) -> dict:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
         if not row:
@@ -1161,10 +620,7 @@ async def update_invoice(
 
 
 @app.post("/invoices/{invoice_id}/send")
-async def send_invoice(
-    invoice_id: str,
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def send_invoice(invoice_id: str) -> dict:
     with get_db() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
         if not row:
@@ -1196,10 +652,7 @@ async def send_invoice(
 
 
 @app.post("/invoices/{invoice_id}/mark-paid")
-async def mark_invoice_paid(
-    invoice_id: str,
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def mark_invoice_paid(invoice_id: str) -> dict:
     today_str = str(datetime.date.today())
     with get_db() as conn:
         row = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
@@ -1217,9 +670,7 @@ async def mark_invoice_paid(
 
 
 @app.post("/invoices/generate-batch")
-async def generate_batch_invoices(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def generate_batch_invoices() -> dict:
     """Manually trigger the auto-invoice generator."""
     _auto_generate_invoices()
     return {"status": "ok", "message": "Batch invoice generation complete"}
@@ -1230,7 +681,6 @@ async def generate_batch_invoices(
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/payments")
 async def list_payments(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
     user_email: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
@@ -1238,7 +688,8 @@ async def list_payments(
     q = "SELECT * FROM payments WHERE 1=1"
     params: list = []
     if user_email:
-        q += " AND user_email=?"; params.append(user_email)
+        q += " AND user_email=?"
+        params.append(user_email)
     q += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params += [limit, offset]
     with get_db() as conn:
@@ -1251,9 +702,7 @@ async def list_payments(
 # ── Analytics ──────────────────────────────────────════════════════════════════
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/analytics/overview")
-async def analytics_overview(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def analytics_overview() -> dict:
     """
     KPI summary: MRR, ARR, active subscriptions, total invoiced, outstanding, collected.
     """
@@ -1298,23 +747,20 @@ async def analytics_overview(
 
 
 @app.get("/analytics/revenue")
-async def analytics_revenue(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-    months: int = Query(12, ge=1, le=36),
-) -> dict:
+async def analytics_revenue(months: int = Query(12, ge=1, le=36)) -> dict:
     """Monthly revenue (collected + outstanding) for the last N months."""
     today = datetime.date.today()
     result = []
     for i in range(months - 1, -1, -1):
         # Work backwards month by month
-        target = today.replace(day=1)
-        # subtract i months
         m = today.month - i
         y = today.year
         while m <= 0:
-            m += 12; y -= 1
+            m += 12
+            y -= 1
         while m > 12:
-            m -= 12; y += 1
+            m -= 12
+            y += 1
         month_start = datetime.date(y, m, 1)
         month_end = (month_start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
 
@@ -1340,9 +786,7 @@ async def analytics_revenue(
 
 
 @app.get("/analytics/plans")
-async def analytics_plans(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def analytics_plans() -> dict:
     """Subscription count and MRR by plan."""
     with get_db() as conn:
         rows = conn.execute("""
@@ -1367,9 +811,7 @@ async def analytics_plans(
 
 
 @app.get("/analytics/invoice-status")
-async def analytics_invoice_status(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def analytics_invoice_status() -> dict:
     """Invoice counts by status (for donut/pie chart)."""
     with get_db() as conn:
         rows = conn.execute("SELECT status, COUNT(*) as cnt, SUM(amount) as total FROM invoices GROUP BY status").fetchall()
@@ -1377,10 +819,7 @@ async def analytics_invoice_status(
 
 
 @app.get("/analytics/mrr-trend")
-async def analytics_mrr_trend(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-    months: int = Query(12, ge=1, le=36),
-) -> dict:
+async def analytics_mrr_trend(months: int = Query(12, ge=1, le=36)) -> dict:
     """Estimated MRR each month based on active subscriptions at billing date."""
     today = datetime.date.today()
     result = []
@@ -1388,7 +827,9 @@ async def analytics_mrr_trend(
         for i in range(months - 1, -1, -1):
             m = today.month - i
             y = today.year
-            while m <= 0: m += 12; y -= 1
+            while m <= 0:
+                m += 12
+                y -= 1
             month_start = datetime.date(y, m, 1)
             month_end = (month_start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
 
@@ -1405,101 +846,11 @@ async def analytics_mrr_trend(
     return {"data": result}
 
 
-@app.get("/admin/revenue/cohorts")
-async def admin_revenue_cohorts(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-    months_back: int = Query(18, ge=1, le=60),
-) -> dict:
-    with get_db() as conn:
-        srows = conn.execute("SELECT created_at, status FROM subscriptions").fetchall()
-    by_month: dict[str, dict[str, int]] = defaultdict(lambda: {"signups": 0, "still_active": 0})
-    for r in srows:
-        ts = int(r["created_at"])
-        dt = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
-        key = dt.strftime("%Y-%m")
-        by_month[key]["signups"] += 1
-        if r["status"] in ("active", "trialing"):
-            by_month[key]["still_active"] += 1
-    sorted_keys = sorted(by_month.keys(), reverse=True)[:months_back]
-    cohorts = [
-        {
-            "cohort_month": k,
-            "signups": by_month[k]["signups"],
-            "still_active": by_month[k]["still_active"],
-            "retention_pct": round(100.0 * by_month[k]["still_active"] / max(by_month[k]["signups"], 1), 1),
-        }
-        for k in sorted_keys
-    ]
-    return {"cohorts": cohorts}
-
-
-@app.get("/admin/revenue/forecast")
-async def admin_revenue_forecast(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-    horizon_months: int = Query(6, ge=1, le=24),
-    lookback_months: int = Query(6, ge=2, le=36),
-) -> dict:
-    today = datetime.date.today()
-    mrr_points: list[float] = []
-    with get_db() as conn:
-        for i in range(lookback_months - 1, -1, -1):
-            m = today.month - i
-            y = today.year
-            while m <= 0: m += 12; y -= 1
-            while m > 12: m -= 12; y += 1
-            month_start = datetime.date(y, m, 1)
-            month_end = (month_start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1) - datetime.timedelta(days=1)
-            ms = int(time.mktime(month_start.timetuple()))
-            me = int(time.mktime(month_end.timetuple()))
-            qrows = conn.execute(
-                "SELECT plan, status FROM subscriptions WHERE created_at<=? AND (status NOT IN ('cancelled','inactive') OR updated_at>=?)",
-                (me, ms),
-            ).fetchall()
-            mrr_points.append(round(sum(PLAN_AMOUNT_GBP.get(r["plan"], 0) for r in qrows if r["status"] in ("active", "trialing")), 2))
-    growth_rates = [
-        (mrr_points[i] - mrr_points[i-1]) / mrr_points[i-1]
-        for i in range(1, len(mrr_points)) if mrr_points[i-1] > 0
-    ]
-    avg_growth = sum(growth_rates[-3:]) / len(growth_rates[-3:]) if growth_rates else 0.0
-    cur = float(mrr_points[-1]) if mrr_points else 0.0
-    forward = []
-    for h in range(1, horizon_months + 1):
-        cur = cur * (1 + avg_growth)
-        forward.append({"month_offset": h, "mrr_gbp": round(cur, 2)})
-    return {"lookback_mrr": mrr_points, "assumed_monthly_growth_rate": round(avg_growth, 4), "forward_mrr": forward}
-
-
-@app.get("/admin/revenue/ltv")
-async def admin_revenue_ltv(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
-    with get_db() as conn:
-        payers = conn.execute("SELECT COUNT(DISTINCT user_email) AS n, SUM(amount) AS rev FROM payments WHERE status='success'").fetchone()
-        subs_row = conn.execute("SELECT COUNT(*) AS total, SUM(CASE WHEN status='cancelled' THEN 1 ELSE 0 END) AS churned FROM subscriptions").fetchone()
-    n_payers = int(payers["n"] or 0)
-    revenue = float(payers["rev"] or 0)
-    arpu = revenue / max(n_payers, 1)
-    total = int(subs_row["total"] or 0)
-    churned = int(subs_row["churned"] or 0)
-    churn_rate = churned / max(total, 1)
-    simple_ltv = arpu / max(churn_rate, 0.0001)
-    return {
-        "paying_customers": n_payers,
-        "total_payment_volume_gbp": round(revenue, 2),
-        "arpu_gbp": round(arpu, 2),
-        "approx_churn_rate": round(churn_rate, 4),
-        "simple_ltv_gbp": round(simple_ltv, 2),
-        "method": "arpu / max(churn_rate, 0.0001) — informational only",
-    }
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # ── Legacy admin stats endpoint ────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 @app.get("/admin/stats")
-async def admin_stats(
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
+async def admin_stats(request: Request) -> dict:
     with get_db() as conn:
         rows = conn.execute("SELECT plan, status, COUNT(*) as cnt FROM subscriptions GROUP BY plan, status").fetchall()
         total_row = conn.execute("SELECT COUNT(*) as cnt FROM subscriptions").fetchone()
@@ -1507,7 +858,8 @@ async def admin_stats(
 
     plan_map: dict[str, dict] = {}
     for r in rows:
-        plan = r["plan"] or "free"; status = r["status"] or "inactive"
+        plan = r["plan"] or "free"
+        status = r["status"] or "inactive"
         if plan not in plan_map:
             plan_map[plan] = {"plan": plan, "count": 0, "active": 0, "trialing": 0, "inactive": 0}
         plan_map[plan]["count"] += r["cnt"]
@@ -1530,63 +882,8 @@ async def admin_stats(
     }
 
 
-def _fire_audit_event(actor: str, action: str, target: str, details: dict) -> None:
-    """Background thread: record admin action in compliance-service."""
-    try:
-        httpx.post(
-            f"{COMPLIANCE_SERVICE_URL}/audit-events",
-            json={"user_id": actor, "action": action, "resource": target, "details": details, "source": "billing-service"},
-            timeout=3.0,
-        )
-    except Exception:  # noqa: BLE001
-        pass
-
-
-# ── ADM.8: Change user plan (admin) ───────────────────────────────────────────
-
-class ChangePlanRequest(BaseModel):
-    new_plan: str
-    new_status: str = "active"
-    reason: str = ""
-
-
-@app.patch("/admin/users/{user_email}/change-plan")
-async def admin_change_user_plan(
-    user_email: str,
-    req: ChangePlanRequest,
-    _admin: Annotated[dict, Depends(require_billing_admin)],
-) -> dict:
-    """ADM.8 — Admin changes a user's subscription plan."""
-    valid_plans = list(PLAN_AMOUNT_GBP.keys()) + ["free"]
-    if req.new_plan not in valid_plans:
-        raise HTTPException(status_code=400, detail=f"Invalid plan '{req.new_plan}'. Valid: {valid_plans}")
-    with get_db() as conn:
-        existing = conn.execute("SELECT * FROM subscriptions WHERE email=?", (user_email,)).fetchone()
-        if not existing:
-            raise HTTPException(status_code=404, detail=f"No subscription found for {user_email}")
-        now = int(__import__("time").time())
-        conn.execute(
-            "UPDATE subscriptions SET plan=?, status=?, updated_at=? WHERE email=?",
-            (req.new_plan, req.new_status, now, user_email),
-        )
-    actor = str(_admin.get("sub") or _admin.get("email") or "admin")
-    threading.Thread(
-        target=_fire_audit_event,
-        args=(actor, "admin.change_user_plan", user_email, {"new_plan": req.new_plan, "reason": req.reason}),
-        daemon=True,
-    ).start()
-    return {
-        "email": user_email,
-        "new_plan": req.new_plan,
-        "new_status": req.new_status,
-        "reason": req.reason,
-        "updated_at": now,
-        "message": f"Plan changed to {req.new_plan} ({req.new_status})",
-    }
-
-
 # ── Helpers ────────────────────────────────────────────────────────────────────
-def _upsert_subscription(
+def _upsert_subscription(  # pylint: disable=too-many-positional-arguments
     email: str, plan: str, status: str,
     stripe_customer_id: str = "", stripe_subscription_id: str = "",
     stripe_session_id: str = "", current_period_end: Optional[int] = None,
@@ -1601,4 +898,5 @@ def _upsert_subscription(
             conn.execute("INSERT INTO subscriptions (email,plan,status,stripe_customer_id,stripe_subscription_id,stripe_session_id,current_period_end,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
                          (email, plan, status, stripe_customer_id, stripe_subscription_id, stripe_session_id, current_period_end, now, now))
         conn.commit()
+
 

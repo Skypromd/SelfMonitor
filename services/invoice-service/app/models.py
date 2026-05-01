@@ -1,9 +1,53 @@
-from sqlalchemy import Column, String, DateTime, Numeric, Integer, Boolean, Text, JSON, ForeignKey
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.sql import func
-from sqlalchemy.orm import relationship
+# pylint: disable=not-callable
 import uuid
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func  # pylint: disable=not-callable
+
 from .database import Base
+
+MAX_CLIENTS_PER_USER = 5
+
+
+class Client(Base):
+    """Client address book — up to 5 per user (self-employed plan limit)."""
+
+    __tablename__ = "clients"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
+    user_id = Column(String, nullable=False, index=True)
+
+    name = Column(String(200), nullable=False)
+    email = Column(String(254), nullable=True)
+    phone = Column(String(30), nullable=True)
+    address = Column(Text, nullable=True)
+    vat_number = Column(String(50), nullable=True)
+    website = Column(String(200), nullable=True)
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Invoices referencing this client (informational; client data is copied into invoice)
+    invoices = relationship(
+        "Invoice",
+        back_populates="client",
+        foreign_keys="Invoice.client_id",
+        passive_deletes=True,
+    )
+
 
 class Invoice(Base):
     """Core invoice model for business invoicing"""
@@ -13,6 +57,9 @@ class Invoice(Base):
     invoice_number = Column(String, unique=True, nullable=False, index=True)
     user_id = Column(String, nullable=False, index=True)  # Business owner
     company_id = Column(String, nullable=True, index=True)  # Multi-company support
+
+    # Link to client address book (optional; populated data copied below on creation)
+    client_id = Column(UUID(as_uuid=True), ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Client Information
     client_name = Column(String, nullable=False)
@@ -48,6 +95,7 @@ class Invoice(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
+    client = relationship("Client", back_populates="invoices", foreign_keys=[client_id])
     line_items = relationship("InvoiceLineItem", back_populates="invoice", cascade="all, delete-orphan")
     payments = relationship("InvoicePayment", back_populates="invoice", cascade="all, delete-orphan")
 

@@ -67,7 +67,7 @@ Threshold: £50,000 turnover from April 2026, £30,000 from April 2027.
 
 
 class MTDAgentResponse:
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         message: str,
         quarter: str,
@@ -216,13 +216,12 @@ class MTDAgent:
 
         # Compute days_until_deadline if not present
         if "days_until_deadline" not in result:
-            from datetime import date as _date
             deadlines = {"Q1": (8, 5), "Q2": (11, 5), "Q3": (2, 5), "Q4": (5, 5)}
             dm, dd = deadlines.get(q_num, (8, 5))
             dl_year = year + 1 if q_num == "Q3" else year
             if q_num in ("Q3", "Q4"):
                 dl_year = year + 1
-            deadline = _date(dl_year, dm, dd)
+            deadline = date(dl_year, dm, dd)
             result["days_until_deadline"] = (deadline - today).days
             result["submission_deadline"] = deadline.isoformat()
 
@@ -252,7 +251,7 @@ class MTDAgent:
             actions.append(f"Turnover approaching £50k MTD threshold (currently £{income:,.0f})")
         return actions
 
-    async def _generate_explanation(
+    async def _generate_explanation(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         user_id: str,
         quarter: str,
@@ -287,7 +286,7 @@ class MTDAgent:
         )
         return await self._call_openai(prompt)
 
-    def _template_explanation(
+    def _template_explanation(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         quarter: str,
         income: float,
@@ -309,8 +308,8 @@ class MTDAgent:
             )
         else:
             lines.append(
-                f"MTD ITSA not yet required (income below £50,000 threshold). "
-                f"Keep monitoring as turnover grows."
+                "MTD ITSA not yet required (income below \u00a350,000 threshold). "
+                "Keep monitoring as turnover grows."
             )
         for a in actions:
             lines.append(f"⚠️ {a}")
@@ -332,4 +331,4 @@ class MTDAgent:
             return response.choices[0].message.content or ""
         except Exception as exc:
             log.error("OpenAI call failed: %s", exc)
-            return f"Unable to generate explanation at this time. Raw data available via /mtd/{{}}/status."
+            return "Unable to generate explanation at this time. Raw data available via /mtd/{}/status."

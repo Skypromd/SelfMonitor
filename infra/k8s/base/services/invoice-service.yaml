@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: invoice-service-deployment
+  namespace: selfmonitor
+  labels:
+    app: invoice-service
+    component: business
+    version: "1.0.0"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: invoice-service
+      component: business
+  template:
+    metadata:
+      labels:
+        app: invoice-service
+        component: business
+        version: "1.0.0"
+        type: service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      initContainers:
+      - name: init-templates
+        image: selfmonitor/invoice-service:latest
+        command: ['python', '-m', 'app.init_templates']
+      - name: migration
+        image: selfmonitor/invoice-service:latest
+        command: ['alembic', 'upgrade', 'head']
+        env:
+        - name: DATABASE_URL
+          value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service/db_invoices"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+      containers:
+      - name: invoice-service
+        image: selfmonitor/invoice-service:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        env:
+        - name: DATABASE_URL
+          value: "postgresql+asyncpg://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service/db_invoices"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: POSTGRES_PASSWORD
+        - name: AUTH_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: AUTH_SECRET_KEY
+        - name: REDIS_URL
+          value: "redis://redis-service:6379/14"
+        - name: TRANSACTIONS_SERVICE_URL
+          value: "http://transactions-service"
+        - name: ANALYTICS_SERVICE_URL
+          value: "http://analytics-service"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+        volumeMounts:
+        - name: invoice-pdfs
+          mountPath: /app/pdfs
+      volumes:
+      - name: invoice-pdfs
+        emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: invoice-service
+  namespace: selfmonitor
+  labels:
+    app: invoice-service
+    component: business
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: invoice-service
+    component: business

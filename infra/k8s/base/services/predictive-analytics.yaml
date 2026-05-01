@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: predictive-analytics-deployment
+  namespace: selfmonitor
+  labels:
+    app: predictive-analytics
+    component: ml
+    version: "1.0.0"
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: predictive-analytics
+      component: ml
+  template:
+    metadata:
+      labels:
+        app: predictive-analytics
+        component: ml
+        version: "1.0.0"
+        type: service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: predictive-analytics
+        image: selfmonitor/predictive-analytics:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        env:
+        - name: AUTH_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: AUTH_SECRET_KEY
+        - name: REDIS_URL
+          value: "redis://redis-service:6379/8"
+        - name: MLFLOW_TRACKING_URI
+          value: "http://mlflow-service:5000"
+        - name: TRANSACTIONS_SERVICE_URL
+          value: "http://transactions-service"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          timeoutSeconds: 1
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: predictive-analytics
+  namespace: selfmonitor
+  labels:
+    app: predictive-analytics
+    component: ml
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: predictive-analytics
+    component: ml

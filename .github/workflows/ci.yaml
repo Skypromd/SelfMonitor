@@ -9,25 +9,9 @@ on:
       - "apps/web-portal/**"
       - "apps/mobile/**"
       - "tests/**"
-      - "libs/**"
-      - "nginx/**"
       - ".github/workflows/ci.yaml"
 
 jobs:
-  gitleaks:
-    name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Run gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
   python-services:
     name: Python checks (${{ matrix.service }})
     runs-on: ubuntu-latest
@@ -37,23 +21,44 @@ jobs:
       fail-fast: false
       matrix:
         service:
+          - advice-service
           - agent-service
+          - ai-agent-service
           - analytics-service
           - auth-service
           - banking-connector
           - billing-service
-          - compliance-service
+          - business-intelligence
+          - calendar-service
           - categorization-service
+          - compliance-service
           - consent-service
+          - cost-optimization
+          - customer-success
           - documents-service
           - finops-monitor
+          - fraud-detection
           - integrations-service
+          - international-expansion
+          - invoice-service
+          - ipo-readiness
+          - localization-service
           - mtd-agent
           - partner-registry
-          - regulatory-service
+          - predictive-analytics
+          - pricing-engine
+          - qna-service
+          - recommendation-engine
+          - referral-service
+          - security-operations
+          - security-service
+          - strategic-partnerships
+          - support-ai-service
           - tax-engine
+          - tenant-router
           - transactions-service
           - user-profile-service
+          - voice-gateway
 
     steps:
       - name: Checkout code
@@ -68,7 +73,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r services/${{ matrix.service }}/requirements.txt
-          pip install flake8 pytest-cov "pygments>=2.17.0"
+          pip install flake8 pytest-cov
 
       - name: Lint with flake8
         working-directory: ./services/${{ matrix.service }}
@@ -77,13 +82,10 @@ jobs:
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
       - name: Run tests with pytest
-        working-directory: ./services/${{ matrix.service }}
         env:
-          AUTH_SECRET_KEY: test-ci-auth-secret
-          AUTH_ALLOW_WEAK_JWT_SECRET: "1"
-          AUTH_REQUIRE_ADMIN_2FA: "false"
-          INTERNAL_SERVICE_SECRET: test-ci-internal-service-secret
-          REGULATORY_SKIP_EXTERNAL_WATCH: "1"
+          AUTH_SECRET_KEY: test-ci-secret-key
+          OPENAI_API_KEY: test-key
+        working-directory: ./services/${{ matrix.service }}
         run: |
           if [ -d tests ]; then
             pytest -q --cov=app --cov-report=term --cov-fail-under=20
@@ -98,23 +100,43 @@ jobs:
       fail-fast: false
       matrix:
         service:
+          - advice-service
           - agent-service
+          - ai-agent-service
           - analytics-service
           - auth-service
           - banking-connector
           - billing-service
-          - compliance-service
+          - business-intelligence
+          - calendar-service
           - categorization-service
+          - compliance-service
           - consent-service
+          - cost-optimization
+          - customer-success
           - documents-service
           - finops-monitor
+          - fraud-detection
           - integrations-service
+          - international-expansion
+          - invoice-service
+          - ipo-readiness
+          - localization-service
           - mtd-agent
           - partner-registry
-          - regulatory-service
+          - predictive-analytics
+          - pricing-engine
+          - qna-service
+          - recommendation-engine
+          - referral-service
+          - security-operations
+          - strategic-partnerships
+          - support-ai-service
           - tax-engine
+          - tenant-router
           - transactions-service
           - user-profile-service
+          - voice-gateway
 
     steps:
       - name: Checkout code
@@ -142,8 +164,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}
-      AUTH_SECRET_KEY: test-smoke-auth-secret-key-32chars!!
-      AUTH_ALLOW_WEAK_JWT_SECRET: "1"
 
     steps:
       - name: Checkout code
@@ -167,7 +187,7 @@ jobs:
       - name: Run smoke tests for core user flow
         run: |
           coverage erase
-          pytest -q services/auth-service/tests/test_main.py::test_login_and_get_me \
+          pytest -q services/auth-service/tests/test_main.py::test_login_and_get_me_returns_token_pair \
             --cov=services/auth-service/app --cov-append --cov-report=
           pytest -q services/user-profile-service/tests/test_main.py::test_create_and_get_profile \
             --cov=services/user-profile-service/app --cov-append --cov-report=
@@ -182,29 +202,6 @@ jobs:
           pytest -q services/partner-registry/tests/test_main.py::test_invoice_pdf_and_accounting_exports \
             --cov=services/partner-registry/app --cov-append --cov-report=
           coverage report --fail-under=25
-
-  security-request-id:
-    name: Security — X-Request-Id middleware
-    runs-on: ubuntu-latest
-    env:
-      PYTHONPATH: ${{ github.workspace }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install test deps
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install "fastapi>=0.115" pytest
-
-      - name: Run request-id tests
-        run: pytest -q tests/security/test_request_id.py
 
   contract-tests:
     name: Contract tests

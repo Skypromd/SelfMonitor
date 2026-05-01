@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: finops-monitor-deployment
+  namespace: selfmonitor
+  labels:
+    app: finops-monitor
+    component: compliance
+    version: "1.0.0"
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: finops-monitor
+      component: compliance
+  template:
+    metadata:
+      labels:
+        app: finops-monitor
+        component: compliance
+        version: "1.0.0"
+        type: service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+      - name: finops-monitor
+        image: selfmonitor/finops-monitor:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        env:
+        - name: AUTH_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: auth-secret
+              key: AUTH_SECRET_KEY
+        - name: TRANSACTIONS_SERVICE_URL
+          value: "http://transactions-service"
+        - name: TAX_ENGINE_URL
+          value: "http://tax-engine"
+        - name: REDIS_URL
+          value: "redis://redis-service:6379/13"
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "INFO"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "300m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 20
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          timeoutSeconds: 1
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: finops-monitor
+  namespace: selfmonitor
+  labels:
+    app: finops-monitor
+    component: compliance
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  selector:
+    app: finops-monitor
+    component: compliance

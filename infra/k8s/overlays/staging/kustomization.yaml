@@ -1,0 +1,138 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# SelfMonitor Platform - Staging Environment Configuration
+# This overlay customizes the base configuration for staging deployment
+
+metadata:
+  name: selfmonitor-staging
+  annotations:
+    version: "2.0.0"
+    environment: "staging"
+    description: "Staging deployment configuration for SelfMonitor FinTech Platform"
+
+# Base configuration
+resources:
+- ../../base
+
+# Namespace for staging
+namespace: selfmonitor-staging
+
+# Staging labels
+commonLabels:
+  environment: staging
+  deployment-tier: staging
+
+# Staging-specific resource patches
+patches:
+# Reduce replicas for staging (single instance to save resources)
+- target:
+    kind: Deployment
+    name: nginx-deployment
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 2
+
+- target:
+    kind: Deployment
+    name: auth-service-deployment
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 2
+
+- target:
+    kind: Deployment
+    name: ai-agent-service-deployment
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+
+- target:
+    kind: Deployment
+    name: user-profile-service-deployment
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 1
+
+# Reduce resource limits for staging workloads
+- target:
+    kind: Deployment
+    name: postgres-deployment
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "1Gi"
+          cpu: "500m"
+
+- target:
+    kind: Deployment
+    name: redis-deployment
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "128Mi"
+          cpu: "100m"
+        limits:
+          memory: "256Mi"
+          cpu: "200m"
+
+- target:
+    kind: Deployment
+    name: ai-agent-service-deployment
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources
+      value:
+        requests:
+          memory: "512Mi"
+          cpu: "250m"
+        limits:
+          memory: "2Gi"
+          cpu: "1000m"
+
+# Staging storage configurations (smaller than production)
+- target:
+    kind: PersistentVolumeClaim
+    name: postgres-pvc
+  patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: 20Gi
+
+- target:
+    kind: PersistentVolumeClaim
+    name: postgres-backup-pvc
+  patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: 50Gi
+
+- target:
+    kind: PersistentVolumeClaim
+    name: redis-pvc
+  patch: |-
+    - op: replace
+      path: /spec/resources/requests/storage
+      value: 5Gi
+
+# Staging image tag suffix
+images:
+- name: selfmonitor/auth-service
+  newTag: staging
+- name: selfmonitor/user-profile-service
+  newTag: staging
+- name: selfmonitor/transactions-service
+  newTag: staging
+- name: selfmonitor/ai-agent-service
+  newTag: staging

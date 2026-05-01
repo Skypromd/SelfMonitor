@@ -112,12 +112,6 @@ spec:
   selector:
     app: auth-service
     component: security
-
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: user-profile-service-deployment
   namespace: selfmonitor
   labels:
     app: user-profile-service

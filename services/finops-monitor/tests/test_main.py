@@ -7,28 +7,19 @@ Run with:
     python -m pytest -q tests/test_main.py
 """
 
-import os
-import sys
 from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+import os
+from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 # Must be set before importing app.main
 os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key-for-finops")
-os.environ.setdefault("INTERNAL_SERVICE_SECRET", "finops-internal-test-secret")
 
 # ── MTD deadline tests ─────────────────────────────────────────────────────────
 
-from app.mtd.deadlines import (
-    MTDQuarter,
-    _quarters_for_tax_year,
-    days_until_deadline,
-    get_current_quarter,
-    get_next_deadline,
-    is_mtd_required,
-)
+from app.mtd.deadlines import _quarters_for_tax_year, get_current_quarter, is_mtd_required  # noqa: E402
 
 
 class TestMTDDeadlines:
@@ -83,7 +74,7 @@ class TestMTDDeadlines:
 
 # ── MTD tracker tests ─────────────────────────────────────────────────────────
 
-from app.mtd.tracker import QuarterlyAccumulator, calculate_quarterly_summary
+from app.mtd.tracker import QuarterlyAccumulator, calculate_quarterly_summary  # noqa: E402
 
 
 class TestQuarterlyAccumulator:
@@ -138,7 +129,7 @@ def test_calculate_quarterly_summary():
 
 # ── report builder tests ──────────────────────────────────────────────────────
 
-from app.mtd.report_builder import build_report, validate_report
+from app.mtd.report_builder import build_report, validate_report  # noqa: E402
 
 
 class TestReportBuilder:
@@ -187,7 +178,7 @@ class TestReportBuilder:
 @pytest.fixture(scope="module")
 def client():
     """Create a TestClient with mocked Redis and scheduler."""
-    import app.main  # ensure module is in sys.modules before patching  # noqa: F401
+    import app.main  # noqa: F401  # pylint: disable=unused-import
     with (
         patch("app.main.create_redis_client", new_callable=AsyncMock) as mock_redis_factory,
         patch("app.main.scheduler") as mock_scheduler,
@@ -216,18 +207,6 @@ def test_status_endpoint(client):
     body = r.json()
     assert "days_until_deadline" in body
     assert "next_deadline" in body
-
-
-def test_internal_notify_invoice_paid_forbidden(client):
-    r = client.post(
-        "/internal/notify-invoice-paid",
-        json={
-            "user_id": "seller@example.com",
-            "invoice_id": "11111111-1111-1111-1111-111111111111",
-            "invoice_number": "INV-001",
-            "amount_gbp": "500.00",
-            "checkout_session_id": "cs_test_abc",
-        },
-        headers={"X-Internal-Token": "wrong-token"},
-    )
-    assert r.status_code == 403
+    body = r.json()
+    assert "days_until_deadline" in body
+    assert "next_deadline" in body

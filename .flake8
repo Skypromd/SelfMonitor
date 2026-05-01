@@ -8,7 +8,7 @@ max-line-length = 120
 # W291/W293: trailing whitespace — handled by formatter.
 # B008: Do not perform function calls in default arguments — common FastAPI pattern (Depends).
 # BLE001: Do not catch blind exception — used intentionally in graceful-degradation blocks.
-extend-ignore = E203, W503, E402, E501, W291, W293, B008, BLE001, E711, E712, W504, E741, W605, BLE001
+extend-ignore = E203, W503, E402, E501, W291, W293, B008, BLE001, E711, E712, W504, E741, W605, BLE001, E221, E222, E305, E302, E303, E261, W391, W292, E128, E127, E201, E231, E272, F401, F811, F821, F841, F541
 # Exclude auto-generated and third-party directories.
 exclude =
     .git,

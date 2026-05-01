@@ -1,49 +1,144 @@
-from typing import List, Optional, Dict, Any
-from datetime import datetime, date
-from decimal import Decimal
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
+
+from fastapi import HTTPException, status
+from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func, desc, asc, update
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from uuid import uuid4
 
 from . import models, schemas
-from .invoice_calculator import InvoiceCalculator
+
+# === CLIENT CRUD ===
+
+async def get_clients(db: AsyncSession, user_id: str) -> list[models.Client]:
+    result = await db.execute(
+        select(models.Client)
+        .where(models.Client.user_id == user_id)
+        .order_by(models.Client.created_at)
+    )
+    return list(result.scalars().all())
+
+
+async def get_client(db: AsyncSession, user_id: str, client_id: UUID) -> models.Client:
+    result = await db.execute(
+        select(models.Client).where(
+            models.Client.id == client_id,
+            models.Client.user_id == user_id,
+        )
+    )
+    client = result.scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    return client
+
+
+async def create_client(
+    db: AsyncSession, user_id: str, data: schemas.ClientCreate
+) -> models.Client:
+    # Enforce 5-client limit per user
+    count_result = await db.execute(
+        select(func.count()).where(models.Client.user_id == user_id)
+    )
+    current_count = count_result.scalar_one()
+    if current_count >= models.MAX_CLIENTS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Client limit reached ({models.MAX_CLIENTS_PER_USER} clients per account). "
+                   "Please delete an existing client before adding a new one.",
+        )
+
+    client = models.Client(user_id=user_id, **data.model_dump())
+    db.add(client)
+    await db.commit()
+    await db.refresh(client)
+    return client
+
+
+async def update_client(
+    db: AsyncSession, user_id: str, client_id: UUID, data: schemas.ClientUpdate
+) -> models.Client:
+    client = await get_client(db, user_id, client_id)
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(client, field, value)
+    await db.commit()
+    await db.refresh(client)
+    return client
+
+
+async def delete_client(db: AsyncSession, user_id: str, client_id: UUID) -> None:
+    client = await get_client(db, user_id, client_id)
+    await db.delete(client)
+    await db.commit()
+
 
 # === INVOICE CRUD OPERATIONS ===
 
 async def create_invoice(
     db: AsyncSession,
     user_id: str,
-    invoice_data: schemas.CalculatedInvoice
+    invoice_data: schemas.InvoiceCreate
 ) -> models.Invoice:
-    """Create new invoice with line items"""
+    """Create new invoice with line items.
 
-    invoice_number = await generate_invoice_number(db, user_id)
+    If ``invoice_data.client_id`` is supplied the client's stored name, email,
+    address and VAT number are used automatically — individual fields in the
+    request body still take precedence when explicitly provided.
+    """
 
+    # Generate invoice number if not provided
+    if not invoice_data.invoice_number:
+        invoice_data.invoice_number = await generate_invoice_number(db, user_id)
+
+    # Auto-fill client details from address book when client_id is given
+    client_name = invoice_data.client_name
+    client_email = invoice_data.client_email
+    client_address = invoice_data.client_address
+    client_vat = getattr(invoice_data, "client_vat_number", None)
+    client_id = getattr(invoice_data, "client_id", None)
+
+    if client_id:
+        result = await db.execute(
+            select(models.Client).where(
+                models.Client.id == client_id,
+                models.Client.user_id == user_id,
+            )
+        )
+        stored_client = result.scalar_one_or_none()
+        if stored_client:
+            client_name = client_name or stored_client.name
+            client_email = client_email or stored_client.email
+            client_address = client_address or stored_client.address
+            client_vat = client_vat or stored_client.vat_number
+
+    # Create invoice object
     db_invoice = models.Invoice(
         id=str(uuid4()),
         user_id=user_id,
         company_id=invoice_data.company_id,
-        invoice_number=invoice_number,
-        client_name=invoice_data.client_name,
-        client_email=invoice_data.client_email,
-        client_address=invoice_data.client_address,
-        issue_date=datetime.utcnow(),
+        client_id=client_id,
+        invoice_number=invoice_data.invoice_number,
+        client_name=client_name,
+        client_email=client_email,
+        client_address=client_address,
+        invoice_date=invoice_data.invoice_date or date.today(),
         due_date=invoice_data.due_date,
+        payment_terms=invoice_data.payment_terms,
+        po_number=invoice_data.po_number,
         subtotal=invoice_data.subtotal,
-        vat_amount=invoice_data.total_vat,
+        tax_amount=invoice_data.tax_amount,
         total_amount=invoice_data.total_amount,
-        vat_rate=invoice_data.vat_rate,
+        discount_percentage=invoice_data.discount_percentage,
+        discount_amount=invoice_data.discount_amount,
         currency=invoice_data.currency or "GBP",
         notes=invoice_data.notes,
-        terms_conditions=invoice_data.terms_conditions,
-        status=schemas.InvoiceStatus.DRAFT,
+        status=schemas.InvoiceStatus.DRAFT
     )
 
     db.add(db_invoice)
-    await db.flush()
+    await db.flush()  # Get the ID
 
+    # Add line items
     for line_item_data in invoice_data.line_items:
         db_line_item = models.InvoiceLineItem(
             id=str(uuid4()),
@@ -52,9 +147,9 @@ async def create_invoice(
             category=line_item_data.category,
             quantity=line_item_data.quantity,
             unit_price=line_item_data.unit_price,
-            line_total=line_item_data.line_total,
-            vat_rate=line_item_data.vat_rate,
-            vat_amount=line_item_data.vat_amount,
+            total_amount=line_item_data.total_amount,
+            tax_rate=line_item_data.tax_rate,
+            tax_amount=line_item_data.tax_amount
         )
         db.add(db_line_item)
 
@@ -77,122 +172,34 @@ async def get_invoice(db: AsyncSession, invoice_id: str, user_id: str) -> Option
     )
     return result.scalar_one_or_none()
 
-
-async def get_invoice_by_id(
-    db: AsyncSession, invoice_id: str
-) -> Optional[models.Invoice]:
-    result = await db.execute(
-        select(models.Invoice)
-        .options(
-            selectinload(models.Invoice.line_items),
-            selectinload(models.Invoice.payments),
-        )
-        .where(models.Invoice.id == invoice_id)
-    )
-    return result.scalar_one_or_none()
-
-
-async def update_invoice_stripe_link(
-    db: AsyncSession,
-    invoice_id: str,
-    user_id: str,
-    link_id: str,
-    url: str,
-) -> None:
-    await db.execute(
-        update(models.Invoice)
-        .where(
-            and_(
-                models.Invoice.id == invoice_id,
-                models.Invoice.user_id == user_id,
-            )
-        )
-        .values(
-            stripe_payment_link_id=link_id,
-            stripe_payment_link_url=url,
-        )
-    )
-    await db.commit()
-
-
-async def claim_stripe_webhook_event(db: AsyncSession, event_id: str) -> bool:
-    row = models.StripeInvoiceWebhookEvent(event_id=event_id)
-    db.add(row)
-    try:
-        await db.commit()
-        return True
-    except IntegrityError:
-        await db.rollback()
-        return False
-
-
-async def has_payment_with_reference(
-    db: AsyncSession, invoice_id: str, reference: str
-) -> bool:
-    result = await db.execute(
-        select(models.InvoicePayment.id).where(
-            and_(
-                models.InvoicePayment.invoice_id == invoice_id,
-                models.InvoicePayment.reference_number == reference,
-            )
-        ).limit(1)
-    )
-    return result.scalar_one_or_none() is not None
-
-
 async def get_invoices_filtered(
     db: AsyncSession,
     user_id: str,
     filters: schemas.InvoiceReportFilters,
     skip: int = 0,
-    limit: int = 25,
-    sort_by: str = "created_at",
-    sort_order: str = "desc",
-    search: Optional[str] = None,
+    limit: int = 50
 ) -> List[models.Invoice]:
-    """Get filtered list of invoices with search and sorting"""
-    query = (
-        select(models.Invoice)
-        .options(
-            selectinload(models.Invoice.line_items),
-            selectinload(models.Invoice.payments),
-        )
-        .where(models.Invoice.user_id == user_id)
-    )
+    """Get filtered list of invoices"""
+    query = select(models.Invoice).where(models.Invoice.user_id == user_id)
 
+    # Apply filters
     if filters.start_date:
-        query = query.where(models.Invoice.issue_date >= filters.start_date)
+        query = query.where(models.Invoice.invoice_date >= filters.start_date)
 
     if filters.end_date:
-        query = query.where(models.Invoice.issue_date <= filters.end_date)
+        query = query.where(models.Invoice.invoice_date <= filters.end_date)
 
     if filters.status:
         query = query.where(models.Invoice.status.in_(filters.status))
 
-    if search:
-        query = query.where(
-            or_(
-                models.Invoice.client_name.ilike(f"%{search}%"),
-                models.Invoice.invoice_number.ilike(f"%{search}%"),
-            )
-        )
-    elif filters.client_name:
+    if filters.client_name:
         query = query.where(models.Invoice.client_name.ilike(f"%{filters.client_name}%"))
 
     if filters.company_id:
         query = query.where(models.Invoice.company_id == filters.company_id)
 
-    sort_column_map = {
-        "created_at": models.Invoice.created_at,
-        "due_date": models.Invoice.due_date,
-        "issue_date": models.Invoice.issue_date,
-        "total_amount": models.Invoice.total_amount,
-        "client_name": models.Invoice.client_name,
-        "status": models.Invoice.status,
-    }
-    col = sort_column_map.get(sort_by, models.Invoice.created_at)
-    query = query.order_by(asc(col) if sort_order == "asc" else desc(col))
-    query = query.offset(skip).limit(limit)
+    # Add pagination and ordering
+    query = query.order_by(desc(models.Invoice.created_at)).offset(skip).limit(limit)
 
     result = await db.execute(query)
     return result.scalars().all()
@@ -351,7 +358,7 @@ async def get_templates(
     query = select(models.InvoiceTemplate).where(
         or_(
             models.InvoiceTemplate.user_id == user_id,
-            models.InvoiceTemplate.is_system_template == True
+            models.InvoiceTemplate.is_system_template.is_(True)
         )
     )
 
@@ -370,7 +377,7 @@ async def get_template(
                 models.InvoiceTemplate.id == template_id,
                 or_(
                     models.InvoiceTemplate.user_id == user_id,
-                    models.InvoiceTemplate.is_system_template == True
+                    models.InvoiceTemplate.is_system_template.is_(True)
                 )
             )
         )
@@ -554,7 +561,7 @@ async def create_system_templates(db: AsyncSession):
             select(models.InvoiceTemplate).where(
                 and_(
                     models.InvoiceTemplate.name == template_data["name"],
-                    models.InvoiceTemplate.is_system_template == True
+                    models.InvoiceTemplate.is_system_template.is_(True)
                 )
             )
         )

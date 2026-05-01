@@ -15,8 +15,7 @@ MTD threshold for 2026/27: £50,000 turnover.
 
 from __future__ import annotations
 
-import json
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from typing import Any
 
 from app.mtd.deadlines import MTDQuarter, get_current_quarter, is_mtd_required

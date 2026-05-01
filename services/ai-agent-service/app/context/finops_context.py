@@ -12,9 +12,8 @@ Redis keys consumed (written by finops-monitor):
 
 from __future__ import annotations
 
-import json
-import logging
 from datetime import date, datetime, timezone
+import logging
 from typing import Any
 
 log = logging.getLogger(__name__)

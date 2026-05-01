@@ -13,7 +13,7 @@ Mandatory from April 2026:
 """
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date
 
 
 @dataclass

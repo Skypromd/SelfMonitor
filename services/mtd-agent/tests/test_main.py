@@ -1,8 +1,7 @@
 """Tests for MTD Agent service."""
 
 import os
-from datetime import date
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -116,7 +115,7 @@ def test_to_dict_contains_all_fields():
 
 # ── FastAPI smoke tests ──────────────────────────────────────────────────────
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(scope="module")

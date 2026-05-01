@@ -13,11 +13,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
 
 import httpx
-
-from libs.shared_mtd import build_mtd_self_employment_period_summary
 
 log = logging.getLogger(__name__)
 
@@ -40,14 +37,12 @@ class HMRCClient:
 
     # ── auth ─────────────────────────────────────────────────────────────────
 
-    async def exchange_authorization_code(
-        self, user_auth_code: str
-    ) -> tuple[str, int | None]:
+    async def get_access_token(self, user_auth_code: str) -> str:
         """
         Exchange authorisation code for OAuth2 access token.
-        Returns (access_token, expires_in_seconds) per HMRC token response.
+        Called once per user during the MTD authorisation flow.
         """
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient() as client:
             resp = await client.post(
                 f"{self._base}/oauth/token",
                 data={
@@ -60,23 +55,13 @@ class HMRCClient:
             )
             resp.raise_for_status()
             data = resp.json()
-            token = data["access_token"]
-            raw_exp = data.get("expires_in")
-            expires_in: int | None
-            try:
-                expires_in = int(raw_exp) if raw_exp is not None else None
-            except (TypeError, ValueError):
-                expires_in = None
-            self._access_token = token
-            return token, expires_in
-
-    async def get_access_token(self, user_auth_code: str) -> str:
-        token, _ = await self.exchange_authorization_code(user_auth_code)
-        return token
+            self._access_token = data["access_token"]
+            token: str = self._access_token or ""
+            return token
 
     # ── period summaries (quarterly submission) ───────────────────────────────
 
-    async def submit_period_summary(
+    async def submit_period_summary(  # pylint: disable=too-many-positional-arguments
         self,
         nino: str,
         tax_year: str,          # "2026-27"
@@ -91,12 +76,20 @@ class HMRCClient:
 
         Returns HMRC submission receipt with transactionReference.
         """
-        payload = build_mtd_self_employment_period_summary(
-            period_start_iso=period_start,
-            period_end_iso=period_end,
-            turnover=income,
-            allowable_expenses=expenses,
-        )
+        payload = {
+            "periodDates": {
+                "periodStartDate": period_start,
+                "periodEndDate":   period_end,
+            },
+            "periodIncome": {
+                "turnover": round(income, 2),
+                "other":    0.0,
+            },
+            "periodExpenses": {
+                "costOfGoods":       0.0,
+                "allowableExpenses": round(expenses, 2),
+            },
+        }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(

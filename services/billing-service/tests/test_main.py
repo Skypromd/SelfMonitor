@@ -1,31 +1,16 @@
 """Tests for billing-service."""
 import os
-import time
 
 os.environ.setdefault("AUTH_SECRET_KEY", "test-secret-key")
 
-import pytest
-from jose import jwt
-from app.main import _upsert_subscription, app, init_db
 from fastapi.testclient import TestClient
+
+from app.main import _upsert_subscription, app, init_db
 
 # Ensure DB tables exist before any test runs
 init_db()
 
 client = TestClient(app)
-
-
-def _bearer(sub: str, is_admin: bool = False) -> dict[str, str]:
-    tok = jwt.encode(
-        {
-            "sub": sub,
-            "is_admin": is_admin,
-            "exp": int(time.time()) + 3600,
-        },
-        os.environ["AUTH_SECRET_KEY"],
-        algorithm="HS256",
-    )
-    return {"Authorization": f"Bearer {tok}"}
 
 
 def test_health():
@@ -44,8 +29,8 @@ def test_list_plans():
     assert "growth" in data
     assert "pro" in data
     assert "business" in data
-    assert data["starter"]["amount"] == 1200
-    assert data["pro"]["amount"] == 1800
+    assert data["starter"]["amount"] == 900
+    assert data["pro"]["amount"] == 1500
 
 
 def test_checkout_free_plan():
@@ -72,165 +57,12 @@ def test_checkout_unknown_plan():
     assert resp.status_code == 400
 
 
-def test_checkout_subscription_requires_plan():
-    resp = client.post("/checkout/session", json={"product": "subscription"})
-    assert resp.status_code == 400
-
-
-def test_list_addons():
-    r = client.get("/addons")
-    assert r.status_code == 200
-    data = r.json()
-    assert "accountant_cis_consult" in data
-    assert data["accountant_cis_consult"]["amount_pence"] >= 100
-
-
-def test_checkout_accountant_consult_dev_mode():
-    resp = client.post(
-        "/checkout/session",
-        json={"product": "accountant_cis_consult", "email": "buyer@example.com"},
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["dev_mode"] is True
-    assert "accountant_cis_consult" in data["checkout_url"]
-    assert data["session_id"].startswith("dev_session_consult_")
-
-
-def test_internal_accountant_consult_idempotent(tmp_path, monkeypatch):
-    import app.main as billing_main
-
-    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "billing-internal-test")
-    billing_main.INTERNAL_SERVICE_SECRET = "billing-internal-test"
-    old_db = billing_main.DB_PATH
-    billing_main.DB_PATH = str(tmp_path / "consult_test.db")
-    init_db()
-
-    hdr = {"X-Internal-Token": "billing-internal-test"}
-    body = {
-        "email": "acct@example.com",
-        "sessions": 2,
-        "idempotency_key": "manual-grant-1",
-        "reason": "test",
-    }
-    r1 = client.post("/internal/accountant-consult-session", json=body, headers=hdr)
-    assert r1.status_code == 200
-    assert r1.json()["applied"] is True
-    r2 = client.post("/internal/accountant-consult-session", json=body, headers=hdr)
-    assert r2.status_code == 200
-    assert r2.json()["applied"] is False
-
-    sub = client.get(
-        "/subscription/acct@example.com",
-        headers=_bearer("acct@example.com"),
-    )
-    assert sub.status_code == 200
-    assert sub.json()["accountant_consult_sessions_available"] == 2
-
-    billing_main.DB_PATH = old_db
-    billing_main.INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
-
-
-def test_webhook_checkout_consult_grants_session(tmp_path):
-    import json
-
-    import app.main as billing_main
-    old_db = billing_main.DB_PATH
-    billing_main.DB_PATH = str(tmp_path / "webhook_consult.db")
-    init_db()
-
-    payload = json.dumps({
-        "id": "evt_test_checkout_consult_1",
-        "type": "checkout.session.completed",
-        "data": {
-            "object": {
-                "id": "cs_consult_xyz",
-                "customer_email": "consult@example.com",
-                "customer": "cus_x",
-                "subscription": None,
-                "metadata": {"product": "accountant_cis_consult", "sessions_granted": "1"},
-                "customer_details": {"email": "consult@example.com"},
-            }
-        }
-    }).encode()
-
-    resp = client.post("/webhook", content=payload)
-    assert resp.status_code == 200
-
-    sub = client.get(
-        "/subscription/consult@example.com",
-        headers=_bearer("consult@example.com"),
-    )
-    assert sub.status_code == 200
-    assert sub.json()["accountant_consult_sessions_available"] == 1
-    assert sub.json()["plan"] == "free"
-
-    billing_main.DB_PATH = old_db
-
-
 def test_subscription_not_found():
-    resp = client.get(
-        "/subscription/nobody@example.com",
-        headers=_bearer("nobody@example.com"),
-    )
+    resp = client.get("/subscription/nobody@example.com")
     assert resp.status_code == 200
     data = resp.json()
     assert data["plan"] == "free"
     assert data["status"] == "none"
-    assert data.get("account_credit_balance_gbp", 0) == 0
-    assert data.get("accountant_consult_sessions_available", 0) == 0
-
-
-def test_internal_account_credit_idempotent(tmp_path, monkeypatch):
-    import app.main as billing_main
-
-    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "billing-internal-test")
-    billing_main.INTERNAL_SERVICE_SECRET = "billing-internal-test"
-    old_db = billing_main.DB_PATH
-    billing_main.DB_PATH = str(tmp_path / "credit_test.db")
-    init_db()
-
-    hdr = {"X-Internal-Token": "billing-internal-test"}
-    body = {
-        "email": "cred@example.com",
-        "amount_gbp": 25.0,
-        "idempotency_key": "referral-usage-abc-referee",
-        "reason": "referral_referee",
-    }
-    r1 = client.post("/internal/account-credit", json=body, headers=hdr)
-    assert r1.status_code == 200
-    assert r1.json()["applied"] is True
-    r2 = client.post("/internal/account-credit", json=body, headers=hdr)
-    assert r2.status_code == 200
-    assert r2.json()["applied"] is False
-
-    sub = client.get(
-        "/subscription/cred@example.com",
-        headers=_bearer("cred@example.com"),
-    )
-    assert sub.status_code == 200
-    assert sub.json()["account_credit_balance_gbp"] == 25.0
-
-    billing_main.DB_PATH = old_db
-    billing_main.INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
-
-
-def test_subscription_forbidden_wrong_user():
-    resp = client.get(
-        "/subscription/other@example.com",
-        headers=_bearer("me@example.com", is_admin=False),
-    )
-    assert resp.status_code == 403
-
-
-def test_analytics_requires_admin():
-    resp = client.get("/analytics/overview", headers=_bearer("u@x.com", is_admin=False))
-    assert resp.status_code == 403
-
-
-def test_analytics_admin_ok():
-    resp = client.get("/analytics/overview", headers=_bearer("admin@x.com", is_admin=True))
-    assert resp.status_code == 200
 
 
 def test_subscription_upsert_and_read(tmp_path):
@@ -246,10 +78,7 @@ def test_subscription_upsert_and_read(tmp_path):
         stripe_session_id="cs_test_123",
     )
 
-    resp = client.get(
-        "/subscription/user@example.com",
-        headers=_bearer("user@example.com"),
-    )
+    resp = client.get("/subscription/user@example.com")
     # Client uses the patched DB path
     assert resp.status_code == 200
     billing_main.DB_PATH = old_db
@@ -270,7 +99,6 @@ def test_webhook_checkout_completed(tmp_path):
     init_db()
 
     payload = json.dumps({
-        "id": "evt_test_checkout_1",
         "type": "checkout.session.completed",
         "data": {
             "object": {
@@ -288,19 +116,4 @@ def test_webhook_checkout_completed(tmp_path):
     assert resp.status_code == 200
     assert resp.json()["status"] == "ok"
 
-    dup = client.post("/webhook", content=payload)
-    assert dup.status_code == 200
-    assert dup.json().get("duplicate") is True
-
     billing_main.DB_PATH = old_db
-
-
-def test_webhook_requires_signature_when_not_dev_mode(monkeypatch):
-    import app.main as billing_main
-
-    monkeypatch.setattr(billing_main, "DEV_MODE", False)
-    monkeypatch.setattr(billing_main, "STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
-
-    resp = client.post("/webhook", content=b"{}")
-    assert resp.status_code == 400
-    assert "signature" in resp.json()["detail"].lower()

@@ -8,48 +8,26 @@ Endpoints:
   GET /mtd/{user_id}/quarterly/{quarter}     – specific quarter (e.g. Q1)
   GET /mtd/{user_id}/all/{tax_year}          – all 4 quarters for a tax year
   POST /mtd/{user_id}/sync                   – manual sync of MTD totals
-  POST /mtd/me/expo-push-token               – register Expo push token (JWT)
-  DELETE /mtd/me/expo-push-token             – remove Expo push token (JWT)
 
 Scheduled tasks:
   run_all_monitors()    – every 5 minutes  (fraud, balance, invoices)
   run_mtd_weekly()      – every Sunday     (bulk-sync MTD accumulators)
-  run_mtd_reminders     – daily 08:05 UTC (MTD deadline email + Expo push)
-  run_mortgage_milestones – weekly Thu 09:25 UTC (Road to mortgage step change email + push)
-  run_mortgage_monthly_digest – monthly 10th 09:35 UTC (Road to mortgage summary email + push)
 """
 
 from __future__ import annotations
 
-import logging
-import os
-import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
+import logging
+import os
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "libs").exists():
-        _root = str(_parent)
-        if _root not in sys.path:
-            sys.path.insert(0, _root)
-        break
-
-from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
-
-import app.monitors.balance_monitor as balance_monitor
-import app.monitors.fraud_monitor as fraud_monitor
-import app.monitors.invoice_monitor as invoice_monitor
-from app.mtd.deadlines import (
-    days_until_deadline,
-    get_current_quarter,
-    get_next_deadline,
-)
+from app.monitors import balance_monitor, fraud_monitor, invoice_monitor
+from app.mtd.deadlines import days_until_deadline, get_next_deadline
 from app.mtd.tracker import QuarterlyAccumulator
 from app.redis_bus import EventType, create_redis_client, publish_event
 
@@ -57,11 +35,6 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
 AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
-AUTH_ALGORITHM = os.getenv("AUTH_ALGORITHM", "HS256")
-INTERNAL_SERVICE_SECRET = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
-
-_get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
-_EXPO_PUSH_TOKEN_TTL = int(os.getenv("FINOPS_EXPO_PUSH_TTL_SECONDS", str(120 * 86400)))
 
 # ── scheduler + redis (module-level, initialised in lifespan) ────────────────
 scheduler = AsyncIOScheduler()
@@ -90,50 +63,6 @@ async def lifespan(app: FastAPI):
         id="mtd_weekly",
         replace_existing=True,
     )
-    scheduler.add_job(
-        _run_mtd_email_reminders,
-        "cron",
-        hour=8,
-        minute=5,
-        id="mtd_reminders",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        _run_tax_savings_monthly_push,
-        "cron",
-        day=15,
-        hour=9,
-        minute=10,
-        id="tax_tips_monthly_push",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        _run_referral_invite_emails,
-        "cron",
-        day=5,
-        hour=10,
-        minute=15,
-        id="referral_invite_email",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        _run_mortgage_milestone_notifications,
-        "cron",
-        day_of_week="thu",
-        hour=9,
-        minute=25,
-        id="mortgage_milestones_weekly",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        _run_mortgage_monthly_digest,
-        "cron",
-        day=10,
-        hour=9,
-        minute=35,
-        id="mortgage_monthly_digest",
-        replace_existing=True,
-    )
     scheduler.start()
     log.info("APScheduler started")
 
@@ -151,12 +80,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -181,53 +107,6 @@ async def _run_mtd_weekly() -> None:
     # In production this would query the transactions service for all users
     # and call accumulator.bulk_sync(). For now we log the intent.
     log.info("MTD weekly sync complete (no users configured yet)")
-
-
-async def _run_mtd_email_reminders() -> None:
-    if redis_client is None:
-        return
-    log.info("[%s] MTD email reminders", datetime.now(timezone.utc).isoformat())
-    try:
-        from app.mtd import reminder_email
-
-        await reminder_email.dispatch_daily_reminders(redis_client)
-    except Exception as exc:
-        log.error("MTD email reminders error: %s", exc, exc_info=True)
-
-
-async def _run_tax_savings_monthly_push() -> None:
-    if redis_client is None:
-        return
-    try:
-        from app.marketing import tax_savings_monthly_push
-
-        await tax_savings_monthly_push.dispatch_tax_savings_monthly_push(redis_client)
-    except Exception as exc:
-        log.error("Tax savings monthly push error: %s", exc, exc_info=True)
-
-
-async def _run_referral_invite_emails() -> None:
-    if redis_client is None:
-        return
-    try:
-        from app.marketing import referral_invite_email
-
-        await referral_invite_email.dispatch_referral_invite_emails(redis_client)
-    except Exception as exc:
-        log.error("Referral invite email campaign error: %s", exc, exc_info=True)
-
-
-async def _run_mortgage_milestone_notifications() -> None:
-    if redis_client is None:
-        return
-    try:
-        from app.marketing import mortgage_milestone_notify
-
-        await mortgage_milestone_notify.dispatch_mortgage_milestone_notifications(
-            redis_client
-        )
-    except Exception as exc:
-        log.error("Mortgage milestone notifications error: %s", exc, exc_info=True)
 
 
 # ── REST endpoints ────────────────────────────────────────────────────────────
@@ -308,53 +187,6 @@ class SyncPayload(BaseModel):
     quarter: str | None = None     # Q1 | Q2 | Q3 | Q4, defaults to current
 
 
-class ExpoPushTokenPayload(BaseModel):
-    expo_push_token: str = Field(..., min_length=24, max_length=512)
-
-
-class InvoicePaidNotifyPayload(BaseModel):
-    user_id: str = Field(..., min_length=3, max_length=512)
-    invoice_id: str = Field(..., min_length=1, max_length=64)
-    invoice_number: str = Field(..., min_length=1, max_length=64)
-    amount_gbp: str = Field(..., min_length=1, max_length=32)
-    checkout_session_id: str = Field(default="", max_length=128)
-
-
-class DashboardTransactionEventPayload(BaseModel):
-    user_id: str = Field(..., min_length=3, max_length=512)
-
-
-def _expo_push_redis_key(user_id: str) -> str:
-    return f"mtd:expo_push:{user_id.strip().lower()}"
-
-
-@app.post("/mtd/me/expo-push-token")
-async def register_expo_push_token(
-    payload: ExpoPushTokenPayload,
-    user_id: str = Depends(get_current_user_id),
-):
-    from app.mtd.expo_push import validate_expo_push_token_format
-
-    if not validate_expo_push_token_format(payload.expo_push_token):
-        raise HTTPException(status_code=422, detail="invalid_expo_push_token")
-    if redis_client is None:
-        raise HTTPException(status_code=503, detail="redis_unavailable")
-    await redis_client.set(
-        _expo_push_redis_key(user_id),
-        payload.expo_push_token.strip(),
-        ex=_EXPO_PUSH_TOKEN_TTL,
-    )
-    return {"ok": True}
-
-
-@app.delete("/mtd/me/expo-push-token")
-async def delete_expo_push_token(user_id: str = Depends(get_current_user_id)):
-    if redis_client is None:
-        raise HTTPException(status_code=503, detail="redis_unavailable")
-    await redis_client.delete(_expo_push_redis_key(user_id))
-    return {"ok": True}
-
-
 @app.post("/mtd/{user_id}/sync")
 async def mtd_sync(user_id: str, payload: SyncPayload):
     """Manually push aggregated MTD totals for a user-quarter."""
@@ -376,105 +208,3 @@ async def mtd_sync(user_id: str, payload: SyncPayload):
             },
         )
     return result
-
-
-@app.post("/internal/mtd-reminders/run")
-async def internal_run_mtd_reminders(
-    x_internal_token: str | None = Header(None, alias="X-Internal-Token"),
-):
-    if not INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=503, detail="internal_calls_not_configured")
-    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=403, detail="forbidden")
-    if redis_client is None:
-        raise HTTPException(status_code=503, detail="redis_unavailable")
-    from app.mtd import reminder_email
-
-    return await reminder_email.dispatch_daily_reminders(redis_client)
-
-
-@app.post("/internal/mortgage-milestones/run")
-async def internal_run_mortgage_milestones(
-    x_internal_token: str | None = Header(None, alias="X-Internal-Token"),
-):
-    if not INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=503, detail="internal_calls_not_configured")
-    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=403, detail="forbidden")
-    if redis_client is None:
-        raise HTTPException(status_code=503, detail="redis_unavailable")
-    from app.marketing import mortgage_milestone_notify
-
-    return await mortgage_milestone_notify.dispatch_mortgage_milestone_notifications(
-        redis_client
-    )
-
-
-@app.post("/internal/mortgage-monthly-digest/run")
-async def internal_run_mortgage_monthly_digest(
-    x_internal_token: str | None = Header(None, alias="X-Internal-Token"),
-):
-    if not INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=503, detail="internal_calls_not_configured")
-    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=403, detail="forbidden")
-    if redis_client is None:
-        raise HTTPException(status_code=503, detail="redis_unavailable")
-    from app.marketing import mortgage_monthly_digest
-
-    return await mortgage_monthly_digest.dispatch_mortgage_monthly_digest(redis_client)
-
-
-@app.post("/internal/notify-invoice-paid")
-async def internal_notify_invoice_paid(
-    body: InvoicePaidNotifyPayload,
-    x_internal_token: str | None = Header(None, alias="X-Internal-Token"),
-):
-    if not INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=503, detail="internal_calls_not_configured")
-    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=403, detail="forbidden")
-    if redis_client is None:
-        raise HTTPException(status_code=503, detail="redis_unavailable")
-    from app.notifications import invoice_paid_notify
-
-    return await invoice_paid_notify.handle_invoice_paid_notify(
-        redis_client,
-        user_id=body.user_id,
-        invoice_id=body.invoice_id,
-        invoice_number=body.invoice_number,
-        amount_gbp=body.amount_gbp,
-        checkout_session_id=body.checkout_session_id,
-    )
-
-
-@app.websocket("/ws/dashboard/live")
-async def ws_dashboard_live(websocket: WebSocket):
-    if redis_client is None:
-        await websocket.close(code=1011, reason="redis_unavailable")
-        return
-    from app.dashboard_live import websocket_dashboard_live as run_dashboard_ws
-
-    await run_dashboard_ws(
-        websocket=websocket,
-        redis_client=redis_client,
-        auth_secret_key=AUTH_SECRET_KEY,
-        auth_algorithm=AUTH_ALGORITHM,
-    )
-
-
-@app.post("/internal/dashboard-transaction-event")
-async def internal_dashboard_transaction_event(
-    body: DashboardTransactionEventPayload,
-    x_internal_token: str | None = Header(None, alias="X-Internal-Token"),
-):
-    if not INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=503, detail="internal_calls_not_configured")
-    if not x_internal_token or x_internal_token != INTERNAL_SERVICE_SECRET:
-        raise HTTPException(status_code=403, detail="forbidden")
-    if redis_client is None:
-        raise HTTPException(status_code=503, detail="redis_unavailable")
-    from app.dashboard_live import publish_dashboard_refresh
-
-    n = await publish_dashboard_refresh(redis_client, user_id=body.user_id)
-    return {"subscribers": n}

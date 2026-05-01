@@ -1,32 +1,25 @@
-import asyncio
-import logging
 import os
-from decimal import Decimal
+from datetime import datetime, timedelta
 from typing import List, Optional
+from uuid import UUID
 
-import stripe
-from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, status, BackgroundTasks
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import FileResponse
+from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import date, datetime, timedelta
 
-from . import crud, models, schemas
+from . import crud, schemas
 from .database import get_db
-from .invoice_smtp import send_client_payment_request_email
-from .notify_finops import notify_seller_invoice_paid
-from .pdf_generator import PDFGenerator
 from .invoice_calculator import InvoiceCalculator
+from .pdf_generator import PDFGenerator
 from .reporting_service import InvoiceReportingService
-from .sync_service import InvoiceTransactionSync
-from .stripe_invoice import create_stripe_payment_link, parse_checkout_session_completed
-
-logger = logging.getLogger(__name__)
+from .sync_service import (
+    sync_invoice_to_transactions,  # pylint: disable=no-name-in-module
+)
 
 app = FastAPI(
-    title="MyNetTax Invoice Service",
+    title="SelfMonitor Invoice Service",
     description="Enterprise invoice generation, management and reporting for FinTech platform",
     version="1.0.0",
     tags_metadata=[
@@ -39,7 +32,7 @@ app = FastAPI(
 )
 
 # Security
-AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
+AUTH_SECRET_KEY = os.getenv("AUTH_SECRET_KEY", "a_very_secret_key_that_should_be_in_an_env_var")
 AUTH_ALGORITHM = "HS256"
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 
@@ -69,6 +62,87 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "ok", "service": "invoice-service", "timestamp": datetime.utcnow()}
 
+# === CLIENT ENDPOINTS ===
+
+@app.get(
+    "/clients",
+    response_model=List[schemas.ClientResponse],
+    tags=["clients"],
+    summary="List my clients",
+)
+async def list_clients(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all clients for the authenticated user (max 5)."""
+    return await crud.get_clients(db, user_id=user_id)
+
+
+@app.post(
+    "/clients",
+    response_model=schemas.ClientResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["clients"],
+    summary="Add a new client",
+)
+async def create_client(
+    data: schemas.ClientCreate,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a new client.  
+    Returns **422** if the 5-client limit has been reached.
+    """
+    return await crud.create_client(db, user_id=user_id, data=data)
+
+
+@app.get(
+    "/clients/{client_id}",
+    response_model=schemas.ClientResponse,
+    tags=["clients"],
+    summary="Get a single client",
+)
+async def get_client(
+    client_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await crud.get_client(db, user_id=user_id, client_id=client_id)
+
+
+@app.put(
+    "/clients/{client_id}",
+    response_model=schemas.ClientResponse,
+    tags=["clients"],
+    summary="Update a client",
+)
+async def update_client(
+    client_id: UUID,
+    data: schemas.ClientUpdate,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await crud.update_client(db, user_id=user_id, client_id=client_id, data=data)
+
+
+@app.delete(
+    "/clients/{client_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["clients"],
+    summary="Delete a client",
+)
+async def delete_client(
+    client_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Delete a client.  
+    Existing invoices keep their client data; only the address-book link is removed.
+    """
+    await crud.delete_client(db, user_id=user_id, client_id=client_id)
+
 # === INVOICE ENDPOINTS ===
 
 @app.post("/invoices", response_model=schemas.Invoice, status_code=status.HTTP_201_CREATED, tags=["invoices"])
@@ -88,94 +162,39 @@ async def create_invoice(
         # Create invoice
         invoice = await crud.create_invoice(db, user_id=user_id, invoice_data=calculated_invoice)
 
-        sync = InvoiceTransactionSync()
+        # Sync to transactions service in background
         background_tasks.add_task(
-            sync.sync_invoice_to_transactions,
-            invoice,
-            token,
+            sync_invoice_to_transactions,
+            invoice.id,
+            token
         )
 
         return invoice
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to create invoice: {str(e)}")
 
-@app.get("/invoices/chase-log", tags=["invoices"])
-async def get_chase_log(
-    user_id: str = Depends(get_current_user_id),
-):
-    """Get chase history for current user"""
-    return {"entries": [c for c in _chase_log if c.get("user_id") == user_id]}
-
-
-@app.get("/invoices/overdue/list", tags=["invoices"])
-async def list_overdue_invoices(
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """List all overdue invoices with chase history"""
-    filters = schemas.InvoiceReportFilters()
-    invoices = await crud.get_invoices_filtered(db, user_id, filters)
-    overdue = []
-    for inv in invoices:
-        if inv.due_date and inv.status in ("sent", "partially_paid") and inv.due_date < datetime.utcnow():
-            days = (date.today() - inv.due_date.date()).days
-            chases = [c for c in _chase_log if c["invoice_id"] == str(inv.id) and c.get("user_id") == user_id]
-            overdue.append({
-                "invoice_id": str(inv.id),
-                "invoice_number": inv.invoice_number,
-                "client_name": inv.client_name,
-                "client_email": inv.client_email,
-                "total_amount": float(inv.total_amount),
-                "due_date": inv.due_date.date().isoformat(),
-                "days_overdue": days,
-                "chase_count": len(chases),
-                "last_chased": chases[-1]["sent_at"] if chases else None,
-            })
-    overdue.sort(key=lambda x: x["days_overdue"], reverse=True)
-    return {"overdue_count": len(overdue), "invoices": overdue}
-
-
-@app.get("/invoices/recurring", tags=["invoices"])
-async def list_recurring_invoices(
-    user_id: str = Depends(get_current_user_id),
-):
-    """List all recurring invoice configurations"""
-    return {"recurring_invoices": [r for r in _recurring_configs if r.get("user_id") == user_id]}
-
-
 @app.get("/invoices", response_model=List[schemas.Invoice], tags=["invoices"])
 async def list_invoices(
     user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
     skip: int = Query(0, ge=0),
-    limit: int = Query(25, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=100),
     status: Optional[schemas.InvoiceStatus] = None,
     company_id: Optional[str] = None,
-    search: Optional[str] = Query(None, description="Search by client name or invoice number"),
-    sort_by: str = Query("created_at", description="Sort field: created_at|due_date|total_amount|client_name|status"),
-    sort_order: str = Query("desc", description="Sort direction: asc|desc"),
+    client_name: Optional[str] = None,
     start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
 ):
-    """List user's invoices with filtering, search and sorting"""
+    """List user's invoices with filtering"""
     filters = schemas.InvoiceReportFilters(
         start_date=start_date,
         end_date=end_date,
         status=[status] if status else None,
-        client_name=search,
-        company_id=company_id,
+        client_name=client_name,
+        company_id=company_id
     )
 
-    invoices = await crud.get_invoices_filtered(
-        db,
-        user_id=user_id,
-        filters=filters,
-        skip=skip,
-        limit=limit,
-        sort_by=sort_by,
-        sort_order=sort_order,
-        search=search,
-    )
+    invoices = await crud.get_invoices_filtered(db, user_id=user_id, filters=filters, skip=skip, limit=limit)
     return invoices
 
 @app.get("/invoices/{invoice_id}", response_model=schemas.Invoice, tags=["invoices"])
@@ -485,259 +504,6 @@ async def get_tax_data(
     reporting_service = InvoiceReportingService(db)
     tax_data = await reporting_service.generate_tax_report(user_id=user_id, tax_year=tax_year)
     return tax_data
-
-# === OVERDUE CHASE ENDPOINTS ===
-
-class ChaseConfig(BaseModel):
-    enabled: bool = True
-    chase_after_days: list[int] = [3, 7, 14]
-    email_template: str = "polite"
-
-class ChaseLogEntry(BaseModel):
-    invoice_id: str
-    chase_number: int
-    sent_at: datetime
-    days_overdue: int
-    status: str
-
-_chase_log: list[dict] = []
-
-@app.post("/invoices/{invoice_id}/chase", tags=["invoices"])
-async def chase_invoice(
-    invoice_id: str,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """Manually send a payment reminder for an overdue invoice"""
-    invoice = await crud.get_invoice(db, invoice_id, user_id)
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-
-    days_overdue = (date.today() - invoice.due_date.date()).days if invoice.due_date else 0
-
-    user_chases = [c for c in _chase_log if c["invoice_id"] == invoice_id and c.get("user_id") == user_id]
-    chase_entry = {
-        "invoice_id": invoice_id,
-        "user_id": user_id,
-        "chase_number": len(user_chases) + 1,
-        "sent_at": datetime.utcnow().isoformat(),
-        "days_overdue": days_overdue,
-        "status": "sent",
-        "recipient": invoice.client_email,
-        "message": f"Friendly reminder: Invoice #{invoice.invoice_number} for £{invoice.total_amount} was due {days_overdue} days ago.",
-    }
-    _chase_log.append(chase_entry)
-
-    return {
-        "status": "reminder_sent",
-        "chase_number": chase_entry["chase_number"],
-        "days_overdue": days_overdue,
-        "message": chase_entry["message"],
-    }
-
-
-# === RECURRING INVOICE ENDPOINTS ===
-
-_recurring_configs: list[dict] = []
-
-class RecurringInvoiceConfig(BaseModel):
-    template_invoice_id: str
-    frequency: str
-    next_due_date: str
-    auto_send: bool = True
-    max_occurrences: int = 12
-
-@app.post("/invoices/recurring", tags=["invoices"])
-async def create_recurring_invoice(
-    config: RecurringInvoiceConfig,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """Set up a recurring invoice from an existing invoice as template"""
-    template = await crud.get_invoice(db, config.template_invoice_id, user_id)
-    if not template:
-        raise HTTPException(status_code=404, detail="Template invoice not found")
-
-    recurring = {
-        "id": f"rec-{len(_recurring_configs) + 1}",
-        "template_invoice_id": config.template_invoice_id,
-        "client_name": template.client_name,
-        "amount": float(template.total_amount),
-        "frequency": config.frequency,
-        "next_due_date": config.next_due_date,
-        "auto_send": config.auto_send,
-        "max_occurrences": config.max_occurrences,
-        "occurrences_sent": 0,
-        "status": "active",
-        "created_at": datetime.utcnow().isoformat(),
-    }
-    _recurring_configs.append(recurring)
-
-    return {
-        "status": "created",
-        "recurring_id": recurring["id"],
-        "message": f"Recurring invoice set up: £{recurring['amount']} {config.frequency} to {recurring['client_name']}",
-        "next_due_date": config.next_due_date,
-    }
-
-
-@app.delete("/invoices/recurring/{recurring_id}", tags=["invoices"])
-async def cancel_recurring_invoice(
-    recurring_id: str,
-    user_id: str = Depends(get_current_user_id),
-):
-    """Cancel a recurring invoice"""
-    for config in _recurring_configs:
-        if config["id"] == recurring_id:
-            config["status"] = "cancelled"
-            return {"status": "cancelled", "recurring_id": recurring_id}
-    raise HTTPException(status_code=404, detail="Recurring config not found")
-
-# === PAYMENT LINK ENDPOINTS ===
-
-@app.post("/invoices/{invoice_id}/payment-link", tags=["payments"])
-async def create_payment_link(
-    invoice_id: str,
-    background_tasks: BackgroundTasks,
-    user_id: str = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
-    """Generate a Stripe Payment Link for an invoice (reuses stored URL until paid)."""
-    invoice = await crud.get_invoice(db, invoice_id, user_id)
-    if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-
-    if invoice.status == "paid":
-        raise HTTPException(status_code=400, detail="Invoice already paid")
-
-    if getattr(invoice, "stripe_payment_link_url", None):
-        url = invoice.stripe_payment_link_url
-        return {
-            "invoice_id": invoice_id,
-            "payment_link": url,
-            "amount": float(invoice.total_amount),
-            "currency": invoice.currency or "GBP",
-            "client_name": invoice.client_name,
-            "expires_in": "until deactivated in Stripe Dashboard",
-            "message": f"Share this link with {invoice.client_name} to receive payment of £{invoice.total_amount}",
-        }
-
-    try:
-        url, _lid = create_stripe_payment_link(invoice=invoice, user_id=user_id)
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except stripe.StripeError as exc:
-        msg = getattr(exc, "user_message", None) or str(exc)
-        raise HTTPException(status_code=502, detail=f"Stripe error: {msg}") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    await crud.update_invoice_stripe_link(
-        db,
-        invoice_id=invoice_id,
-        user_id=user_id,
-        link_id=_lid,
-        url=url,
-    )
-
-    if invoice.client_email:
-        background_tasks.add_task(
-            send_client_payment_request_email,
-            to_email=invoice.client_email,
-            client_name=invoice.client_name or "there",
-            invoice_number=invoice.invoice_number,
-            amount_gbp=float(invoice.total_amount),
-            pay_url=url,
-        )
-
-    return {
-        "invoice_id": invoice_id,
-        "payment_link": url,
-        "amount": float(invoice.total_amount),
-        "currency": invoice.currency or "GBP",
-        "client_name": invoice.client_name,
-        "expires_in": "until deactivated in Stripe Dashboard",
-        "message": f"Share this link with {invoice.client_name} to receive payment of £{invoice.total_amount}",
-    }
-
-
-@app.post("/webhooks/stripe/invoices")
-async def stripe_invoices_webhook(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    stripe_signature: Optional[str] = Header(None, alias="Stripe-Signature"),
-):
-    """Stripe webhook: mark invoice paid after Checkout completes (Payment Link)."""
-    wh = os.environ.get("STRIPE_INVOICE_WEBHOOK_SECRET", "").strip()
-    if not wh:
-        wh = os.environ.get("STRIPE_WEBHOOK_SECRET", "").strip()
-    if not wh:
-        raise HTTPException(
-            status_code=503,
-            detail="Stripe webhook signing secret not configured (STRIPE_INVOICE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET)",
-        )
-    if not stripe_signature:
-        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
-
-    payload = await request.body()
-    try:
-        event = stripe.Webhook.construct_event(payload, stripe_signature, wh)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="Invalid payload") from exc
-    except stripe.SignatureVerificationError as exc:
-        raise HTTPException(status_code=400, detail="Invalid signature") from exc
-
-    if event.get("type") != "checkout.session.completed":
-        return {"received": True}
-
-    if not await crud.claim_stripe_webhook_event(db, event["id"]):
-        return {"received": True, "duplicate": True}
-
-    parsed = parse_checkout_session_completed(event)
-    if not parsed:
-        return {"received": True}
-
-    invoice = await crud.get_invoice_by_id(db, parsed["invoice_id"])
-    if not invoice:
-        logger.warning("stripe invoice webhook: unknown invoice_id=%s", parsed["invoice_id"])
-        return {"received": True}
-
-    if invoice.status in ("paid", "cancelled"):
-        return {"received": True}
-
-    if (invoice.currency or "GBP").upper() != parsed["currency"]:
-        logger.warning("stripe invoice webhook: currency mismatch for invoice=%s", invoice.id)
-        return {"received": True}
-
-    expected = Decimal(str(invoice.total_amount))
-    paid_gbp = Decimal(parsed["amount_total_minor"]) / Decimal(100)
-    if abs(expected - paid_gbp) > Decimal("0.02"):
-        logger.warning("stripe invoice webhook: amount mismatch for invoice=%s", invoice.id)
-        return {"received": True}
-
-    inv_str = str(invoice.id)
-    if await crud.has_payment_with_reference(db, inv_str, parsed["checkout_session_id"]):
-        return {"received": True}
-
-    pdata = schemas.InvoicePaymentCreate(
-        amount=paid_gbp,
-        payment_method=schemas.PaymentMethod.STRIPE,
-        reference_number=parsed["checkout_session_id"][:100],
-        notes="Stripe Checkout (Payment Link)",
-    )
-    await crud.create_payment(db, inv_str, pdata)
-    await crud.update_invoice_status_from_payments(db, inv_str)
-    try:
-        await notify_seller_invoice_paid(
-            user_id=invoice.user_id,
-            invoice_id=inv_str,
-            invoice_number=str(invoice.invoice_number),
-            amount_gbp=str(float(paid_gbp)),
-            checkout_session_id=parsed["checkout_session_id"],
-        )
-    except Exception as exc:
-        logger.warning("seller invoice-paid notify error: %s", exc)
-    return {"received": True, "paid_invoice_id": inv_str}
 
 if __name__ == "__main__":
     import uvicorn

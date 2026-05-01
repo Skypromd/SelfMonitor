@@ -4,11 +4,12 @@ This module handles automatic synchronization of invoice data to create
 corresponding transaction records for comprehensive financial reporting
 """
 
-import httpx
 import asyncio
-from typing import Optional, Dict, Any, List
-from datetime import datetime
 import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import httpx
 
 from . import models, schemas
 
@@ -309,3 +310,15 @@ class InvoiceTransactionSync:
             await asyncio.sleep(0.1)
 
         return results
+
+
+# Module-level convenience wrapper — called from main.py background tasks.
+async def sync_invoice_to_transactions(invoice_id: str, auth_token: str) -> None:
+    """Fire-and-forget sync of a single invoice to transactions-service."""
+    syncer = InvoiceTransactionSync()
+    try:
+        await syncer.sync_invoice_to_transactions(  # type: ignore[arg-type]
+            invoice_id, auth_token  # type: ignore[arg-type]
+        )
+    except Exception as exc:
+        logger.warning("Background sync failed for invoice %s: %s", invoice_id, exc)

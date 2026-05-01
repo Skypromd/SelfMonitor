@@ -1,6 +1,5 @@
 """Tests for Voice Gateway service."""
 
-import base64
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -18,8 +17,6 @@ from app.stt import transcribe
 @pytest.mark.asyncio
 async def test_transcribe_no_api_key():
     with patch.dict(os.environ, {"OPENAI_API_KEY": ""}):
-        import importlib
-
         import app.stt as stt_module
         stt_module.OPENAI_API_KEY = ""
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
@@ -41,7 +38,7 @@ async def test_transcribe_calls_openai():
 
 # ── TTS unit tests ────────────────────────────────────────────────────────────
 
-from app.tts import synthesize
+from app.tts import synthesize  # noqa: E402
 
 
 @pytest.mark.asyncio
@@ -87,7 +84,7 @@ async def test_synthesize_truncates_long_text():
 
 # ── MTD routing helper tests ──────────────────────────────────────────────────
 
-from app.main import _is_mtd_question
+from app.main import _is_mtd_question  # noqa: E402
 
 
 def test_is_mtd_question_true():
@@ -103,7 +100,7 @@ def test_is_mtd_question_false():
 
 # ── FastAPI REST smoke tests ──────────────────────────────────────────────────
 
-from fastapi.testclient import TestClient
+from fastapi.testclient import TestClient  # noqa: E402
 
 
 @pytest.fixture(scope="module")

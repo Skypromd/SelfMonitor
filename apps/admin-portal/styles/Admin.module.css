@@ -1,0 +1,1143 @@
+/* ═══════════════════════════════════════════════════════════════
+   ADMIN PORTAL — Complete CSS Module
+   All classes required by dashboard.tsx
+═══════════════════════════════════════════════════════════════ */
+
+/* ── Layout ─────────────────────────────────────────────────────── */
+.dashboard {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 4rem;
+}
+
+.pageHeader {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.pageEyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--lp-accent-teal-light);
+  margin: 0 0 0.4rem;
+}
+
+.pageTitle {
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+  font-weight: 700;
+  color: var(--lp-text);
+  letter-spacing: -0.03em;
+  margin: 0 0 0.6rem;
+}
+
+.pageLead {
+  color: var(--lp-text-muted);
+  font-size: 1rem;
+  margin: 0;
+  max-width: 700px;
+}
+
+/* ── Section containers ──────────────────────────────────────────── */
+.subContainer {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--lp-bg-elevated);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.75rem;
+  margin-top: 1.5rem;
+}
+
+.sectionHeader {
+  margin-bottom: 1.25rem;
+}
+
+.sectionTitle {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--lp-text);
+  margin: 0 0 0.3rem;
+}
+
+.sectionSubtitle {
+  color: var(--lp-text-muted);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+/* ── Form inputs ─────────────────────────────────────────────────── */
+.input {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  margin-bottom: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--lp-border);
+  background: var(--lp-bg-card);
+  color: var(--lp-text);
+  font-size: 0.9rem;
+  font-family: 'Inter', sans-serif;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--lp-accent-teal);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.2);
+}
+
+.input::placeholder {
+  color: var(--lp-text-muted);
+}
+
+.categorySelect {
+  padding: 0.55rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--lp-border);
+  background: var(--lp-bg-card);
+  color: var(--lp-text);
+  font-size: 0.875rem;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+}
+
+.categorySelect:focus {
+  outline: none;
+  border-color: var(--lp-accent-teal);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+.button {
+  height: 42px;
+  padding: 0 1.25rem;
+  border: none;
+  border-radius: 10px;
+  background: var(--lp-accent-teal);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--lp-accent-teal-light);
+}
+
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  background: transparent !important;
+  border: 1px solid var(--lp-border) !important;
+  color: var(--lp-text-muted) !important;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.1) !important;
+  color: var(--lp-text) !important;
+}
+
+.tableActionButton {
+  padding: 0.3rem 0.75rem;
+  border-radius: 7px;
+  border: 1px solid var(--lp-border);
+  background: transparent;
+  color: var(--lp-accent-teal-light);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.tableActionButton:hover:not(:disabled) {
+  background: rgba(13, 148, 136, 0.15);
+  border-color: var(--lp-accent-teal);
+}
+
+.tableActionButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.actionBtn {
+  padding: 0.3rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(13, 148, 136, 0.12);
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  color: var(--lp-accent-teal-light);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.actionBtn:hover {
+  background: rgba(13, 148, 136, 0.25);
+}
+
+/* ── Tab Navigation ──────────────────────────────────────────────── */
+.adminTabBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--lp-border);
+  border-radius: 14px;
+  padding: 0.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.adminTab {
+  padding: 0.5rem 1.1rem;
+  border-radius: 10px;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+
+.adminTab:hover {
+  background: rgba(148, 163, 184, 0.08);
+  color: #f1f5f9;
+}
+
+.adminTabActive {
+  background: rgba(13, 148, 136, 0.18);
+  color: #14b8a6;
+  font-weight: 700;
+}
+
+/* ── KPI Cards ───────────────────────────────────────────────────── */
+.kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.kpiCard {
+  background: var(--lp-bg-elevated);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.kpiLabel {
+  color: var(--lp-text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 0.4rem;
+}
+
+.kpiValue {
+  color: var(--lp-text);
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.kpiSub {
+  color: #64748b;
+  font-size: 0.75rem;
+  margin: 0.15rem 0 0;
+}
+
+/* ── MRR Bar Chart ───────────────────────────────────────────────── */
+.mrrBarChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  height: 160px;
+  padding-top: 2rem;
+}
+
+.mrrBarCol {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  height: 100%;
+}
+
+.mrrBarVal {
+  font-size: 0.65rem;
+  color: #64748b;
+  text-align: center;
+  height: 1rem;
+}
+
+.mrrBarTrack {
+  flex: 1;
+  width: 100%;
+  background: rgba(148, 163, 184, 0.1);
+  border-radius: 4px 4px 0 0;
+  display: flex;
+  align-items: flex-end;
+}
+
+.mrrBarFill {
+  width: 100%;
+  background: linear-gradient(180deg, #14b8a6 0%, #0d9488 100%);
+  border-radius: 4px 4px 0 0;
+  transition: height 0.4s ease;
+  min-height: 4px;
+}
+
+.mrrBarMonth {
+  font-size: 0.65rem;
+  color: #64748b;
+  text-align: center;
+}
+
+/* ── Plan Distribution ───────────────────────────────────────────── */
+.planDistGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+}
+
+@media (max-width: 900px) {
+  .planDistGrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 500px) {
+  .planDistGrid { grid-template-columns: 1fr; }
+}
+
+.planDistCard {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--lp-border);
+  border-left-width: 3px;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.planDistHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.planDistName {
+  color: #f1f5f9;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.planDistPrice {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.planDistCount {
+  color: #f1f5f9;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.planDistMrr {
+  color: #14b8a6;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.planDistBar {
+  height: 6px;
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 0.25rem;
+}
+
+.planDistBarFill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.planDistShare {
+  color: #64748b;
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+/* ── Plan badge ──────────────────────────────────────────────────── */
+.planBadge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 20px;
+  background: rgba(13, 148, 136, 0.15);
+  color: #14b8a6;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* ── Funnel ──────────────────────────────────────────────────────── */
+.funnelContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+.funnelStep {
+  width: 100%;
+}
+
+.funnelBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(90deg, rgba(13, 148, 136, 0.25) 0%, rgba(13, 148, 136, 0.05) 100%);
+  border-left: 3px solid #14b8a6;
+  border-radius: 0 8px 8px 0;
+  min-width: 60px;
+  transition: width 0.4s ease;
+}
+
+.funnelLabel {
+  color: #f1f5f9;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.funnelCount {
+  color: #14b8a6;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+/* ── Filters row ─────────────────────────────────────────────────── */
+.adminFiltersGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.filterField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--lp-text-muted);
+  font-weight: 500;
+}
+
+.filterField .input,
+.filterField .categorySelect {
+  margin-bottom: 0;
+}
+
+/* ── Table ───────────────────────────────────────────────────────── */
+.tableResponsive {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.tableCaption {
+  font-size: 0.82rem;
+  color: var(--lp-text-muted);
+  margin: 0 0 0.6rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.table th,
+.table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--lp-text-muted);
+  white-space: nowrap;
+}
+
+.table td {
+  color: var(--lp-text);
+  font-size: 0.875rem;
+}
+
+.table tr:hover td {
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.emptyState {
+  text-align: center;
+  color: var(--lp-text-muted);
+  font-size: 0.875rem;
+  padding: 1.5rem;
+  margin: 0;
+}
+
+.positive {
+  color: #34d399;
+}
+
+.negative {
+  color: #f87171;
+}
+
+/* ── dataTable for support tab ───────────────────────────────────── */
+.dataTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.dataTable th,
+.dataTable td {
+  padding: 0.7rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.dataTable th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--lp-text-muted);
+}
+
+.dataTable td {
+  color: var(--lp-text);
+  font-size: 0.875rem;
+}
+
+.dataTable tr:hover td {
+  background: rgba(148, 163, 184, 0.04);
+}
+
+/* ── subHeader / subTitle for support ───────────────────────────── */
+.subHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.subTitle {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--lp-text);
+  margin: 0;
+}
+
+/* ── Admin form / actions ────────────────────────────────────────── */
+.adminStatusForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.adminActionsRow {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+/* ── Billing control panel ───────────────────────────────────────── */
+.billingControlPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.presetRow {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.presetButton {
+  padding: 0.35rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--lp-border);
+  background: transparent;
+  color: var(--lp-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.presetButton:hover {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--lp-text);
+}
+
+.presetButtonActive {
+  background: rgba(13, 148, 136, 0.2);
+  border-color: var(--lp-accent-teal);
+  color: #14b8a6;
+}
+
+.statusPillsRow {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.checkboxPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 20px;
+  border: 1px solid var(--lp-border);
+  background: rgba(15, 23, 42, 0.5);
+  color: var(--lp-text-muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.checkboxPill:hover {
+  border-color: var(--lp-accent-teal);
+  color: var(--lp-text);
+}
+
+.checkboxPill input[type='checkbox'] {
+  accent-color: var(--lp-accent-teal);
+}
+
+/* ── Billing visual grid ─────────────────────────────────────────── */
+.billingVisualGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .billingVisualGrid { grid-template-columns: 1fr; }
+}
+
+/* ── Chart cards ─────────────────────────────────────────────────── */
+.chartCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem 1rem;
+}
+
+.chartTitle {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  margin: 0 0 0.4rem;
+}
+
+.chartSubtitle {
+  font-size: 0.78rem;
+  color: var(--lp-text-muted);
+  margin: 0 0 0.75rem;
+}
+
+.lineChart {
+  width: 100%;
+  height: 100px;
+  overflow: visible;
+}
+
+.lineChartPath {
+  fill: none;
+  stroke: #14b8a6;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* ── Bar chart card (partner billing) ───────────────────────────── */
+.barChartCard {
+  background: var(--lp-bg-card);
+  border: 1px solid var(--lp-border);
+  border-radius: 14px;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.barRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.barLabel {
+  min-width: 110px;
+  max-width: 120px;
+  color: var(--lp-text-muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barTrack {
+  flex: 1;
+  height: 10px;
+  background: rgba(148, 163, 184, 0.12);
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  background: var(--lp-accent-teal);
+  border-radius: 5px;
+  transition: width 0.4s ease;
+}
+
+.barValue {
+  min-width: 70px;
+  text-align: right;
+  color: var(--lp-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ── Invoice export / action groups ─────────────────────────────── */
+.invoiceExportGroup {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.invoiceActionGroup {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ── AI Agent ────────────────────────────────────────────────────── */
+.agentStatusRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.25rem;
+  background: rgba(13, 148, 136, 0.07);
+  border: 1px solid rgba(13, 148, 136, 0.2);
+  border-radius: 12px;
+  flex-wrap: wrap;
+}
+
+.agentStatusLabel {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.permMatrix {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.permRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--lp-border);
+  border-radius: 8px;
+  gap: 1rem;
+}
+
+.permToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  flex: 1;
+}
+
+.permLabel {
+  color: #cbd5e1;
+  font-size: 0.9rem;
+}
+
+.permComingSoon {
+  font-size: 0.7rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 20px;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+}
+
+/* ── System Health ───────────────────────────────────────────────── */
+.healthGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 900px) {
+  .healthGrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 500px) {
+  .healthGrid { grid-template-columns: 1fr; }
+}
+
+.healthCard {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.healthCardTop {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.healthDot {
+  font-size: 1rem;
+}
+
+.healthName {
+  color: #f1f5f9;
+  font-size: 0.9rem;
+}
+
+.healthPort {
+  color: #64748b;
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.healthStatus {
+  font-size: 0.82rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+/* ── Support contact grid ────────────────────────────────────────── */
+.supportContactGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.75rem;
+}
+
+@media (max-width: 900px) {
+  .supportContactGrid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 500px) {
+  .supportContactGrid { grid-template-columns: 1fr; }
+}
+
+.supportContactCard {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--lp-border);
+  border-radius: 12px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+
+.supportContactIcon {
+  font-size: 1.6rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.supportContactTitle {
+  display: block;
+  color: #f1f5f9;
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 0.2rem;
+}
+
+.supportContactSub {
+  color: #94a3b8;
+  font-size: 0.82rem;
+  margin: 0;
+}
+
+.supportLink {
+  color: #14b8a6;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.supportLink:hover {
+  text-decoration: underline;
+}
+
+/* ── Feedback / ticket form ──────────────────────────────────────── */
+.feedbackForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.starRow {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.starBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+  line-height: 1;
+  transition: transform 0.1s;
+}
+
+.starBtn:hover {
+  transform: scale(1.15);
+}
+
+.ratingLabel {
+  color: #f59e0b;
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-left: 0.75rem;
+}
+
+.supportTextarea {
+  width: 100%;
+  min-height: 100px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--lp-border);
+  border-radius: 10px;
+  color: #f1f5f9;
+  font-size: 0.9rem;
+  padding: 0.85rem 1rem;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.18s;
+}
+
+.supportTextarea:focus {
+  outline: none;
+  border-color: #14b8a6;
+}
+
+.ticketForm {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ticketFieldRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 600px) {
+  .ticketFieldRow { grid-template-columns: 1fr; }
+}
+
+.supportSuccessBanner {
+  background: rgba(13, 148, 136, 0.12);
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  border-radius: 10px;
+  padding: 1rem 1.5rem;
+  color: #14b8a6;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+/* ── Modal ───────────────────────────────────────────────────────── */
+.modalBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modalCard {
+  background: var(--lp-bg-elevated);
+  border: 1px solid var(--lp-border);
+  border-radius: 16px;
+  padding: 1.75rem;
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
+}
+
+.modalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.modalTitle {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--lp-text);
+  margin: 0;
+}
+
+.modalGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.modalMetric {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--lp-border);
+  border-radius: 10px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.modalLabel {
+  font-size: 0.75rem;
+  color: var(--lp-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.modalValue {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--lp-text);
+}
+
+/* ── Toasts ──────────────────────────────────────────────────────── */
+.toastViewport {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  z-index: 2000;
+  pointer-events: none;
+  max-width: 360px;
+}
+
+.toastItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  pointer-events: all;
+  animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.toastSuccess {
+  background: rgba(13, 148, 136, 0.15);
+  border-color: rgba(13, 148, 136, 0.4);
+  color: #5eead4;
+}
+
+.toastError {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+
+.toastInfo {
+  background: rgba(99, 102, 241, 0.15);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+}
+
+.toastClose {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  font-size: 1.25rem;
+  line-height: 1;
+  opacity: 0.7;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.toastClose:hover {
+  opacity: 1;
+}

@@ -1,47 +1,14 @@
 import type { AppProps } from 'next/app';
-import type { NextRouter } from 'next/router';
 import { useRouter } from 'next/router';
 import { useContext, useEffect, useState } from 'react';
 import ErrorBoundary from '../components/ErrorBoundary';
-import AdminLayout from '../components/AdminLayout';
-import ClientLayout from '../components/ClientLayout';
+import Layout from '../components/Layout';
 import { I18nContext, I18nProvider } from '../context/i18n';
-import {
-  ADMIN_SUBDOMAIN_ENABLED,
-  adminSurfaceUrl,
-  clientSurfaceUrl,
-  isAdminHostname,
-} from '../lib/adminSurface';
 import '../styles/globals.css';
 
-function navigateTo(router: NextRouter, pathOrUrl: string) {
-  if (typeof window !== 'undefined' && pathOrUrl.startsWith('http')) {
-    window.location.href = pathOrUrl;
-    return;
-  }
-  void router.replace(pathOrUrl);
-}
-
-const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || '/api/auth';
-/** Same-origin path — proxied to gateway by `next.config.js` rewrites (avoids cross-origin :8000 from the browser) */
-const LOCALIZATION_URL = '/api/localization';
-
-/** Dev: set NEXT_PUBLIC_SKIP_I18N_FETCH=1 to avoid calling :8000 when the gateway is not running */
-const SKIP_I18N_FETCH = process.env.NEXT_PUBLIC_SKIP_I18N_FETCH === '1';
-
-let i18nOfflineNotified = false;
-
-const PUBLIC_PATHS = new Set([
-  '/',
-  '/register',
-  '/login',
-  '/welcome',
-  '/checkout-success',
-  '/checkout-cancel',
-  '/forgot-password',
-  '/reset-password',
-  '/admin/login',
-]);
+const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || 'http://localhost:8000/api';
+const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || 'http://localhost:8001';
+const LOCALIZATION_URL = process.env.NEXT_PUBLIC_LOCALIZATION_SERVICE_URL || `${API_GATEWAY_URL}/localization`;
 
 type AuthUser = {
   email: string;
@@ -77,66 +44,27 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser>({ email: '', is_admin: false });
   const [isUserLoaded, setIsUserLoaded] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const router = useRouter();
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = localStorage.getItem('smTheme');
-    const theme = saved === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    setIsDarkMode(theme === 'dark');
-  }, []);
-
-  const handleToggleTheme = () => {
-    const next = isDarkMode ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    if (typeof window !== 'undefined') localStorage.setItem('smTheme', next);
-    setIsDarkMode(!isDarkMode);
-  };
+  const handleToggleTheme = () => setIsDarkMode((prev) => !prev);
   const { setTranslations, setLocale } = useContext(I18nContext);
   const { locale, defaultLocale } = router;
 
   useEffect(() => {
     const fetchTranslations = async () => {
       const lang = locale || defaultLocale || 'en-GB';
+      // Sync locale into context so useTranslation uses correct locale for formatting
       setLocale(lang);
-      if (SKIP_I18N_FETCH) {
-        setTranslations({});
-        return;
-      }
-      const url = (loc: string) => `${LOCALIZATION_URL}/translations/${loc}/all`;
       try {
-        let res = await fetch(url(lang));
-        if (res.status === 404 && lang !== 'en-GB') {
-          res = await fetch(url('en-GB'));
+        const response = await fetch(`${LOCALIZATION_URL}/translations/${lang}/all`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch translations');
         }
-        if (!res.ok) {
-          throw new Error(`Failed to fetch translations (${res.status})`);
-        }
-        setTranslations(await res.json());
+        const data = await response.json();
+        setTranslations(data);
       } catch (error) {
-        setTranslations({});
-        if (process.env.NODE_ENV !== 'development') {
-          return;
-        }
-        const msg = error instanceof Error ? error.message : String(error);
-        const statusMatch = msg.match(/Failed to fetch translations \((\d+)\)/);
-        const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 0;
-        const gatewayDown =
-          (error instanceof TypeError && msg === 'Failed to fetch') ||
-          msg.includes('NetworkError') ||
-          (statusCode >= 500 && statusCode < 600);
-        if (gatewayDown) {
-          if (!i18nOfflineNotified) {
-            i18nOfflineNotified = true;
-            console.info(
-              '[i18n] API gateway недоступен (localhost:8000 или прокси Next вернул 5xx) — переводы пропущены. Запуск бэкенда: из корня репозитория `scripts/start_backend_v1.ps1` или `scripts/start_backend_v1.sh` (нужен Docker Desktop).',
-            );
-          }
-          return;
-        }
-        console.warn('[i18n] Translations error:', msg);
+        console.error('Could not load translations:', error);
       }
     };
 
@@ -160,84 +88,22 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
   };
 
   useEffect(() => {
-    if (!router.isReady) return;
     const saved = localStorage.getItem('preferredLocale');
-    if (!saved && router.pathname === '/') {
-      void router.replace('/welcome');
+    if (!saved) {
+      localStorage.setItem('preferredLocale', 'en-GB');
     }
-  }, [router.isReady, router.pathname, router]);
+  }, [router]);
 
   useEffect(() => {
-    if (!router.isReady) return;
     const storedToken = sessionStorage.getItem('authToken');
     if (storedToken) {
       setToken(storedToken);
       setUser(decodeUserFromToken(storedToken));
       fetchUserInfo(storedToken);
-      return;
+    } else if (router.pathname !== '/' && router.pathname !== '/landing' && router.pathname !== '/register' && router.pathname !== '/login' && router.pathname !== '/welcome' && router.pathname !== '/checkout-success' && router.pathname !== '/checkout-cancel' && router.pathname !== '/forgot-password' && router.pathname !== '/reset-password') {
+      router.replace('/');
     }
-    if (PUBLIC_PATHS.has(router.pathname)) return;
-
-    const next = encodeURIComponent(router.asPath || '/dashboard');
-    const adminEntry =
-      router.pathname === '/admin' ||
-      (router.pathname.startsWith('/admin/') && router.pathname !== '/admin/login');
-    const dest = adminEntry ? `/admin/login?next=${next}` : `/login?next=${next}`;
-    void router.replace(dest);
-  }, [router.isReady, router.pathname, router.asPath, router]);
-
-  /** Дубль middleware: на операторском хосте не показывать клиентские страницы (CSR / обход `/_next/data`). */
-  useEffect(() => {
-    if (!router.isReady || typeof window === 'undefined') return;
-    if (!ADMIN_SUBDOMAIN_ENABLED) return;
-    if (!isAdminHostname(window.location.hostname)) return;
-    const pathname = router.pathname;
-    if (pathname.startsWith('/admin') || pathname === '/billing' || pathname.startsWith('/billing/')) {
-      return;
-    }
-    const path = (router.asPath || '/').split('#')[0];
-    window.location.replace(clientSurfaceUrl(path));
-  }, [router.isReady, router.pathname, router.asPath]);
-
-  /** Не вызывать router.* во время render — только в эффектах (иначе Next: Abort fetching component). */
-  useEffect(() => {
-    const onAdminApp =
-      router.pathname.startsWith('/admin') && router.pathname !== '/admin/login';
-    if (!router.isReady || !onAdminApp || !token) return;
-    if (!isUserLoaded) return;
-    if (!user.is_admin) {
-      navigateTo(router, clientSurfaceUrl('/dashboard'));
-    }
-  }, [router.isReady, router.pathname, token, isUserLoaded, user.is_admin, router]);
-
-  /** `/billing` — аналитика и счета по всей платформе; только для админов (не клиентский кабинет). */
-  useEffect(() => {
-    if (!router.isReady || router.pathname !== '/billing' || !token) return;
-    if (!isUserLoaded) return;
-    if (!user.is_admin) {
-      navigateTo(router, clientSurfaceUrl('/dashboard'));
-    }
-  }, [router.isReady, router.pathname, token, isUserLoaded, user.is_admin, router]);
-
-  useEffect(() => {
-    const onAdminApp =
-      router.pathname.startsWith('/admin') && router.pathname !== '/admin/login';
-    if (!router.isReady || !onAdminApp || !token) return;
-    try {
-      const p = token.split('.')[1];
-      const pl = JSON.parse(atob((p.replace(/-/g, '+').replace(/_/g, '/')) + '=='));
-      if (pl.iat && (Date.now() / 1000 - pl.iat) / 60 > 60) {
-        sessionStorage.removeItem('authToken');
-        setToken(null);
-        setUser({ email: '', is_admin: false });
-        setIsUserLoaded(false);
-        const next = encodeURIComponent(router.asPath || '/admin');
-        navigateTo(router, adminSurfaceUrl(`/admin/login?next=${next}`));
-      }
-    } catch {
-      /* ignore */
-    }
-  }, [router.isReady, router.pathname, router.asPath, token, router]);
+  }, [router.pathname, router]);
 
   const handleLoginSuccess = (newToken: string) => {
     sessionStorage.setItem('authToken', newToken);
@@ -245,37 +111,11 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     const decoded = decodeUserFromToken(newToken);
     setUser(decoded);
     fetchUserInfo(newToken);
-
-    const rawNext = router.query.next;
-    const nextStr = typeof rawNext === 'string' ? rawNext : Array.isArray(rawNext) ? rawNext[0] : '';
-    const safeNext =
-      nextStr && nextStr.startsWith('/') && !nextStr.startsWith('//') ? nextStr.split('#')[0] : '';
-    const onAdminLoginPage = router.pathname === '/admin/login';
-
-    if (safeNext === '/admin' && !decoded.is_admin) {
-      navigateTo(router, clientSurfaceUrl('/dashboard'));
-    } else if (safeNext) {
-      void router.push(safeNext);
-    } else if (onAdminLoginPage) {
-      if (decoded.is_admin) {
-        void router.push('/admin');
-      } else {
-        navigateTo(router, clientSurfaceUrl('/login'));
-      }
+    const next = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('next') : null;
+    if (next && decoded.is_admin) {
+      router.push(next);
     } else {
-      if (decoded.is_admin) {
-        if (
-          typeof window !== 'undefined' &&
-          process.env.NEXT_PUBLIC_ADMIN_SUBDOMAIN_ENABLED === '1' &&
-          !isAdminHostname(window.location.hostname)
-        ) {
-          window.location.href = adminSurfaceUrl('/admin');
-        } else {
-          void router.push('/admin');
-        }
-      } else {
-        navigateTo(router, clientSurfaceUrl('/dashboard'));
-      }
+      router.push(decoded.is_admin ? '/admin' : '/dashboard');
     }
   };
 
@@ -284,33 +124,28 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     setToken(null);
     setUser({ email: '', is_admin: false });
     setIsUserLoaded(false);
-    if (typeof window !== 'undefined' && isAdminHostname(window.location.hostname)) {
-      window.location.href = adminSurfaceUrl('/admin/login');
-      return;
-    }
-    void router.push('/');
+    router.push('/');
   };
 
-  const adminShellRoute =
-    router.pathname === '/admin' ||
-    router.pathname === '/billing' ||
-    (router.pathname.startsWith('/admin/') && router.pathname !== '/admin/login');
-
-  if (adminShellRoute && token && !isUserLoaded) {
-    return null;
+  // ── Hard guard: /admin — is_admin + session freshness (< 60 min) ─────────────
+  if (router.pathname === '/admin' && token) {
+    if (!isUserLoaded) return null; // wait for /me before deciding
+    if (!user.is_admin) {
+      router.replace('/dashboard');
+      return null;
+    }
+    // If token was issued more than 60 minutes ago, force re-login
+    try {
+      const p = token.split('.')[1];
+      const pl = JSON.parse(atob((p.replace(/-/g, '+').replace(/_/g, '/')) + '=='));
+      if (pl.iat && (Date.now() / 1000 - pl.iat) / 60 > 60) {
+        handleLogout();
+        return null;
+      }
+    } catch { /* ignore */ }
   }
 
-  if (
-    router.pathname === '/' ||
-    router.pathname === '/register' ||
-    router.pathname === '/login' ||
-    router.pathname === '/welcome' ||
-    router.pathname === '/checkout-success' ||
-    router.pathname === '/checkout-cancel' ||
-    router.pathname === '/forgot-password' ||
-    router.pathname === '/reset-password' ||
-    router.pathname === '/admin/login'
-  ) {
+  if (router.pathname === '/' || router.pathname === '/landing' || router.pathname === '/register' || router.pathname === '/login' || router.pathname === '/welcome' || router.pathname === '/checkout-success' || router.pathname === '/checkout-cancel' || router.pathname === '/forgot-password' || router.pathname === '/reset-password') {
     return <Component {...pageProps} onLoginSuccess={handleLoginSuccess} />;
   }
 
@@ -318,18 +153,10 @@ function AppContent({ Component, pageProps }: AppProps<AppPageProps>) {
     return null;
   }
 
-  if (adminShellRoute && user.is_admin) {
-    return (
-      <AdminLayout onLogout={handleLogout} user={user}>
-        <Component {...pageProps} token={token} user={user} />
-      </AdminLayout>
-    );
-  }
-
   return (
-    <ClientLayout onLogout={handleLogout} user={user} isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme}>
+    <Layout onLogout={handleLogout} user={user} isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme}>
       <Component {...pageProps} token={token} user={user} />
-    </ClientLayout>
+    </Layout>
   );
 }
 
