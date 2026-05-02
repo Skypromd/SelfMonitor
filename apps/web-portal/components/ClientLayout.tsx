@@ -1,6 +1,7 @@
 import {
     Activity, Banknote, BarChart2, Bot, CalendarDays, CheckCircle, ClipboardCheck, CreditCard, ExternalLink,
     FileDown, FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
+    PackageOpen,
     Receipt,
     Settings, ShoppingBag,
     Sparkles,
@@ -100,6 +101,7 @@ export default function ClientLayout({
     { href: '/obligations',        label: 'Deadlines',          icon: <CalendarDays size={17} /> },
     { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
     { href: '/submission',       label: 'Export / Download',      icon: <FileDown size={17} /> },
+    { href: '/evidence-pack',    label: 'Evidence Pack',          icon: <PackageOpen size={17} /> },
     { href: '/tax-preparation',  label: 'Tax Return',            icon: <ClipboardCheck size={17} /> },
     { href: '/reports',          label: t('nav.reports'),        icon: <BarChart2 size={17} /> },
     { href: '/marketplace',     label: t('nav.marketplace'),  icon: <ShoppingBag size={17} /> },
