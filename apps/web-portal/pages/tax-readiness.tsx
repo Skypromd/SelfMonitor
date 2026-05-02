@@ -1,11 +1,21 @@
 import Head from 'next/head';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_ROOT = (process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api').replace(/\/$/, '');
 const FINOPS_URL = `${API_GATEWAY_ROOT}/finops`;
 const TXN_URL = `${API_GATEWAY_ROOT}/transactions`;
+
+function parseJwtClaims(jwt: string): Record<string, unknown> {
+  try {
+    const part = jwt.split('.')[1];
+    if (!part) return {};
+    return JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/'))) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 
 // ── New enriched types ──────────────────────────────────────────────────────
 type BlockerDetail = {
@@ -114,6 +124,11 @@ export default function TaxReadinessPage({ token }: Props) {
   const blockers = readiness?.blockers ?? [];
   const todayList = readiness?.today_list ?? [];
   const totalMinutes = todayList.reduce((s, b) => s + b.estimated_minutes, 0);
+
+  const hmrcDirect = useMemo(() => {
+    const claims = parseJwtClaims(token);
+    return claims.hmrc_direct_submission === true;
+  }, [token]);
 
   const scoreColor =
     score === null ? '#64748b' : score >= 80 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
@@ -250,6 +265,43 @@ export default function TaxReadinessPage({ token }: Props) {
                   </p>
                 </div>
               )}
+
+              {/* HMRC Mode card */}
+              <div className={styles.subContainer}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--lp-muted)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  HMRC Submission Mode
+                </div>
+                {hmrcDirect ? (
+                  <div>
+                    <span style={{
+                      display: 'inline-block', padding: '0.3rem 0.9rem', borderRadius: 999,
+                      background: '#0d948822', border: '1px solid #0d9488', color: '#0d9488',
+                      fontWeight: 700, fontSize: '0.8rem', marginBottom: '0.6rem',
+                    }}>
+                      Direct HMRC Submission
+                    </span>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--lp-muted)', lineHeight: 1.5 }}>
+                      Your Pro/Business account submits figures directly to HMRC MTD via OAuth. Full fraud-prevention headers required.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <span style={{
+                      display: 'inline-block', padding: '0.3rem 0.9rem', borderRadius: 999,
+                      background: '#6366f122', border: '1px solid #6366f1', color: '#6366f1',
+                      fontWeight: 700, fontSize: '0.8rem', marginBottom: '0.6rem',
+                    }}>
+                      Guided MTD Workflow
+                    </span>
+                    <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--lp-muted)', lineHeight: 1.5 }}>
+                      Your figures are prepared and reviewed here. An accountant or agent submits to HMRC on your behalf.
+                    </p>
+                  </div>
+                )}
+                <Link href="/settings" style={{ display: 'block', marginTop: '0.75rem', fontSize: '0.78rem', color: 'var(--lp-accent-teal)', textDecoration: 'none', fontWeight: 600 }}>
+                  HMRC Connection Settings →
+                </Link>
+              </div>
             </div>
 
             {/* ── Today List ── */}
@@ -390,14 +442,6 @@ export default function TaxReadinessPage({ token }: Props) {
     </>
   );
 }
-
-          <p style={{ color: 'var(--lp-muted)', fontSize: '0.9rem', padding: '2rem 0' }}>Loading…</p>
-        )}
-
-        {error && <p className={styles.error}>{error}</p>}
-
-        {!loading && (
-          <>
             {/* Score card */}
             <div
               className={styles.subContainer}

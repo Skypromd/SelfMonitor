@@ -240,6 +240,7 @@ export default function SubmissionPage({ token }: Props) {
   const [txExportBusy, setTxExportBusy] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(false);
   const [mtdDraft, setMtdDraft] = useState<MtdDraftLatest | null>(null);
+  const [submitAttempts, setSubmitAttempts] = useState(0);
 
   const year = TAX_YEARS[yearIdx];
 
@@ -407,11 +408,26 @@ export default function SubmissionPage({ token }: Props) {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(formatApiDetail(data.detail) || 'Submission failed');
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
+          throw new Error('HMRC authorisation expired. Please reconnect your HMRC account under Settings → HMRC Connection, then retry.');
+        } else if (res.status === 429) {
+          throw new Error('HMRC is rate-limiting requests. Please wait a few minutes and try again.');
+        } else if (res.status >= 500) {
+          throw new Error('HMRC service is temporarily unavailable. Your figures have been saved — retry in a few minutes.');
+        }
+        throw new Error(formatApiDetail(data.detail) || 'Submission failed');
+      }
       setSubmitResult(data);
       setStep('submitted');
+      setSubmitAttempts(0);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
+      setSubmitAttempts((n) => n + 1);
+      if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
+        setError('Could not reach HMRC — check your connection. Your data is saved; retry when online.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Unexpected error');
+      }
     } finally {
       setLoading(false);
     }
@@ -888,7 +904,19 @@ export default function SubmissionPage({ token }: Props) {
               </div>
             )}
 
-            {error && <p style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '0.875rem' }}>{error}</p>}
+            {error && (
+              <div style={{ marginBottom: '1rem' }}>
+                <p style={{ color: '#ef4444', margin: '0 0 0.4rem', fontSize: '0.875rem' }}>{error}</p>
+                {submitAttempts >= 1 && (
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--lp-muted)' }}>
+                    Attempt {submitAttempts} failed.{' '}
+                    {submitAttempts < 3
+                      ? 'HMRC transient errors usually resolve within 2–5 minutes.'
+                      : 'If this persists, check your HMRC connection under Settings or contact support.'}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button
@@ -896,7 +924,9 @@ export default function SubmissionPage({ token }: Props) {
                 disabled={loading || (requiresUnverifiedCisAck && !unverifiedCisSubmitAck)}
                 style={{ flex: 1, padding: '0.9rem', background: '#0d9488', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: '1rem', cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.7 : 1 }}
               >
-                {loading ? 'Submitting to HMRC…' : 'Confirm & Submit to HMRC'}
+                {loading
+                  ? submitAttempts > 0 ? 'Retrying…' : 'Submitting to HMRC…'
+                  : submitAttempts > 0 ? `Retry Submission (attempt ${submitAttempts + 1})` : 'Confirm & Submit to HMRC'}
               </button>
               <button
                 onClick={() => setStep('review')}
