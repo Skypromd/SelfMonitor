@@ -13,6 +13,9 @@ export default function BankCallbackPage() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Connecting to your bank…');
   const [connId, setConnId] = useState('');
+  const [attempt, setAttempt] = useState(0);
+
+  const MAX_ATTEMPTS = 3;
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -46,7 +49,9 @@ export default function BankCallbackPage() {
       return;
     }
 
-    const exchange = async () => {
+    const exchange = async (tryNum: number) => {
+      setAttempt(tryNum);
+      setMessage(tryNum > 1 ? `Retrying… (attempt ${tryNum} of ${MAX_ATTEMPTS})` : 'Connecting to your bank…');
       try {
         const providerId =
           (typeof window !== 'undefined' && sessionStorage.getItem('bankingProviderId')) || '';
@@ -69,13 +74,19 @@ export default function BankCallbackPage() {
         // Redirect after short delay
         setTimeout(() => void router.replace('/transactions'), 2500);
       } catch (err) {
-        setStatus('error');
-        setMessage(err instanceof Error ? err.message : 'Connection failed');
-        if (typeof window !== 'undefined') sessionStorage.removeItem('bankingProviderId');
+        if (tryNum < MAX_ATTEMPTS) {
+          const delay = 1500 * tryNum; // 1.5 s, 3 s
+          setMessage(`Attempt ${tryNum} failed — retrying in ${delay / 1000}s…`);
+          setTimeout(() => void exchange(tryNum + 1), delay);
+        } else {
+          setStatus('error');
+          setMessage(err instanceof Error ? err.message : 'Connection failed');
+          if (typeof window !== 'undefined') sessionStorage.removeItem('bankingProviderId');
+        }
       }
     };
 
-    void exchange();
+    void exchange(1);
   }, [router.isReady, router.query, router]);
 
   return (
@@ -106,6 +117,11 @@ export default function BankCallbackPage() {
             <div style={{ fontSize: '2.5rem', marginBottom: '1rem', animation: 'spin 1.2s linear infinite', display: 'inline-block' }}>⏳</div>
             <h2 style={{ marginTop: 0 }}>Connecting…</h2>
             <p style={{ color: 'var(--lp-muted)' }}>{message}</p>
+            {attempt > 1 && (
+              <p style={{ fontSize: '0.8rem', color: '#f59e0b', marginTop: '0.35rem' }}>
+                Attempt {attempt} of {MAX_ATTEMPTS}
+              </p>
+            )}
           </>
         )}
 
@@ -130,12 +146,23 @@ export default function BankCallbackPage() {
             <div style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>❌</div>
             <h2 style={{ marginTop: 0, color: '#ef4444' }}>Connection Failed</h2>
             <p style={{ color: 'var(--lp-muted)' }}>{message}</p>
-            <button
-              onClick={() => void router.replace('/transactions')}
-              style={{ marginTop: '1.5rem', padding: '0.75rem 2rem', background: 'var(--lp-accent-teal)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer' }}
-            >
-              Back to Transactions
-            </button>
+            <p style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginTop: '0.25rem' }}>
+              Failed after {MAX_ATTEMPTS} attempts. Check your connection and try again.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => void router.replace('/connect-bank')}
+                style={{ padding: '0.65rem 1.5rem', background: 'var(--lp-accent-teal)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer' }}
+              >
+                Try again →
+              </button>
+              <button
+                onClick={() => void router.replace('/transactions')}
+                style={{ padding: '0.65rem 1.5rem', background: 'transparent', color: 'var(--lp-muted)', border: '1px solid var(--lp-border)', borderRadius: 10, fontWeight: 500, cursor: 'pointer' }}
+              >
+                Back to Transactions
+              </button>
+            </div>
           </>
         )}
       </div>

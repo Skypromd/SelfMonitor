@@ -235,7 +235,22 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                 CIS record saved successfully.
               </p>
             )}
-            {uploadErr && <p style={{ color: '#ef4444', marginBottom: '0.75rem', fontSize: '0.85rem' }}>{uploadErr}</p>}
+            {uploadErr && (
+              <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+                <p style={{ color: '#ef4444', margin: 0, fontSize: '0.85rem' }}>{uploadErr}</p>
+                <button
+                  type="button"
+                  onClick={() => { setUploadErr(''); setOcr(null); if (fileInputRef.current) { fileInputRef.current.value = ''; fileInputRef.current.click(); } }}
+                  style={{
+                    padding: '0.25rem 0.75rem', borderRadius: 8, border: 'none',
+                    background: 'var(--lp-accent-teal)', color: '#fff', fontWeight: 600,
+                    fontSize: '0.78rem', cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                >
+                  Try again →
+                </button>
+              </div>
+            )}
             {!ocr && (
               <label style={{ display: 'block' }}>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
@@ -248,7 +263,11 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                   onChange={handleFileChange}
                   style={{ fontSize: '0.85rem' }}
                 />
-                {uploading && <p style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)', marginTop: 6 }}>Analysing document…</p>}
+                {uploading && (
+                  <p style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)', marginTop: 6 }}>
+                    Analysing document… this may take a few seconds.
+                  </p>
+                )}
               </label>
             )}
             {ocr && (

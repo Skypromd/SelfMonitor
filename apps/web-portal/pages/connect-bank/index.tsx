@@ -45,6 +45,7 @@ export default function ConnectBankPage({ token }: ConnectBankPageProps) {
   const [loadError, setLoadError] = useState('');
   const [connectingId, setConnectingId] = useState('');
   const [flowError, setFlowError] = useState('');
+  const [lastConnectedId, setLastConnectedId] = useState('');
   const [syncQuota, setSyncQuota] = useState<{ daily_limit: number; remaining: number } | null>(null);
   const [statementExportBusy, setStatementExportBusy] = useState(false);
   const [statementExportError, setStatementExportError] = useState('');
@@ -90,6 +91,7 @@ export default function ConnectBankPage({ token }: ConnectBankPageProps) {
 
   const startConnect = async (providerId: string) => {
     setFlowError('');
+    setLastConnectedId(providerId);
     setConnectingId(providerId);
     try {
       const callbackUrl =
@@ -170,7 +172,24 @@ export default function ConnectBankPage({ token }: ConnectBankPageProps) {
       <div className={styles.subContainer} style={{ marginBottom: '1.5rem' }}>
         <h2 style={{ marginTop: 0 }}>Providers</h2>
         {loadError && <p className={styles.error}>{loadError}</p>}
-        {flowError && <p className={styles.error}>{flowError}</p>}
+        {flowError && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+            <p className={styles.error} style={{ margin: 0 }}>{flowError}</p>
+            {lastConnectedId && (
+              <button
+                type="button"
+                onClick={() => void startConnect(lastConnectedId)}
+                style={{
+                  padding: '0.3rem 0.85rem', borderRadius: 8, border: 'none',
+                  background: 'var(--lp-accent-teal)', color: '#fff', fontWeight: 600,
+                  fontSize: '0.82rem', cursor: 'pointer', whiteSpace: 'nowrap',
+                }}
+              >
+                Try again →
+              </button>
+            )}
+          </div>
+        )}
         {!loadError && providers.length === 0 && <p className={styles.emptyState}>No providers registered.</p>}
         <div
           style={{
