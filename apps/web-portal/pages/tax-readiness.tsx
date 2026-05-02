@@ -7,12 +7,61 @@ const API_GATEWAY_ROOT = (process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api').rep
 const FINOPS_URL = `${API_GATEWAY_ROOT}/finops`;
 const TXN_URL = `${API_GATEWAY_ROOT}/transactions`;
 
+// ── New enriched types ──────────────────────────────────────────────────────
+type BlockerDetail = {
+  id: string;
+  label: string;
+  count: number;
+  severity: 'blocking' | 'attention' | 'info';
+  estimated_minutes: number;
+  impact_points: number;
+  action_label: string;
+  action_route: string;
+};
+
+type TaxReserve = {
+  income_gbp: number;
+  expenses_gbp: number;
+  profit_gbp: number;
+  income_tax_gbp: number;
+  class4_nic_gbp: number;
+  total_tax_estimated_gbp: number;
+  cis_deductions_verified_gbp: number;
+  cis_deductions_unverified_gbp: number;
+  net_tax_due_gbp: number;
+  confidence: 'low' | 'medium' | 'high';
+  disclaimer: string;
+};
+
+function fmt(n: number) {
+  return `£${Math.round(n).toLocaleString('en-GB')}`;
+}
+
+function SeverityBadge({ severity }: { severity: BlockerDetail['severity'] }) {
+  const map = {
+    blocking: { bg: '#ef444420', border: '#ef4444', color: '#ef4444', label: 'Blocking' },
+    attention: { bg: '#f59e0b20', border: '#f59e0b', color: '#f59e0b', label: 'Attention' },
+    info: { bg: '#0891b220', border: '#0891b2', color: '#0891b2', label: 'Info' },
+  };
+  const s = map[severity];
+  return (
+    <span style={{
+      padding: '2px 7px', borderRadius: 999, fontSize: '0.7rem', fontWeight: 700,
+      background: s.bg, border: `1px solid ${s.border}`, color: s.color,
+    }}>
+      {s.label}
+    </span>
+  );
+}
+
 type ReadinessData = {
   uncategorized_count: number;
   missing_business_pct: number;
   unmatched_receipts: number;
   cis_unverified: number;
   score: number;
+  blockers: BlockerDetail[];
+  today_list: BlockerDetail[];
 };
 
 type MtdStatus = {
@@ -23,19 +72,12 @@ type MtdStatus = {
   period_end?: string;
 };
 
-type Blocker = {
-  label: string;
-  count: number;
-  action: string;
-  href: string;
-  color: string;
-};
-
 type Props = { token: string };
 
 export default function TaxReadinessPage({ token }: Props) {
   const [readiness, setReadiness] = useState<ReadinessData | null>(null);
   const [mtdStatus, setMtdStatus] = useState<MtdStatus | null>(null);
+  const [reserve, setReserve] = useState<TaxReserve | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -43,22 +85,21 @@ export default function TaxReadinessPage({ token }: Props) {
     if (!token) return;
     setLoading(true);
     setError('');
-
     const headers = { Authorization: `Bearer ${token}` };
 
     const fetchAll = async () => {
       try {
-        const [rdRes, mtdRes] = await Promise.allSettled([
+        const [rdRes, mtdRes, resRes] = await Promise.allSettled([
           fetch(`${TXN_URL}/transactions/readiness`, { headers }),
           fetch(`${FINOPS_URL}/mtd/status`, { headers }),
+          fetch(`${TXN_URL}/transactions/tax-reserve`, { headers }),
         ]);
-
-        if (rdRes.status === 'fulfilled' && rdRes.value.ok) {
+        if (rdRes.status === 'fulfilled' && rdRes.value.ok)
           setReadiness((await rdRes.value.json()) as ReadinessData);
-        }
-        if (mtdRes.status === 'fulfilled' && mtdRes.value.ok) {
+        if (mtdRes.status === 'fulfilled' && mtdRes.value.ok)
           setMtdStatus((await mtdRes.value.json()) as MtdStatus);
-        }
+        if (resRes.status === 'fulfilled' && resRes.value.ok)
+          setReserve((await resRes.value.json()) as TaxReserve);
       } catch {
         setError('Failed to load readiness data.');
       } finally {
@@ -69,46 +110,19 @@ export default function TaxReadinessPage({ token }: Props) {
     void fetchAll();
   }, [token]);
 
-  const blockers: Blocker[] = readiness
-    ? [
-        {
-          label: 'Uncategorised transactions',
-          count: readiness.uncategorized_count,
-          action: 'Categorise now',
-          href: '/transactions',
-          color: '#f59e0b',
-        },
-        {
-          label: 'Expenses without business %',
-          count: readiness.missing_business_pct,
-          action: 'Set business use',
-          href: '/transactions',
-          color: '#ef4444',
-        },
-        {
-          label: 'Unmatched receipts',
-          count: readiness.unmatched_receipts,
-          action: 'Match receipts',
-          href: '/transactions',
-          color: '#8b5cf6',
-        },
-        {
-          label: 'CIS records unverified',
-          count: readiness.cis_unverified,
-          action: 'Verify CIS',
-          href: '/transactions',
-          color: '#0891b2',
-        },
-      ].filter((b) => b.count > 0)
-    : [];
-
   const score = readiness?.score ?? null;
+  const blockers = readiness?.blockers ?? [];
+  const todayList = readiness?.today_list ?? [];
+  const totalMinutes = todayList.reduce((s, b) => s + b.estimated_minutes, 0);
 
   const scoreColor =
     score === null ? '#64748b' : score >= 80 ? '#22c55e' : score >= 50 ? '#f59e0b' : '#ef4444';
-
   const scoreLabel =
     score === null ? '—' : score >= 80 ? 'Ready' : score >= 50 ? 'In Progress' : 'Needs Attention';
+  const statusColor = (st?: string) =>
+    !st ? '#64748b' : st === 'overdue' ? '#ef4444' : st === 'fulfilled' ? '#22c55e' : '#f59e0b';
+  const confidenceColor = (c?: string) =>
+    c === 'high' ? '#22c55e' : c === 'medium' ? '#f59e0b' : '#94a3b8';
 
   return (
     <>
@@ -116,16 +130,267 @@ export default function TaxReadinessPage({ token }: Props) {
         <title>Tax Readiness — MyNetTax</title>
       </Head>
       <div className={styles.pageContainer}>
-        {/* Header */}
         <div className={styles.pageHeader}>
           <p className={styles.pageEyebrow}>Quarter Readiness</p>
-          <h1 className={styles.pageTitle}>Tax Readiness</h1>
+          <h1 className={styles.pageTitle}>Tax Readiness Console</h1>
           <p className={styles.pageLead}>
-            Fix blockers before your MTD submission deadline. Every resolved item improves your readiness score.
+            Fix blockers before your MTD submission deadline. Every resolved item improves your score.
           </p>
         </div>
 
         {loading && (
+          <p style={{ color: 'var(--lp-muted)', fontSize: '0.9rem', padding: '2rem 0' }}>Loading…</p>
+        )}
+        {error && <p className={styles.error}>{error}</p>}
+
+        {!loading && (
+          <>
+            {/* ── Score + MTD Status + Reserve row ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+
+              {/* Score card */}
+              <div className={styles.subContainer} style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+                <div style={{ textAlign: 'center', minWidth: 72 }}>
+                  <div style={{ fontSize: '2.8rem', fontWeight: 800, color: scoreColor, lineHeight: 1 }}>
+                    {score ?? '—'}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--lp-muted)', marginTop: 2 }}>/ 100</div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    display: 'inline-block', padding: '0.2rem 0.75rem', borderRadius: 999,
+                    background: `${scoreColor}22`, border: `1px solid ${scoreColor}55`,
+                    color: scoreColor, fontSize: '0.78rem', fontWeight: 700, marginBottom: '0.4rem',
+                  }}>
+                    {scoreLabel}
+                  </div>
+                  <div style={{ height: 8, borderRadius: 999, background: 'var(--lp-border)', overflow: 'hidden', marginBottom: 6 }}>
+                    <div style={{ height: '100%', width: `${score ?? 0}%`, background: scoreColor, borderRadius: 999, transition: 'width 0.6s ease' }} />
+                  </div>
+                  <p style={{ color: 'var(--lp-muted)', fontSize: '0.82rem', margin: 0 }}>
+                    {blockers.length === 0
+                      ? 'All clear — records ready for submission.'
+                      : `${blockers.length} blocker${blockers.length > 1 ? 's' : ''} to resolve`}
+                  </p>
+                </div>
+              </div>
+
+              {/* MTD Status card */}
+              <div className={styles.subContainer}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--lp-muted)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  MTD Obligation
+                </div>
+                {mtdStatus ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.88rem' }}>
+                    {mtdStatus.quarter && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--lp-muted)' }}>Quarter</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{mtdStatus.quarter}</strong>
+                      </div>
+                    )}
+                    {mtdStatus.status && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--lp-muted)' }}>Status</span>
+                        <strong style={{ color: statusColor(mtdStatus.status), textTransform: 'capitalize' }}>{mtdStatus.status}</strong>
+                      </div>
+                    )}
+                    {mtdStatus.due_date && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--lp-muted)' }}>Due</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                          {new Date(mtdStatus.due_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </strong>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p style={{ color: 'var(--lp-muted)', fontSize: '0.85rem', margin: 0 }}>
+                    No obligation data — <Link href="/tax-preparation" style={{ color: 'var(--lp-accent-teal)' }}>connect HMRC →</Link>
+                  </p>
+                )}
+                <Link href="/obligations" style={{ display: 'block', marginTop: '0.75rem', fontSize: '0.78rem', color: 'var(--lp-accent-teal)', textDecoration: 'none', fontWeight: 600 }}>
+                  View all deadlines →
+                </Link>
+              </div>
+
+              {/* Tax Reserve card */}
+              {reserve && (
+                <div className={styles.subContainer}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--lp-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Tax Reserve (est.)
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: confidenceColor(reserve.confidence), fontWeight: 600 }}>
+                      {reserve.confidence} confidence
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '1.7rem', fontWeight: 800, color: '#ef4444', marginBottom: '0.4rem' }}>
+                    {fmt(reserve.net_tax_due_gbp)}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Income tax</span><span>{fmt(reserve.income_tax_gbp)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Class 4 NIC</span><span>{fmt(reserve.class4_nic_gbp)}</span>
+                    </div>
+                    {reserve.cis_deductions_verified_gbp > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#22c55e' }}>
+                        <span>CIS withheld (verified)</span><span>−{fmt(reserve.cis_deductions_verified_gbp)}</span>
+                      </div>
+                    )}
+                    {reserve.cis_deductions_unverified_gbp > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f59e0b' }}>
+                        <span>CIS unverified</span><span>{fmt(reserve.cis_deductions_unverified_gbp)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--lp-muted)', marginTop: '0.5rem', lineHeight: 1.4 }}>
+                    {reserve.disclaimer}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ── Today List ── */}
+            {todayList.length > 0 && (
+              <div className={styles.subContainer} style={{ marginBottom: '1.5rem', borderLeft: '3px solid #0d9488' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>
+                      Fix in {totalMinutes} minute{totalMinutes !== 1 ? 's' : ''} — Today&apos;s List
+                    </h2>
+                    <p style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: 'var(--lp-muted)' }}>
+                      Top {todayList.length} priority actions to raise your score
+                    </p>
+                  </div>
+                  <Link href="/transactions" style={{
+                    padding: '0.45rem 1.1rem', borderRadius: 8,
+                    background: '#0d9488', color: '#fff', fontWeight: 700, fontSize: '0.82rem', textDecoration: 'none',
+                  }}>
+                    Start fixing →
+                  </Link>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                  {todayList.map((b, i) => (
+                    <div key={b.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '0.75rem',
+                      padding: '0.7rem 0.9rem', borderRadius: 10,
+                      border: '1px solid var(--lp-border)', background: 'var(--lp-bg-elevated)',
+                      flexWrap: 'wrap',
+                    }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%', background: 'var(--lp-border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontWeight: 800, fontSize: '0.78rem', color: 'var(--lp-muted)', flexShrink: 0,
+                      }}>
+                        {i + 1}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 140 }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)', marginBottom: 2 }}>
+                          {b.label}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--lp-muted)', display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                          <span>⏱ ~{b.estimated_minutes} min</span>
+                          <span>+{b.impact_points}pts to score</span>
+                          <SeverityBadge severity={b.severity} />
+                        </div>
+                      </div>
+                      <Link href={b.action_route} style={{
+                        padding: '0.3rem 0.85rem', borderRadius: 7,
+                        border: '1px solid var(--lp-border)', color: 'var(--text-primary)',
+                        fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none', whiteSpace: 'nowrap',
+                      }}>
+                        {b.action_label} →
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ── All Blockers ── */}
+            {blockers.length > 0 ? (
+              <div className={styles.subContainer} style={{ marginBottom: '1.5rem' }}>
+                <h2 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 700 }}>All Blockers</h2>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+                  {blockers.map((b) => {
+                    const c = b.severity === 'blocking' ? '#ef4444' : b.severity === 'attention' ? '#f59e0b' : '#0891b2';
+                    return (
+                      <div key={b.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.65rem',
+                        padding: '0.8rem 1rem', borderRadius: 10,
+                        border: `1px solid ${c}33`, background: `${c}0a`,
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                          <div style={{
+                            width: 34, height: 34, borderRadius: 8, background: `${c}22`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontWeight: 800, fontSize: '0.9rem', color: c, flexShrink: 0,
+                          }}>
+                            {b.count}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: '0.88rem', color: 'var(--text-primary)' }}>{b.label}</div>
+                            <div style={{ fontSize: '0.74rem', color: 'var(--lp-muted)', marginTop: 2, display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                              <span>⏱ ~{b.estimated_minutes} min</span>
+                              <span>+{b.impact_points}pts</span>
+                              <SeverityBadge severity={b.severity} />
+                            </div>
+                          </div>
+                        </div>
+                        <Link href={b.action_route} style={{
+                          padding: '0.3rem 0.85rem', borderRadius: 7,
+                          border: `1px solid ${c}`, color: c,
+                          fontSize: '0.8rem', fontWeight: 600, textDecoration: 'none',
+                          background: `${c}14`, whiteSpace: 'nowrap',
+                        }}>
+                          {b.action_label} →
+                        </Link>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              !loading && score !== null && (
+                <div className={styles.subContainer} style={{ textAlign: 'center', padding: '2rem', color: '#22c55e', fontWeight: 600, marginBottom: '1.5rem' }}>
+                  ✓ No blockers — your records are clean and ready for submission.
+                </div>
+              )
+            )}
+
+            {/* ── CTAs ── */}
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <Link href="/tax-preparation" style={{
+                padding: '0.6rem 1.4rem', borderRadius: 10,
+                background: 'var(--lp-accent-teal)', color: '#fff',
+                fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none',
+              }}>
+                Go to MTD Submission →
+              </Link>
+              <Link href="/obligations" style={{
+                padding: '0.6rem 1.4rem', borderRadius: 10,
+                border: '1px solid var(--lp-border)', color: 'var(--lp-muted)',
+                fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none',
+              }}>
+                View Deadlines
+              </Link>
+              <Link href="/transactions" style={{
+                padding: '0.6rem 1.4rem', borderRadius: 10,
+                border: '1px solid var(--lp-border)', color: 'var(--lp-muted)',
+                fontWeight: 600, fontSize: '0.9rem', textDecoration: 'none',
+              }}>
+                Review Transactions
+              </Link>
+            </div>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
           <p style={{ color: 'var(--lp-muted)', fontSize: '0.9rem', padding: '2rem 0' }}>Loading…</p>
         )}
 

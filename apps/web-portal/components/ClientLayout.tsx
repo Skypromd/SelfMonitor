@@ -1,18 +1,18 @@
 import {
-  Activity, Banknote, BarChart2, Bot, CalendarDays, ClipboardCheck, CreditCard, ExternalLink,
-  FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
-  Receipt, Send, Settings, ShoppingBag, User, Wallet, X,
+    Activity, Banknote, BarChart2, Bot, CalendarDays, CheckCircle, ClipboardCheck, CreditCard, ExternalLink,
+    FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
+    Receipt, Send, Settings, ShoppingBag, User, Wallet
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { ReactNode, useEffect, useRef, useState } from 'react';
-import {
-  adminHostPattern,
-  clientSurfaceUrl,
-  isAdminHostname,
-} from '../lib/adminSurface';
 import { useTranslation } from '../hooks/useTranslation';
+import {
+    adminHostPattern,
+    clientSurfaceUrl,
+    isAdminHostname,
+} from '../lib/adminSurface';
 import styles from '../styles/Layout.module.css';
 
 const LOCALE_FLAGS: Record<string, string> = {
@@ -92,6 +92,8 @@ export default function ClientLayout({
     { href: '/transactions',    label: t('nav.transactions'), icon: <Wallet size={17} /> },
     { href: '/connect-bank',    label: 'Connect bank',       icon: <Landmark size={17} /> },
     { href: '/cis-refund-tracker', label: 'CIS refund',       icon: <Banknote size={17} /> },
+    { href: '/tax-readiness',      label: 'Tax Readiness',     icon: <CheckCircle size={17} /> },
+    { href: '/obligations',        label: 'Deadlines',          icon: <CalendarDays size={17} /> },
     { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
     { href: '/tax-preparation',  label: 'Tax Return',            icon: <ClipboardCheck size={17} /> },
     { href: '/reports',          label: t('nav.reports'),        icon: <BarChart2 size={17} /> },

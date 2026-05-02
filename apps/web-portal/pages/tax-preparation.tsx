@@ -310,6 +310,7 @@ export default function TaxPreparationPage({ token }: Props) {
   const [mtdDraft, setMtdDraft] = useState<MtdDraftLatest | null>(null);
   const [mtdWorkflowBusy, setMtdWorkflowBusy] = useState(false);
   const [showSubmitPreview, setShowSubmitPreview] = useState(false);
+  const [ackChecked, setAckChecked] = useState(false);
 
   const year = TAX_YEARS[yearIdx];
 
@@ -530,14 +531,41 @@ export default function TaxPreparationPage({ token }: Props) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+        {/* Acknowledgement */}
+        <label style={{
+          display: 'flex', alignItems: 'flex-start', gap: '0.6rem',
+          marginTop: '1.25rem', cursor: 'pointer',
+          padding: '0.75rem 1rem', borderRadius: 10,
+          border: `1px solid ${ackChecked ? '#0d9488' : 'var(--border)'}`,
+          background: ackChecked ? 'rgba(13,148,136,0.06)' : 'transparent',
+          transition: 'all 0.2s',
+        }}>
+          <input
+            type="checkbox"
+            checked={ackChecked}
+            onChange={(e) => setAckChecked(e.target.checked)}
+            style={{ marginTop: 2, accentColor: '#0d9488', width: 16, height: 16, flexShrink: 0 }}
+          />
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            I confirm these figures are <strong>true and complete</strong> to the best of my knowledge and belief, and I authorise submission to HMRC.
+          </span>
+        </label>
+
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem', flexWrap: 'wrap' }}>
           <Link
             href="/submission"
+            onClick={!ackChecked ? (e) => e.preventDefault() : undefined}
             style={{
               flex: 1, textAlign: 'center', padding: '0.65rem 1.2rem',
-              borderRadius: 10, background: 'var(--accent, #0d9488)', color: '#fff',
+              borderRadius: 10,
+              background: ackChecked ? 'var(--accent, #0d9488)' : 'var(--border)',
+              color: ackChecked ? '#fff' : 'var(--text-secondary)',
               fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none',
+              cursor: ackChecked ? 'pointer' : 'not-allowed',
+              opacity: ackChecked ? 1 : 0.55,
+              transition: 'all 0.2s',
             }}
+            aria-disabled={!ackChecked}
           >
             Proceed to Submission →
           </Link>
@@ -943,7 +971,7 @@ export default function TaxPreparationPage({ token }: Props) {
                 {/* MTD Preview Modal */}
                 <button
                   type="button"
-                  onClick={() => setShowSubmitPreview(true)}
+                  onClick={() => { setAckChecked(false); setShowSubmitPreview(true); }}
                   style={{
                     marginTop: 12,
                     padding: '10px 20px',

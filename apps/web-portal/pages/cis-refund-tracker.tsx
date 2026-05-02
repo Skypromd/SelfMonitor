@@ -53,6 +53,7 @@ function statusColor(st: string): string {
 export default function CisRefundTrackerPage({ token }: { token: string }) {
   const [data, setData] = useState<TrackerPayload | null>(null);
   const [err, setErr] = useState('');
+  const [filter, setFilter] = useState<'all' | 'problems' | 'unverified' | 'missing'>('all');
 
   const load = useCallback(async () => {
     setErr('');
@@ -128,7 +129,52 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
             <p style={{ color: 'var(--text-secondary)' }}>No CIS periods or tasks yet.</p>
           )}
 
-          {data.by_tax_month.map((block) => (
+          {/* ── Pill filters ── */}
+          {data.by_tax_month.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: 16 }}>
+              {(
+                [
+                  { key: 'all', label: 'All' },
+                  { key: 'problems', label: '⚠ Problems' },
+                  { key: 'unverified', label: 'Unverified' },
+                  { key: 'missing', label: 'Missing' },
+                ] as { key: typeof filter; label: string }[]
+              ).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setFilter(key)}
+                  style={{
+                    padding: '0.3rem 0.9rem', borderRadius: 999, fontSize: '0.8rem', fontWeight: 600,
+                    cursor: 'pointer', border: '1px solid',
+                    borderColor: filter === key ? 'var(--accent, #0d9488)' : 'var(--border)',
+                    background: filter === key ? 'rgba(13,148,136,0.12)' : 'transparent',
+                    color: filter === key ? 'var(--accent, #0d9488)' : 'var(--text-secondary)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {data.by_tax_month.map((block) => {
+            const filteredContractors = block.contractors.filter((c) => {
+              if (filter === 'all') return true;
+              if (filter === 'unverified') return c.status === 'UNVERIFIED';
+              if (filter === 'missing') return c.status === 'MISSING';
+              if (filter === 'problems')
+                return (
+                  c.status === 'UNVERIFIED' ||
+                  c.status === 'MISSING' ||
+                  c.reconciliation_worst === 'needs_review' ||
+                  c.open_payment_count > 0
+                );
+              return true;
+            });
+            if (filteredContractors.length === 0) return null;
+            return (
             <section key={`${block.tax_year_start}-${block.tax_month}`} style={{ marginBottom: 24 }}>
               <h2 style={{ fontSize: '1rem', marginBottom: 10 }}>{block.tax_month_label}</h2>
               <div style={{ overflowX: 'auto' }}>
@@ -142,7 +188,7 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {block.contractors.map((c) => (
+                    {filteredContractors.map((c) => (
                       <tr key={c.contractor_key}>
                         <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
                           {c.display_name}
@@ -176,7 +222,8 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                 </table>
               </div>
             </section>
-          ))}
+            );
+          })}
 
           {data.open_tasks_preview.length > 0 && (
             <section>

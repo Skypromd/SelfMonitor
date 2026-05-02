@@ -305,7 +305,7 @@ async def get_transaction_readiness(
     business_id: uuid.UUID = Depends(get_active_business_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """Returns a tax-readiness score and blocker counts for the authenticated user."""
+    """Returns a tax-readiness score, blocker counts, and per-blocker metadata for the authenticated user."""
     transactions = await crud.get_transactions_by_user(db, user_id=user_id, business_id=business_id)
 
     total = len(transactions)
@@ -316,6 +316,8 @@ async def get_transaction_readiness(
             "unmatched_receipts": 0,
             "cis_unverified": 0,
             "score": 100,
+            "blockers": [],
+            "today_list": [],
         }
 
     uncategorized_count = sum(
@@ -343,8 +345,63 @@ async def get_transaction_readiness(
     except Exception:
         cis_unverified = 0
 
-    blockers = uncategorized_count + missing_business_pct + unmatched_count + cis_unverified
-    score = max(0, round(100 - (blockers / max(total, 1)) * 100))
+    blockers_raw = blockers = uncategorized_count + missing_business_pct + unmatched_count + cis_unverified
+    score = max(0, round(100 - (blockers_raw / max(total, 1)) * 100))
+
+    def _impact(count: int) -> int:
+        return min(30, round(count / max(total, 1) * 100))
+
+    blocker_list = []
+    if uncategorized_count:
+        blocker_list.append({
+            "id": "uncategorized_transactions",
+            "label": "Uncategorised transactions",
+            "count": uncategorized_count,
+            "severity": "blocking" if uncategorized_count > 10 else "attention",
+            "estimated_minutes": max(2, min(uncategorized_count * 1, 30)),
+            "impact_points": _impact(uncategorized_count),
+            "action_label": "Categorise now",
+            "action_route": "/transactions?filter=uncategorised",
+        })
+    if missing_business_pct:
+        blocker_list.append({
+            "id": "missing_business_pct",
+            "label": "Expenses missing business-use %",
+            "count": missing_business_pct,
+            "severity": "attention",
+            "estimated_minutes": max(2, min(missing_business_pct * 1, 20)),
+            "impact_points": _impact(missing_business_pct),
+            "action_label": "Set business use",
+            "action_route": "/transactions?filter=uncategorised",
+        })
+    if unmatched_count:
+        blocker_list.append({
+            "id": "unmatched_receipts",
+            "label": "Unmatched receipts",
+            "count": unmatched_count,
+            "severity": "attention",
+            "estimated_minutes": max(2, min(unmatched_count * 2, 20)),
+            "impact_points": _impact(unmatched_count),
+            "action_label": "Match receipts",
+            "action_route": "/transactions?filter=no_receipt",
+        })
+    if cis_unverified:
+        blocker_list.append({
+            "id": "cis_unverified",
+            "label": "CIS records unverified",
+            "count": cis_unverified,
+            "severity": "blocking",
+            "estimated_minutes": max(3, min(cis_unverified * 3, 30)),
+            "impact_points": _impact(cis_unverified),
+            "action_label": "Verify CIS",
+            "action_route": "/cis-refund-tracker",
+        })
+
+    # Sort by severity then impact: blocking first, then attention, then info
+    severity_order = {"blocking": 0, "attention": 1, "info": 2}
+    blocker_list.sort(key=lambda b: (severity_order.get(b["severity"], 9), -b["impact_points"]))
+
+    today_list = blocker_list[:3]
 
     return {
         "uncategorized_count": uncategorized_count,
@@ -352,6 +409,72 @@ async def get_transaction_readiness(
         "unmatched_receipts": unmatched_count,
         "cis_unverified": cis_unverified,
         "score": score,
+        "blockers": blocker_list,
+        "today_list": today_list,
+    }
+
+
+@app.get("/transactions/tax-reserve")
+async def get_tax_reserve(
+    user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns an estimated tax reserve for the current tax year based on transactions."""
+    transactions = await crud.get_transactions_by_user(db, user_id=user_id, business_id=business_id)
+
+    income = sum(float(getattr(t, "amount", 0)) for t in transactions if float(getattr(t, "amount", 0)) > 0)
+    expenses = sum(abs(float(getattr(t, "amount", 0))) for t in transactions if float(getattr(t, "amount", 0)) < 0)
+
+    # CIS deductions already withheld
+    try:
+        cis_records = await crud_cis.get_cis_records(db, user_id=user_id)
+        cis_deductions = sum(
+            float(getattr(r, "cis_withheld_gbp", 0) or 0)
+            for r in cis_records
+            if getattr(r, "verification_status", "unverified") == "verified"
+        )
+        cis_unverified_deductions = sum(
+            float(getattr(r, "cis_withheld_gbp", 0) or 0)
+            for r in cis_records
+            if getattr(r, "verification_status", "unverified") == "unverified"
+        )
+    except Exception:
+        cis_deductions = 0.0
+        cis_unverified_deductions = 0.0
+
+    profit = max(0.0, income - expenses)
+
+    # Simplified UK tax estimate (2025/26): personal allowance £12,570
+    personal_allowance = 12570.0
+    basic_rate_limit = 50270.0
+    taxable_profit = max(0.0, profit - personal_allowance)
+    basic_rate_tax = min(taxable_profit, max(0.0, basic_rate_limit - personal_allowance)) * 0.20
+    higher_rate_tax = max(0.0, taxable_profit - (basic_rate_limit - personal_allowance)) * 0.40
+    income_tax = round(basic_rate_tax + higher_rate_tax, 2)
+
+    # Class 4 NIC: 6% on profit £12,570–£50,270, 2% above
+    class4_lower = max(0.0, min(profit, basic_rate_limit) - personal_allowance) * 0.06
+    class4_upper = max(0.0, profit - basic_rate_limit) * 0.02
+    class4_nic = round(class4_lower + class4_upper, 2)
+
+    total_tax = round(income_tax + class4_nic, 2)
+    net_due = round(max(0.0, total_tax - cis_deductions), 2)
+
+    confidence = "high" if len(transactions) >= 20 else "medium" if len(transactions) >= 5 else "low"
+
+    return {
+        "income_gbp": round(income, 2),
+        "expenses_gbp": round(expenses, 2),
+        "profit_gbp": round(profit, 2),
+        "income_tax_gbp": income_tax,
+        "class4_nic_gbp": class4_nic,
+        "total_tax_estimated_gbp": total_tax,
+        "cis_deductions_verified_gbp": round(cis_deductions, 2),
+        "cis_deductions_unverified_gbp": round(cis_unverified_deductions, 2),
+        "net_tax_due_gbp": net_due,
+        "confidence": confidence,
+        "disclaimer": "This is an estimate only. Consult a qualified accountant before filing.",
     }
 
 
