@@ -342,6 +342,51 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
             {data.totals.estimate_note}
           </p>
 
+          {/* ── Refund Estimate Banner ── */}
+          {data.totals.verified_cis_withheld_gbp > 0 && (
+            <div style={{
+              display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12,
+              marginBottom: 20, padding: '1rem', borderRadius: 12,
+              background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.25)',
+            }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                  Estimated CIS refund
+                </div>
+                <div style={{ fontWeight: 800, fontSize: '1.5rem', color: '#10b981' }}>
+                  {fmt(data.totals.verified_cis_withheld_gbp)}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 3 }}>
+                  From verified statements only
+                </div>
+              </div>
+              {data.totals.unverified_cis_withheld_gbp > 0 && (
+                <div>
+                  <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                    Pending verification
+                  </div>
+                  <div style={{ fontWeight: 800, fontSize: '1.5rem', color: '#f59e0b' }}>
+                    {fmt(data.totals.unverified_cis_withheld_gbp)}
+                  </div>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 3 }}>
+                    Upload statements to confirm
+                  </div>
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>
+                  Total withheld
+                </div>
+                <div style={{ fontWeight: 800, fontSize: '1.5rem' }}>
+                  {fmt(data.totals.verified_cis_withheld_gbp + data.totals.unverified_cis_withheld_gbp)}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 3 }}>
+                  Verified + unverified
+                </div>
+              </div>
+            </div>
+          )}
+
           <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', marginBottom: 20 }}>
             Reminders: hard gap {data.reminder_policy.hard_interval_hours}h; max{' '}
             {data.reminder_policy.soft_max_sends_per_7_days} push/email per 7 days per task (then in-app only). Snooze:{' '}
@@ -407,7 +452,8 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                       <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Contractor</th>
                       <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Status</th>
                       <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>CIS withheld</th>
-                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Bank / review</th>
+                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Reconciliation</th>
+                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Next action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -422,21 +468,54 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                             </span>
                           )}
                         </td>
-                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', color: statusColor(c.status) }}>
-                          {c.status}
+                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
+                          <span style={{
+                            padding: '0.15rem 0.55rem', borderRadius: 999, fontWeight: 700, fontSize: '0.7rem',
+                            textTransform: 'uppercase',
+                            background: c.status === 'VERIFIED' ? 'rgba(16,185,129,0.12)' : c.status === 'UNVERIFIED' ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.1)',
+                            color: statusColor(c.status),
+                          }}>
+                            {c.status === 'VERIFIED' ? 'Matched' : c.status === 'UNVERIFIED' ? 'Unverified' : c.status === 'MISSING' ? 'Missing' : c.status}
+                          </span>
                         </td>
-                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>{fmt(c.cis_withheld_gbp)}</td>
+                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{fmt(c.cis_withheld_gbp)}</td>
                         <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
                           {c.reconciliation_worst === 'needs_review' && (
-                            <span style={{ color: '#f97316', fontWeight: 600 }}>Needs review</span>
+                            <span style={{ color: '#f97316', fontWeight: 600, fontSize: '0.8rem' }}>⚠ Mismatch</span>
                           )}
-                          {c.reconciliation_worst === 'ok' && <span style={{ color: '#10b981' }}>Statement ↔ bank OK</span>}
-                          {c.reconciliation_worst === 'pending' && <span style={{ color: 'var(--text-tertiary)' }}>Pending match</span>}
-                          {c.reconciliation_worst === 'not_applicable' && <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
-                          {c.bank_net_observed_gbp != null && c.reconciliation_worst !== 'not_applicable' && (
-                            <span style={{ color: 'var(--text-tertiary)', display: 'block', fontSize: '0.72rem' }}>
-                              Bank net {fmt(c.bank_net_observed_gbp)} vs declared {fmt(c.net_paid_declared_gbp)}
+                          {c.reconciliation_worst === 'ok' && <span style={{ color: '#10b981', fontSize: '0.8rem' }}>✓ Matched</span>}
+                          {c.reconciliation_worst === 'pending' && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>Pending</span>}
+                          {(c.reconciliation_worst === 'not_applicable' || !c.reconciliation_worst) && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>—</span>}
+                          {c.bank_net_observed_gbp != null && c.reconciliation_worst === 'needs_review' && (
+                            <span style={{ color: 'var(--text-tertiary)', display: 'block', fontSize: '0.7rem' }}>
+                              Bank {fmt(c.bank_net_observed_gbp)} vs {fmt(c.net_paid_declared_gbp)}
                             </span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', fontSize: '0.78rem' }}>
+                          {c.status === 'MISSING' && (
+                            <button
+                              type="button"
+                              onClick={() => setUploadOpen(true)}
+                              style={{ padding: '0.25rem 0.7rem', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Upload statement
+                            </button>
+                          )}
+                          {c.status === 'UNVERIFIED' && (
+                            <button
+                              type="button"
+                              onClick={() => setUploadOpen(true)}
+                              style={{ padding: '0.25rem 0.7rem', borderRadius: 6, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Add statement
+                            </button>
+                          )}
+                          {c.status === 'VERIFIED' && c.reconciliation_worst === 'needs_review' && (
+                            <span style={{ color: '#f97316' }}>Review bank match</span>
+                          )}
+                          {c.status === 'VERIFIED' && c.reconciliation_worst !== 'needs_review' && (
+                            <span style={{ color: '#10b981' }}>✓ No action needed</span>
                           )}
                         </td>
                       </tr>

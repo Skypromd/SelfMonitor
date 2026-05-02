@@ -548,6 +548,33 @@ export default function SubmissionPage({ token }: Props) {
           {/* Main breakdown */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
+            {/* Submission mode banner */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap',
+              padding: '0.75rem 1rem', borderRadius: 12,
+              background: calc.mtd_obligation.reporting_required ? 'rgba(13,148,136,0.08)' : 'rgba(100,116,139,0.1)',
+              border: `1px solid ${calc.mtd_obligation.reporting_required ? 'rgba(13,148,136,0.3)' : 'rgba(100,116,139,0.2)'}`,
+              fontSize: '0.82rem',
+            }}>
+              <span style={{
+                padding: '0.2rem 0.65rem', borderRadius: 999, fontWeight: 700, fontSize: '0.72rem', textTransform: 'uppercase',
+                background: calc.mtd_obligation.reporting_required ? 'rgba(13,148,136,0.2)' : 'rgba(100,116,139,0.2)',
+                color: calc.mtd_obligation.reporting_required ? '#0d9488' : '#64748b',
+              }}>
+                {calc.mtd_obligation.reporting_required ? 'MTD required' : 'Self Assessment only'}
+              </span>
+              <span style={{ color: 'var(--lp-muted)' }}>
+                {calc.mtd_obligation.reporting_required
+                  ? `Qualifying income estimate: £${(calc.mtd_obligation.qualifying_income_estimate ?? 0).toLocaleString('en-GB')}`
+                  : `Below MTD threshold for ${year.label}`}
+              </span>
+              {calc.cis_hmrc_submit_requires_unverified_ack && (
+                <span style={{ padding: '0.2rem 0.65rem', borderRadius: 999, fontWeight: 700, fontSize: '0.72rem', textTransform: 'uppercase', background: 'rgba(245,158,11,0.2)', color: '#f59e0b' }}>
+                  ⚠ Unverified CIS
+                </span>
+              )}
+            </div>
+
             {/* Income & Expenses */}
             <section style={{ background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 16, padding: '1.5rem' }}>
               <h2 style={{ marginTop: 0, fontSize: '1rem', fontWeight: 700, marginBottom: '1rem' }}>📊 Income & Expenses</h2>
@@ -624,6 +651,35 @@ export default function SubmissionPage({ token }: Props) {
               </section>
             )}
 
+            {/* CIS Tax Credits */}
+            {((calc.cis_tax_credit_verified_gbp ?? 0) > 0 || (calc.cis_tax_credit_self_attested_gbp ?? 0) > 0) && (
+              <section style={{ background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 16, padding: '1.5rem' }}>
+                <h2 style={{ marginTop: 0, fontSize: '1rem', fontWeight: 700, marginBottom: '1rem' }}>🏗️ CIS Tax Credits</h2>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                  <tbody>
+                    {(calc.cis_tax_credit_verified_gbp ?? 0) > 0 && (
+                      <Row label="Verified CIS deductions (backed by statements)" value={fmt(calc.cis_tax_credit_verified_gbp ?? 0)} />
+                    )}
+                    {(calc.cis_tax_credit_self_attested_gbp ?? 0) > 0 && (
+                      <Row label="Self-attested CIS credits (no statement yet)" value={fmt(calc.cis_tax_credit_self_attested_gbp ?? 0)} warn />
+                    )}
+                    <Row
+                      label="Total CIS credits claimed"
+                      value={fmt((calc.cis_tax_credit_verified_gbp ?? 0) + (calc.cis_tax_credit_self_attested_gbp ?? 0))}
+                      bold
+                      accent
+                    />
+                  </tbody>
+                </table>
+                {(calc.cis_tax_credit_self_attested_gbp ?? 0) > 0 && (
+                  <div style={{ marginTop: '1rem', background: 'rgba(245,158,11,0.09)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, padding: '0.85rem 1rem', fontSize: '0.82rem', color: 'var(--lp-muted)', lineHeight: 1.55 }}>
+                    ⚠ <strong>Unverified credits</strong> are included. HMRC may query figures not backed by CIS300 statements.{' '}
+                    <a href="/cis-refund-tracker" style={{ color: 'var(--lp-accent-teal)', textDecoration: 'underline' }}>Upload missing statements →</a>
+                  </div>
+                )}
+              </section>
+            )}
+
             {/* MTD Quarterly obligations */}
             {calc.mtd_obligation.reporting_required && calc.mtd_obligation.quarterly_updates.length > 0 && (
               <section style={{ background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 16, padding: '1.5rem' }}>
@@ -667,6 +723,24 @@ export default function SubmissionPage({ token }: Props) {
               <MiniRow label="31 Jul payment" value={fmt(calc.payment_on_account_jul)} />
               <p style={{ color: 'var(--lp-muted)', fontSize: '0.75rem', marginTop: '0.5rem', marginBottom: 0 }}>Each = 50% of prior year tax</p>
             </div>
+
+            {/* Tax Reserve suggestion */}
+            {calc.taxable_profit > 0 && (
+              <div style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 16, padding: '1.25rem' }}>
+                <p style={{ fontWeight: 700, fontSize: '0.9rem', margin: '0 0 0.5rem' }}>💡 Suggested Reserve</p>
+                <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', margin: '0 0 0.25rem' }}>
+                  {fmt(calc.estimated_tax_due * 1.05)}
+                </p>
+                <p style={{ color: 'var(--lp-muted)', fontSize: '0.75rem', margin: 0, lineHeight: 1.5 }}>
+                  Tax + NI + 5% buffer. Set this aside now to cover your Jan & Jul payments.
+                </p>
+                {calc.estimated_effective_tax_rate > 0 && (
+                  <p style={{ color: 'var(--lp-muted)', fontSize: '0.72rem', marginTop: '0.4rem', marginBottom: 0 }}>
+                    Effective rate: {pct(calc.estimated_effective_tax_rate)} of profit
+                  </p>
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <button

@@ -1,24 +1,24 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  TextInput,
-  Animated,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
+import { useNavigation } from '@react-navigation/native';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Localization from 'expo-localization';
-import { useNavigation } from '@react-navigation/native';
-import { colors, spacing, fontSize, borderRadius } from '../theme';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Animated,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { apiCall, getVoiceHttpBase } from '../api';
 import { useAuth } from '../context/AuthContext';
+import { borderRadius, colors, fontSize, spacing } from '../theme';
 
 function jwtSub(jwt: string): string | null {
   const parts = jwt.split('.');
@@ -119,6 +119,7 @@ export default function DashboardScreen() {
   const [advice, setAdvice] = useState<string | null>(null);
   const [adviceLoading, setAdviceLoading] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
+  const [cisAlert, setCisAlert] = useState<{ openTasks: number; unverified: number; missing: number } | null>(null);
 
   const [taxYear, setTaxYear] = useState('2024');
   const [taxIncome, setTaxIncome] = useState('');
@@ -146,8 +147,7 @@ export default function DashboardScreen() {
     ]).start();
   }, [heroFade, heroSlide]);
 
-  const fetchAdvice = useCallback(async () => {
-    setAdviceLoading(true);
+  const fetchAdvice = useCallback(async () => {    setAdviceLoading(true);
     try {
       const res = await apiCall('/advice/generate', {
         method: 'POST',
@@ -162,6 +162,25 @@ export default function DashboardScreen() {
       setAdviceLoading(false);
     }
   }, []);
+
+  const fetchCisAlert = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await apiCall('/transactions/cis/refund-tracker');
+      if (res.ok) {
+        const d = await res.json() as { totals?: { open_tasks?: number; unverified_cis_withheld_gbp?: number; missing_obligation_buckets?: number } };
+        setCisAlert({
+          openTasks: d.totals?.open_tasks ?? 0,
+          unverified: d.totals?.unverified_cis_withheld_gbp ?? 0,
+          missing: d.totals?.missing_obligation_buckets ?? 0,
+        });
+      }
+    } catch { /* non-critical */ }
+  }, [token]);
+
+  useEffect(() => {
+    void fetchCisAlert();
+  }, [fetchCisAlert]);
 
   const calculateTax = useCallback(async () => {
     if (!taxIncome) {
@@ -209,7 +228,8 @@ export default function DashboardScreen() {
   const quickActions: QuickAction[] = [
     { icon: '🔄', label: 'Sync', onPress: () => navigation.navigate('Money') },
     { icon: '📸', label: 'Scan', onPress: () => navigation.navigate('Scan') },
-    { icon: '🏠', label: 'Mortgage', onPress: () => navigation.navigate('Me', { screen: 'Mortgage' }) },
+    { icon: '�️', label: 'CIS', onPress: () => navigation.navigate('Me', { screen: 'CisRefundTracker' }) },
+    { icon: '�🏠', label: 'Mortgage', onPress: () => navigation.navigate('Me', { screen: 'Mortgage' }) },
     { icon: '📄', label: 'Invoice', onPress: () => navigation.navigate('Money') },
   ];
 
@@ -379,6 +399,40 @@ export default function DashboardScreen() {
             </View>
           </View>
         </AnimatedPressable>
+
+        {/* Quarter Readiness Card */}
+        <AnimatedPressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); navigation.navigate('Tax'); }} style={styles.deadlineCardWrapper}>
+          <View style={[styles.deadlineCard, { borderColor: 'rgba(13,148,136,0.4)', backgroundColor: 'rgba(13,148,136,0.06)' }]}>
+            <View style={styles.deadlineRow}>
+              <Text style={styles.deadlineIcon}>✅</Text>
+              <View style={[styles.deadlineInfo, { flex: 1 }]}>
+                <Text style={[styles.deadlineTitle, { color: colors.accentTeal }]}>Quarter Readiness</Text>
+                <Text style={styles.deadlineAction}>Fix blockers · Submit in 7 min →</Text>
+              </View>
+            </View>
+            <View style={[styles.mortgageProgress, { marginTop: 8 }]}>
+              <View style={[styles.mortgageProgressFill, { width: '65%', backgroundColor: colors.accentTeal }]} />
+            </View>
+            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>65% ready · 3 blockers remaining</Text>
+          </View>
+        </AnimatedPressable>
+
+        {/* CIS Alert Banner */}
+        {cisAlert && (cisAlert.openTasks > 0 || cisAlert.missing > 0) && (
+          <AnimatedPressable onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); navigation.navigate('Me', { screen: 'CisRefundTracker' }); }} style={styles.deadlineCardWrapper}>
+            <View style={[styles.deadlineCard, { borderColor: 'rgba(245,158,11,0.4)', backgroundColor: 'rgba(245,158,11,0.08)' }]}>
+              <View style={styles.deadlineRow}>
+                <Text style={styles.deadlineIcon}>⚠️</Text>
+                <View style={styles.deadlineInfo}>
+                  <Text style={[styles.deadlineTitle, { color: '#f59e0b' }]}>
+                    CIS: {cisAlert.openTasks > 0 ? `${cisAlert.openTasks} open task${cisAlert.openTasks !== 1 ? 's' : ''}` : `${cisAlert.missing} missing bucket${cisAlert.missing !== 1 ? 's' : ''}`}
+                  </Text>
+                  <Text style={styles.deadlineAction}>Upload statements to verify →</Text>
+                </View>
+              </View>
+            </View>
+          </AnimatedPressable>
+        )}
 
         {/* Mortgage Readiness Card */}
         <AnimatedPressable onPress={() => navigation.navigate('Me', { screen: 'Mortgage' })} style={styles.deadlineCardWrapper}>

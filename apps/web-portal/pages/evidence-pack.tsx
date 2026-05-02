@@ -38,6 +38,16 @@ type ShareToken = {
   expires_at: string;
 };
 
+type TxnSummary = {
+  total: number;
+  income_count: number;
+  expense_count: number;
+  cis_count: number;
+  income_total_gbp: number;
+  expense_total_gbp: number;
+  category_totals: Record<string, number>;
+};
+
 const fmt = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -60,22 +70,51 @@ export default function EvidencePackPage({ token }: { token: string }) {
   const [generating, setGenerating] = useState(false);
   const [shareErr, setShareErr] = useState('');
   const [copied, setCopied] = useState(false);
+  const [txnSummary, setTxnSummary] = useState<TxnSummary | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const r = await fetch(`${TXN_SERVICE_URL}/cis/evidence-pack/manifest`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const j = await r.json().catch(() => ({}));
+        const [manifestRes, txnRes] = await Promise.all([
+          fetch(`${TXN_SERVICE_URL}/cis/evidence-pack/manifest`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${TXN_SERVICE_URL}/transactions/me`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        ]);
         if (cancelled) return;
-        if (r.status === 403) {
+
+        const j = await manifestRes.json().catch(() => ({}));
+        if (manifestRes.status === 403) {
           setErr((j as { detail?: string }).detail || 'Evidence pack requires Growth plan or higher.');
-        } else if (!r.ok) {
+        } else if (!manifestRes.ok) {
           setErr((j as { detail?: string }).detail || 'Could not load evidence pack.');
         } else {
           setManifest((j as { manifest: ManifestPayload }).manifest);
+        }
+
+        if (txnRes.ok) {
+          const txns = (await txnRes.json().catch(() => [])) as Array<{ amount: number; category?: string | null }>;
+          const income = txns.filter((t) => t.amount > 0);
+          const expense = txns.filter((t) => t.amount < 0);
+          const cis = txns.filter((t) => t.category === 'cis_income' || t.category === 'cis' || t.category === 'cis_payment');
+          const catTotals: Record<string, number> = {};
+          for (const t of txns) {
+            if (t.amount < 0 && t.category) {
+              catTotals[t.category] = (catTotals[t.category] ?? 0) + Math.abs(t.amount);
+            }
+          }
+          if (!cancelled) setTxnSummary({
+            total: txns.length,
+            income_count: income.length,
+            expense_count: expense.length,
+            cis_count: cis.length,
+            income_total_gbp: income.reduce((s, t) => s + t.amount, 0),
+            expense_total_gbp: expense.reduce((s, t) => s + Math.abs(t.amount), 0),
+            category_totals: catTotals,
+          });
         }
       } catch {
         if (!cancelled) setErr('Failed to load evidence pack.');
@@ -310,7 +349,63 @@ export default function EvidencePackPage({ token }: { token: string }) {
           <p style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 24, lineHeight: 1.55 }}>
             {manifest.export_legal_notice}
           </p>
-          <p style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', marginTop: 4 }}>
+
+          {/* Transaction Summary */}
+          {txnSummary && txnSummary.total > 0 && (
+            <section style={{ marginTop: 28 }}>
+              <h2 style={{ fontSize: '1rem', marginBottom: 12 }}>Transaction Summary</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+                {[
+                  { label: 'Total transactions', value: txnSummary.total.toString(), color: 'var(--text-primary)' },
+                  { label: 'Income transactions', value: txnSummary.income_count.toString(), color: '#10b981' },
+                  { label: 'Expense transactions', value: txnSummary.expense_count.toString(), color: '#ef4444' },
+                  { label: 'CIS payments', value: txnSummary.cis_count.toString(), color: '#3b82f6' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} style={{ background: 'var(--card-bg)', borderRadius: 10, padding: '0.85rem', border: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)' }}>{label}</div>
+                    <div style={{ fontWeight: 700, fontSize: '1.1rem', color }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 140, background: 'rgba(16,185,129,0.07)', borderRadius: 10, padding: '0.85rem', border: '1px solid rgba(16,185,129,0.2)' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total income</div>
+                  <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#10b981' }}>
+                    £{txnSummary.income_total_gbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+                <div style={{ flex: 1, minWidth: 140, background: 'rgba(239,68,68,0.07)', borderRadius: 10, padding: '0.85rem', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#ef4444', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total expenses</div>
+                  <div style={{ fontWeight: 800, fontSize: '1.25rem', color: '#ef4444' }}>
+                    £{txnSummary.expense_total_gbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* Category Breakdown */}
+          {txnSummary && Object.keys(txnSummary.category_totals).length > 0 && (
+            <section style={{ marginTop: 24 }}>
+              <h2 style={{ fontSize: '1rem', marginBottom: 10 }}>Expense Category Breakdown</h2>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+                {Object.entries(txnSummary.category_totals)
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([cat, total]) => (
+                    <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.55rem 0.75rem', background: 'var(--card-bg)', borderRadius: 8, border: '1px solid var(--border)', fontSize: '0.82rem' }}>
+                      <span style={{ color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{cat.replace(/_/g, ' ')}</span>
+                      <span style={{ fontWeight: 600 }}>£{total.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  ))}
+              </div>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginTop: 8 }}>
+                Expense categories from your transaction history. For the full tax calculation visit{' '}
+                <Link href="/tax-preparation" style={{ color: 'var(--accent)' }}>Tax preparation</Link>.
+              </p>
+            </section>
+          )}
+
+          <p style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)', marginTop: 12 }}>
             Pack generated: {fmt(manifest.generated_at)}
           </p>
         </>
