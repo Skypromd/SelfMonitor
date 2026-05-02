@@ -1,6 +1,9 @@
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -113,6 +116,31 @@ export default function CisRefundTrackerScreen() {
             </View>
             <Text style={styles.note}>{data.totals.estimate_note}</Text>
 
+            {data.totals.missing_obligation_buckets > 0 ? (
+              <Pressable
+                style={styles.missingBanner}
+                onPress={() =>
+                  Alert.alert(
+                    'Upload CIS Statement',
+                    `You have ${data.totals.missing_obligation_buckets} missing statement bucket${data.totals.missing_obligation_buckets !== 1 ? 's' : ''}.\n\nTo upload, go to the web portal → CIS Refund Tracker → Upload Statement, or ask your contractor for a CIS deduction statement.`,
+                    [
+                      { text: 'Open web portal', onPress: () => void Linking.openURL('https://app.mynettax.com/cis-refund-tracker') },
+                      { text: 'Later', style: 'cancel' },
+                    ]
+                  )
+                }
+              >
+                <Text style={styles.missingBannerIcon}>📋</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.missingBannerTitle}>
+                    {data.totals.missing_obligation_buckets} missing CIS statement{data.totals.missing_obligation_buckets !== 1 ? 's' : ''}
+                  </Text>
+                  <Text style={styles.missingBannerSub}>Tap to learn how to upload → get your refund faster</Text>
+                </View>
+                <Text style={{ color: '#f59e0b', fontSize: 18 }}>›</Text>
+              </Pressable>
+            ) : null}
+
             {data.by_tax_month.length === 0 ? (
               <Text style={styles.muted}>No CIS periods yet. Sync bank data and review CIS hints on Money.</Text>
             ) : null}
@@ -160,6 +188,20 @@ const styles = StyleSheet.create({
   statVal: { fontSize: fontSize.md, fontWeight: '700', color: colors.text, marginTop: 4 },
   note: { fontSize: fontSize.xs, color: colors.textMuted, lineHeight: 18, marginBottom: spacing.lg },
   muted: { fontSize: fontSize.sm, color: colors.textMuted },
+  missingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(245,158,11,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(245,158,11,0.35)',
+    borderRadius: 12,
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  missingBannerIcon: { fontSize: 24 },
+  missingBannerTitle: { fontSize: fontSize.sm, fontWeight: '700', color: '#f59e0b' },
+  missingBannerSub: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
   section: { marginBottom: spacing.lg },
   sectionTitle: { fontSize: fontSize.md, fontWeight: '600', color: colors.text, marginBottom: 8 },
   row: {
