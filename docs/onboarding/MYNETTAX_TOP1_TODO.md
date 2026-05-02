@@ -220,7 +220,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Make CIS Refund Tracker visible in primary navigation.
 - [ ] Add homepage section for CIS subcontractors.
 - [x] Show UK tax month x contractor table.
-- [ ] Show statuses: Matched, Mismatch, Missing statement, Unverified, Not CIS.
+- [x] Show statuses: Matched, Mismatch, Missing statement, Unverified, Not CIS.
 - [x] Add filter: only problems.
 - [x] Add filter: unverified credits.
 - [x] Add filter: missing statements.
