@@ -1,7 +1,7 @@
 import {
     Activity, Banknote, BarChart2, Bot, CalendarDays, CheckCircle, ClipboardCheck, CreditCard, ExternalLink,
     FileDown, FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
-    Receipt,
+    Receipt, Sparkles,
     Settings, ShoppingBag, User, Wallet
 } from 'lucide-react';
 import Image from 'next/image';
@@ -94,6 +94,7 @@ export default function ClientLayout({
     { href: '/connect-bank',    label: 'Connect bank',       icon: <Landmark size={17} /> },
     { href: '/cis-refund-tracker', label: 'CIS refund',       icon: <Banknote size={17} /> },
     { href: '/tax-readiness',      label: 'Tax Readiness',     icon: <CheckCircle size={17} /> },
+    { href: '/quarterly-wizard',   label: '7-Min Wizard',      icon: <Sparkles size={17} /> },
     { href: '/obligations',        label: 'Deadlines',          icon: <CalendarDays size={17} /> },
     { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
     { href: '/submission',       label: 'Export / Download',      icon: <FileDown size={17} /> },
