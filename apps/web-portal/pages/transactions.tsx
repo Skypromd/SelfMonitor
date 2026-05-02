@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
 import styles from '../styles/Home.module.css';
@@ -216,6 +217,12 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
 }
 
 function TransactionsList({ token, accountId, businessId }: { token: string; accountId: string; businessId: string | null }) {
+  const router = useRouter();
+  const initialFilter = (() => {
+    const q = typeof router.query.filter === 'string' ? router.query.filter : 'all';
+    const valid = ['all', 'uncategorised', 'no_receipt', 'cis_unverified'] as const;
+    return (valid as readonly string[]).includes(q) ? (q as typeof valid[number]) : 'all';
+  })();
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -274,7 +281,7 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
   const [txnFilterDateFrom, setTxnFilterDateFrom] = useState('');
   const [txnFilterDateTo, setTxnFilterDateTo] = useState('');
   const [txnFilterCategory, setTxnFilterCategory] = useState('');
-  const [inboxFilter, setInboxFilter] = useState<'all' | 'uncategorised' | 'no_receipt' | 'cis_unverified'>('all');
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'uncategorised' | 'no_receipt' | 'cis_unverified'>(initialFilter);
 
   const displayedTransactions = useMemo(() => {
     return transactions.filter((t) => {

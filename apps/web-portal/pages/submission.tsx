@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
-import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
 import { MtdDraftWorkflowStrip, type MtdDraftLatest } from '../components/MtdDraftWorkflow';
 import { downloadAccountantTaxSummaryPdf, type AccountantPdfCalc } from '../lib/taxAccountantPdf';
+import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
 import styles from '../styles/Home.module.css';
 
 const TAX_ENGINE_URL = process.env.NEXT_PUBLIC_TAX_ENGINE_URL || '/api/tax';
@@ -108,7 +108,7 @@ function buildSubmissionSummaryLines(yearLabel: string, calc: TaxCalcResult): st
     `tax_year,${escapeSubmissionCsvField(yearLabel)}`,
     `period_start,${escapeSubmissionCsvField(calc.start_date)}`,
     `period_end,${escapeSubmissionCsvField(calc.end_date)}`,
-    `disclaimer,${escapeSubmissionCsvField('SelfMonitor export for accountant review. Not an HMRC submission file.')}`,
+    `disclaimer,${escapeSubmissionCsvField('MyNetTax export for accountant review. Not an HMRC submission file.')}`,
     `total_income,${calc.total_income}`,
     `total_expenses,${calc.total_expenses}`,
     `taxable_profit,${calc.taxable_profit}`,

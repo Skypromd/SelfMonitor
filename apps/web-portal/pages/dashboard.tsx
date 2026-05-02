@@ -2,16 +2,16 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+    Bar,
+    BarChart,
+    CartesianGrid,
+    Legend,
+    Line,
+    LineChart,
+    ResponsiveContainer,
+    Tooltip,
+    XAxis,
+    YAxis,
 } from 'recharts';
 import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
@@ -20,6 +20,8 @@ const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
 const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || '/api/auth';
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || '/api/analytics';
 const ADVICE_SERVICE_URL = process.env.NEXT_PUBLIC_ADVICE_SERVICE_URL || '/api/advice';
+const BANKING_SERVICE_URL = process.env.NEXT_PUBLIC_BANKING_SERVICE_URL || '/api/banking';
+const TXN_SERVICE_URL = process.env.NEXT_PUBLIC_TRANSACTIONS_SERVICE_URL || '/api/transactions';
 
 type DashboardPageProps = {
   token: string;
@@ -629,8 +631,132 @@ function CisTasksStrip({ token }: { token: string }) {
   );
 }
 
-function ActionCenter({ token }: { token: string }) {
-  const [advice, setAdvice] = useState<AdviceItem | null>(null);
+
+type TaxReserveData = {
+  net_tax_due_gbp: number;
+  income_tax_gbp: number;
+  class4_nic_gbp: number;
+  profit_gbp: number;
+  confidence: 'low' | 'medium' | 'high';
+};
+
+function TaxReserveWidget({ token }: { token: string }) {
+  const [reserve, setReserve] = useState<TaxReserveData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(`${TXN_SERVICE_URL}/transactions/tax-reserve`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok || cancelled) return;
+        setReserve(await r.json());
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  if (!reserve) return null;
+
+  const fmt = (n: number) => `£${Math.round(n).toLocaleString('en-GB')}`;
+  const confColor = reserve.confidence === 'high' ? '#22c55e' : reserve.confidence === 'medium' ? '#f59e0b' : '#94a3b8';
+
+  return (
+    <div className={styles.subContainer} style={{
+      border: '1px solid rgba(239,68,68,0.25)',
+      background: 'rgba(239,68,68,0.04)',
+      marginBottom: '1.25rem',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.6rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1rem' }}>Tax Reserve Estimate</h2>
+        <span style={{ fontSize: '0.72rem', fontWeight: 700, color: confColor, textTransform: 'uppercase' }}>
+          {reserve.confidence} confidence
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1.5rem', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, color: '#ef4444', lineHeight: 1 }}>
+            {fmt(reserve.net_tax_due_gbp)}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--lp-muted)', marginTop: 2 }}>est. tax to set aside</div>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', fontSize: '0.82rem', color: 'var(--lp-muted)' }}>
+          <span>Profit: <strong style={{ color: 'var(--text-primary)' }}>{fmt(reserve.profit_gbp)}</strong></span>
+          <span>Income tax: <strong style={{ color: 'var(--text-primary)' }}>{fmt(reserve.income_tax_gbp)}</strong></span>
+          <span>Class 4 NIC: <strong style={{ color: 'var(--text-primary)' }}>{fmt(reserve.class4_nic_gbp)}</strong></span>
+        </div>
+      </div>
+      <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+        <Link href="/tax-readiness" style={{
+          padding: '0.4rem 1rem', borderRadius: 8, border: '1px solid rgba(239,68,68,0.35)',
+          color: '#ef4444', fontSize: '0.82rem', fontWeight: 600, textDecoration: 'none',
+        }}>
+          View full breakdown →
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+type SyncQuota = { daily_limit: number; remaining: number };
+
+function BankSyncStatus({ token }: { token: string }) {
+  const [quota, setQuota] = useState<SyncQuota | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(`${BANKING_SERVICE_URL}/connections/sync-quota`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok || cancelled) return;
+        const d = (await r.json()) as SyncQuota;
+        if (typeof d.daily_limit === 'number') setQuota(d);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  if (!quota) return null;
+
+  const used = quota.daily_limit - quota.remaining;
+  const pct = quota.daily_limit > 0 ? Math.round((used / quota.daily_limit) * 100) : 0;
+  const barColor = quota.remaining === 0 ? '#ef4444' : quota.remaining <= 1 ? '#f59e0b' : '#22c55e';
+
+  return (
+    <div className={styles.subContainer} style={{ marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.6rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1rem' }}>Bank Sync</h2>
+        <Link href="/connect-bank" style={{
+          padding: '0.35rem 0.85rem', borderRadius: 8,
+          background: 'var(--lp-accent-teal)', color: '#fff',
+          fontWeight: 700, fontSize: '0.8rem', textDecoration: 'none',
+        }}>
+          Sync now →
+        </Link>
+      </div>
+      <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', fontSize: '0.85rem', color: 'var(--lp-muted)', marginBottom: '0.5rem' }}>
+        <span>
+          Today: <strong style={{ color: barColor }}>{quota.remaining}</strong> sync{quota.remaining !== 1 ? 's' : ''} remaining
+          {' '}/ {quota.daily_limit} daily limit
+        </span>
+        <span style={{ color: 'var(--text-secondary)' }}>Used {used} of {quota.daily_limit} ({pct}%)</span>
+      </div>
+      <div style={{ height: 6, borderRadius: 999, background: 'var(--lp-border)', overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 999, transition: 'width 0.4s ease' }} />
+      </div>
+      {quota.remaining === 0 && (
+        <p style={{ fontSize: '0.75rem', color: '#ef4444', margin: '0.4rem 0 0' }}>
+          Daily limit reached — resets at midnight UTC.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ActionCenter({ token }: { token: string }) {  const [advice, setAdvice] = useState<AdviceItem | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -684,6 +810,8 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <h1>{t('dashboard.title')}</h1>
       <p>{t('dashboard.description')}</p>
       <CisTasksStrip token={token} />
+      <TaxReserveWidget token={token} />
+      <BankSyncStatus token={token} />
       <ProfitPulseStrip token={token} />
       <ActionCenter token={token} />
       <CashFlowChart token={token} />

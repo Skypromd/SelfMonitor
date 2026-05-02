@@ -59,7 +59,7 @@ export async function downloadAccountantTaxSummaryPdf(params: {
   doc.text(`Tax year ${yearLabel}  ·  ${periodStart} to ${periodEnd}`, 14, y);
   y += 6;
   const disclaimerLines = doc.splitTextToSize(
-    'Self-employed / SA103-style figures from SelfMonitor. Not an HMRC submission. Review before use.',
+    'Self-employed / SA103-style figures from MyNetTax. Not an HMRC submission. Review before use.',
     182,
   );
   doc.text(disclaimerLines, 14, y);
