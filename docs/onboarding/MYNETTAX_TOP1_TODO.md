@@ -25,7 +25,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in pricing copy.
 - [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in testimonials or demo copy.
 - [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in billing emails.
-- [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in invoice PDFs and payment emails.
+- [x] Replace customer-facing `SelfMonitor` with `MyNetTax` in invoice PDFs and payment emails.
 - [ ] Replace app-store placeholder links using `selfmonitor` package/URLs with MyNetTax placeholders.
 - [ ] Update service metadata only where it is visible to customers or API docs.
 - [ ] Keep internal namespace changes scoped; do not rename code packages unless needed.
@@ -77,24 +77,24 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 ### P0.2 Transaction Inbox Zero
 
 - [ ] Make Transaction Inbox the main financial workbench.
-- [ ] Add filters by readiness status.
+- [x] Add filters by readiness status.
 - [ ] Add filters by tax period.
-- [ ] Add filters by transaction type: income, expense, CIS, receipt draft.
+- [x] Add filters by transaction type: income, expense, CIS, receipt draft.
 - [ ] Add “fastest readiness gain” sorting.
 - [ ] Add “needs receipt” queue.
 - [ ] Add “needs category” queue.
 - [ ] Add “needs business %” queue.
 - [ ] Add “needs split” queue.
 - [ ] Add “possible CIS income” queue.
-- [ ] Add quick action: mark personal.
-- [ ] Add quick action: mark business.
-- [ ] Add quick action: set business-use percentage.
+- [x] Add quick action: mark personal.
+- [x] Add quick action: mark business.
+- [x] Add quick action: set business-use percentage.
 - [ ] Add quick action: attach receipt.
 - [ ] Add quick action: split transaction.
 - [ ] Add quick action: create recurring rule.
 - [ ] Add quick action: ignore receipt draft candidate.
-- [ ] Add bulk review mode.
-- [ ] Add weekly Inbox Zero metric.
+- [x] Add bulk review mode.
+- [x] Add weekly Inbox Zero metric.
 - [ ] Add empty state that celebrates completion without sounding childish.
 - [ ] Add keyboard/mobile-friendly review flow.
 - [ ] Add tests for transaction status transitions.
@@ -136,7 +136,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [ ] Show unverified CIS credits.
 - [ ] Show missing evidence warning.
 - [ ] Show direct vs guided/simulation mode.
-- [ ] Require “true and complete” acknowledgement before submit.
+- [x] Require "true and complete" acknowledgement before submit.
 - [ ] Require extra acknowledgement if CIS credits are unverified.
 - [ ] Wire existing confirmation-token flow into tax submit UX.
 - [ ] Generate and store preview fingerprint.
@@ -166,13 +166,13 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### Obligations First
 
-- [ ] Add “Your Deadlines” screen.
-- [ ] Show period start.
-- [ ] Show period end.
-- [ ] Show due date.
-- [ ] Show obligation status: Open / Fulfilled / Overdue.
-- [ ] Show days until deadline.
-- [ ] Link each deadline to quarter readiness.
+- [x] Add "Your Deadlines" screen.
+- [x] Show period start.
+- [x] Show period end.
+- [x] Show due date.
+- [x] Show obligation status: Open / Fulfilled / Overdue.
+- [x] Show days until deadline.
+- [x] Link each deadline to quarter readiness.
 - [ ] Add reminders for 14, 7, 3 and 1 day windows.
 - [ ] Suppress reminders when already submitted.
 - [ ] Add urgent pending reminder 24h before deadline.
@@ -191,39 +191,39 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### Tax Reserve
 
-- [ ] Calculate profit-to-date.
-- [ ] Calculate estimated tax reserve.
-- [ ] Include CIS deductions in reserve estimate.
+- [x] Calculate profit-to-date.
+- [x] Calculate estimated tax reserve.
+- [x] Include CIS deductions in reserve estimate.
 - [ ] Add weekly reserve suggestion.
 - [ ] Add confidence level: low / medium / high.
 - [ ] Explain reserve changes: profit up, expenses down, quarter changed, CIS credited.
-- [ ] Add reserve widget to dashboard.
+- [x] Add reserve widget to dashboard.
 - [ ] Add reserve widget to quarter preview.
 
 ### 7-Minute Quarterly Wizard
 
-- [ ] Step 1: Sync bank.
-- [ ] Step 2: Fix Inbox blockers.
-- [ ] Step 3: Review receipts and CIS.
-- [ ] Step 4: Preview quarterly update.
-- [ ] Step 5: Confirm.
-- [ ] Step 6: Submit or save guided package.
-- [ ] Show estimated time on each step.
-- [ ] Show blockers per step.
-- [ ] Allow resume later.
-- [ ] Add completion celebration with receipt reference.
+- [x] Step 1: Sync bank.
+- [x] Step 2: Fix Inbox blockers.
+- [x] Step 3: Review receipts and CIS.
+- [x] Step 4: Preview quarterly update.
+- [x] Step 5: Confirm.
+- [x] Step 6: Submit or save guided package.
+- [x] Show estimated time on each step.
+- [x] Show blockers per step.
+- [x] Allow resume later.
+- [x] Add completion celebration with receipt reference.
 
 ## P1-B CIS Wedge
 
 ### CIS Control Center
 
-- [ ] Make CIS Refund Tracker visible in primary navigation.
+- [x] Make CIS Refund Tracker visible in primary navigation.
 - [ ] Add homepage section for CIS subcontractors.
-- [ ] Show UK tax month x contractor table.
+- [x] Show UK tax month x contractor table.
 - [ ] Show statuses: Matched, Mismatch, Missing statement, Unverified, Not CIS.
-- [ ] Add filter: only problems.
-- [ ] Add filter: unverified credits.
-- [ ] Add filter: missing statements.
+- [x] Add filter: only problems.
+- [x] Add filter: unverified credits.
+- [x] Add filter: missing statements.
 - [ ] Add contractor grouping.
 - [ ] Add refund estimate summary.
 - [ ] Add total verified deductions.
@@ -232,17 +232,17 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### CIS Statement Ingest
 
-- [ ] Add upload flow for CIS statement PDF/photo.
-- [ ] Parse contractor name.
-- [ ] Parse period start and end.
-- [ ] Parse gross total.
-- [ ] Parse materials total.
-- [ ] Parse CIS deducted total.
-- [ ] Parse net paid total.
+- [x] Add upload flow for CIS statement PDF/photo.
+- [x] Parse contractor name.
+- [x] Parse period start and end.
+- [x] Parse gross total.
+- [x] Parse materials total.
+- [x] Parse CIS deducted total.
+- [x] Parse net paid total.
 - [ ] Link statement to contractor and tax month.
-- [ ] Show OCR confidence.
-- [ ] Require review when confidence is low.
-- [ ] Store document reference on CIS record.
+- [x] Show OCR confidence.
+- [x] Require review when confidence is low.
+- [x] Store document reference on CIS record.
 - [ ] Add tests for statement parsing edge cases.
 
 ### CIS Bank Reconciliation
@@ -262,18 +262,18 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 - [ ] Show CIS disclosure in quarterly preview.
 - [ ] Allow unverified credits with explicit acknowledgement.
-- [ ] Watermark unverified CIS in evidence pack.
-- [ ] Generate “what to upload to become verified” report.
+- [x] Watermark unverified CIS in evidence pack.
+- [ ] Generate "what to upload to become verified" report.
 - [ ] Add accountant-facing CIS evidence summary.
-- [ ] Add share token for accountant evidence pack.
+- [x] Add share token for accountant evidence pack.
 - [ ] Add audit events for CIS classification.
 - [ ] Add audit events for statement upload.
 - [ ] Add audit events for shared evidence download.
 
 ### CIS Reminders
 
-- [ ] Keep 72h hard throttle.
-- [ ] Keep 2 per 7 days soft throttle.
+- [x] Keep 72h hard throttle.
+- [x] Keep 2 per 7 days soft throttle.
 - [ ] Add reminder copy for requesting statement from contractor/client.
 - [ ] Add snooze 7, 14, 30 days.
 - [ ] Add reminder sent log.
@@ -285,7 +285,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 ### Localization Coverage
 
 - [ ] Confirm priority languages: EN, PL, RO, UK, RU, ES, IT, PT, TR, BN.
-- [ ] Remove raw translation keys from visible UI.
+- [x] Remove raw translation keys from visible UI.
 - [ ] Localize onboarding.
 - [ ] Localize dashboard.
 - [ ] Localize Transaction Inbox.
@@ -337,46 +337,46 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [ ] Bank connection must be simple and reliable.
 - [ ] Bank sync must show imported count.
 - [ ] Bank sync must show last sync time.
-- [ ] Bank sync must show tier limits.
-- [ ] Bank sync must show next available sync.
+- [x] Bank sync must show tier limits.
+- [x] Bank sync must show next available sync.
 - [ ] Receipt scan must be faster than manual entry.
 - [ ] Invoices must remain easy to create and send.
-- [ ] Export CSV/PDF must be easy to find.
+- [x] Export CSV/PDF must be easy to find.
 - [ ] VAT Pro+ flow must be clearly positioned.
-- [ ] MTD obligations must be accurate.
+- [x] MTD obligations must be accurate.
 - [ ] HMRC fraud context must be handled correctly.
 - [ ] Pricing must be clear and credible.
 - [ ] Legal pages must be production-ready.
 
 ### Where MyNetTax Must Win
 
-- [ ] CIS refund tracking must be more user-friendly than Sage CIS workflows.
-- [ ] Quarter readiness must feel easier than accounting dashboards.
+- [x] CIS refund tracking must be more user-friendly than Sage CIS workflows.
+- [x] Quarter readiness must feel easier than accounting dashboards.
 - [ ] Language support must be visible before signup.
 - [ ] Mobile receipt and voice flows must feel native and fast.
-- [ ] Evidence pack must feel professional enough for accountants.
-- [ ] Mortgage readiness must connect tax records to life goals.
+- [x] Evidence pack must feel professional enough for accountants.
+- [x] Mortgage readiness must connect tax records to life goals.
 - [ ] AI must answer around the user’s actual blockers, not generic tax questions only.
 
 ## P2 Evidence Pack And Accountant Layer
 
 - [ ] Build quarter evidence pack PDF.
-- [ ] Build quarter evidence pack ZIP.
+- [x] Build quarter evidence pack ZIP.
 - [ ] Include transaction summary.
 - [ ] Include category summary.
 - [ ] Include receipts list.
 - [ ] Include missing receipts list.
-- [ ] Include CIS records.
+- [x] Include CIS records.
 - [ ] Include CIS statements list.
-- [ ] Include unverified CIS watermark.
+- [x] Include unverified CIS watermark.
 - [ ] Include readiness summary.
 - [ ] Include MTD preview fingerprint.
 - [ ] Include submission receipt reference.
 - [ ] Include audit trail.
-- [ ] Add accountant share token.
-- [ ] Add token expiry.
+- [x] Add accountant share token.
+- [x] Add token expiry.
 - [ ] Add shared download audit event.
-- [ ] Add Growth/Pro/Business gating for pack features.
+- [x] Add Growth/Pro/Business gating for pack features.
 
 ## P2 Mobile Wow
 
@@ -392,13 +392,13 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ## P3 Mortgage Growth Loop
 
-- [ ] Connect tax estimate to mortgage readiness.
-- [ ] Connect bank history to mortgage readiness.
-- [ ] Connect evidence pack to broker bundle.
-- [ ] Add multilingual mortgage readiness explanation.
-- [ ] Add broker bundle CTA.
+- [x] Connect tax estimate to mortgage readiness.
+- [x] Connect bank history to mortgage readiness.
+- [x] Connect evidence pack to broker bundle.
+- [x] Add multilingual mortgage readiness explanation.
+- [x] Add broker bundle CTA.
 - [ ] Add `.co.uk` SEO page for self-employed mortgage readiness.
-- [ ] Add “Road to mortgage” dashboard card.
+- [x] Add "Road to mortgage" dashboard card.
 - [ ] Add monthly mortgage progress digest.
 - [ ] Add partner broker marketplace backlog.
 
