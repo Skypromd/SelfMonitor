@@ -1,4 +1,4 @@
-# MyNetTax Top-1 TODO
+﻿# MyNetTax Top-1 TODO
 
 ## North Star
 
@@ -102,20 +102,20 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 ### P0.3 Quarter Readiness Console
 
 - [ ] Create quarter readiness screen.
-- [ ] Show status: Ready / Needs attention / Blocked.
-- [ ] Show current tax quarter and due date.
-- [ ] Show MTD obligation status.
-- [ ] Show readiness score.
-- [ ] Show blocker groups.
-- [ ] Show “Fix in 5 minutes” button.
-- [ ] Generate Today list from top blockers.
-- [ ] Show estimated time per task.
-- [ ] Show improvement impact per task.
-- [ ] Show missing bank sync warning.
-- [ ] Show missing receipts count.
-- [ ] Show unreviewed transaction count.
-- [ ] Show missing category/split/business % count.
-- [ ] Show CIS verified/unverified summary.
+- [x] Show status: Ready / Needs attention / Blocked.
+- [x] Show current tax quarter and due date.
+- [x] Show MTD obligation status.
+- [x] Show readiness score.
+- [x] Show blocker groups.
+- [x] Show “Fix in 5 minutes” button.
+- [x] Generate Today list from top blockers.
+- [x] Show estimated time per task.
+- [x] Show improvement impact per task.
+- [x] Show missing bank sync warning.
+- [x] Show missing receipts count.
+- [x] Show unreviewed transaction count.
+- [x] Show missing category/split/business % count.
+- [x] Show CIS verified/unverified summary.
 - [ ] Show direct/guided/simulation HMRC mode status.
 - [ ] Show HMRC operational readiness where relevant.
 - [ ] Add mobile version of readiness console.
