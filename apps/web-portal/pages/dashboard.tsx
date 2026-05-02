@@ -662,6 +662,18 @@ function TaxReserveWidget({ token }: { token: string }) {
   const fmt = (n: number) => `£${Math.round(n).toLocaleString('en-GB')}`;
   const confColor = reserve.confidence === 'high' ? '#22c55e' : reserve.confidence === 'medium' ? '#f59e0b' : '#94a3b8';
 
+  // Weekly reserve suggestion: split remaining balance over weeks until next SA payment date
+  const weeklyReserve = (() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    // HMRC SA dates: 31 Jan, 31 Jul — find the next one
+    const candidates = [new Date(year, 0, 31), new Date(year, 6, 31), new Date(year + 1, 0, 31)];
+    const target = candidates.find(d => d > now) ?? candidates[candidates.length - 1];
+    const weeksLeft = Math.max(1, Math.ceil((target.getTime() - now.getTime()) / (7 * 86_400_000)));
+    const weeklyAmount = reserve.net_tax_due_gbp / weeksLeft;
+    return { weeklyAmount, target, weeksLeft };
+  })();
+
   return (
     <div className={styles.subContainer} style={{
       border: '1px solid rgba(239,68,68,0.25)',
@@ -687,10 +699,20 @@ function TaxReserveWidget({ token }: { token: string }) {
           <span>Class 4 NIC: <strong style={{ color: 'var(--text-primary)' }}>{fmt(reserve.class4_nic_gbp)}</strong></span>
         </div>
       </div>
-      <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
+      <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <div style={{
+          padding: '0.45rem 0.85rem', borderRadius: 8,
+          background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',
+          fontSize: '0.8rem', color: '#b91c1c',
+        }}>
+          Save <strong>{fmt(weeklyReserve.weeklyAmount)}/week</strong> to reach your reserve by{' '}
+          {weeklyReserve.target.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}{' '}
+          <span style={{ opacity: 0.7 }}>({weeklyReserve.weeksLeft} weeks left)</span>
+        </div>
         <Link href="/tax-readiness" style={{
           padding: '0.4rem 1rem', borderRadius: 8, border: '1px solid rgba(239,68,68,0.35)',
           color: '#ef4444', fontSize: '0.82rem', fontWeight: 600, textDecoration: 'none',
+          display: 'inline-block',
         }}>
           View full breakdown →
         </Link>

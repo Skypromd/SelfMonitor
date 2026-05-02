@@ -157,6 +157,43 @@ export default function ObligationsPage({ token }: Props) {
 
         {!loading && obligations.length > 0 && (
           <>
+            {/* Deadline reminder banners */}
+            {(() => {
+              const windows = [
+                { days: 1,  label: 'Due today or tomorrow',  bg: '#fef2f2', border: '#ef4444', color: '#b91c1c' },
+                { days: 3,  label: 'Due within 3 days',      bg: '#fef3c7', border: '#f59e0b', color: '#92400e' },
+                { days: 7,  label: 'Due within 7 days',      bg: '#fff7ed', border: '#fb923c', color: '#9a3412' },
+                { days: 14, label: 'Due within 14 days',     bg: '#f0fdf4', border: '#22c55e', color: '#166534' },
+              ];
+              const upcoming = obligations.filter(o => o.status !== 'fulfilled');
+              return windows
+                .map(w => {
+                  const matches = upcoming.filter(o => {
+                    const d = daysUntil(o.due_date);
+                    return d >= 0 && d <= w.days;
+                  });
+                  if (matches.length === 0) return null;
+                  return (
+                    <div key={w.days} style={{
+                      padding: '0.65rem 1rem', borderRadius: 10, marginBottom: '0.75rem',
+                      background: w.bg, border: `1px solid ${w.border}`, color: w.color,
+                      fontSize: '0.85rem', fontWeight: 600,
+                      display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+                    }}>
+                      <span>⏰</span>
+                      <span>
+                        {w.label}: <strong>{matches.length} obligation{matches.length > 1 ? 's' : ''}</strong>
+                        {' '}({matches.map(m => fmtDate(m.due_date)).join(', ')})
+                      </span>
+                      <Link href="/quarterly-wizard" style={{ marginLeft: 'auto', color: w.color, fontSize: '0.78rem', textDecoration: 'underline', whiteSpace: 'nowrap' }}>
+                        Start wizard →
+                      </Link>
+                    </div>
+                  );
+                })
+                .filter(Boolean);
+            })()}
+
             {/* Summary strip */}
             <div style={{
               display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
