@@ -1,8 +1,10 @@
 import {
     Activity, Banknote, BarChart2, Bot, CalendarDays, CheckCircle, ClipboardCheck, CreditCard, ExternalLink,
     FileDown, FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
-    Receipt, Sparkles,
-    Settings, ShoppingBag, User, Wallet
+    Receipt,
+    Settings, ShoppingBag,
+    Sparkles,
+    User, Wallet
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';

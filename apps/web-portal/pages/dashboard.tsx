@@ -13,7 +13,6 @@ import {
     XAxis,
     YAxis,
 } from 'recharts';
-import { useTranslation } from '../hooks/useTranslation';
 import styles from '../styles/Home.module.css';
 
 const API_GATEWAY_URL = process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api';
@@ -801,14 +800,12 @@ function ActionCenter({ token }: { token: string }) {  const [advice, setAdvice]
 }
 
 export default function DashboardPage({ token }: DashboardPageProps) {
-  const { t } = useTranslation();
-
   return (
     <div className={styles.pageContainer}>
       <TrialBanner token={token} />
       <MtdComplianceBanner token={token} />
-      <h1>{t('dashboard.title')}</h1>
-      <p>{t('dashboard.description')}</p>
+      <h1>Financial Dashboard</h1>
+      <p>Your financial overview</p>
       <CisTasksStrip token={token} />
       <TaxReserveWidget token={token} />
       <BankSyncStatus token={token} />

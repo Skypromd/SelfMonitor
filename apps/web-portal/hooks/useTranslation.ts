@@ -1,5 +1,5 @@
-import { useContext } from 'react';
 import { IntlMessageFormat } from 'intl-messageformat';
+import { useContext } from 'react';
 import { I18nContext } from '../context/i18n';
 
 type TranslationPrimitive = string | number | boolean | Date;
@@ -27,7 +27,11 @@ export const useTranslation = () => {
     const subkey = subkeyParts.join('.');
     const messageTemplate = translations[namespace]?.[subkey];
     if (!messageTemplate) {
-      return key;
+      // Return a readable English fallback rather than a raw key like 'nav.dashboard'
+      const lastSegment = subkeyParts.length > 0 ? subkeyParts[subkeyParts.length - 1] : namespace;
+      return lastSegment
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (c) => c.toUpperCase());
     }
     try {
       const formatter = getCachedMessageFormatter(activeLocale, messageTemplate);
