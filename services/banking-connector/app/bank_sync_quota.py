@@ -118,6 +118,25 @@ def consume_sync_slot_or_raise(
                 ),
             )
         data[user_id][day] = used + 1
+        data[user_id]["_last_sync_at"] = datetime.now(timezone.utc).isoformat()
+        _save(data)
+
+
+def last_sync_at(user_id: str) -> str | None:
+    """Return ISO-8601 UTC timestamp of the user's most recent successful sync, or None."""
+    with _LOCK:
+        data = _load()
+        return data.get(user_id, {}).get("_last_sync_at")  # type: ignore[return-value]
+
+
+def record_sync_at(user_id: str) -> None:
+    """Persist the current UTC instant as the user's last successful sync timestamp."""
+    ts = datetime.now(timezone.utc).isoformat()
+    with _LOCK:
+        data = _load()
+        if user_id not in data:
+            data[user_id] = {}
+        data[user_id]["_last_sync_at"] = ts
         _save(data)
 
 

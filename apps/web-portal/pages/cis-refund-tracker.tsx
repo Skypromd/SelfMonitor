@@ -47,7 +47,27 @@ function statusColor(st: string): string {
   if (st === 'VERIFIED') return '#10b981';
   if (st === 'UNVERIFIED') return '#f59e0b';
   if (st === 'MISSING') return '#ef4444';
+  if (st === 'MISMATCH') return '#f97316';
+  if (st === 'NOT_CIS') return '#94a3b8';
   return 'var(--text-secondary)';
+}
+
+function statusBg(st: string): string {
+  if (st === 'VERIFIED') return 'rgba(16,185,129,0.12)';
+  if (st === 'UNVERIFIED') return 'rgba(245,158,11,0.12)';
+  if (st === 'MISSING') return 'rgba(239,68,68,0.1)';
+  if (st === 'MISMATCH') return 'rgba(249,115,22,0.12)';
+  if (st === 'NOT_CIS') return 'rgba(148,163,184,0.12)';
+  return 'rgba(148,163,184,0.08)';
+}
+
+function statusLabel(st: string): string {
+  if (st === 'VERIFIED') return 'Matched';
+  if (st === 'UNVERIFIED') return 'Unverified';
+  if (st === 'MISSING') return 'Missing';
+  if (st === 'MISMATCH') return 'Mismatch';
+  if (st === 'NOT_CIS') return 'Not CIS';
+  return st;
 }
 
 type OcrResult = {
@@ -68,7 +88,7 @@ type OcrResult = {
 export default function CisRefundTrackerPage({ token }: { token: string }) {
   const [data, setData] = useState<TrackerPayload | null>(null);
   const [err, setErr] = useState('');
-  const [filter, setFilter] = useState<'all' | 'problems' | 'unverified' | 'missing'>('all');
+  const [filter, setFilter] = useState<'all' | 'problems' | 'unverified' | 'missing' | 'mismatch' | 'not_cis'>('all');
 
   // Upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -406,6 +426,8 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                   { key: 'problems', label: '⚠ Problems' },
                   { key: 'unverified', label: 'Unverified' },
                   { key: 'missing', label: 'Missing' },
+                  { key: 'mismatch', label: 'Mismatch' },
+                  { key: 'not_cis', label: 'Not CIS' },
                 ] as { key: typeof filter; label: string }[]
               ).map(({ key, label }) => (
                 <button
@@ -432,10 +454,13 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
               if (filter === 'all') return true;
               if (filter === 'unverified') return c.status === 'UNVERIFIED';
               if (filter === 'missing') return c.status === 'MISSING';
+              if (filter === 'mismatch') return c.status === 'MISMATCH' || c.reconciliation_worst === 'needs_review';
+              if (filter === 'not_cis') return c.status === 'NOT_CIS';
               if (filter === 'problems')
                 return (
                   c.status === 'UNVERIFIED' ||
                   c.status === 'MISSING' ||
+                  c.status === 'MISMATCH' ||
                   c.reconciliation_worst === 'needs_review' ||
                   c.open_payment_count > 0
                 );
@@ -472,10 +497,10 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                           <span style={{
                             padding: '0.15rem 0.55rem', borderRadius: 999, fontWeight: 700, fontSize: '0.7rem',
                             textTransform: 'uppercase',
-                            background: c.status === 'VERIFIED' ? 'rgba(16,185,129,0.12)' : c.status === 'UNVERIFIED' ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.1)',
+                            background: statusBg(c.status),
                             color: statusColor(c.status),
                           }}>
-                            {c.status === 'VERIFIED' ? 'Matched' : c.status === 'UNVERIFIED' ? 'Unverified' : c.status === 'MISSING' ? 'Missing' : c.status}
+                            {statusLabel(c.status)}
                           </span>
                         </td>
                         <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{fmt(c.cis_withheld_gbp)}</td>
@@ -510,6 +535,12 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                             >
                               Add statement
                             </button>
+                          )}
+                          {c.status === 'MISMATCH' && (
+                            <span style={{ color: '#f97316', fontWeight: 600 }}>Review bank match</span>
+                          )}
+                          {c.status === 'NOT_CIS' && (
+                            <span style={{ color: '#94a3b8' }}>No CIS action</span>
                           )}
                           {c.status === 'VERIFIED' && c.reconciliation_worst === 'needs_review' && (
                             <span style={{ color: '#f97316' }}>Review bank match</span>

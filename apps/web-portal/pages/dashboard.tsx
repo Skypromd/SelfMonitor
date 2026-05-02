@@ -20,6 +20,7 @@ const AUTH_SERVICE_URL = process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || '/api/auth'
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || '/api/analytics';
 const ADVICE_SERVICE_URL = process.env.NEXT_PUBLIC_ADVICE_SERVICE_URL || '/api/advice';
 const BANKING_SERVICE_URL = process.env.NEXT_PUBLIC_BANKING_SERVICE_URL || '/api/banking';
+const INTEGRATIONS_SERVICE_URL = process.env.NEXT_PUBLIC_INTEGRATIONS_SERVICE_URL || '/api/integrations';
 const TXN_SERVICE_URL = process.env.NEXT_PUBLIC_TRANSACTIONS_SERVICE_URL || '/api/transactions';
 
 type DashboardPageProps = {
@@ -698,7 +699,18 @@ function TaxReserveWidget({ token }: { token: string }) {
   );
 }
 
-type SyncQuota = { daily_limit: number; remaining: number };
+type SyncQuota = { daily_limit: number; remaining: number; last_sync_at?: string | null };
+
+function fmtRelative(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 2) return 'just now';
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
 
 function BankSyncStatus({ token }: { token: string }) {
   const [quota, setQuota] = useState<SyncQuota | null>(null);
@@ -746,9 +758,98 @@ function BankSyncStatus({ token }: { token: string }) {
       <div style={{ height: 6, borderRadius: 999, background: 'var(--lp-border)', overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 999, transition: 'width 0.4s ease' }} />
       </div>
+      {quota.last_sync_at && (
+        <p style={{ fontSize: '0.75rem', color: 'var(--lp-muted)', margin: '0.35rem 0 0' }}>
+          Last sync: <strong>{fmtRelative(quota.last_sync_at)}</strong>{' '}
+          <span style={{ opacity: 0.6 }}>
+            ({new Date(quota.last_sync_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })})
+          </span>
+        </p>
+      )}
+      {!quota.last_sync_at && (
+        <p style={{ fontSize: '0.75rem', color: 'var(--lp-muted)', margin: '0.35rem 0 0' }}>
+          No sync recorded yet — press Sync now to import transactions.
+        </p>
+      )}
       {quota.remaining === 0 && (
-        <p style={{ fontSize: '0.75rem', color: '#ef4444', margin: '0.4rem 0 0' }}>
+        <p style={{ fontSize: '0.75rem', color: '#ef4444', margin: '0.2rem 0 0' }}>
           Daily limit reached — resets at midnight UTC.
+        </p>
+      )}
+    </div>
+  );
+}
+
+type LatestSubmission = {
+  submission_id: string;
+  status: string;
+  submitted_at: string;
+  provider_reference: string | null;
+  submission_mode: string | null;
+};
+
+function SubmissionStatus({ token }: { token: string }) {
+  const [sub, setSub] = useState<LatestSubmission | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(`${INTEGRATIONS_SERVICE_URL}/submissions/latest`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok || cancelled) return;
+        const d = (await r.json()) as { submission: LatestSubmission | null };
+        if (!cancelled) { setSub(d.submission); setLoaded(true); }
+      } catch { setLoaded(true); }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  if (!loaded) return null;
+
+  const statusColor = (s: string) =>
+    s === 'completed' ? '#22c55e' : s === 'failed' ? '#ef4444' : s === 'pending' ? '#f59e0b' : '#94a3b8';
+
+  return (
+    <div className={styles.subContainer} style={{ marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.4rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1rem' }}>Last HMRC Submission</h2>
+        <Link href="/tax-preparation" style={{
+          padding: '0.3rem 0.75rem', borderRadius: 8,
+          border: '1px solid var(--lp-border)', color: 'var(--lp-muted)',
+          fontWeight: 600, fontSize: '0.78rem', textDecoration: 'none',
+        }}>
+          Submit return →
+        </Link>
+      </div>
+      {sub ? (
+        <div style={{ fontSize: '0.82rem', color: 'var(--lp-muted)', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+          <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{
+              padding: '0.15rem 0.55rem', borderRadius: 999, fontWeight: 700, fontSize: '0.7rem',
+              textTransform: 'capitalize', background: `${statusColor(sub.status)}22`,
+              border: `1px solid ${statusColor(sub.status)}55`, color: statusColor(sub.status),
+            }}>
+              {sub.status}
+            </span>
+            <span>{fmtRelative(sub.submitted_at)}</span>
+            <span style={{ opacity: 0.6 }}>
+              ({new Date(sub.submitted_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })})
+            </span>
+          </div>
+          {sub.provider_reference && (
+            <span>HMRC ref: <strong style={{ fontFamily: 'monospace' }}>{sub.provider_reference}</strong></span>
+          )}
+          {sub.submission_mode && (
+            <span>Mode: {sub.submission_mode.replace(/_/g, ' ')}</span>
+          )}
+        </div>
+      ) : (
+        <p style={{ fontSize: '0.82rem', color: 'var(--lp-muted)', margin: 0 }}>
+          No submission on record — use the{' '}
+          <Link href="/tax-preparation" style={{ color: 'var(--lp-accent-teal)' }}>MTD Submission</Link> page to file your first return.
         </p>
       )}
     </div>
@@ -888,6 +989,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <CisTasksStrip token={token} />
       <TaxReserveWidget token={token} />
       <BankSyncStatus token={token} />
+      <SubmissionStatus token={token} />
       <ProfitPulseStrip token={token} />
       <MortgageReadinessCard token={token} />
       <ActionCenter token={token} />

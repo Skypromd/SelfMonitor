@@ -24,22 +24,43 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
-from .companies_house import search_companies, get_company_profile, CompanySearchResult, CompanyProfile
+from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
+from libs.shared_auth.plan_limits import strict_hmrc_fraud_client_context_required
+from libs.shared_cis.audit_actions import CISAuditAction
+from libs.shared_compliance.audit_client import post_audit_event
+from libs.shared_mtd.audit_actions import MTDAuditAction
+
+from .companies_house import (
+    CompanyProfile,
+    CompanySearchResult,
+    get_company_profile,
+    search_companies,
+)
+from .hmrc_apis import (
+    BusinessDetail,
+    LossRecord,
+    Obligation,
+    PeriodicUpdate,
+    PeriodicUpdateResponse,
+    TaxCalculation,
+    VATObligation,
+    VATReturn,
+    VATReturnResponse,
+    calculate_tax_simulated,
+    get_business_details_simulated,
+    get_losses_simulated,
+    get_obligations_simulated,
+    get_vat_obligations_simulated,
+    record_loss_simulated,
+    submit_periodic_update_simulated,
+    submit_vat_return_simulated,
+)
 from .hmrc_client_context import (
     HMRCFraudClientContext,
     build_fraud_prevention_headers,
     fraud_headers_fingerprint,
     observed_inbound_client_metadata,
     validate_client_context_for_direct,
-)
-from .hmrc_apis import (
-    BusinessDetail, get_business_details_simulated,
-    Obligation, get_obligations_simulated,
-    PeriodicUpdate, PeriodicUpdateResponse, submit_periodic_update_simulated,
-    TaxCalculation, calculate_tax_simulated,
-    LossRecord, record_loss_simulated, get_losses_simulated,
-    VATReturn, VATReturnResponse, submit_vat_return_simulated,
-    VATObligation, get_vat_obligations_simulated,
 )
 from .hmrc_individual_calculations import (
     list_self_assessment_calculations,
@@ -58,12 +79,6 @@ from .hmrc_mtd import (
     submit_quarterly_update_to_hmrc,
     validate_quarterly_report,
 )
-
-from libs.shared_auth.jwt_fastapi import build_jwt_auth_dependencies
-from libs.shared_auth.plan_limits import strict_hmrc_fraud_client_context_required
-from libs.shared_cis.audit_actions import CISAuditAction
-from libs.shared_compliance.audit_client import post_audit_event
-from libs.shared_mtd.audit_actions import MTDAuditAction
 
 get_bearer_token, get_current_user_id = build_jwt_auth_dependencies()
 
@@ -1531,6 +1546,24 @@ async def get_company_profile_endpoint(
 
 
 # === HMRC MTD Minimum Functionality Endpoints ===
+
+@app.get("/integrations/submissions/latest")
+async def get_latest_submission(user_id: str = Depends(get_current_user_id)):
+    """Return the most recent HMRC submission for the authenticated user."""
+    submissions = list_submissions_for_user(user_id)
+    if not submissions:
+        return {"submission": None}
+    latest = submissions[0]
+    return {
+        "submission": {
+            "submission_id": str(latest.submission_id),
+            "status": latest.status,
+            "submitted_at": latest.submitted_at.isoformat(),
+            "provider_reference": latest.provider_reference,
+            "submission_mode": latest.submission_mode,
+        }
+    }
+
 
 @app.get("/integrations/hmrc/mtd/business-details", response_model=list[BusinessDetail])
 async def get_business_details(
