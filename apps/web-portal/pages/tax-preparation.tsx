@@ -520,6 +520,30 @@ export default function TaxPreparationPage({ token }: Props) {
           </div>
         )}
 
+        {/* Tax Reserve suggestion */}
+        {calc.estimated_tax_due > 0 && (
+          <div style={{
+            marginTop: '1rem', padding: '0.75rem 1rem',
+            background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.25)',
+            borderRadius: 10,
+          }}>
+            <div style={{ fontSize: '0.78rem', color: '#ef4444', fontWeight: 700, marginBottom: 4 }}>
+              💰 Tax Reserve
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>Set aside now</span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#ef4444' }}>
+                £{calc.estimated_tax_due.toFixed(2)}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 4 }}>
+              Based on {year.label} figures. See{' '}
+              <Link href="/tax-readiness" style={{ color: '#0d9488' }}>Tax Readiness</Link>{' '}
+              for a live reserve estimate.
+            </div>
+          </div>
+        )}
+
         {/* Warnings */}
         {warnings.length > 0 && (
           <div style={{

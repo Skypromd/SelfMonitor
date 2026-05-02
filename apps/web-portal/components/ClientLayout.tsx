@@ -1,7 +1,8 @@
 import {
     Activity, Banknote, BarChart2, Bot, CalendarDays, CheckCircle, ClipboardCheck, CreditCard, ExternalLink,
-    FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
-    Receipt, Send, Settings, ShoppingBag, User, Wallet
+    FileDown, FileText, Gift, Globe, Headphones, Home, Landmark, LayoutDashboard, Lock, LogOut, Menu,
+    Receipt,
+    Settings, ShoppingBag, User, Wallet
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -95,10 +96,10 @@ export default function ClientLayout({
     { href: '/tax-readiness',      label: 'Tax Readiness',     icon: <CheckCircle size={17} /> },
     { href: '/obligations',        label: 'Deadlines',          icon: <CalendarDays size={17} /> },
     { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
+    { href: '/submission',       label: 'Export / Download',      icon: <FileDown size={17} /> },
     { href: '/tax-preparation',  label: 'Tax Return',            icon: <ClipboardCheck size={17} /> },
     { href: '/reports',          label: t('nav.reports'),        icon: <BarChart2 size={17} /> },
     { href: '/marketplace',     label: t('nav.marketplace'),  icon: <ShoppingBag size={17} /> },
-    { href: '/submission',      label: t('nav.submission'),   icon: <Send size={17} /> },
     { href: '/profile',         label: t('nav.profile'),      icon: <User size={17} /> },
     { href: '/my-subscription', label: 'My subscription',     icon: <CreditCard size={17} /> },
     { href: '/invoices',        label: 'Invoices',            icon: <Receipt size={17} /> },

@@ -7,17 +7,18 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from datetime import datetime, timedelta, timezone
 
-import jwt
 import pytest
 from app.main import app
 from fastapi.testclient import TestClient
+from jose import jwt
 
 client = TestClient(app)
 
 
 def make_token(sub: str = "user-abc") -> str:
     payload = {"sub": sub, "exp": datetime.now(timezone.utc) + timedelta(hours=1)}
-    return jwt.encode(payload, "test-secret-key", algorithm="HS256")
+    key = os.environ.get("AUTH_SECRET_KEY", "test-secret-key")
+    return jwt.encode(payload, key, algorithm="HS256")
 
 
 AUTH_HEADER = {"Authorization": f"Bearer {make_token()}"}
