@@ -153,8 +153,8 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 - [ ] Standardize user-facing API error copy.
 - [ ] Add retry indicators for HMRC submit.
-- [ ] Add retry indicators for bank sync.
-- [ ] Add retry indicators for OCR processing.
+- [x] Add retry indicators for bank sync.
+- [x] Add retry indicators for OCR processing.
 - [ ] Add transparent fallback messaging.
 - [ ] Add operational readiness surface for HMRC.
 - [ ] Add “last successful sync” display.
