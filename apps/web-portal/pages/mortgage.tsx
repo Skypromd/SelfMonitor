@@ -476,7 +476,110 @@ export default function MortgagePage({ token }: Props) {
             View Full Mortgage Readiness in Reports →
           </Link>
         </div>
+
+        {/* Broker Bundle */}
+        <BrokerBundlePanel token={token} analyticsUrl={ANALYTICS_SERVICE_URL} />
       </div>
     </>
+  );
+}
+
+function BrokerBundlePanel({ token, analyticsUrl }: { token: string; analyticsUrl: string }) {
+  const [mortgageType, setMortgageType] = useState('residential_purchase');
+  const [downloading, setDownloading] = useState(false);
+  const [dlErr, setDlErr] = useState('');
+
+  const handleDownloadBundle = async () => {
+    setDlErr('');
+    setDownloading(true);
+    try {
+      const r = await fetch(`${analyticsUrl}/mortgage/broker-bundle.zip?mortgage_type=${encodeURIComponent(mortgageType)}&employment_profile=sole_trader`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({})) as { detail?: string };
+        setDlErr(j.detail || `Error ${r.status}`);
+        return;
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `broker-bundle-${mortgageType}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setDlErr('Download failed — please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: '1.5rem', padding: '1.25rem', borderRadius: 14, border: '1px solid rgba(99,102,241,0.3)', background: 'rgba(99,102,241,0.04)' }}>
+      <h2 style={{ margin: '0 0 0.5rem', fontSize: '1rem', fontWeight: 700 }}>Broker Bundle</h2>
+      <p style={{ fontSize: '0.85rem', color: 'var(--lp-muted)', margin: '0 0 1rem', lineHeight: 1.55 }}>
+        Package your CIS records, SA302 evidence, and income/expenditure summary into a single ZIP for your mortgage broker.
+        Your <Link href="/evidence-pack" style={{ color: 'var(--lp-accent-teal)' }}>Evidence Pack</Link> is automatically included.
+      </p>
+
+      {/* Multilingual readiness explanation */}
+      <details style={{ marginBottom: '1rem' }}>
+        <summary style={{ fontSize: '0.82rem', color: 'var(--lp-muted)', cursor: 'pointer', fontWeight: 600 }}>What self-employed applicants need (EN · RU · PL)</summary>
+        <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', paddingLeft: '0.5rem' }}>
+          <div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700 }}>🇬🇧 English —</span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--lp-muted)' }}> UK mortgage lenders typically require 2 years of SA302s + tax year overviews, 3 months' bank statements, and proof of identity/address. CIS subcontractors should provide CIS deduction statements alongside.</span>
+          </div>
+          <div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700 }}>🇷🇺 Русский —</span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--lp-muted)' }}> Для самозанятых заёмщиков в Великобритании, как правило, требуются SA302 за 2 года, обзоры налогового года, выписки банковского счёта за 3 месяца и удостоверение личности. Подрядчики CIS должны приложить справки об удержанном налоге.</span>
+          </div>
+          <div>
+            <span style={{ fontSize: '0.75rem', fontWeight: 700 }}>🇵🇱 Polski —</span>
+            <span style={{ fontSize: '0.78rem', color: 'var(--lp-muted)' }}> Kredytodawcy hipoteczni w Wielkiej Brytanii zwykle wymagają SA302 za 2 lata, przeglądów roku podatkowego, wyciągów bankowych za 3 miesiące oraz dokumentów tożsamości. Podwykonawcy CIS powinni dołączyć zaświadczenia o potrąconym podatku CIS.</span>
+          </div>
+        </div>
+      </details>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
+        <div>
+          <label style={{ display: 'block', fontSize: '0.78rem', color: 'var(--lp-muted)', marginBottom: 4, fontWeight: 600 }}>Mortgage type</label>
+          <select
+            value={mortgageType}
+            onChange={(e) => setMortgageType(e.target.value)}
+            style={{ padding: '0.45rem 0.75rem', borderRadius: 8, border: '1px solid var(--lp-border)', background: 'var(--lp-bg-elevated)', color: 'var(--text-primary)', fontSize: '0.88rem' }}
+          >
+            <option value="residential_purchase">Residential purchase</option>
+            <option value="residential_remortgage">Residential remortgage</option>
+            <option value="buy_to_let_purchase">Buy-to-let purchase</option>
+            <option value="buy_to_let_remortgage">Buy-to-let remortgage</option>
+            <option value="help_to_buy">Help to Buy</option>
+            <option value="shared_ownership">Shared ownership</option>
+          </select>
+        </div>
+        <button
+          type="button"
+          onClick={() => void handleDownloadBundle()}
+          disabled={downloading}
+          style={{
+            padding: '0.55rem 1.25rem', borderRadius: 8,
+            background: 'linear-gradient(135deg,#7c3aed,#6366f1)', color: '#fff',
+            fontWeight: 700, fontSize: '0.88rem', border: 'none',
+            cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.7 : 1,
+          }}
+        >
+          {downloading ? 'Preparing ZIP…' : 'Download broker bundle ZIP'}
+        </button>
+        <Link href="/evidence-pack" style={{ padding: '0.55rem 1.1rem', borderRadius: 8, border: '1px solid rgba(99,102,241,0.5)', color: '#818cf8', fontWeight: 700, fontSize: '0.88rem', textDecoration: 'none' }}>
+          View evidence pack
+        </Link>
+      </div>
+      {dlErr && <p style={{ color: '#ef4444', fontSize: '0.82rem', marginTop: '0.6rem', marginBottom: 0 }}>{dlErr}</p>}
+      <p style={{ fontSize: '0.7rem', color: 'var(--lp-muted)', marginTop: '0.75rem', marginBottom: 0, lineHeight: 1.5 }}>
+        ⚠️ Informational only — not regulated mortgage or financial advice. Verify all figures with a qualified, FCA-authorised mortgage broker before submission.
+      </p>
+    </div>
   );
 }

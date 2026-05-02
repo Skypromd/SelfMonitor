@@ -799,6 +799,85 @@ function ActionCenter({ token }: { token: string }) {  const [advice, setAdvice]
   );
 }
 
+type MortgageProgressStep = { id: string; title: string; detail: string; status: 'completed' | 'current' | 'upcoming'; done: boolean };
+type MortgageProgressResult = { steps: MortgageProgressStep[]; estimated_timeline_note: string | null; disclaimer: string };
+
+function MortgageReadinessCard({ token }: { token: string }) {
+  const [data, setData] = useState<MortgageProgressResult | null>(null);
+  const [planGated, setPlanGated] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch(`${ANALYTICS_SERVICE_URL}/mortgage/progress-tracker`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ credit_focus: 'unknown', include_backend_signals: false }),
+        });
+        if (r.status === 403) { if (!cancelled) setPlanGated(true); return; }
+        if (!r.ok) return;
+        const j = await r.json() as MortgageProgressResult;
+        if (!cancelled) setData(j);
+      } catch { /* no-op */ }
+    })();
+    return () => { cancelled = true; };
+  }, [token]);
+
+  const stepDots = data?.steps.slice(0, 5) ?? [];
+  const completedCount = stepDots.filter(s => s.done).length;
+  const totalCount = stepDots.length || 1;
+  const pct = Math.round((completedCount / totalCount) * 100);
+
+  return (
+    <div className={styles.subContainer} style={{ marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <h2 style={{ margin: 0, fontSize: '1rem' }}>Road to Mortgage</h2>
+        <Link href="/mortgage" style={{ padding: '0.35rem 0.85rem', borderRadius: 8, background: 'var(--lp-accent-teal)', color: '#fff', fontWeight: 700, fontSize: '0.8rem', textDecoration: 'none' }}>
+          Open plan →
+        </Link>
+      </div>
+      {planGated ? (
+        <p style={{ fontSize: '0.82rem', color: 'var(--lp-muted)' }}>
+          Mortgage readiness requires Pro or Business plan.{' '}
+          <Link href="/my-subscription" style={{ color: 'var(--accent)' }}>Upgrade</Link>
+        </p>
+      ) : !data ? (
+        <p style={{ fontSize: '0.82rem', color: 'var(--lp-muted)' }}>Loading milestones…</p>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <div style={{ flex: 1, height: 6, borderRadius: 999, background: 'var(--lp-border)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${pct}%`, background: '#0d9488', borderRadius: 999, transition: 'width 0.4s' }} />
+            </div>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#0d9488', whiteSpace: 'nowrap' }}>{completedCount}/{totalCount} done</span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+            {stepDots.map(step => (
+              <div key={step.id} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start', fontSize: '0.82rem' }}>
+                <span style={{ marginTop: 2, color: step.done ? '#22c55e' : step.status === 'current' ? '#818cf8' : 'var(--lp-muted)' }}>
+                  {step.done ? '✓' : step.status === 'current' ? '●' : '○'}
+                </span>
+                <div>
+                  <span style={{ fontWeight: 600, color: step.done ? '#22c55e' : step.status === 'current' ? '#818cf8' : 'var(--text-primary)' }}>{step.title}</span>
+                  {step.status === 'current' && <span style={{ marginLeft: 6, fontSize: '0.72rem', color: '#818cf8' }}>← next step</span>}
+                  <div style={{ fontSize: '0.75rem', color: 'var(--lp-muted)' }}>{step.detail}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {data.estimated_timeline_note && (
+            <p style={{ fontSize: '0.75rem', color: 'var(--lp-muted)', marginTop: '0.75rem', marginBottom: 0 }}>{data.estimated_timeline_note}</p>
+          )}
+          <p style={{ fontSize: '0.7rem', color: 'var(--lp-muted)', marginTop: '0.5rem', marginBottom: 0 }}>
+            Informational only — not financial or mortgage advice.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function DashboardPage({ token }: DashboardPageProps) {
   return (
     <div className={styles.pageContainer}>
@@ -810,6 +889,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <TaxReserveWidget token={token} />
       <BankSyncStatus token={token} />
       <ProfitPulseStrip token={token} />
+      <MortgageReadinessCard token={token} />
       <ActionCenter token={token} />
       <CashFlowChart token={token} />
       <TaxCalculator token={token} />

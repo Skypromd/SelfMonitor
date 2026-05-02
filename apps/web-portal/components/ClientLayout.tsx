@@ -102,6 +102,7 @@ export default function ClientLayout({
     { href: '/documents',        label: t('nav.documents'),      icon: <FileText size={17} /> },
     { href: '/submission',       label: 'Export / Download',      icon: <FileDown size={17} /> },
     { href: '/evidence-pack',    label: 'Evidence Pack',          icon: <PackageOpen size={17} /> },
+    { href: '/mortgage',         label: 'Mortgage Advisor',       icon: <Home size={17} /> },
     { href: '/tax-preparation',  label: 'Tax Return',            icon: <ClipboardCheck size={17} /> },
     { href: '/reports',          label: t('nav.reports'),        icon: <BarChart2 size={17} /> },
     { href: '/marketplace',     label: t('nav.marketplace'),  icon: <ShoppingBag size={17} /> },
