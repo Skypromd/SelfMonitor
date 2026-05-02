@@ -2,14 +2,13 @@ import datetime
 import json
 import logging
 import os
-
-import httpx
 import sys
 import uuid
-
-from jose import jwt as jose_jwt
 from pathlib import Path
 from typing import List
+
+import httpx
+from jose import jwt as jose_jwt
 
 for parent in Path(__file__).resolve().parents:
     if (parent / "libs").exists():
@@ -18,7 +17,17 @@ for parent in Path(__file__).resolve().parents:
             sys.path.append(parent_str)
         break
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,8 +39,15 @@ from libs.shared_cis.audit_actions import CISAuditAction
 from libs.shared_compliance.audit_client import post_audit_event
 from libs.shared_http.request_id import RequestIdMiddleware, get_request_id
 
-from . import cis_evidence_share
-from . import cis_refund_tracker, crud, crud_business, crud_cis, models, schemas
+from . import (
+    cis_evidence_share,
+    cis_refund_tracker,
+    crud,
+    crud_business,
+    crud_cis,
+    models,
+    schemas,
+)
 from .database import get_db
 from .telemetry import setup_telemetry
 
@@ -281,6 +297,63 @@ async def get_all_my_transactions(
             logger.warning(f"Failed to emit transaction overview events: {str(e)}")
 
     return transactions
+
+
+@app.get("/transactions/readiness")
+async def get_transaction_readiness(
+    user_id: str = Depends(get_current_user_id),
+    business_id: uuid.UUID = Depends(get_active_business_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns a tax-readiness score and blocker counts for the authenticated user."""
+    transactions = await crud.get_transactions_by_user(db, user_id=user_id, business_id=business_id)
+
+    total = len(transactions)
+    if total == 0:
+        return {
+            "uncategorized_count": 0,
+            "missing_business_pct": 0,
+            "unmatched_receipts": 0,
+            "cis_unverified": 0,
+            "score": 100,
+        }
+
+    uncategorized_count = sum(
+        1 for t in transactions if not getattr(t, "tax_category", None) and not getattr(t, "category", None)
+    )
+    missing_business_pct = sum(
+        1 for t in transactions
+        if getattr(t, "amount", 0) < 0 and getattr(t, "business_use_percent", None) is None
+    )
+
+    # unmatched receipt drafts — query directly from crud
+    try:
+        unmatched_count, _ = await crud.list_unmatched_receipt_drafts(
+            db, user_id=user_id, limit=1, offset=0
+        )
+    except Exception:
+        unmatched_count = 0
+
+    # CIS: count unverified records for this user
+    try:
+        cis_records = await crud_cis.get_cis_records(db, user_id=user_id)
+        cis_unverified = sum(
+            1 for r in cis_records if getattr(r, "verification_status", "unverified") == "unverified"
+        )
+    except Exception:
+        cis_unverified = 0
+
+    blockers = uncategorized_count + missing_business_pct + unmatched_count + cis_unverified
+    score = max(0, round(100 - (blockers / max(total, 1)) * 100))
+
+    return {
+        "uncategorized_count": uncategorized_count,
+        "missing_business_pct": missing_business_pct,
+        "unmatched_receipts": unmatched_count,
+        "cis_unverified": cis_unverified,
+        "score": score,
+    }
+
 
 @app.patch("/transactions/{transaction_id}", response_model=schemas.Transaction)
 async def update_transaction_category(

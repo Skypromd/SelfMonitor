@@ -274,6 +274,7 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
   const [txnFilterDateFrom, setTxnFilterDateFrom] = useState('');
   const [txnFilterDateTo, setTxnFilterDateTo] = useState('');
   const [txnFilterCategory, setTxnFilterCategory] = useState('');
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'uncategorised' | 'no_receipt' | 'cis_unverified'>('all');
 
   const displayedTransactions = useMemo(() => {
     return transactions.filter((t) => {
@@ -282,9 +283,12 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
       if (txnFilterCategory === '__uncategorized__') {
         if (t.category) return false;
       } else if (txnFilterCategory && (t.category || '') !== txnFilterCategory) return false;
+      if (inboxFilter === 'uncategorised' && t.category) return false;
+      if (inboxFilter === 'no_receipt' && t.reconciliation_status !== 'unmatched') return false;
+      if (inboxFilter === 'cis_unverified' && !openTaskByTxnId.has(t.id)) return false;
       return true;
     });
-  }, [transactions, txnFilterDateFrom, txnFilterDateTo, txnFilterCategory]);
+  }, [transactions, txnFilterDateFrom, txnFilterDateTo, txnFilterCategory, inboxFilter, openTaskByTxnId]);
 
   useEffect(() => {
     if (!modalTask || !modalTxn) {
@@ -940,6 +944,42 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
             </button>
           )}
         </div>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '0.35rem',
+          marginBottom: '0.75rem',
+        }}
+      >
+        {(
+          [
+            { key: 'all', label: 'All' },
+            { key: 'uncategorised', label: `Uncategorised (${transactions.filter((t) => !t.category).length})` },
+            { key: 'no_receipt', label: `No Receipt (${transactions.filter((t) => t.reconciliation_status === 'unmatched').length})` },
+            { key: 'cis_unverified', label: `CIS Unverified (${transactions.filter((t) => openTaskByTxnId.has(t.id)).length})` },
+          ] as const
+        ).map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setInboxFilter(key)}
+            style={{
+              padding: '0.28rem 0.8rem',
+              borderRadius: 999,
+              border: `1px solid ${inboxFilter === key ? 'var(--lp-accent-teal)' : 'var(--lp-border)'}`,
+              background: inboxFilter === key ? 'rgba(13,148,136,0.12)' : 'transparent',
+              color: inboxFilter === key ? 'var(--lp-accent-teal)' : 'var(--lp-muted)',
+              fontSize: '0.78rem',
+              fontWeight: inboxFilter === key ? 700 : 400,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       <div
         style={{

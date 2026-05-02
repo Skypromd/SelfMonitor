@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useRouter } from 'next/router';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { useCallback, useEffect, useState } from 'react';
 import { CisComplianceBanner } from '../components/CisComplianceBanner';
-import { MtdTaxPrepSubmissionCta, MtdTaxPrepDraftCaption, mtdWorkflowLabel, type MtdDraftLatest } from '../components/MtdDraftWorkflow';
+import { MtdTaxPrepDraftCaption, MtdTaxPrepSubmissionCta, mtdWorkflowLabel, type MtdDraftLatest } from '../components/MtdDraftWorkflow';
 import { downloadAccountantTaxSummaryPdf } from '../lib/taxAccountantPdf';
 import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
 import styles from '../styles/Home.module.css';
@@ -309,6 +309,7 @@ export default function TaxPreparationPage({ token }: Props) {
   const [taxTipsDisclaimer, setTaxTipsDisclaimer] = useState('');
   const [mtdDraft, setMtdDraft] = useState<MtdDraftLatest | null>(null);
   const [mtdWorkflowBusy, setMtdWorkflowBusy] = useState(false);
+  const [showSubmitPreview, setShowSubmitPreview] = useState(false);
 
   const year = TAX_YEARS[yearIdx];
 
@@ -465,8 +466,100 @@ export default function TaxPreparationPage({ token }: Props) {
 
   const totalTaxDue = calc ? calc.estimated_tax_due : 0;
 
+  const submitPreviewModal = showSubmitPreview && calc ? (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9000,
+        background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}
+      onClick={() => setShowSubmitPreview(false)}
+    >
+      <div
+        style={{
+          background: 'var(--card-bg, #1e293b)', borderRadius: 16, padding: '2rem',
+          maxWidth: 520, width: '90%', border: '1px solid var(--border)',
+          boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ margin: '0 0 1.2rem', fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+          Review Before Submitting
+        </h2>
+        <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+          {year.label} · Deadline {year.deadline}
+        </div>
+
+        {/* Final figures */}
+        {[
+          { label: 'Total income', value: `£${calc.total_income.toFixed(2)}` },
+          { label: 'Total expenses', value: `£${calc.total_expenses.toFixed(2)}`, color: '#ef4444' },
+          { label: 'Taxable profit', value: `£${calc.taxable_profit.toFixed(2)}`, bold: true },
+          { label: 'Income tax', value: `£${calc.estimated_income_tax_due.toFixed(2)}` },
+          { label: 'Class 4 NIC', value: `£${calc.estimated_class4_nic_due.toFixed(2)}` },
+          { label: 'Total tax due', value: `£${calc.estimated_tax_due.toFixed(2)}`, bold: true, accent: '#0d9488' },
+        ].map(({ label, value, bold, color, accent }) => (
+          <div
+            key={label}
+            style={{
+              display: 'flex', justifyContent: 'space-between',
+              padding: '0.55rem 0', borderBottom: '1px solid var(--border-light)',
+              fontSize: '0.88rem',
+            }}
+          >
+            <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+            <span style={{ fontWeight: bold ? 700 : 500, color: accent ?? color ?? 'var(--text-primary)' }}>{value}</span>
+          </div>
+        ))}
+
+        {/* Quarter info */}
+        {calc.mtd_obligation.reporting_required && calc.mtd_obligation.quarterly_updates?.length > 0 && (
+          <div style={{ marginTop: '1rem', fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+            <strong>MTD Quarter:</strong>{' '}
+            {calc.mtd_obligation.quarterly_updates.find(q => q.status === 'open' || q.status === 'due_now')?.quarter ?? '—'}
+          </div>
+        )}
+
+        {/* Warnings */}
+        {warnings.length > 0 && (
+          <div style={{
+            marginTop: '1rem', padding: '0.75rem 1rem',
+            background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)',
+            borderRadius: 10, fontSize: '0.82rem', color: 'var(--text-secondary)',
+          }}>
+            ⚠️ {warnings.length} issue{warnings.length !== 1 ? 's' : ''} detected — review before finalising.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', flexWrap: 'wrap' }}>
+          <Link
+            href="/submission"
+            style={{
+              flex: 1, textAlign: 'center', padding: '0.65rem 1.2rem',
+              borderRadius: 10, background: 'var(--accent, #0d9488)', color: '#fff',
+              fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none',
+            }}
+          >
+            Proceed to Submission →
+          </Link>
+          <button
+            type="button"
+            onClick={() => setShowSubmitPreview(false)}
+            style={{
+              padding: '0.65rem 1.2rem', borderRadius: 10, border: '1px solid var(--border)',
+              background: 'transparent', color: 'var(--text-secondary)',
+              fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer',
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className={styles.pageContainer} style={{ padding: '24px 0' }}>
+      {submitPreviewModal}
       {/* Header */}
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ fontSize: '1.6rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
@@ -847,6 +940,24 @@ export default function TaxPreparationPage({ token }: Props) {
                   ))}
                 </div>
                 <MtdTaxPrepSubmissionCta />
+                {/* MTD Preview Modal */}
+                <button
+                  type="button"
+                  onClick={() => setShowSubmitPreview(true)}
+                  style={{
+                    marginTop: 12,
+                    padding: '10px 20px',
+                    borderRadius: 10,
+                    border: '2px solid var(--accent, #0d9488)',
+                    background: 'rgba(13,148,136,0.1)',
+                    color: 'var(--accent, #0d9488)',
+                    fontWeight: 700,
+                    fontSize: '0.88rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Review Figures Before Submitting →
+                </button>
                 {mtdDraft?.draft_id && mtdDraft.workflow_status ? (
                   <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-light)' }}>
                     <MtdTaxPrepDraftCaption />

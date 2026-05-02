@@ -722,7 +722,7 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
             <h1 className={styles.pageTitle}>{t('nav.admin')}</h1>
-            <p className={styles.pageLead}>Full visibility and control over your SelfMonitor business — revenue, users, partners, and AI automation.</p>
+            <p className={styles.pageLead}>Full visibility and control over your MyNetTax business — revenue, users, partners, and AI automation.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
             {user && <span style={{ color: '#64748b', fontSize: '0.82rem' }}>{user.email}</span>}

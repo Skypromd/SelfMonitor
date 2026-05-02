@@ -160,7 +160,7 @@ const TESTIMONIALS = [
     name: 'Sarah K.',
     role: 'Freelance Developer, London',
     initials: 'SK',
-    quote: 'SelfMonitor saved me 6 hours every week. My tax return was filed in 3 clicks. I wish I had found this 5 years ago.',
+    quote: 'MyNetTax saved me 6 hours every week. My tax return was filed in 3 clicks. I wish I had found this 5 years ago.',
     stars: 5,
   },
   {
@@ -237,7 +237,7 @@ export default function HomePage(_props: IndexPageProps) {
   return (
     <>
       <Head>
-        <title>SelfMonitor — Financial Freedom for UK Freelancers</title>
+        <title>MyNetTax — Financial Freedom for UK Freelancers</title>
         <meta name="description" content="AI-powered banking, taxes, and insights for UK freelancers and sole traders. From receipt to HMRC submission in minutes." />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
@@ -249,7 +249,7 @@ export default function HomePage(_props: IndexPageProps) {
         <div className={styles.lpNavInner}>
           <div className={styles.lpNavBrand}>
             <span className={styles.lpNavLogo}>SM</span>
-            <span className={styles.lpNavName}>SelfMonitor</span>
+            <span className={styles.lpNavName}>MyNetTax</span>
           </div>
           <nav className={styles.lpNavLinks}>
             <a href="#features" className={styles.lpNavLink}>Features</a>
@@ -317,6 +317,21 @@ export default function HomePage(_props: IndexPageProps) {
             Invoicing · AI Tax Advice · HMRC Deadlines · Cash Flow Forecasts ·
             Expense Tracking · Document Storage — in one beautifully designed mobile app.
           </p>
+          {/* CIS lead feature highlight */}
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.55rem',
+            background: 'linear-gradient(135deg, rgba(8,145,178,0.15), rgba(13,148,136,0.12))',
+            border: '1px solid rgba(8,145,178,0.4)',
+            borderRadius: 10, padding: '0.55rem 1rem', marginBottom: '1rem',
+            fontSize: '0.82rem', color: '#e2e8f0',
+          }}>
+            <BarChart2 size={14} color="#0891b2" />
+            <span>
+              <strong style={{ color: '#22d3ee' }}>CIS Refund Tracker</strong>
+              {' '}— automatically track Construction Industry Scheme deductions and maximise your refund.
+              {' '}<a href="#features" style={{ color: '#0d9488', fontWeight: 600, textDecoration: 'none' }}>Available on all paid plans →</a>
+            </span>
+          </div>
           <div className={styles.lpHeroCtas}>
             <a href="/register" className={styles.lpCtaGold}>Start for Free <ArrowRight size={16} /></a>
             <a href="#features" className={styles.lpCtaSecondary}>See Features</a>
@@ -478,7 +493,7 @@ export default function HomePage(_props: IndexPageProps) {
           <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.4 }}>
             <div className={styles.chartTitleRow}><PieChart size={16} color="#16a34a" /><span>Tax Savings Distribution</span></div>
             <SavingsChart />
-            <p className={styles.chartCaption}>Breakdown of how SelfMonitor identifies and maximises your allowable deductions</p>
+            <p className={styles.chartCaption}>Breakdown of how MyNetTax identifies and maximises your allowable deductions</p>
           </motion.div>
           <motion.div className={styles.chartCard} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.5 }}>
             <div className={styles.chartTitleRow}><Landmark size={16} color="#f59e0b" /><span>Financial Health Summary</span></div>
@@ -529,7 +544,7 @@ export default function HomePage(_props: IndexPageProps) {
       <section className={styles.lpSection} id="ai-engine" style={{ background: 'linear-gradient(135deg, rgba(2,132,199,0.06) 0%, rgba(13,148,136,0.06) 100%)' }}>
         <div className={styles.lpSectionHeader}>
           <div className={styles.lpChip}><Bot size={13} /> Powered by GPT-4o</div>
-          <h2 className={styles.lpSectionH2}>The AI brain behind SelfMonitor</h2>
+          <h2 className={styles.lpSectionH2}>The AI brain behind MyNetTax</h2>
           <p className={styles.lpSectionSub}>Not just automation — a financial co-pilot that understands UK tax law, speaks 10 languages, and learns your business patterns.</p>
         </div>
         <div className={styles.aiEngineGrid}>
@@ -560,10 +575,10 @@ export default function HomePage(_props: IndexPageProps) {
         </div>
       </section>
 
-      {/* ═══ WHY SELFMONITOR ═══ */}
+      {/* ═══ WHY MYNETTAX ═══ */}
       <section className={styles.lpSection} id="why" style={{ background: 'var(--lp-bg-elevated)' }}>
         <div className={styles.lpSectionHeader}>
-          <div className={styles.lpChip}>Why SelfMonitor</div>
+          <div className={styles.lpChip}>Why MyNetTax</div>
           <h2 className={styles.lpSectionH2}>Built specifically for how you work</h2>
           <p className={styles.lpSectionSub}>Not a generic accounting tool. Designed from the ground up for UK sole traders and freelancers.</p>
         </div>
@@ -640,18 +655,18 @@ export default function HomePage(_props: IndexPageProps) {
         <div className={styles.lpSectionHeader}>
           <div className={styles.lpChip}>ROI Calculator</div>
           <h2 className={styles.lpSectionH2}>See How Much You Save</h2>
-          <p className={styles.lpSectionSub}>SelfMonitor pays for itself in weeks — the numbers speak for themselves.</p>
+          <p className={styles.lpSectionSub}>MyNetTax pays for itself in weeks — the numbers speak for themselves.</p>
         </div>
         <div className={styles.roiGrid}>
           <motion.div className={`${styles.roiCol} ${styles.roiColBad}`} {...fadeUp}>
-            <p className={`${styles.roiColTitle} ${styles.roiColTitleBad}`}>❌ Without SelfMonitor</p>
+            <p className={`${styles.roiColTitle} ${styles.roiColTitleBad}`}>❌ Without MyNetTax</p>
             <div className={styles.roiRow}><span className={styles.roiRowLabel}>Weekly admin</span><span className={styles.roiRowBad}>5 hrs/week</span></div>
             <div className={styles.roiRow}><span className={styles.roiRowLabel}>Overpaid tax</span><span className={styles.roiRowBad}>£1,200/yr</span></div>
             <div className={styles.roiRow}><span className={styles.roiRowLabel}>Accountant fees</span><span className={styles.roiRowBad}>£500/yr</span></div>
             <div className={styles.roiRow}><span className={styles.roiRowLabel}>Total cost</span><span className={styles.roiRowBad}>£2,700/yr</span></div>
           </motion.div>
           <motion.div className={`${styles.roiCol} ${styles.roiColGood}`} initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.7, delay: 0.2 }}>
-            <p className={`${styles.roiColTitle} ${styles.roiColTitleGood}`}>✅ With SelfMonitor</p>
+            <p className={`${styles.roiColTitle} ${styles.roiColTitleGood}`}>✅ With MyNetTax</p>
             <div className={styles.roiRow}><span className={styles.roiRowLabel}>Weekly admin</span><span className={styles.roiRowGood}>30 min/week</span></div>
             <div className={styles.roiRow}><span className={styles.roiRowLabel}>Overpaid tax</span><span className={styles.roiRowGood}>£0</span></div>
             <div className={styles.roiRow}><span className={styles.roiRowLabel}>Pro plan</span><span className={styles.roiRowGood}>£15/month</span></div>
@@ -660,7 +675,7 @@ export default function HomePage(_props: IndexPageProps) {
         </div>
         <motion.div {...fadeUp} style={{ marginTop: '2.5rem', textAlign: 'center' }}>
           <div className={styles.roiSaving}><AnimatedCounter target={2520} prefix="£" />/yr</div>
-          <p className={styles.roiSavingLbl}>That&rsquo;s the average annual saving with SelfMonitor</p>
+          <p className={styles.roiSavingLbl}>That&rsquo;s the average annual saving with MyNetTax</p>
           <a href="/register" className={styles.lpCtaGoldLg} style={{ marginTop: '1.5rem', display: 'inline-flex' }}>
             Start Saving Today <ArrowRight size={18} />
           </a>
@@ -708,7 +723,7 @@ export default function HomePage(_props: IndexPageProps) {
           <motion.div className={styles.appDownloadContent} {...fadeUp}>
             <div className={styles.lpChip}><Smartphone size={13} /> Available Now</div>
             <h2 className={styles.lpSectionH2} style={{ textAlign: 'left', marginTop: '1rem' }}>
-              Take SelfMonitor<br />Everywhere You Go
+              Take MyNetTax<br />Everywhere You Go
             </h2>
             <p className={styles.lpSectionSub} style={{ textAlign: 'left' }}>
               Full access on iOS &amp; Android. Scan receipts with your camera, check cash flow on the go,
@@ -723,7 +738,7 @@ export default function HomePage(_props: IndexPageProps) {
             </ul>
             <div className={styles.appStoreBtns}>
               <a
-                href="https://apps.apple.com/app/selfmonitor"
+                href="https://apps.apple.com/app/mynettax"
                 className={styles.appStoreBtnApple}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -737,7 +752,7 @@ export default function HomePage(_props: IndexPageProps) {
                 </div>
               </a>
               <a
-                href="https://play.google.com/store/apps/details?id=com.selfmonitor.app"
+                href="https://play.google.com/store/apps/details?id=com.mynettax.app"
                 className={styles.appStoreBtnGoogle}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -768,7 +783,7 @@ export default function HomePage(_props: IndexPageProps) {
               <div className={styles.lpPhoneNotch} />
               <div className={styles.lpPhoneScreen}>
                 <div className={styles.lpAppBar}>
-                  <span className={styles.lpAppBarTitle}>SelfMonitor</span>
+                  <span className={styles.lpAppBarTitle}>MyNetTax</span>
                   <div className={styles.lpAppBarAvatar}><Download size={12} /></div>
                 </div>
                 <div className={styles.lpAppCards}>
@@ -830,9 +845,9 @@ export default function HomePage(_props: IndexPageProps) {
       <footer className={styles.lpFooter}>
         <div className={styles.lpFooterBrand}>
           <span className={styles.lpNavLogo} style={{ width: 28, height: 28, fontSize: '0.7rem' }}>SM</span>
-          <span className={styles.lpNavName}>SelfMonitor</span>
+          <span className={styles.lpNavName}>MyNetTax</span>
         </div>
-        <p className={styles.lpFooterText}>© 2026 SelfMonitor · Built for UK freelancers · HMRC MTD ready · GDPR compliant</p>
+        <p className={styles.lpFooterText}>© 2026 MyNetTax · Built for UK freelancers · HMRC MTD ready · GDPR compliant</p>
         <a
           href="/login?next=/admin"
           style={{ display: 'block', marginTop: '1.2rem', fontSize: '0.7rem', color: 'rgba(148,163,184,0.3)', textDecoration: 'none', letterSpacing: '0.08em' }}

@@ -1,11 +1,12 @@
 import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import * as Haptics from 'expo-haptics';
 import * as Localization from 'expo-localization';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
+import { getVoiceHttpBase } from '../../api';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import Chip from '../components/Chip';
@@ -26,14 +27,13 @@ import { useAuth } from '../context/AuthContext';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useSubscriptionPlan } from '../hooks/useSubscriptionPlan';
 import { useTranslation } from '../hooks/useTranslation';
+import type { MainTabParamList } from '../navigation/MainTabs';
 import { apiRequest } from '../services/api';
-import { readStoredTransactionsBusinessId } from '../services/transactionsBusinessStorage';
+import { jwtSub } from '../services/jwtPayload';
 import { flushQueue, getQueueCount } from '../services/offlineQueue';
 import { getSyncLogEntries, SyncLogEntry } from '../services/syncLog';
-import type { MainTabParamList } from '../navigation/MainTabs';
+import { readStoredTransactionsBusinessId } from '../services/transactionsBusinessStorage';
 import { colors, spacing } from '../theme';
-import { getVoiceHttpBase } from '../../api';
-import { jwtSub } from '../services/jwtPayload';
 
 type Transaction = {
   amount: number;
@@ -74,6 +74,8 @@ export default function DashboardScreen() {
   const [mtdBanner, setMtdBanner] = useState<MtdBanner | null>(null);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [transactionsBusinessId, setTransactionsBusinessId] = useState<string | null>(null);
+  const [cisUnverified, setCisUnverified] = useState<number>(0);
+  const [cisRefundTotal, setCisRefundTotal] = useState<number | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -205,17 +207,38 @@ export default function DashboardScreen() {
     setSyncLog(entries);
   };
 
+  const loadCisData = async () => {
+    if (!token) return;
+    try {
+      const [tasksRes, refundRes] = await Promise.allSettled([
+        apiRequest('/transactions/cis/tasks?status=open', { token }),
+        apiRequest('/transactions/cis/refund-tracker', { token }),
+      ]);
+      if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
+        const tasks = (await tasksRes.value.json()) as { id: string }[];
+        setCisUnverified(tasks.length);
+      }
+      if (refundRes.status === 'fulfilled' && refundRes.value.ok) {
+        const data = (await refundRes.value.json()) as { total_refund_estimated_gbp?: number };
+        setCisRefundTotal(data.total_refund_estimated_gbp ?? null);
+      }
+    } catch {
+      /* ignore */
+    }
+  };
+
   useEffect(() => {
     loadReadiness();
     loadCashFlow();
     loadQueueCount();
     loadEstimatedTax();
     loadSyncLog();
+    loadCisData();
   }, [token, transactionsBusinessId]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await Promise.all([loadReadiness(), loadCashFlow(), loadQueueCount(), loadEstimatedTax(), loadSyncLog()]);
+    await Promise.all([loadReadiness(), loadCashFlow(), loadQueueCount(), loadEstimatedTax(), loadSyncLog(), loadCisData()]);
     setIsRefreshing(false);
   };
 
@@ -449,6 +472,75 @@ export default function DashboardScreen() {
           </Card>
         </FadeInView>
       ) : null}
+
+      {/* Quarter Readiness card */}
+      <SectionHeader title="Quarter Readiness" subtitle="Fix blockers before your MTD deadline" />
+      <FadeInView delay={117}>
+        <Card>
+          <View style={styles.titleRow}>
+            <Text style={styles.cardTitle}>Tax Readiness</Text>
+            <Badge
+              label={`${readinessScore}%`}
+              tone={readinessScore >= 80 ? 'success' : readinessScore >= 50 ? 'warning' : 'danger'}
+            />
+          </View>
+          <View style={{ marginVertical: spacing.sm }}>
+            <ProgressBar
+              value={readinessScore / 100}
+              tone={readinessScore >= 80 ? 'success' : readinessScore >= 50 ? 'warning' : 'primary'}
+            />
+          </View>
+          {readinessMeta.missingCategories > 0 && (
+            <InfoRow label="Uncategorised" value={`${readinessMeta.missingCategories} transactions`} />
+          )}
+          {readinessMeta.missingBusinessUse > 0 && (
+            <InfoRow label="No business %" value={`${readinessMeta.missingBusinessUse} expenses`} />
+          )}
+          {readinessMeta.missingCategories === 0 && readinessMeta.missingBusinessUse === 0 && (
+            <Text style={{ color: colors.success, fontSize: 13, marginTop: spacing.xs }}>
+              ✓ All transactions categorised
+            </Text>
+          )}
+          <PrimaryButton
+            title="Review Transactions"
+            onPress={() => navigation.navigate('Transactions' as never)}
+            variant="secondary"
+            haptic="light"
+            style={styles.secondaryButton}
+          />
+        </Card>
+      </FadeInView>
+
+      {/* CIS card */}
+      <SectionHeader title="CIS Refund Tracker" subtitle="Construction Industry Scheme deductions" />
+      <FadeInView delay={119}>
+        <Card>
+          <View style={styles.titleRow}>
+            <Text style={styles.cardTitle}>CIS Status</Text>
+            {cisUnverified > 0 && (
+              <Badge label={`${cisUnverified} unverified`} tone="warning" />
+            )}
+          </View>
+          {cisRefundTotal !== null && (
+            <InfoRow
+              label="Estimated refund"
+              value={`GBP ${cisRefundTotal.toFixed(2)}`}
+            />
+          )}
+          {cisUnverified === 0 && cisRefundTotal === null && (
+            <Text style={{ color: colors.textSecondary, fontSize: 13 }}>
+              No CIS records found for this period.
+            </Text>
+          )}
+          <PrimaryButton
+            title="View CIS Details"
+            onPress={() => navigation.navigate('Transactions' as never)}
+            variant="secondary"
+            haptic="light"
+            style={styles.secondaryButton}
+          />
+        </Card>
+      </FadeInView>
 
       <SectionHeader title={t('dashboard.tax_pot_title')} subtitle={t('dashboard.tax_pot_subtitle')} />
       <FadeInView delay={130}>

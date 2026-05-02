@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "MT",
-    "slug": "selfmonitor",
+    "name": "MyNetTax",
+    "slug": "mynettax",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,23 +14,23 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.selfmonitor.app",
+      "bundleIdentifier": "com.mynettax.app",
       "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#0f172a"
       },
-      "package": "com.selfmonitor.app",
+      "package": "com.mynettax.app",
       "versionCode": 1
     },
-    "scheme": "selfmonitor",
+    "scheme": "mynettax",
     "plugins": [
       "expo-secure-store",
       [
         "expo-av",
         {
-          "microphonePermission": "Allow MT to record a short voice note for quick expense capture."
+          "microphonePermission": "Allow MyNetTax to record a short voice note for quick expense capture."
         }
       ],
       [

@@ -19,7 +19,7 @@ from .sync_service import (
 )
 
 app = FastAPI(
-    title="SelfMonitor Invoice Service",
+    title="MyNetTax Invoice Service",
     description="Enterprise invoice generation, management and reporting for FinTech platform",
     version="1.0.0",
     tags_metadata=[

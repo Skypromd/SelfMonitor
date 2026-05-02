@@ -81,7 +81,7 @@ export default function LoginPage() {
               margin: '0 0 0.4rem',
             }}
           >
-            SelfMonitor
+            MyNetTax
           </p>
           <h1
             style={{
