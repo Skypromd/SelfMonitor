@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import styles from '../styles/Home.module.css';
 
 const TXN_SERVICE_URL = process.env.NEXT_PUBLIC_TRANSACTIONS_SERVICE_URL || '/api/transactions';
@@ -50,10 +50,43 @@ function statusColor(st: string): string {
   return 'var(--text-secondary)';
 }
 
+type OcrResult = {
+  document_id: string;
+  filename: string | null;
+  contractor_name: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  gross_total: number | null;
+  materials_total: number;
+  cis_deducted_total: number | null;
+  net_paid_total: number | null;
+  ocr_confidence: 'low' | 'medium' | 'high';
+  needs_review: boolean;
+  note?: string;
+};
+
 export default function CisRefundTrackerPage({ token }: { token: string }) {
   const [data, setData] = useState<TrackerPayload | null>(null);
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState<'all' | 'problems' | 'unverified' | 'missing'>('all');
+
+  // Upload state
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState('');
+  const [ocr, setOcr] = useState<OcrResult | null>(null);
+  const [form, setForm] = useState({
+    contractor_name: '',
+    period_start: '',
+    period_end: '',
+    gross_total: '',
+    materials_total: '0',
+    cis_deducted_total: '',
+    net_paid_total: '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [saveOk, setSaveOk] = useState(false);
 
   const load = useCallback(async () => {
     setErr('');
@@ -73,6 +106,83 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
     void load();
   }, [load]);
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadErr('');
+    setOcr(null);
+    setSaveOk(false);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch(`${TXN_SERVICE_URL}/cis/statements/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setUploadErr((j as { detail?: string }).detail || 'Upload failed');
+        return;
+      }
+      const result = j as OcrResult;
+      setOcr(result);
+      setForm({
+        contractor_name: result.contractor_name ?? '',
+        period_start: result.period_start ?? '',
+        period_end: result.period_end ?? '',
+        gross_total: result.gross_total != null ? String(result.gross_total) : '',
+        materials_total: String(result.materials_total ?? 0),
+        cis_deducted_total: result.cis_deducted_total != null ? String(result.cis_deducted_total) : '',
+        net_paid_total: result.net_paid_total != null ? String(result.net_paid_total) : '',
+      });
+    } catch {
+      setUploadErr('Upload failed. Please try again.');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ocr) return;
+    setSaving(true);
+    setSaveOk(false);
+    try {
+      const body = {
+        contractor_name: form.contractor_name,
+        period_start: form.period_start,
+        period_end: form.period_end,
+        gross_total: parseFloat(form.gross_total) || 0,
+        materials_total: parseFloat(form.materials_total) || 0,
+        cis_deducted_total: parseFloat(form.cis_deducted_total) || 0,
+        net_paid_total: parseFloat(form.net_paid_total) || 0,
+        evidence_status: ocr.needs_review ? 'pending_review' : 'statement_uploaded',
+        document_id: ocr.document_id,
+        source: 'statement_upload',
+        report_status: 'draft',
+      };
+      const r = await fetch(`${TXN_SERVICE_URL}/cis/records`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setUploadErr((j as { detail?: string }).detail || 'Could not save CIS record');
+        return;
+      }
+      setSaveOk(true);
+      setOcr(null);
+      setForm({ contractor_name: '', period_start: '', period_end: '', gross_total: '', materials_total: '0', cis_deducted_total: '', net_paid_total: '' });
+      void load();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className={styles.container} style={{ maxWidth: 960, margin: '0 auto', padding: '24px 16px' }}>
       <h1 style={{ fontSize: '1.35rem', marginBottom: 8 }}>CIS refund tracker</h1>
@@ -82,6 +192,119 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
         {' · '}
         <Link href="/tax-preparation" style={{ color: 'var(--accent)' }}>Tax preparation</Link>
       </p>
+
+      {/* ── Upload CIS Statement ── */}
+      <div style={{ marginBottom: 20, borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <button
+          type="button"
+          onClick={() => { setUploadOpen((v) => !v); setSaveOk(false); setUploadErr(''); }}
+          style={{
+            width: '100%', textAlign: 'left', padding: '0.75rem 1rem',
+            background: uploadOpen ? 'rgba(13,148,136,0.08)' : 'var(--card-bg)',
+            border: 'none', cursor: 'pointer', fontWeight: 600,
+            fontSize: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}
+        >
+          <span>Upload CIS statement (PDF or photo)</span>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{uploadOpen ? '▲ Hide' : '▼ Show'}</span>
+        </button>
+        {uploadOpen && (
+          <div style={{ padding: '1rem', borderTop: '1px solid var(--border)' }}>
+            {saveOk && (
+              <p style={{ color: '#10b981', fontWeight: 600, marginBottom: '0.75rem' }}>
+                CIS record saved successfully.
+              </p>
+            )}
+            {uploadErr && <p style={{ color: '#ef4444', marginBottom: '0.75rem', fontSize: '0.85rem' }}>{uploadErr}</p>}
+            {!ocr && (
+              <label style={{ display: 'block' }}>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: 8 }}>
+                  Select a PDF or image of a CIS300 deduction statement. Fields will be pre-filled from the document.
+                </span>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/pdf,image/*"
+                  onChange={handleFileChange}
+                  style={{ fontSize: '0.85rem' }}
+                />
+                {uploading && <p style={{ fontSize: '0.82rem', color: 'var(--text-tertiary)', marginTop: 6 }}>Analysing document…</p>}
+              </label>
+            )}
+            {ocr && (
+              <form onSubmit={handleSave}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span style={{
+                    padding: '0.2rem 0.6rem', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700,
+                    background: ocr.ocr_confidence === 'high' ? 'rgba(16,185,129,0.15)' : ocr.ocr_confidence === 'medium' ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.12)',
+                    color: ocr.ocr_confidence === 'high' ? '#10b981' : ocr.ocr_confidence === 'medium' ? '#f59e0b' : '#ef4444',
+                    textTransform: 'uppercase',
+                  }}>
+                    OCR confidence: {ocr.ocr_confidence}
+                  </span>
+                  {ocr.needs_review && (
+                    <span style={{ fontSize: '0.78rem', color: '#f59e0b' }}>
+                      ⚠ Please review all fields before saving
+                    </span>
+                  )}
+                </div>
+                {ocr.note && <p style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', marginBottom: '0.75rem' }}>{ocr.note}</p>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
+                  {(
+                    [
+                      { key: 'contractor_name', label: 'Contractor name', type: 'text', required: true },
+                      { key: 'period_start', label: 'Period start (YYYY-MM-DD)', type: 'date', required: true },
+                      { key: 'period_end', label: 'Period end (YYYY-MM-DD)', type: 'date', required: true },
+                      { key: 'gross_total', label: 'Gross total (£)', type: 'number', required: true },
+                      { key: 'materials_total', label: 'Materials total (£)', type: 'number', required: false },
+                      { key: 'cis_deducted_total', label: 'CIS deducted (£)', type: 'number', required: true },
+                      { key: 'net_paid_total', label: 'Net paid (£)', type: 'number', required: true },
+                    ] as { key: keyof typeof form; label: string; type: string; required: boolean }[]
+                  ).map(({ key, label, type, required }) => (
+                    <label key={key} style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: '0.82rem' }}>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{label}{required && ' *'}</span>
+                      <input
+                        type={type}
+                        value={form[key]}
+                        onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                        required={required}
+                        step={type === 'number' ? '0.01' : undefined}
+                        min={type === 'number' ? '0' : undefined}
+                        style={{
+                          padding: '0.4rem 0.6rem', borderRadius: 6,
+                          border: '1px solid var(--border)', fontSize: '0.82rem',
+                          background: 'var(--card-bg)', color: 'var(--text-primary)',
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    style={{
+                      padding: '0.45rem 1.1rem', borderRadius: 8,
+                      background: 'var(--lp-accent-teal, #0d9488)', color: '#fff',
+                      fontWeight: 700, fontSize: '0.85rem', border: 'none', cursor: saving ? 'not-allowed' : 'pointer',
+                      opacity: saving ? 0.7 : 1,
+                    }}
+                  >
+                    {saving ? 'Saving…' : 'Save CIS record'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setOcr(null); setUploadErr(''); }}
+                    style={{ padding: '0.45rem 1rem', borderRadius: 8, border: '1px solid var(--border)', background: 'transparent', cursor: 'pointer', fontSize: '0.85rem' }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+      </div>
 
       {err && <p className={styles.error}>{err}</p>}
 

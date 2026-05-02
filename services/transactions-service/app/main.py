@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -21,11 +22,13 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     FastAPI,
+    File,
     Header,
     HTTPException,
     Query,
     Request,
     Response,
+    UploadFile,
     status,
 )
 from fastapi.responses import StreamingResponse
@@ -956,6 +959,192 @@ async def cis_snooze_reminder(
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_task_not_found")
     return task
+
+
+_CIS_STATEMENT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB hard cap
+_CIS_ALLOWED_MIME_PREFIXES = ("application/pdf", "image/")
+
+
+def _parse_cis_statement_text(text: str) -> dict:
+    """Extract CIS statement fields from plain text via regex patterns."""
+
+    def _find_amount(patterns: list[str], src: str) -> float | None:
+        for pat in patterns:
+            m = re.search(pat, src, re.IGNORECASE)
+            if m:
+                raw = m.group(1).replace(",", "").replace("£", "").strip()
+                try:
+                    return float(raw)
+                except ValueError:
+                    pass
+        return None
+
+    def _find_date(patterns: list[str], src: str) -> str | None:
+        for pat in patterns:
+            m = re.search(pat, src, re.IGNORECASE)
+            if m:
+                try:
+                    day = int(m.group(1))
+                    month_raw = m.group(2)
+                    year = int(m.group(3))
+                    months = {
+                        "jan": 1, "feb": 2, "mar": 3, "apr": 4,
+                        "may": 5, "jun": 6, "jul": 7, "aug": 8,
+                        "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+                    }
+                    if month_raw.isdigit():
+                        month = int(month_raw)
+                    else:
+                        month = months.get(month_raw[:3].lower(), 0)
+                    if 1 <= month <= 12 and 1 <= day <= 31 and year >= 2000:
+                        return f"{year:04d}-{month:02d}-{day:02d}"
+                except (ValueError, IndexError):
+                    pass
+        return None
+
+    contractor = None
+    for pat in [
+        r"contractor[:\s]+([A-Za-z0-9 &.,'-]{2,80})",
+        r"company[:\s]+([A-Za-z0-9 &.,'-]{2,80})",
+        r"subcontractor paid by[:\s]+([A-Za-z0-9 &.,'-]{2,80})",
+    ]:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            contractor = m.group(1).strip()
+            break
+
+    date_patterns = [
+        r"(\d{1,2})[/\-. ](\d{1,2}|[A-Za-z]+)[/\-. ](\d{4})",
+    ]
+    period_start = _find_date(date_patterns, text)
+    # Find second date occurrence for period end
+    all_dates = re.findall(r"(\d{1,2})[/\-. ](\d{1,2}|[A-Za-z]+)[/\-. ](\d{4})", text, re.IGNORECASE)
+    period_end = None
+    parsed_dates: list[str] = []
+    for d in all_dates:
+        day, month_raw, year = int(d[0]), d[1], int(d[2])
+        months = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+                  "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+        month = int(month_raw) if month_raw.isdigit() else months.get(month_raw[:3].lower(), 0)
+        if 1 <= month <= 12 and 1 <= day <= 31 and year >= 2000:
+            parsed_dates.append(f"{year:04d}-{month:02d}-{day:02d}")
+    if parsed_dates:
+        period_start = parsed_dates[0]
+        period_end = parsed_dates[-1] if len(parsed_dates) > 1 else parsed_dates[0]
+
+    gross = _find_amount([
+        r"gross[:\s£]+([\d,]+\.?\d*)",
+        r"gross payment[:\s£]+([\d,]+\.?\d*)",
+        r"total gross[:\s£]+([\d,]+\.?\d*)",
+    ], text)
+    materials = _find_amount([
+        r"materials?[:\s£]+([\d,]+\.?\d*)",
+        r"cost of materials?[:\s£]+([\d,]+\.?\d*)",
+    ], text)
+    cis_deducted = _find_amount([
+        r"(?:cis |tax |deduction)[:\s£]*deducted[:\s£]+([\d,]+\.?\d*)",
+        r"tax deducted[:\s£]+([\d,]+\.?\d*)",
+        r"cis deducted[:\s£]+([\d,]+\.?\d*)",
+        r"deduction[:\s£]+([\d,]+\.?\d*)",
+    ], text)
+    net_paid = _find_amount([
+        r"net[:\s£]+paid[:\s£]+([\d,]+\.?\d*)",
+        r"net payment[:\s£]+([\d,]+\.?\d*)",
+        r"amount paid[:\s£]+([\d,]+\.?\d*)",
+        r"net[:\s£]+([\d,]+\.?\d*)",
+    ], text)
+
+    found_fields = sum(x is not None for x in [contractor, period_start, period_end, gross, cis_deducted, net_paid])
+    confidence: str
+    if found_fields >= 5:
+        confidence = "high"
+    elif found_fields >= 3:
+        confidence = "medium"
+    else:
+        confidence = "low"
+
+    return {
+        "contractor_name": contractor,
+        "period_start": period_start,
+        "period_end": period_end,
+        "gross_total": gross,
+        "materials_total": materials or 0.0,
+        "cis_deducted_total": cis_deducted,
+        "net_paid_total": net_paid,
+        "ocr_confidence": confidence,
+        "needs_review": confidence != "high",
+    }
+
+
+@app.post("/cis/statements/upload")
+async def cis_upload_statement(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> dict:
+    """Accept a CIS statement file, attempt text extraction and OCR parsing.
+
+    Returns parsed fields with confidence score. Always requires user review
+    before creating a CIS record — caller must POST to /cis/records with confirmed data.
+    """
+    content_type = (file.content_type or "").lower()
+    if not any(content_type.startswith(p) for p in _CIS_ALLOWED_MIME_PREFIXES):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Only PDF or image files are accepted for CIS statement upload.",
+        )
+
+    raw = await file.read(_CIS_STATEMENT_MAX_BYTES + 1)
+    if len(raw) > _CIS_STATEMENT_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="File exceeds 10 MB limit.",
+        )
+
+    # Attempt text extraction
+    text: str | None = None
+    if content_type == "application/pdf" or file.filename and file.filename.lower().endswith(".pdf"):
+        # Minimal PDF text extraction: scan for BT...ET blocks (works only for unencrypted PDFs)
+        try:
+            decoded = raw.decode("latin-1", errors="ignore")
+            bt_blocks = re.findall(r"BT(.+?)ET", decoded, re.DOTALL)
+            text_parts: list[str] = []
+            for block in bt_blocks:
+                tokens = re.findall(r"\(([^)]{1,200})\)", block)
+                text_parts.extend(tokens)
+            if text_parts:
+                text = " ".join(text_parts)
+        except Exception:
+            text = None
+    else:
+        # Image — try UTF-8 decode (will fail for binary images, resulting in low confidence)
+        try:
+            text = raw.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            text = None
+
+    document_id = str(uuid.uuid4())
+
+    if not text or len(text.strip()) < 10:
+        # Binary file with no extractable text — return empty fields, low confidence
+        return {
+            "document_id": document_id,
+            "filename": file.filename,
+            "contractor_name": None,
+            "period_start": None,
+            "period_end": None,
+            "gross_total": None,
+            "materials_total": 0.0,
+            "cis_deducted_total": None,
+            "net_paid_total": None,
+            "ocr_confidence": "low",
+            "needs_review": True,
+            "note": "No text could be extracted from this file. Please fill in the fields manually.",
+        }
+
+    parsed = _parse_cis_statement_text(text)
+    parsed["document_id"] = document_id
+    parsed["filename"] = file.filename
+    return parsed
 
 
 @app.get("/cis/evidence-pack/manifest", response_model=schemas.EvidencePackManifestOut)
