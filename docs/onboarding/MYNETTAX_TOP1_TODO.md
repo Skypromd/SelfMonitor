@@ -125,17 +125,17 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 ### P0.4 Preview, Confirm, Submit
 
 - [ ] Build MTD quarterly draft preview.
-- [ ] Show turnover.
-- [ ] Show expenses.
-- [ ] Show profit.
-- [ ] Show estimated tax due.
-- [ ] Show tax reserve suggestion.
-- [ ] Show category summary.
-- [ ] Show CIS credits summary.
-- [ ] Show verified CIS credits.
-- [ ] Show unverified CIS credits.
-- [ ] Show missing evidence warning.
-- [ ] Show direct vs guided/simulation mode.
+- [x] Show turnover.
+- [x] Show expenses.
+- [x] Show profit.
+- [x] Show estimated tax due.
+- [x] Show tax reserve suggestion.
+- [x] Show category summary.
+- [x] Show CIS credits summary.
+- [x] Show verified CIS credits.
+- [x] Show unverified CIS credits.
+- [x] Show missing evidence warning.
+- [x] Show direct vs guided/simulation mode.
 - [x] Require "true and complete" acknowledgement before submit.
 - [ ] Require extra acknowledgement if CIS credits are unverified.
 - [ ] Wire existing confirmation-token flow into tax submit UX.
@@ -225,10 +225,10 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add filter: unverified credits.
 - [x] Add filter: missing statements.
 - [ ] Add contractor grouping.
-- [ ] Add refund estimate summary.
-- [ ] Add total verified deductions.
-- [ ] Add total unverified deductions.
-- [ ] Add next action per row.
+- [x] Add refund estimate summary.
+- [x] Add total verified deductions.
+- [x] Add total unverified deductions.
+- [x] Add next action per row.
 
 ### CIS Statement Ingest
 
@@ -362,8 +362,8 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 - [ ] Build quarter evidence pack PDF.
 - [x] Build quarter evidence pack ZIP.
-- [ ] Include transaction summary.
-- [ ] Include category summary.
+- [x] Include transaction summary.
+- [x] Include category summary.
 - [ ] Include receipts list.
 - [ ] Include missing receipts list.
 - [x] Include CIS records.
@@ -380,13 +380,13 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ## P2 Mobile Wow
 
-- [ ] Make Receipt Scan a primary mobile action.
-- [ ] Make Bank Sync a primary mobile action.
-- [ ] Make Quarter Readiness a primary mobile card.
-- [ ] Make CIS missing statement prompt mobile-friendly.
-- [ ] Add offline-safe draft capture for expenses.
-- [ ] Add haptics only where useful.
-- [ ] Add push actions that deep-link to exact blocker.
+- [x] Make Receipt Scan a primary mobile action.
+- [x] Make Bank Sync a primary mobile action.
+- [x] Make Quarter Readiness a primary mobile card.
+- [x] Make CIS missing statement prompt mobile-friendly.
+- [x] Add offline-safe draft capture for expenses.
+- [x] Add haptics only where useful.
+- [x] Add push actions that deep-link to exact blocker.
 - [ ] Add biometric lock copy with MyNetTax branding.
 - [ ] Add app-store screenshots around MTD, CIS, receipts and languages.
 
