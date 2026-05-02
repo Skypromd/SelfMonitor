@@ -1,4 +1,4 @@
-﻿# MyNetTax Top-1 TODO
+# MyNetTax Top-1 TODO
 
 ## North Star
 
@@ -116,7 +116,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show unreviewed transaction count.
 - [x] Show missing category/split/business % count.
 - [x] Show CIS verified/unverified summary.
-- [ ] Show direct/guided/simulation HMRC mode status.
+- [x] Show direct/guided/simulation HMRC mode status.
 - [ ] Show HMRC operational readiness where relevant.
 - [ ] Add mobile version of readiness console.
 - [ ] Add empty state for fully ready quarter.
@@ -143,8 +143,8 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [ ] Store confirmed timestamp.
 - [ ] Store submit receipt reference.
 - [ ] Store submission history.
-- [ ] Show retrying state for transient HMRC failures.
-- [ ] Show clear error messages for OAuth, 429, 5xx and timeout.
+- [x] Show retrying state for transient HMRC failures.
+- [x] Show clear error messages for OAuth, 429, 5xx and timeout.
 - [ ] Show direct-to-simulation fallback notice if fallback is enabled.
 - [ ] Add audit events for preview, confirmation and submit.
 - [ ] Add tests for confirmation and duplicate submit prevention.
