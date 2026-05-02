@@ -137,7 +137,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show missing evidence warning.
 - [x] Show direct vs guided/simulation mode.
 - [x] Require "true and complete" acknowledgement before submit.
-- [ ] Require extra acknowledgement if CIS credits are unverified.
+- [x] Require extra acknowledgement if CIS credits are unverified.
 - [ ] Wire existing confirmation-token flow into tax submit UX.
 - [ ] Generate and store preview fingerprint.
 - [ ] Store confirmed timestamp.
@@ -152,7 +152,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 ### P0.5 Reliability And Trust UX
 
 - [ ] Standardize user-facing API error copy.
-- [ ] Add retry indicators for HMRC submit.
+- [x] Add retry indicators for HMRC submit.
 - [x] Add retry indicators for bank sync.
 - [x] Add retry indicators for OCR processing.
 - [ ] Add transparent fallback messaging.
@@ -174,7 +174,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show days until deadline.
 - [x] Link each deadline to quarter readiness.
 - [x] Add reminders for 14, 7, 3 and 1 day windows.
-- [ ] Suppress reminders when already submitted.
+- [x] Suppress reminders when already submitted.
 - [ ] Add urgent pending reminder 24h before deadline.
 - [ ] Add mobile push copy for deadlines.
 - [ ] Add email copy for deadlines.
@@ -195,7 +195,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Calculate estimated tax reserve.
 - [x] Include CIS deductions in reserve estimate.
 - [x] Add weekly reserve suggestion.
-- [ ] Add confidence level: low / medium / high.
+- [x] Add confidence level: low / medium / high.
 - [ ] Explain reserve changes: profit up, expenses down, quarter changed, CIS credited.
 - [x] Add reserve widget to dashboard.
 - [ ] Add reserve widget to quarter preview.
