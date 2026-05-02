@@ -35,6 +35,8 @@ type TransactionRecord = {
   id: string;
   ignored_candidate_ids?: string[] | null;
   reconciliation_status?: string | null;
+  is_personal?: boolean | null;
+  business_use_pct?: number | null;
 };
 
 type ReceiptDraftCandidate = {
@@ -232,6 +234,11 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
   const [cisModalError, setCisModalError] = useState('');
   const [cisResolveBusy, setCisResolveBusy] = useState(false);
   const [flaggingTxn, setFlaggingTxn] = useState('');
+  const [quickActionBusy, setQuickActionBusy] = useState<Set<string>>(new Set());
+  const [businessPctEdit, setBusinessPctEdit] = useState<{ txnId: string; value: string } | null>(null);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedTxnIds, setSelectedTxnIds] = useState<Set<string>>(new Set());
+  const [bulkActionBusy, setBulkActionBusy] = useState(false);
   const [cisZipBusy, setCisZipBusy] = useState(false);
   const [cisShareBusy, setCisShareBusy] = useState(false);
   const [cisShareMsg, setCisShareMsg] = useState('');
@@ -597,6 +604,45 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
     } finally {
       setIsAutoCategorizing(false);
     }
+  };
+
+  const patchTransaction = async (txnId: string, patch: Record<string, unknown>) => {
+    setQuickActionBusy((prev) => new Set([...prev, txnId]));
+    try {
+      const res = await fetch(`${TRANSACTIONS_API_BASE}/transactions/${txnId}`, {
+        method: 'PATCH',
+        headers: transactionsBearerHeaders(token, businessId, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) return;
+      setTransactions((prev) => prev.map((t) => (t.id === txnId ? { ...t, ...patch } : t)));
+    } catch { /* ignore */ } finally {
+      setQuickActionBusy((prev) => { const s = new Set(prev); s.delete(txnId); return s; });
+    }
+  };
+
+  const handleMarkPersonal = (txnId: string) =>
+    void patchTransaction(txnId, { is_personal: true, business_use_pct: 0 });
+
+  const handleMarkBusiness = (txnId: string) =>
+    void patchTransaction(txnId, { is_personal: false, business_use_pct: 100 });
+
+  const handleSetBusinessPct = (txnId: string, pct: number) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+    void patchTransaction(txnId, { business_use_pct: clamped, is_personal: clamped === 0 });
+    setBusinessPctEdit(null);
+  };
+
+  const handleBulkMark = async (isPersonal: boolean) => {
+    if (selectedTxnIds.size === 0) return;
+    setBulkActionBusy(true);
+    const patch = isPersonal
+      ? { is_personal: true, business_use_pct: 0 }
+      : { is_personal: false, business_use_pct: 100 };
+    await Promise.all([...selectedTxnIds].map((id) => patchTransaction(id, patch)));
+    setSelectedTxnIds(new Set());
+    setBulkMode(false);
+    setBulkActionBusy(false);
   };
 
   const handleCategoryChange = async (transactionId: string, newCategory: string) => {
@@ -1053,64 +1099,162 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
         <span style={{ fontSize: '0.78rem', color: 'var(--lp-muted)', marginLeft: 'auto' }}>
           Showing {displayedTransactions.length} of {transactions.length}
         </span>
+        <button
+          type="button"
+          onClick={() => { setBulkMode((b) => !b); setSelectedTxnIds(new Set()); }}
+          style={{
+            padding: '0.28rem 0.7rem', borderRadius: 8,
+            border: `1px solid ${bulkMode ? 'var(--lp-accent-teal)' : 'var(--lp-border)'}`,
+            background: bulkMode ? 'rgba(13,148,136,0.12)' : 'transparent',
+            color: bulkMode ? 'var(--lp-accent-teal)' : 'var(--lp-muted)',
+            fontSize: '0.78rem', fontWeight: bulkMode ? 700 : 400, cursor: 'pointer',
+          }}
+        >
+          {bulkMode ? 'Exit bulk' : 'Bulk review'}
+        </button>
       </div>
+
+      {/* Inbox Zero metric */}
+      {(() => {
+        const needsAttention = transactions.filter((t) => !t.category || t.reconciliation_status === 'unmatched').length;
+        if (needsAttention === 0) return (
+          <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', borderRadius: 10, background: 'rgba(16,185,129,0.09)', border: '1px solid rgba(16,185,129,0.3)', fontSize: '0.82rem', color: '#10b981' }}>
+            🎉 Inbox Zero — all transactions categorised and matched!
+          </div>
+        );
+        return (
+          <div style={{ marginBottom: '0.75rem', padding: '0.5rem 0.85rem', borderRadius: 10, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', fontSize: '0.82rem', color: 'var(--lp-muted)' }}>
+            📥 <strong style={{ color: 'var(--text-primary)' }}>{needsAttention}</strong> transaction{needsAttention !== 1 ? 's' : ''} need attention (uncategorised or no receipt)
+          </div>
+        );
+      })()}
+
+      {/* Bulk action bar */}
+      {bulkMode && selectedTxnIds.size > 0 && (
+        <div style={{ marginBottom: '0.6rem', display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--lp-muted)' }}>{selectedTxnIds.size} selected</span>
+          <button type="button" disabled={bulkActionBusy} onClick={() => void handleBulkMark(true)}
+            style={{ padding: '0.3rem 0.75rem', borderRadius: 8, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(239,68,68,0.09)', color: '#ef4444', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+            Mark personal
+          </button>
+          <button type="button" disabled={bulkActionBusy} onClick={() => void handleBulkMark(false)}
+            style={{ padding: '0.3rem 0.75rem', borderRadius: 8, border: '1px solid rgba(16,185,129,0.4)', background: 'rgba(16,185,129,0.09)', color: '#10b981', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}>
+            Mark business
+          </button>
+        </div>
+      )}
+
       {!displayedTransactions.length ? (
         <p className={styles.emptyState}>No transactions match the current filters.</p>
       ) : (
         <table className={styles.table}>
-          <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>CIS</th></tr></thead>
+          <thead>
+            <tr>
+              {bulkMode && <th style={{ width: 28 }}></th>}
+              <th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>CIS</th><th>Actions</th>
+            </tr>
+          </thead>
           <tbody>
-            {displayedTransactions.map((t) => (
-              <tr key={t.id} style={openTaskByTxnId.has(t.id) ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
-                <td>{t.date}</td>
-                <td>{t.description}</td>
-                <td className={t.amount > 0 ? styles.positive : styles.negative}>{t.amount.toFixed(2)} {t.currency}</td>
-                <td>
-                  <select value={t.category || ''} onChange={(e) => handleCategoryChange(t.id, e.target.value)} className={styles.categorySelect}>
-                    <option value="" disabled>Select...</option>
-                    {availableCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-                </td>
-                <td>
-                  {openTaskByTxnId.has(t.id) ? (
-                    <button
-                      type="button"
-                      onClick={() => setModalTask(openTaskByTxnId.get(t.id)!)}
-                      style={{
-                        padding: '0.25rem 0.6rem',
-                        borderRadius: 8,
-                        border: '1px solid rgba(245,158,11,0.5)',
-                        background: 'rgba(245,158,11,0.12)',
-                        fontSize: '0.78rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Review
-                    </button>
-                  ) : t.amount > 0 ? (
-                    <button
-                      type="button"
-                      disabled={flaggingTxn === t.id}
-                      onClick={() => void flagCisSuspect(t.id)}
-                      style={{
-                        padding: '0.25rem 0.5rem',
-                        borderRadius: 8,
-                        border: '1px solid var(--lp-border)',
-                        background: 'transparent',
-                        fontSize: '0.75rem',
-                        cursor: flaggingTxn === t.id ? 'wait' : 'pointer',
-                        color: 'var(--lp-muted)',
-                      }}
-                    >
-                      {flaggingTxn === t.id ? '…' : 'Flag'}
-                    </button>
-                  ) : (
-                    '—'
+            {displayedTransactions.map((t) => {
+              const isBusy = quickActionBusy.has(t.id);
+              const isSelected = selectedTxnIds.has(t.id);
+              const pctLabel = t.business_use_pct != null ? `${t.business_use_pct}%` : null;
+              const isEditingPct = businessPctEdit?.txnId === t.id;
+              return (
+                <tr key={t.id} style={openTaskByTxnId.has(t.id) ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
+                  {bulkMode && (
+                    <td>
+                      <input type="checkbox" checked={isSelected}
+                        onChange={(e) => setSelectedTxnIds((prev) => {
+                          const s = new Set(prev);
+                          if (e.target.checked) s.add(t.id); else s.delete(t.id);
+                          return s;
+                        })}
+                      />
+                    </td>
                   )}
-                </td>
-              </tr>
-            ))}
+                  <td>{t.date}</td>
+                  <td>{t.description}</td>
+                  <td className={t.amount > 0 ? styles.positive : styles.negative}>{t.amount.toFixed(2)} {t.currency}</td>
+                  <td>
+                    <select value={t.category || ''} onChange={(e) => handleCategoryChange(t.id, e.target.value)} className={styles.categorySelect}>
+                      <option value="" disabled>Select...</option>
+                      {availableCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    {openTaskByTxnId.has(t.id) ? (
+                      <button
+                        type="button"
+                        onClick={() => setModalTask(openTaskByTxnId.get(t.id)!)}
+                        style={{ padding: '0.25rem 0.6rem', borderRadius: 8, border: '1px solid rgba(245,158,11,0.5)', background: 'rgba(245,158,11,0.12)', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Review
+                      </button>
+                    ) : t.amount > 0 ? (
+                      <button
+                        type="button"
+                        disabled={flaggingTxn === t.id}
+                        onClick={() => void flagCisSuspect(t.id)}
+                        style={{ padding: '0.25rem 0.5rem', borderRadius: 8, border: '1px solid var(--lp-border)', background: 'transparent', fontSize: '0.75rem', cursor: flaggingTxn === t.id ? 'wait' : 'pointer', color: 'var(--lp-muted)' }}
+                      >
+                        {flaggingTxn === t.id ? '…' : 'Flag'}
+                      </button>
+                    ) : '—'}
+                  </td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                      {t.is_personal ? (
+                        <span style={{ fontSize: '0.72rem', color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 6, padding: '0.15rem 0.5rem' }}>Personal</span>
+                      ) : (
+                        <button type="button" disabled={isBusy} onClick={() => handleMarkPersonal(t.id)}
+                          style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid rgba(239,68,68,0.35)', background: 'transparent', color: '#ef4444', fontSize: '0.72rem', cursor: isBusy ? 'wait' : 'pointer' }}>
+                          Personal
+                        </button>
+                      )}
+                      {t.business_use_pct === 100 ? (
+                        <span style={{ fontSize: '0.72rem', color: '#10b981', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 6, padding: '0.15rem 0.5rem' }}>Business</span>
+                      ) : (
+                        <button type="button" disabled={isBusy} onClick={() => handleMarkBusiness(t.id)}
+                          style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid rgba(16,185,129,0.35)', background: 'transparent', color: '#10b981', fontSize: '0.72rem', cursor: isBusy ? 'wait' : 'pointer' }}>
+                          Business
+                        </button>
+                      )}
+                      {isEditingPct ? (
+                        <span style={{ display: 'inline-flex', gap: '0.2rem', alignItems: 'center' }}>
+                          <input
+                            type="number" min={0} max={100} step={5}
+                            value={businessPctEdit.value}
+                            onChange={(e) => setBusinessPctEdit({ txnId: t.id, value: e.target.value })}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSetBusinessPct(t.id, Number(businessPctEdit.value));
+                              if (e.key === 'Escape') setBusinessPctEdit(null);
+                            }}
+                            style={{ width: 50, padding: '0.15rem 0.35rem', borderRadius: 6, border: '1px solid var(--lp-accent-teal)', background: 'var(--lp-bg-elevated)', color: 'var(--text-primary)', fontSize: '0.72rem' }}
+                            autoFocus
+                          />
+                          <button type="button"
+                            onClick={() => handleSetBusinessPct(t.id, Number(businessPctEdit.value))}
+                            style={{ padding: '0.15rem 0.4rem', borderRadius: 6, border: 'none', background: 'var(--lp-accent-teal)', color: '#fff', fontSize: '0.72rem', cursor: 'pointer' }}>
+                            ✓
+                          </button>
+                          <button type="button" onClick={() => setBusinessPctEdit(null)}
+                            style={{ padding: '0.15rem 0.4rem', borderRadius: 6, border: '1px solid var(--lp-border)', background: 'transparent', color: 'var(--lp-muted)', fontSize: '0.72rem', cursor: 'pointer' }}>
+                            ✕
+                          </button>
+                        </span>
+                      ) : (
+                        <button type="button" disabled={isBusy}
+                          onClick={() => setBusinessPctEdit({ txnId: t.id, value: String(t.business_use_pct ?? 50) })}
+                          style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid var(--lp-border)', background: 'transparent', color: 'var(--lp-muted)', fontSize: '0.72rem', cursor: isBusy ? 'wait' : 'pointer' }}>
+                          {pctLabel ? `${pctLabel} biz` : '% split'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
