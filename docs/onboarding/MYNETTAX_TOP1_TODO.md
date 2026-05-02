@@ -173,7 +173,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show obligation status: Open / Fulfilled / Overdue.
 - [x] Show days until deadline.
 - [x] Link each deadline to quarter readiness.
-- [ ] Add reminders for 14, 7, 3 and 1 day windows.
+- [x] Add reminders for 14, 7, 3 and 1 day windows.
 - [ ] Suppress reminders when already submitted.
 - [ ] Add urgent pending reminder 24h before deadline.
 - [ ] Add mobile push copy for deadlines.
@@ -194,7 +194,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Calculate profit-to-date.
 - [x] Calculate estimated tax reserve.
 - [x] Include CIS deductions in reserve estimate.
-- [ ] Add weekly reserve suggestion.
+- [x] Add weekly reserve suggestion.
 - [ ] Add confidence level: low / medium / high.
 - [ ] Explain reserve changes: profit up, expenses down, quarter changed, CIS credited.
 - [x] Add reserve widget to dashboard.
