@@ -155,7 +155,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add retry indicators for HMRC submit.
 - [x] Add retry indicators for bank sync.
 - [x] Add retry indicators for OCR processing.
-- [ ] Add transparent fallback messaging.
+- [x] Add transparent fallback messaging.
 - [ ] Add operational readiness surface for HMRC.
 - [x] Add "last successful sync" display.
 - [x] Add "last successful submission" display.
@@ -196,7 +196,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Include CIS deductions in reserve estimate.
 - [x] Add weekly reserve suggestion.
 - [x] Add confidence level: low / medium / high.
-- [ ] Explain reserve changes: profit up, expenses down, quarter changed, CIS credited.
+- [x] Explain reserve changes: profit up, expenses down, quarter changed, CIS credited.
 - [x] Add reserve widget to dashboard.
 - [x] Add reserve widget to quarter preview.
 

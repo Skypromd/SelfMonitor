@@ -88,6 +88,7 @@ export default function TaxReadinessPage({ token }: Props) {
   const [readiness, setReadiness] = useState<ReadinessData | null>(null);
   const [mtdStatus, setMtdStatus] = useState<MtdStatus | null>(null);
   const [reserve, setReserve] = useState<TaxReserve | null>(null);
+  const [reserveChangeNote, setReserveChangeNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -108,8 +109,28 @@ export default function TaxReadinessPage({ token }: Props) {
           setReadiness((await rdRes.value.json()) as ReadinessData);
         if (mtdRes.status === 'fulfilled' && mtdRes.value.ok)
           setMtdStatus((await mtdRes.value.json()) as MtdStatus);
-        if (resRes.status === 'fulfilled' && resRes.value.ok)
-          setReserve((await resRes.value.json()) as TaxReserve);
+        if (resRes.status === 'fulfilled' && resRes.value.ok) {
+          const resData = (await resRes.value.json()) as TaxReserve;
+          setReserve(resData);
+          try {
+            const stored = localStorage.getItem('mnt_tax_reserve_prev');
+            if (stored) {
+              const prev = JSON.parse(stored) as TaxReserve;
+              const delta = resData.net_tax_due_gbp - prev.net_tax_due_gbp;
+              if (Math.abs(delta) >= 1) {
+                const dir = delta > 0 ? 'up' : 'down';
+                const reasons: string[] = [];
+                const profitDelta = resData.profit_gbp - prev.profit_gbp;
+                if (Math.abs(profitDelta) >= 1) reasons.push(`profit ${profitDelta > 0 ? 'increased' : 'decreased'} by £${Math.abs(Math.round(profitDelta)).toLocaleString('en-GB')}`);
+                const cisDelta = (resData.cis_deductions_verified_gbp ?? 0) - (prev.cis_deductions_verified_gbp ?? 0);
+                if (Math.abs(cisDelta) >= 1) reasons.push(`CIS verified credits ${cisDelta > 0 ? 'increased' : 'decreased'} by £${Math.abs(Math.round(cisDelta)).toLocaleString('en-GB')}`);
+                const why = reasons.length > 0 ? ` — ${reasons.join('; ')}` : '';
+                setReserveChangeNote(`Reserve ${dir} £${Math.abs(Math.round(delta)).toLocaleString('en-GB')}${why}.`);
+              }
+            }
+            localStorage.setItem('mnt_tax_reserve_prev', JSON.stringify(resData));
+          } catch { /* storage unavailable */ }
+        }
       } catch {
         setError('Failed to load readiness data.');
       } finally {
@@ -263,6 +284,11 @@ export default function TaxReadinessPage({ token }: Props) {
                   <p style={{ fontSize: '0.68rem', color: 'var(--lp-muted)', marginTop: '0.5rem', lineHeight: 1.4 }}>
                     {reserve.disclaimer}
                   </p>
+                  {reserveChangeNote && (
+                    <div style={{ marginTop: '0.5rem', padding: '0.35rem 0.7rem', borderRadius: 7, background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)', fontSize: '0.75rem', color: '#92400e' }}>
+                      ↕ {reserveChangeNote}
+                    </div>
+                  )}
                 </div>
               )}
 

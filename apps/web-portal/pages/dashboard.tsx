@@ -637,11 +637,33 @@ type TaxReserveData = {
   income_tax_gbp: number;
   class4_nic_gbp: number;
   profit_gbp: number;
+  cis_deductions_verified_gbp?: number;
+  cis_deductions_unverified_gbp?: number;
   confidence: 'low' | 'medium' | 'high';
 };
 
+const RESERVE_STORAGE_KEY = 'mnt_tax_reserve_prev';
+
+function explainReserveChange(prev: TaxReserveData, curr: TaxReserveData): string | null {
+  const delta = curr.net_tax_due_gbp - prev.net_tax_due_gbp;
+  if (Math.abs(delta) < 1) return null;
+  const dir = delta > 0 ? 'up' : 'down';
+  const reasons: string[] = [];
+  const profitDelta = curr.profit_gbp - prev.profit_gbp;
+  if (Math.abs(profitDelta) >= 1) reasons.push(`profit ${profitDelta > 0 ? 'increased' : 'decreased'} by £${Math.abs(Math.round(profitDelta)).toLocaleString('en-GB')}`);
+  const expDelta = (prev.income_tax_gbp + prev.class4_nic_gbp) - (curr.income_tax_gbp + curr.class4_nic_gbp);
+  if (reasons.length === 0 && Math.abs(expDelta) >= 1) reasons.push('tax band or NIC calculation changed');
+  const cisPrev = (prev.cis_deductions_verified_gbp ?? 0);
+  const cisCurr = (curr.cis_deductions_verified_gbp ?? 0);
+  const cisDelta = cisCurr - cisPrev;
+  if (Math.abs(cisDelta) >= 1) reasons.push(`CIS verified credits ${cisDelta > 0 ? 'increased' : 'decreased'} by £${Math.abs(Math.round(cisDelta)).toLocaleString('en-GB')}`);
+  const why = reasons.length > 0 ? ` — ${reasons.join('; ')}` : '';
+  return `Reserve ${dir} £${Math.abs(Math.round(delta)).toLocaleString('en-GB')}${why}.`;
+}
+
 function TaxReserveWidget({ token }: { token: string }) {
   const [reserve, setReserve] = useState<TaxReserveData | null>(null);
+  const [changeNote, setChangeNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -651,7 +673,17 @@ function TaxReserveWidget({ token }: { token: string }) {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!r.ok || cancelled) return;
-        setReserve(await r.json());
+        const data = (await r.json()) as TaxReserveData;
+        setReserve(data);
+        // Compare with previous stored value
+        try {
+          const stored = localStorage.getItem(RESERVE_STORAGE_KEY);
+          if (stored) {
+            const prev = JSON.parse(stored) as TaxReserveData;
+            setChangeNote(explainReserveChange(prev, data));
+          }
+          localStorage.setItem(RESERVE_STORAGE_KEY, JSON.stringify(data));
+        } catch { /* storage unavailable */ }
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
@@ -700,6 +732,15 @@ function TaxReserveWidget({ token }: { token: string }) {
         </div>
       </div>
       <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        {changeNote && (
+          <div style={{
+            padding: '0.4rem 0.85rem', borderRadius: 8,
+            background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.25)',
+            fontSize: '0.78rem', color: '#92400e',
+          }}>
+            ↕ {changeNote}
+          </div>
+        )}
         <div style={{
           padding: '0.45rem 0.85rem', borderRadius: 8,
           background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)',

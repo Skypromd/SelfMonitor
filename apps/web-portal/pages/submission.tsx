@@ -55,6 +55,16 @@ type SubmitResult = {
 
 type Step = 'draft' | 'review' | 'confirm' | 'submitted';
 
+/** Decode the payload section of a JWT without verification (client-side only). */
+function jwtPayload(tok: string): Record<string, unknown> {
+  try {
+    const b64 = tok.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/') ?? '';
+    return JSON.parse(atob(b64)) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
 const TAX_YEARS = [
   { label: '2025/26', start: '2025-04-06', end: '2026-04-05' },
   { label: '2024/25', start: '2024-04-06', end: '2025-04-05' },
@@ -253,6 +263,10 @@ export default function SubmissionPage({ token }: Props) {
   }>(null);
 
   const year = TAX_YEARS[yearIdx];
+
+  // Detect simulation / guided mode from JWT claim (no HMRC live submission)
+  const jwtClaims = jwtPayload(token);
+  const isSimulationMode = !jwtClaims.hmrc_direct_submission;
 
   const requiresUnverifiedCisAck = Boolean(calc?.cis_hmrc_submit_requires_unverified_ack);
 
@@ -582,6 +596,13 @@ export default function SubmissionPage({ token }: Props) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '1.5rem', alignItems: 'start' }}>
           {/* Main breakdown */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+            {/* Simulation mode notice */}
+            {isSimulationMode && (
+              <div style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 12, padding: '0.75rem 1rem', fontSize: '0.82rem', lineHeight: 1.5, color: '#92400e' }}>
+                <strong>Guided mode:</strong> This return will be packaged but <strong>not submitted directly to HMRC</strong>. Upgrade to Pro or Business to enable live submission.
+              </div>
+            )}
 
             {/* Submission mode banner */}
             <div style={{
@@ -964,6 +985,13 @@ export default function SubmissionPage({ token }: Props) {
               </div>
             )}
 
+            {isSimulationMode && (
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: 10, padding: '0.875rem 1rem', marginBottom: '1rem', fontSize: '0.85rem', lineHeight: 1.55 }}>
+                <strong style={{ color: '#d97706' }}>Guided mode — not submitted to HMRC.</strong>{' '}
+                Your return will be saved locally and packaged as a guided MTD file. To file directly with HMRC in real time, upgrade to Pro or Business.
+              </div>
+            )}
+
             {error && (
               <div style={{ marginBottom: '1rem' }}>
                 <p style={{ color: '#ef4444', margin: '0 0 0.4rem', fontSize: '0.875rem' }}>{error}</p>
@@ -1003,9 +1031,15 @@ export default function SubmissionPage({ token }: Props) {
       {step === 'submitted' && submitResult && (
         <div style={{ maxWidth: 520 }}>
           <div style={{ background: 'rgba(13,148,136,0.07)', border: '2px solid rgba(13,148,136,0.4)', borderRadius: 16, padding: '2.5rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>✅</div>
-            <h2 style={{ marginTop: 0, color: '#0d9488' }}>Submitted to HMRC</h2>
-            <p style={{ color: 'var(--lp-muted)', marginBottom: '1.5rem' }}>Your Self Assessment has been submitted successfully.</p>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{isSimulationMode ? '📦' : '✅'}</div>
+            <h2 style={{ marginTop: 0, color: isSimulationMode ? '#d97706' : '#0d9488' }}>
+              {isSimulationMode ? 'Return Packaged (Guided Mode)' : 'Submitted to HMRC'}
+            </h2>
+            <p style={{ color: 'var(--lp-muted)', marginBottom: '1.5rem' }}>
+              {isSimulationMode
+                ? 'Your return has been saved and packaged — it has not been filed with HMRC. Upgrade to Pro or Business to submit directly.'
+                : 'Your Self Assessment has been submitted successfully.'}
+            </p>
 
             <div style={{ background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 12, padding: '1.25rem', textAlign: 'left', marginBottom: '1.5rem' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginBottom: '0.25rem' }}>HMRC Reference</div>
