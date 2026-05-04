@@ -147,7 +147,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show clear error messages for OAuth, 429, 5xx and timeout.
 - [x] Show direct-to-simulation fallback notice if fallback is enabled.
 - [x] Add audit events for preview, confirmation and submit.
-- [ ] Add tests for confirmation and duplicate submit prevention.
+- [x] Add tests for confirmation and duplicate submit prevention.
 
 ### P0.5 Reliability And Trust UX
 
@@ -224,7 +224,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add filter: only problems.
 - [x] Add filter: unverified credits.
 - [x] Add filter: missing statements.
-- [ ] Add contractor grouping.
+- [x] Add contractor grouping.
 - [x] Add refund estimate summary.
 - [x] Add total verified deductions.
 - [x] Add total unverified deductions.
@@ -239,7 +239,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Parse materials total.
 - [x] Parse CIS deducted total.
 - [x] Parse net paid total.
-- [ ] Link statement to contractor and tax month.
+- [x] Link statement to contractor and tax month.
 - [x] Show OCR confidence.
 - [x] Require review when confidence is low.
 - [x] Store document reference on CIS record.

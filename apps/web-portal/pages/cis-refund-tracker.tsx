@@ -85,10 +85,19 @@ type OcrResult = {
   note?: string;
 };
 
+type ContractorGroup = {
+  contractor_key: string;
+  display_name: string;
+  total_cis_withheld: number;
+  worst_status: string;
+  months: Array<{ month_label: string; row: ContractorRow }>;
+};
+
 export default function CisRefundTrackerPage({ token }: { token: string }) {
   const [data, setData] = useState<TrackerPayload | null>(null);
   const [err, setErr] = useState('');
   const [filter, setFilter] = useState<'all' | 'problems' | 'unverified' | 'missing' | 'mismatch' | 'not_cis'>('all');
+  const [groupBy, setGroupBy] = useState<'month' | 'contractor'>('month');
 
   // Upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +116,19 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
   });
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
+
+  const openUploadForContractor = (contractorName: string, periodStart?: string, periodEnd?: string) => {
+    setSaveOk(false);
+    setUploadErr('');
+    setOcr(null);
+    setForm(prev => ({
+      ...prev,
+      contractor_name: contractorName,
+      period_start: periodStart ?? prev.period_start,
+      period_end: periodEnd ?? prev.period_end,
+    }));
+    setUploadOpen(true);
+  };
 
   const load = useCallback(async () => {
     setErr('');
@@ -436,9 +458,9 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
             <p style={{ color: 'var(--text-secondary)' }}>No CIS periods or tasks yet.</p>
           )}
 
-          {/* ── Pill filters ── */}
+          {/* ── Pill filters + group-by toggle ── */}
           {data.by_tax_month.length > 0 && (
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: 16, alignItems: 'center' }}>
               {(
                 [
                   { key: 'all', label: 'All' },
@@ -465,11 +487,65 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                   {label}
                 </button>
               ))}
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.4rem' }}>
+                {(['month', 'contractor'] as const).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setGroupBy(g)}
+                    style={{
+                      padding: '0.25rem 0.8rem', borderRadius: 999, fontSize: '0.78rem', fontWeight: 600,
+                      cursor: 'pointer', border: '1px solid',
+                      borderColor: groupBy === g ? '#6366f1' : 'var(--border)',
+                      background: groupBy === g ? 'rgba(99,102,241,0.12)' : 'transparent',
+                      color: groupBy === g ? '#6366f1' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {g === 'month' ? '📅 By month' : '🏢 By contractor'}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
-          {data.by_tax_month.map((block) => {
-            const filteredContractors = block.contractors.filter((c) => {
+          {/* Helper: row-level action buttons */}
+          {(() => {
+            const rowActions = (c: ContractorRow, monthLabel?: string) => (
+              <>
+                {c.status === 'MISSING' && (
+                  <button
+                    type="button"
+                    onClick={() => openUploadForContractor(c.display_name, monthLabel)}
+                    style={{ padding: '0.25rem 0.7rem', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Upload statement
+                  </button>
+                )}
+                {c.status === 'UNVERIFIED' && (
+                  <button
+                    type="button"
+                    onClick={() => openUploadForContractor(c.display_name, monthLabel)}
+                    style={{ padding: '0.25rem 0.7rem', borderRadius: 6, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Add statement
+                  </button>
+                )}
+                {c.status === 'MISMATCH' && (
+                  <span style={{ color: '#f97316', fontWeight: 600 }}>Review bank match</span>
+                )}
+                {c.status === 'NOT_CIS' && (
+                  <span style={{ color: '#94a3b8' }}>No CIS action</span>
+                )}
+                {c.status === 'VERIFIED' && c.reconciliation_worst === 'needs_review' && (
+                  <span style={{ color: '#f97316' }}>Review bank match</span>
+                )}
+                {c.status === 'VERIFIED' && c.reconciliation_worst !== 'needs_review' && (
+                  <span style={{ color: '#10b981' }}>✓ No action needed</span>
+                )}
+              </>
+            );
+
+            const passesFilter = (c: ContractorRow) => {
               if (filter === 'all') return true;
               if (filter === 'unverified') return c.status === 'UNVERIFIED';
               if (filter === 'missing') return c.status === 'MISSING';
@@ -484,98 +560,143 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                   c.open_payment_count > 0
                 );
               return true;
-            });
-            if (filteredContractors.length === 0) return null;
-            return (
-            <section key={`${block.tax_year_start}-${block.tax_month}`} style={{ marginBottom: 24 }}>
-              <h2 style={{ fontSize: '1rem', marginBottom: 10 }}>{block.tax_month_label}</h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
-                  <thead>
-                    <tr style={{ textAlign: 'left', color: 'var(--text-tertiary)' }}>
-                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Contractor</th>
-                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Status</th>
-                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>CIS withheld</th>
-                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Reconciliation</th>
-                      <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Next action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredContractors.map((c) => (
-                      <tr key={c.contractor_key}>
-                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
-                          {c.display_name}
-                          {c.open_payment_count > 0 && (
-                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.72rem' }}>
-                              {' '}
-                              · {c.open_payment_count} open payment(s)
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
-                          <span style={{
-                            padding: '0.15rem 0.55rem', borderRadius: 999, fontWeight: 700, fontSize: '0.7rem',
-                            textTransform: 'uppercase',
-                            background: statusBg(c.status),
-                            color: statusColor(c.status),
-                          }}>
-                            {statusLabel(c.status)}
-                          </span>
-                        </td>
-                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{fmt(c.cis_withheld_gbp)}</td>
-                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
-                          {c.reconciliation_worst === 'needs_review' && (
-                            <span style={{ color: '#f97316', fontWeight: 600, fontSize: '0.8rem' }}>⚠ Mismatch</span>
-                          )}
-                          {c.reconciliation_worst === 'ok' && <span style={{ color: '#10b981', fontSize: '0.8rem' }}>✓ Matched</span>}
-                          {c.reconciliation_worst === 'pending' && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>Pending</span>}
-                          {(c.reconciliation_worst === 'not_applicable' || !c.reconciliation_worst) && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>—</span>}
-                          {c.bank_net_observed_gbp != null && c.reconciliation_worst === 'needs_review' && (
-                            <span style={{ color: 'var(--text-tertiary)', display: 'block', fontSize: '0.7rem' }}>
-                              Bank {fmt(c.bank_net_observed_gbp)} vs {fmt(c.net_paid_declared_gbp)}
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', fontSize: '0.78rem' }}>
-                          {c.status === 'MISSING' && (
-                            <button
-                              type="button"
-                              onClick={() => setUploadOpen(true)}
-                              style={{ padding: '0.25rem 0.7rem', borderRadius: 6, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
-                            >
-                              Upload statement
-                            </button>
-                          )}
-                          {c.status === 'UNVERIFIED' && (
-                            <button
-                              type="button"
-                              onClick={() => setUploadOpen(true)}
-                              style={{ padding: '0.25rem 0.7rem', borderRadius: 6, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer' }}
-                            >
-                              Add statement
-                            </button>
-                          )}
-                          {c.status === 'MISMATCH' && (
-                            <span style={{ color: '#f97316', fontWeight: 600 }}>Review bank match</span>
-                          )}
-                          {c.status === 'NOT_CIS' && (
-                            <span style={{ color: '#94a3b8' }}>No CIS action</span>
-                          )}
-                          {c.status === 'VERIFIED' && c.reconciliation_worst === 'needs_review' && (
-                            <span style={{ color: '#f97316' }}>Review bank match</span>
-                          )}
-                          {c.status === 'VERIFIED' && c.reconciliation_worst !== 'needs_review' && (
-                            <span style={{ color: '#10b981' }}>✓ No action needed</span>
-                          )}
-                        </td>
+            };
+
+            const statusRank = (st: string) => ({ MISSING: 0, MISMATCH: 1, UNVERIFIED: 2, NOT_CIS: 3, VERIFIED: 4 }[st] ?? 5);
+
+            if (groupBy === 'month') {
+              return data.by_tax_month.map((block) => {
+                const filtered = block.contractors.filter(passesFilter);
+                if (filtered.length === 0) return null;
+                return (
+                  <section key={`${block.tax_year_start}-${block.tax_month}`} style={{ marginBottom: 24 }}>
+                    <h2 style={{ fontSize: '1rem', marginBottom: 10 }}>{block.tax_month_label}</h2>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                        <thead>
+                          <tr style={{ textAlign: 'left', color: 'var(--text-tertiary)' }}>
+                            <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Contractor</th>
+                            <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Status</th>
+                            <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>CIS withheld</th>
+                            <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Reconciliation</th>
+                            <th style={{ padding: '8px 6px', borderBottom: '1px solid var(--border)' }}>Next action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filtered.map((c) => (
+                            <tr key={c.contractor_key}>
+                              <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
+                                {c.display_name}
+                                {c.open_payment_count > 0 && (
+                                  <span style={{ color: 'var(--text-tertiary)', fontSize: '0.72rem' }}>
+                                    {' '}· {c.open_payment_count} open payment(s)
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
+                                <span style={{ padding: '0.15rem 0.55rem', borderRadius: 999, fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', background: statusBg(c.status), color: statusColor(c.status) }}>
+                                  {statusLabel(c.status)}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{fmt(c.cis_withheld_gbp)}</td>
+                              <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)' }}>
+                                {c.reconciliation_worst === 'needs_review' && <span style={{ color: '#f97316', fontWeight: 600, fontSize: '0.8rem' }}>⚠ Mismatch</span>}
+                                {c.reconciliation_worst === 'ok' && <span style={{ color: '#10b981', fontSize: '0.8rem' }}>✓ Matched</span>}
+                                {c.reconciliation_worst === 'pending' && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>Pending</span>}
+                                {(c.reconciliation_worst === 'not_applicable' || !c.reconciliation_worst) && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>—</span>}
+                                {c.bank_net_observed_gbp != null && c.reconciliation_worst === 'needs_review' && (
+                                  <span style={{ color: 'var(--text-tertiary)', display: 'block', fontSize: '0.7rem' }}>
+                                    Bank {fmt(c.bank_net_observed_gbp)} vs {fmt(c.net_paid_declared_gbp)}
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: '10px 6px', borderBottom: '1px solid var(--border)', fontSize: '0.78rem' }}>
+                                {rowActions(c, block.tax_month_label)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                );
+              });
+            }
+
+            // By contractor grouping
+            const groupMap = new Map<string, ContractorGroup>();
+            for (const block of data.by_tax_month) {
+              for (const row of block.contractors) {
+                if (!passesFilter(row)) continue;
+                const existing = groupMap.get(row.contractor_key);
+                if (existing) {
+                  existing.total_cis_withheld += row.cis_withheld_gbp;
+                  if (statusRank(row.status) < statusRank(existing.worst_status)) {
+                    existing.worst_status = row.status;
+                  }
+                  existing.months.push({ month_label: block.tax_month_label, row });
+                } else {
+                  groupMap.set(row.contractor_key, {
+                    contractor_key: row.contractor_key,
+                    display_name: row.display_name,
+                    total_cis_withheld: row.cis_withheld_gbp,
+                    worst_status: row.status,
+                    months: [{ month_label: block.tax_month_label, row }],
+                  });
+                }
+              }
+            }
+            const groups = Array.from(groupMap.values()).sort((a, b) => statusRank(a.worst_status) - statusRank(b.worst_status));
+            if (groups.length === 0) return <p style={{ color: 'var(--text-secondary)' }}>No contractors match this filter.</p>;
+
+            return groups.map((g) => (
+              <section key={g.contractor_key} style={{ marginBottom: 24, background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.85rem 1rem', borderBottom: '1px solid var(--border)' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.95rem', flex: 1 }}>{g.display_name}</span>
+                  <span style={{ padding: '0.15rem 0.6rem', borderRadius: 999, fontWeight: 700, fontSize: '0.7rem', textTransform: 'uppercase', background: statusBg(g.worst_status), color: statusColor(g.worst_status) }}>
+                    {statusLabel(g.worst_status)}
+                  </span>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{fmt(g.total_cis_withheld)}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>{g.months.length} month{g.months.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: 'var(--text-tertiary)' }}>
+                        <th style={{ padding: '7px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>Tax month</th>
+                        <th style={{ padding: '7px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>Status</th>
+                        <th style={{ padding: '7px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>CIS withheld</th>
+                        <th style={{ padding: '7px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>Reconciliation</th>
+                        <th style={{ padding: '7px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>Next action</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-            );
-          })}
+                    </thead>
+                    <tbody>
+                      {g.months.map(({ month_label, row: c }) => (
+                        <tr key={month_label + c.contractor_key}>
+                          <td style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{month_label}</td>
+                          <td style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)' }}>
+                            <span style={{ padding: '0.12rem 0.5rem', borderRadius: 999, fontWeight: 700, fontSize: '0.68rem', textTransform: 'uppercase', background: statusBg(c.status), color: statusColor(c.status) }}>
+                              {statusLabel(c.status)}
+                            </span>
+                          </td>
+                          <td style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{fmt(c.cis_withheld_gbp)}</td>
+                          <td style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)' }}>
+                            {c.reconciliation_worst === 'needs_review' && <span style={{ color: '#f97316', fontWeight: 600, fontSize: '0.8rem' }}>⚠ Mismatch</span>}
+                            {c.reconciliation_worst === 'ok' && <span style={{ color: '#10b981', fontSize: '0.8rem' }}>✓ Matched</span>}
+                            {(c.reconciliation_worst === 'pending') && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>Pending</span>}
+                            {(c.reconciliation_worst === 'not_applicable' || !c.reconciliation_worst) && <span style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>—</span>}
+                          </td>
+                          <td style={{ padding: '9px 12px', borderBottom: '1px solid var(--border)', fontSize: '0.78rem' }}>
+                            {rowActions(c, month_label)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ));
+          })()}
 
           {data.open_tasks_preview.length > 0 && (
             <section>

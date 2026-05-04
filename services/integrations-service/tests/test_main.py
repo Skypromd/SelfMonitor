@@ -11,7 +11,6 @@ from jose import jwt
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from app.main import app
 
-
 client = TestClient(app)
 AUTH_SECRET_KEY = os.environ["AUTH_SECRET_KEY"]
 AUTH_ALGORITHM = "HS256"
@@ -469,7 +468,10 @@ def test_hmrc_mtd_operational_readiness_endpoint(monkeypatch):
 
 
 def test_quarterly_report_fingerprint_includes_cis_disclosure():
-    from app.hmrc_mtd import HMRCMTDQuarterlyReport, compute_quarterly_report_fingerprint
+    from app.hmrc_mtd import (
+        HMRCMTDQuarterlyReport,
+        compute_quarterly_report_fingerprint,
+    )
 
     base_report = dict(_valid_quarterly_payload()["report"])
     r0 = HMRCMTDQuarterlyReport.model_validate({**base_report, "cis_disclosure": None})
@@ -685,3 +687,166 @@ def test_final_declaration_posts_mtd_compliance_audit(monkeypatch):
     audit.assert_awaited_once()
     assert audit.await_args.kwargs["action"] == "mtd_final_declaration_submitted"
     assert audit.await_args.kwargs["details"]["declaration_status"] == "accepted"
+
+
+# ---------------------------------------------------------------------------
+# New endpoints: submissions list, audit trail, audit event
+# ---------------------------------------------------------------------------
+
+
+def test_list_submissions_empty(monkeypatch, tmp_path):
+    """GET /integrations/submissions returns empty list when no submissions exist."""
+    _isolated_db(monkeypatch, tmp_path)
+    r = client.get("/integrations/submissions", headers=_headers())
+    assert r.status_code == 200
+    body = r.json()
+    assert "submissions" in body
+    assert body["submissions"] == []
+
+
+def _valid_submit_body() -> dict:
+    return {
+        "tax_period_start": "2026-04-06",
+        "tax_period_end": "2026-07-05",
+        "tax_due": 3200.0,
+    }
+
+
+def test_list_submissions_after_submit(monkeypatch, tmp_path):
+    """GET /integrations/submissions returns records after a simulated submit."""
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    r = client.post(
+        "/integrations/hmrc/submit-tax-return",
+        headers=_headers(),
+        json=_valid_submit_body(),
+    )
+    assert r.status_code == 202
+
+    r2 = client.get("/integrations/submissions", headers=_headers())
+    assert r2.status_code == 200
+    subs = r2.json()["submissions"]
+    assert len(subs) == 1
+    entry = subs[0]
+    assert "submission_id" in entry
+    assert entry["status"] in {"pending", "accepted", "simulated"}
+    assert "submitted_at" in entry
+
+
+def test_list_submissions_isolated_per_user(monkeypatch, tmp_path):
+    """Submissions are scoped per user — user B sees no data from user A."""
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+    client.post(
+        "/integrations/hmrc/submit-tax-return",
+        headers=_headers("user-a@test.com"),
+        json=_valid_submit_body(),
+    )
+    r = client.get("/integrations/submissions", headers=_headers("user-b@test.com"))
+    assert r.status_code == 200
+    assert r.json()["submissions"] == []
+
+
+def test_audit_trail_empty(monkeypatch, tmp_path):
+    """GET /integrations/audit-trail returns empty events list for a fresh user."""
+    _isolated_db(monkeypatch, tmp_path)
+    r = client.get("/integrations/audit-trail", headers=_headers())
+    assert r.status_code == 200
+    body = r.json()
+    assert "events" in body
+    assert isinstance(body["events"], list)
+
+
+def test_audit_trail_populated_after_event_and_submit(monkeypatch, tmp_path):
+    """Audit trail includes both fraud-audit events and submission records."""
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+
+    # Log a preview event
+    r_event = client.post(
+        "/integrations/audit/event",
+        headers=_headers(),
+        json={"stage": "preview", "report_hash": "abc123"},
+    )
+    assert r_event.status_code == 201
+    assert r_event.json()["recorded"] is True
+
+    # Submit a return so there's also a submission_record event
+    client.post(
+        "/integrations/hmrc/submit-tax-return",
+        headers=_headers(),
+        json=_valid_submit_body(),
+    )
+
+    r_trail = client.get("/integrations/audit-trail", headers=_headers())
+    assert r_trail.status_code == 200
+    events = r_trail.json()["events"]
+    assert len(events) >= 2
+    types = {e["event_type"] for e in events}
+    assert "preview" in types
+    assert "submission_record" in types
+
+
+def test_audit_event_validates_stage_pattern(monkeypatch, tmp_path):
+    """POST /integrations/audit/event rejects stage values with invalid characters."""
+    _isolated_db(monkeypatch, tmp_path)
+    r = client.post(
+        "/integrations/audit/event",
+        headers=_headers(),
+        json={"stage": "BAD STAGE!!"},
+    )
+    assert r.status_code == 422
+
+
+def test_audit_event_confirm_stage(monkeypatch, tmp_path):
+    """POST /integrations/audit/event records confirm stage successfully."""
+    _isolated_db(monkeypatch, tmp_path)
+    r = client.post(
+        "/integrations/audit/event",
+        headers=_headers(),
+        json={"stage": "confirm", "report_hash": "deadbeef00001234"},
+    )
+    assert r.status_code == 201
+    assert r.json()["recorded"] is True
+
+    # Verify it appears in the audit trail
+    trail_events = client.get("/integrations/audit-trail", headers=_headers()).json()["events"]
+    assert any(e["event_type"] == "confirm" for e in trail_events)
+
+
+def test_duplicate_confirmation_token_rejected(monkeypatch, tmp_path):
+    """Submitting the same confirmation token twice returns 403 on second attempt."""
+    _isolated_db(monkeypatch, tmp_path)
+    monkeypatch.setattr("app.main.HMRC_REQUIRE_EXPLICIT_CONFIRM", True)
+    monkeypatch.setattr("app.main.HMRC_DIRECT_SUBMISSION_ENABLED", False)
+
+    report = _valid_quarterly_payload()["report"]
+    draft_id = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/draft",
+        headers=_headers(),
+        json={"report": report},
+    ).json()["draft_id"]
+
+    token = client.post(
+        "/integrations/hmrc/mtd/quarterly-update/confirm",
+        headers=_headers(),
+        json={"draft_id": draft_id},
+    ).json()["confirmation_token"]
+
+    payload = _valid_quarterly_payload()
+    payload["confirmation_token"] = token
+
+    r1 = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=payload,
+    )
+    assert r1.status_code == 202
+
+    r2 = client.post(
+        "/integrations/hmrc/mtd/quarterly-update",
+        headers=_headers(),
+        json=payload,
+    )
+    assert r2.status_code == 403
+    assert "already used" in r2.json()["detail"].lower()
