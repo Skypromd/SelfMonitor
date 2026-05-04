@@ -1,18 +1,18 @@
-import React, { useState, useCallback, useRef } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  Animated,
+    ActivityIndicator,
+    Alert,
+    Animated,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { colors, spacing, fontSize, borderRadius } from '../theme';
 import { apiCall } from '../api';
+import { borderRadius, colors, fontSize, spacing } from '../theme';
 
 type QuarterStatus = 'submitted' | 'due' | 'locked';
 
@@ -81,14 +81,57 @@ function AnimatedPressable({
   );
 }
 
+type ReadinessBlocker = {
+  id: string;
+  label: string;
+  count: number;
+  severity: 'blocking' | 'attention' | 'info';
+  estimated_minutes: number;
+  impact_points: number;
+  action_label: string;
+  action_route: string;
+};
+
+type ReadinessData = {
+  status: 'ready' | 'needs_attention' | 'blocked';
+  score: number;
+  uncategorized_count: number;
+  missing_business_pct: number;
+  unmatched_receipts: number;
+  cis_unverified: number;
+  blockers: ReadinessBlocker[];
+  today_list: ReadinessBlocker[];
+};
+
 export default function TaxScreen() {
   const [prepareLoading, setPrepareLoading] = useState<string | null>(null);
   const [annualLoading, setAnnualLoading] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
+  const [readiness, setReadiness] = useState<ReadinessData | null>(null);
+  const [readinessLoading, setReadinessLoading] = useState(false);
 
   const estimatedTax = 9131;
   const incomeTaxPortion = 6886;
   const niPortion = 2245;
+
+  const fetchReadiness = useCallback(async () => {
+    setReadinessLoading(true);
+    try {
+      const res = await apiCall('/transactions/readiness', { method: 'GET' });
+      if (res.ok) {
+        const data = await res.json() as ReadinessData;
+        setReadiness(data);
+      }
+    } catch {
+      // ignore — show nothing rather than error
+    } finally {
+      setReadinessLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchReadiness();
+  }, [fetchReadiness]);
 
   const prepareQuarterly = useCallback(
     async (quarter: string) => {
@@ -164,6 +207,115 @@ export default function TaxScreen() {
             Income Tax £{incomeTaxPortion.toLocaleString()} + NI £{niPortion.toLocaleString()}
           </Text>
         </View>
+
+        {/* Quarter Readiness Console */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Quarter Readiness</Text>
+        </View>
+        {readinessLoading ? (
+          <View style={[styles.card, { alignItems: 'center', paddingVertical: spacing.xl }]}>
+            <ActivityIndicator color={colors.accentTeal} />
+          </View>
+        ) : readiness ? (
+          <View style={styles.card}>
+            {/* Status badge + score */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md }}>
+              <View style={[
+                styles.readinessBadge,
+                readiness.status === 'ready'
+                  ? { backgroundColor: 'rgba(16,185,129,0.15)', borderColor: '#10b981' }
+                  : readiness.status === 'needs_attention'
+                  ? { backgroundColor: 'rgba(245,158,11,0.12)', borderColor: '#f59e0b' }
+                  : { backgroundColor: 'rgba(239,68,68,0.12)', borderColor: '#ef4444' },
+              ]}>
+                <Text style={[
+                  styles.readinessBadgeText,
+                  readiness.status === 'ready' ? { color: '#10b981' }
+                    : readiness.status === 'needs_attention' ? { color: '#f59e0b' }
+                    : { color: '#ef4444' },
+                ]}>
+                  {readiness.status === 'ready' ? '✓ Ready'
+                    : readiness.status === 'needs_attention' ? '⚠ Needs attention'
+                    : '✗ Blocked'}
+                </Text>
+              </View>
+              <Text style={styles.readinessScore}>Score: {readiness.score}%</Text>
+            </View>
+
+            {/* Score bar */}
+            <View style={styles.scoreBarTrack}>
+              <View style={[
+                styles.scoreBarFill,
+                {
+                  width: `${readiness.score}%` as unknown as number,
+                  backgroundColor: readiness.score >= 80 ? '#10b981'
+                    : readiness.score >= 50 ? '#f59e0b' : '#ef4444',
+                },
+              ]} />
+            </View>
+
+            {/* Stat pills */}
+            <View style={styles.readinessStats}>
+              {readiness.uncategorized_count > 0 && (
+                <View style={styles.statPill}>
+                  <Text style={styles.statPillText}>📂 {readiness.uncategorized_count} uncategorised</Text>
+                </View>
+              )}
+              {readiness.missing_business_pct > 0 && (
+                <View style={styles.statPill}>
+                  <Text style={styles.statPillText}>% {readiness.missing_business_pct} missing %</Text>
+                </View>
+              )}
+              {readiness.unmatched_receipts > 0 && (
+                <View style={styles.statPill}>
+                  <Text style={styles.statPillText}>🧾 {readiness.unmatched_receipts} no receipt</Text>
+                </View>
+              )}
+              {readiness.cis_unverified > 0 && (
+                <View style={styles.statPill}>
+                  <Text style={styles.statPillText}>🏗 {readiness.cis_unverified} CIS unverified</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Today's blockers */}
+            {readiness.today_list.length > 0 && (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: spacing.md, marginBottom: spacing.sm }]}>
+                  Fix today
+                </Text>
+                {readiness.today_list.map((b) => (
+                  <View key={b.id} style={styles.blockerRow}>
+                    <View style={[
+                      styles.severityDot,
+                      { backgroundColor: b.severity === 'blocking' ? '#ef4444' : b.severity === 'attention' ? '#f59e0b' : '#6b7280' },
+                    ]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.blockerLabel}>{b.label}</Text>
+                      <Text style={styles.blockerMeta}>~{b.estimated_minutes} min · +{b.impact_points} pts</Text>
+                    </View>
+                    <Text style={styles.blockerCount}>{b.count}</Text>
+                  </View>
+                ))}
+              </>
+            )}
+
+            {readiness.status === 'ready' && (
+              <Text style={styles.readyMsg}>
+                🎉 Quarter is ready for submission. Review the preview before confirming.
+              </Text>
+            )}
+
+            {/* Refresh */}
+            <TouchableOpacity
+              style={styles.refreshBtn}
+              onPress={() => void fetchReadiness()}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.refreshBtnText}>↻ Refresh readiness</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Quarterly Submissions */}
         <View style={styles.sectionHeader}>
@@ -424,5 +576,97 @@ const styles = StyleSheet.create({
     color: colors.accentTeal,
     flex: 1,
     lineHeight: 22,
+  },
+  readinessBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginRight: spacing.sm,
+  },
+  readinessBadgeText: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+  },
+  readinessScore: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
+    marginLeft: 'auto',
+  },
+  scoreBarTrack: {
+    height: 6,
+    backgroundColor: colors.border,
+    borderRadius: 3,
+    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  scoreBarFill: {
+    height: 6,
+    borderRadius: 3,
+  },
+  readinessStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  statPill: {
+    backgroundColor: 'rgba(107,114,128,0.1)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statPillText: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+  },
+  blockerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    gap: spacing.sm,
+  },
+  severityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    flexShrink: 0,
+  },
+  blockerLabel: {
+    fontSize: fontSize.sm,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  blockerMeta: {
+    fontSize: fontSize.xs,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  blockerCount: {
+    fontSize: fontSize.sm,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  readyMsg: {
+    fontSize: fontSize.sm,
+    color: '#10b981',
+    textAlign: 'center',
+    marginTop: spacing.md,
+    lineHeight: 20,
+  },
+  refreshBtn: {
+    marginTop: spacing.md,
+    alignSelf: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  refreshBtnText: {
+    fontSize: fontSize.sm,
+    color: colors.textMuted,
   },
 });

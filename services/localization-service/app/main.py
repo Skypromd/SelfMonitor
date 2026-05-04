@@ -851,3 +851,78 @@ async def get_translations_by_component(
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Translations for locale '{locale}' and component '{component}' not found.",
     )
+
+
+class LocaleCompletenessRow(BaseModel):
+    locale: str
+    native_name: str
+    total_keys: int
+    translated_keys: int
+    missing_keys: int
+    coverage_pct: float
+    missing_namespaces: list[str]
+
+
+class TranslationCompletenessResponse(BaseModel):
+    generated_at: datetime.datetime
+    baseline_locale: str
+    baseline_total_keys: int
+    locales: list[LocaleCompletenessRow]
+
+
+@app.get(
+    "/translations/completeness",
+    response_model=TranslationCompletenessResponse,
+    summary="Per-language translation completeness vs EN-GB baseline",
+)
+async def get_translation_completeness():
+    """Returns per-language coverage % against the EN-GB baseline.
+    Used to track progress as new keys are added."""
+    base_data = fake_translations_db.get(DEFAULT_LOCALE, {})
+    base_namespace_map = _collect_namespace_key_map(base_data)
+    reference_keys = _flatten_keys(base_namespace_map)
+    baseline_total = len(reference_keys)
+
+    rows: list[LocaleCompletenessRow] = []
+    for locale_code, meta in SUPPORTED_LOCALE_METADATA.items():
+        if locale_code == DEFAULT_LOCALE:
+            rows.append(
+                LocaleCompletenessRow(
+                    locale=locale_code,
+                    native_name=str(meta.get("native_name") or locale_code),
+                    total_keys=baseline_total,
+                    translated_keys=baseline_total,
+                    missing_keys=0,
+                    coverage_pct=100.0,
+                    missing_namespaces=[],
+                )
+            )
+            continue
+        locale_specific = fake_translations_db.get(locale_code, {})
+        locale_ns_map = _collect_namespace_key_map(locale_specific)
+        locale_flat_keys = _flatten_keys(locale_ns_map)
+        translated = reference_keys.intersection(locale_flat_keys)
+        missing = reference_keys - translated
+        missing_ns = sorted(
+            {ns for ns in base_namespace_map if ns not in locale_ns_map}
+        )
+        coverage = round((len(translated) / baseline_total) * 100, 1) if baseline_total else 100.0
+        rows.append(
+            LocaleCompletenessRow(
+                locale=locale_code,
+                native_name=str(meta.get("native_name") or locale_code),
+                total_keys=baseline_total,
+                translated_keys=len(translated),
+                missing_keys=len(missing),
+                coverage_pct=coverage,
+                missing_namespaces=missing_ns,
+            )
+        )
+
+    rows.sort(key=lambda r: r.coverage_pct, reverse=True)
+    return TranslationCompletenessResponse(
+        generated_at=datetime.datetime.now(datetime.UTC),
+        baseline_locale=DEFAULT_LOCALE,
+        baseline_total_keys=baseline_total,
+        locales=rows,
+    )

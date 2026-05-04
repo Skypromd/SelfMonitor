@@ -118,7 +118,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show CIS verified/unverified summary.
 - [x] Show direct/guided/simulation HMRC mode status.
 - [x] Show HMRC operational readiness where relevant.
-- [ ] Add mobile version of readiness console.
+- [x] Add mobile version of readiness console.
 - [x] Add empty state for fully ready quarter.
 - [x] Add tests for readiness score and blocker display.
 
@@ -284,19 +284,19 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### Localization Coverage
 
-- [ ] Confirm priority languages: EN, PL, RO, UK, RU, ES, IT, PT, TR, BN.
+- [x] Confirm priority languages: EN, PL, RO, UK, RU, ES, IT, PT, TR, BN.
 - [x] Remove raw translation keys from visible UI.
-- [ ] Localize onboarding.
-- [ ] Localize dashboard.
+- [x] Localize onboarding.
+- [x] Localize dashboard.
 - [ ] Localize Transaction Inbox.
-- [ ] Localize Quarter Readiness.
-- [ ] Localize CIS Control Center.
+- [x] Localize Quarter Readiness.
+- [x] Localize CIS Control Center.
 - [ ] Localize receipt review.
-- [ ] Localize MTD preview.
+- [x] Localize MTD preview.
 - [ ] Localize confirmation and warning copy.
-- [ ] Localize error messages.
+- [x] Localize error messages.
 - [ ] Localize emails and push notifications.
-- [ ] Add translation completeness checks.
+- [x] Add translation completeness checks.
 
 ### Multilingual Tax Guidance
 
@@ -543,3 +543,5 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [ ] Product copy is consistent as MyNetTax.
 - [ ] Production domains are aligned.
 - [ ] Sage comparison is clear: MyNetTax wins on self-employed readiness, CIS, language, mobile and mortgage path.
+
+

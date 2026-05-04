@@ -6,10 +6,10 @@
     "save": "Save"
   },
   "login": {
-    "title": "FinTech App",
-    "description": "Register or log in to continue",
-    "register_button": "Register",
-    "login_button": "Login"
+    "title": "MyNetTax",
+    "description": "Sign in or create your account to continue",
+    "register_button": "Create account",
+    "login_button": "Sign in"
   },
   "nav": {
     "dashboard": "Dashboard",
@@ -72,5 +72,87 @@
     "all_documents_title": "All Uploaded Documents",
     "uploaded_documents_count": "{count, plural, =0 {No uploaded documents yet.} one {# uploaded document} other {# uploaded documents}}",
     "review_queue_count": "{count, plural, =0 {No documents currently require manual OCR review.} one {# document requires manual OCR review.} other {# documents require manual OCR review.}}"
+  },
+  "onboarding": {
+    "title": "Welcome to MyNetTax",
+    "subtitle": "Tax readiness for UK self-employed workers",
+    "step1_title": "Connect your bank",
+    "step1_body": "Securely link your bank account. MyNetTax reads transactions — it never moves money.",
+    "step2_title": "Review your transactions",
+    "step2_body": "Categorise your income and expenses. We guide you, step by step.",
+    "step3_title": "Get HMRC-ready",
+    "step3_body": "See your readiness score and fix any blockers before your deadline.",
+    "step4_title": "Track CIS refunds",
+    "step4_body": "If you work in construction, track every deduction and claim what you are owed.",
+    "cta_start": "Get started",
+    "cta_skip": "Skip for now",
+    "not_advice": "MyNetTax provides guidance, not professional tax advice. Consult a qualified accountant for your specific situation."
+  },
+  "readiness": {
+    "title": "Quarter Readiness",
+    "status_ready": "Ready",
+    "status_needs_attention": "Needs attention",
+    "status_blocked": "Blocked",
+    "score_label": "Readiness score",
+    "fix_today": "Fix today",
+    "fix_button": "Fix in 5 minutes",
+    "blocker_uncategorised": "Uncategorised transactions",
+    "blocker_no_receipt": "Missing receipts",
+    "blocker_business_pct": "Expenses missing business-use %",
+    "blocker_cis_unverified": "CIS records unverified",
+    "blocker_stale_sync": "Bank sync is out of date",
+    "empty_ready_title": "Quarter is ready for submission",
+    "empty_ready_body": "All transactions are reviewed and categorised.",
+    "empty_ready_cta": "File with HMRC →",
+    "estimated_minutes": "~{minutes} min",
+    "impact_points": "+{points} pts",
+    "not_advice": "Readiness scores are based on data you have provided. This is not professional tax advice."
+  },
+  "mtd": {
+    "title": "Making Tax Digital",
+    "obligations_title": "Your deadlines",
+    "obligation_open": "Open",
+    "obligation_fulfilled": "Submitted",
+    "obligation_overdue": "Overdue",
+    "days_until": "{days} days until deadline",
+    "prepare_button": "Prepare quarterly update",
+    "preview_title": "Quarterly preview",
+    "confirm_title": "Confirm and submit",
+    "confirm_acknowledgement": "I confirm this quarterly update is true and complete to the best of my knowledge.",
+    "submit_button": "Submit to HMRC",
+    "submitted_title": "Submission sent",
+    "submitted_body": "Your quarterly update has been submitted. Reference: {reference}",
+    "error_hmrc_unavailable": "HMRC services are temporarily unavailable. Please try again shortly.",
+    "error_duplicate": "This period has already been submitted.",
+    "not_advice": "MyNetTax prepares your submission data. You are responsible for confirming that figures are accurate before submitting to HMRC."
+  },
+  "cis": {
+    "title": "CIS Refund Tracker",
+    "subtitle": "Construction Industry Scheme",
+    "control_centre": "CIS Control Centre",
+    "verified": "Verified",
+    "unverified": "Unverified",
+    "missing_statement": "Missing statement",
+    "matched": "Matched",
+    "mismatch": "Mismatch",
+    "total_deducted": "Total CIS deducted",
+    "verified_deducted": "Verified deductions",
+    "unverified_deducted": "Unverified deductions",
+    "request_statement": "Request CIS300 from contractor",
+    "upload_statement": "Upload CIS statement",
+    "evidence_pack": "CIS evidence pack",
+    "evidence_pack_body": "Share a verified summary with your accountant.",
+    "unverified_warning": "Some CIS deductions are unverified. You can still submit, but your accountant will need to confirm these before your final declaration.",
+    "not_advice": "CIS refund estimates are based on records you have provided. Contact HMRC or a qualified accountant to confirm your entitlement."
+  },
+  "errors": {
+    "network": "Network error. Please check your connection and try again.",
+    "server": "Something went wrong on our end. Please try again shortly.",
+    "auth_expired": "Your session has expired. Please sign in again.",
+    "not_found": "This page or record could not be found.",
+    "validation": "Please check the highlighted fields and try again.",
+    "hmrc_429": "HMRC is rate-limiting requests. Please wait a moment and try again.",
+    "hmrc_5xx": "HMRC services are temporarily unavailable.",
+    "hmrc_oauth": "HMRC authorisation failed. Please re-authorise and try again."
   }
 }
