@@ -1150,7 +1150,17 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
       )}
 
       {!displayedTransactions.length ? (
-        <p className={styles.emptyState}>No transactions match the current filters.</p>
+        transactions.length > 0 ? (
+          <p className={styles.emptyState}>No transactions match the current filters.</p>
+        ) : !loading ? (
+          <div style={{ textAlign: 'center', padding: '3rem 1.5rem', background: 'rgba(16,185,129,0.05)', border: '1.5px solid rgba(16,185,129,0.2)', borderRadius: 16, marginTop: '1rem' }}>
+            <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>✓</div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#10b981', marginBottom: '0.4rem' }}>Transaction inbox is clear</div>
+            <div style={{ color: 'var(--lp-muted, #94a3b8)', fontSize: '0.87rem', maxWidth: 400, margin: '0 auto' }}>
+              All transactions are reviewed and categorised. New ones will appear here as they arrive from your connected accounts.
+            </div>
+          </div>
+        ) : null
       ) : (
         <table className={styles.table}>
           <thead>
@@ -1254,6 +1264,41 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
                           style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid var(--lp-border)', background: 'transparent', color: 'var(--lp-muted)', fontSize: '0.72rem', cursor: isBusy ? 'wait' : 'pointer' }}>
                           {pctLabel ? `${pctLabel} biz` : '% split'}
                         </button>
+                      )}
+                      {/* Quick action: Attach receipt */}
+                      <a
+                        href={`/receipt-management?attach_txn_id=${t.id}`}
+                        style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid rgba(99,102,241,0.35)', background: 'transparent', color: '#818cf8', fontSize: '0.72rem', textDecoration: 'none', cursor: 'pointer' }}
+                        title="Attach a receipt to this transaction"
+                      >
+                        📎 Receipt
+                      </a>
+                      {/* Quick action: Split transaction */}
+                      <a
+                        href={`/transactions/${t.id}/split`}
+                        style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid rgba(245,158,11,0.35)', background: 'transparent', color: '#f59e0b', fontSize: '0.72rem', textDecoration: 'none', cursor: 'pointer' }}
+                        title="Split this transaction into multiple categories"
+                      >
+                        ✂ Split
+                      </a>
+                      {/* Quick action: Create recurring rule */}
+                      <a
+                        href={`/transactions?create_rule_from=${t.id}`}
+                        style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid rgba(16,185,129,0.35)', background: 'transparent', color: '#10b981', fontSize: '0.72rem', textDecoration: 'none', cursor: 'pointer' }}
+                        title="Create a recurring rule from this transaction"
+                      >
+                        🔁 Rule
+                      </a>
+                      {/* Quick action: Ignore as receipt draft candidate */}
+                      {t.reconciliation_status === 'pending' && (
+                        <a
+                          href={`#receipt-drafts`}
+                          onClick={(e) => { e.preventDefault(); document.getElementById('receipt-drafts')?.scrollIntoView({ behavior: 'smooth' }); }}
+                          style={{ padding: '0.18rem 0.5rem', borderRadius: 6, border: '1px solid rgba(239,68,68,0.3)', background: 'transparent', color: '#ef4444', fontSize: '0.72rem', textDecoration: 'none', cursor: 'pointer' }}
+                          title="Review or ignore receipt draft match for this transaction"
+                        >
+                          🚫 Ignore draft
+                        </a>
                       )}
                     </div>
                   </td>
@@ -1561,7 +1606,9 @@ export default function TransactionsPage({ token }: TransactionsPageProps) {
             {loadError ? <p className={styles.error} style={{ marginBottom: '1rem', fontSize: '0.88rem' }}>{loadError}</p> : null}
             <BankConnection token={token} onConnectionComplete={setConnectedAccountId} />
             <TransactionsList token={token} accountId={connectedAccountId} businessId={selectedBusinessId} />
-            <ReceiptDraftManualMatching token={token} businessId={selectedBusinessId} />
+            <div id="receipt-drafts">
+              <ReceiptDraftManualMatching token={token} businessId={selectedBusinessId} />
+            </div>
         </div>
     );
 }

@@ -553,8 +553,16 @@ export default function TaxReadinessPage({ token }: Props) {
               </div>
             ) : (
               !loading && score !== null && (
-                <div className={styles.subContainer} style={{ textAlign: 'center', padding: '2rem', color: '#22c55e', fontWeight: 600, marginBottom: '1.5rem' }}>
-                  ✓ No blockers — your records are clean and ready for submission.
+                <div className={styles.subContainer} style={{ textAlign: 'center', padding: '2.5rem 1.5rem', marginBottom: '1.5rem', background: 'rgba(16,185,129,0.06)', border: '1.5px solid rgba(16,185,129,0.25)', borderRadius: 16 }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.6rem' }}>🎉</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#10b981', marginBottom: '0.4rem' }}>Quarter is ready for submission</div>
+                  <div style={{ color: 'var(--lp-muted, #94a3b8)', fontSize: '0.88rem', marginBottom: '1.2rem', maxWidth: 440, margin: '0 auto 1.2rem' }}>
+                    All transactions are categorised, CIS records are verified, and your accounts are in order.
+                    You can file this quarter with HMRC right now.
+                  </div>
+                  <Link href="/submission" style={{ padding: '0.65rem 1.6rem', borderRadius: 10, background: '#10b981', color: '#fff', fontWeight: 700, fontSize: '0.92rem', textDecoration: 'none' }}>
+                    File with HMRC →
+                  </Link>
                 </div>
               )
             )}
@@ -758,9 +766,17 @@ export default function TaxReadinessPage({ token }: Props) {
               !loading && score !== null && (
                 <div
                   className={styles.subContainer}
-                  style={{ textAlign: 'center', padding: '2rem', color: '#22c55e', fontWeight: 600 }}
+                  style={{ textAlign: 'center', padding: '2.5rem 1.5rem', background: 'rgba(16,185,129,0.06)', border: '1.5px solid rgba(16,185,129,0.25)', borderRadius: 16 }}
                 >
-                  ✓ No blockers — your records are clean and ready for submission.
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.6rem' }}>🎉</div>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#10b981', marginBottom: '0.4rem' }}>Quarter is ready for submission</div>
+                  <div style={{ color: 'var(--lp-muted, #94a3b8)', fontSize: '0.88rem', marginBottom: '1.2rem', maxWidth: 440, margin: '0 auto 1.2rem' }}>
+                    All transactions are categorised, CIS records are verified, and your accounts are in order.
+                    You can file this quarter with HMRC right now.
+                  </div>
+                  <Link href="/submission" style={{ padding: '0.65rem 1.6rem', borderRadius: 10, background: '#10b981', color: '#fff', fontWeight: 700, fontSize: '0.92rem', textDecoration: 'none' }}>
+                    File with HMRC →
+                  </Link>
                 </div>
               )
             )}

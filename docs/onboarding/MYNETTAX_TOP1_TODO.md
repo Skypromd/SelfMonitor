@@ -89,13 +89,13 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add quick action: mark personal.
 - [x] Add quick action: mark business.
 - [x] Add quick action: set business-use percentage.
-- [ ] Add quick action: attach receipt.
-- [ ] Add quick action: split transaction.
-- [ ] Add quick action: create recurring rule.
-- [ ] Add quick action: ignore receipt draft candidate.
+- [x] Add quick action: attach receipt.
+- [x] Add quick action: split transaction.
+- [x] Add quick action: create recurring rule.
+- [x] Add quick action: ignore receipt draft candidate.
 - [x] Add bulk review mode.
 - [x] Add weekly Inbox Zero metric.
-- [ ] Add empty state that celebrates completion without sounding childish.
+- [x] Add empty state that celebrates completion without sounding childish.
 - [ ] Add keyboard/mobile-friendly review flow.
 - [ ] Add tests for transaction status transitions.
 
@@ -119,7 +119,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show direct/guided/simulation HMRC mode status.
 - [x] Show HMRC operational readiness where relevant.
 - [ ] Add mobile version of readiness console.
-- [ ] Add empty state for fully ready quarter.
+- [x] Add empty state for fully ready quarter.
 - [ ] Add tests for readiness score and blocker display.
 
 ### P0.4 Preview, Confirm, Submit
@@ -176,8 +176,8 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add reminders for 14, 7, 3 and 1 day windows.
 - [x] Suppress reminders when already submitted.
 - [x] Add urgent pending reminder 24h before deadline.
-- [ ] Add mobile push copy for deadlines.
-- [ ] Add email copy for deadlines.
+- [x] Add mobile push copy for deadlines.
+- [x] Add email copy for deadlines.
 
 ### Category Mapping
 
