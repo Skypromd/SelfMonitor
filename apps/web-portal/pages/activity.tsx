@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import { formatApiError } from '../lib/apiError';
 import styles from '../styles/Home.module.css';
 
 const COMPLIANCE_SERVICE_URL =
@@ -38,7 +39,7 @@ export default function ActivityPage({ token, userEmail }: ActivityPageProps) {
         }
         setEvents(await response.json());
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unexpected error');
+        setError(formatApiError(err, 'load activity'));
       } finally {
         setIsLoading(false);
       }

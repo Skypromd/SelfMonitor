@@ -122,6 +122,24 @@ def consume_sync_slot_or_raise(
         _save(data)
 
 
+def record_import_count(user_id: str, count: int) -> None:
+    """Persist the number of transactions imported in the last sync."""
+    with _LOCK:
+        data = _load()
+        if user_id not in data:
+            data[user_id] = {}
+        data[user_id]["_last_import_count"] = count
+        _save(data)
+
+
+def last_import_count(user_id: str) -> int | None:
+    """Return the transaction count from the most recent import, or None."""
+    with _LOCK:
+        data = _load()
+        val = data.get(user_id, {}).get("_last_import_count")
+        return int(val) if val is not None else None
+
+
 def last_sync_at(user_id: str) -> str | None:
     """Return ISO-8601 UTC timestamp of the user's most recent successful sync, or None."""
     with _LOCK:
@@ -140,7 +158,7 @@ def record_sync_at(user_id: str) -> None:
         _save(data)
 
 
-def sync_status(user_id: str, daily_limit: int) -> dict[str, int]:
+def sync_status(user_id: str, daily_limit: int) -> dict[str, object]:
     used = sync_used_today(user_id)
     remaining = max(0, daily_limit - used) if daily_limit > 0 else 0
     return {"daily_limit": daily_limit, "used_today": used, "remaining": remaining}

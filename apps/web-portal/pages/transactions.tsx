@@ -127,7 +127,7 @@ function downloadTransactionsCsv(rows: TransactionRecord[]): void {
   URL.revokeObjectURL(url);
 }
 
-type SyncQuota = { daily_limit: number; used_today: number; remaining: number };
+type SyncQuota = { daily_limit: number; used_today: number; remaining: number; last_import_count?: number | null };
 
 function BankConnection({ token, onConnectionComplete }: { token: string, onConnectionComplete: (accountId: string) => void }) {
   const [error, setError] = useState('');
@@ -203,6 +203,11 @@ function BankConnection({ token, onConnectionComplete }: { token: string, onConn
           {syncQuota.daily_limit <= 0
             ? 'Manual bank sync is not included in your current plan (UTC daily limits).'
             : `Manual syncs left today (UTC): ${syncQuota.remaining} of ${syncQuota.daily_limit}`}
+          {syncQuota.last_import_count != null && (
+            <span style={{ marginLeft: '0.75rem', color: 'var(--lp-accent-teal)', fontWeight: 600 }}>
+              · Last sync: {syncQuota.last_import_count} transaction{syncQuota.last_import_count === 1 ? '' : 's'} imported
+            </span>
+          )}
         </p>
       )}
       <button

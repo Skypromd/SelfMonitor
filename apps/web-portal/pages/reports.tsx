@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import { formatApiError } from '../lib/apiError';
 import styles from '../styles/Home.module.css';
 
 const ANALYTICS_SERVICE_URL = process.env.NEXT_PUBLIC_ANALYTICS_SERVICE_URL || '/api/analytics';
@@ -361,7 +362,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
           setSelectedLenderProfile(lenderProfilesPayload[0].code);
         }
       } catch (err) {
-        setChecklistError(err instanceof Error ? err.message : 'Unexpected error');
+        setChecklistError(formatApiError(err, 'load mortgage data'));
       } finally {
         setIsLoadingMortgageTypes(false);
         setIsLoadingLenderProfiles(false);
@@ -437,7 +438,7 @@ export default function ReportsPage({ token }: ReportsPageProps) {
       }
       setAffordResult(payload as MortgageAffordabilityResponse);
     } catch (e) {
-      setAffordError(e instanceof Error ? e.message : 'Unexpected error');
+      setAffordError(formatApiError(e, 'calculate affordability'));
     } finally {
       setAffordLoading(false);
     }

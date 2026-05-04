@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { useCallback, useEffect, useState } from 'react';
 import { CisComplianceBanner } from '../components/CisComplianceBanner';
 import { MtdTaxPrepDraftCaption, MtdTaxPrepSubmissionCta, mtdWorkflowLabel, type MtdDraftLatest } from '../components/MtdDraftWorkflow';
+import { formatApiError } from '../lib/apiError';
 import { downloadAccountantTaxSummaryPdf } from '../lib/taxAccountantPdf';
 import { transactionsBearerHeaders, useTransactionsBusinessScope } from '../lib/transactionsBusinessScope';
 import styles from '../styles/Home.module.css';
@@ -401,7 +402,7 @@ export default function TaxPreparationPage({ token }: Props) {
       setTaxTips(tipsList);
       setTaxTipsDisclaimer(tipsDisc);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unexpected error');
+      setError(formatApiError(e, 'load tax data'));
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useRouter } from 'next/router';
+import { Fragment, useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import { formatApiError } from '../lib/apiError';
 import styles from '../styles/Home.module.css';
 
 const DOCUMENTS_SERVICE_URL = process.env.NEXT_PUBLIC_DOCUMENTS_SERVICE_URL || '/api/documents';
@@ -161,7 +162,7 @@ function SemanticSearch({ token }: { token: string }) {
       }
       setResults(await response.json());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
+      setError(formatApiError(err, 'search documents'));
     } finally {
       setIsSearching(false);
     }
@@ -241,7 +242,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
       }
       setDocuments(await response.json());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
+      setError(formatApiError(err, 'load documents'));
     } finally {
       setIsLoadingDocuments(false);
     }
@@ -267,7 +268,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         return next;
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
+      setError(formatApiError(err, 'load review queue'));
     } finally {
       setIsLoadingReviewQueue(false);
     }
@@ -322,7 +323,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         setSelectedFile(null);
         await Promise.all([fetchDocuments(), fetchReviewQueue()]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unexpected error');
+        setError(formatApiError(err, 'upload file'));
       } finally {
         setIsUploading(false);
       }
@@ -435,7 +436,7 @@ export default function DocumentsPage({ token }: DocumentsPageProps) {
         setMessage(`Review status saved for '${document.filename}'.`);
         await Promise.all([fetchDocuments(), fetchReviewQueue()]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unexpected error');
+        setError(formatApiError(err, 'save review'));
       } finally {
         setReviewActionDocumentId(null);
       }

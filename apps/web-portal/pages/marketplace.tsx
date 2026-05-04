@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import { formatApiError } from '../lib/apiError';
 import styles from '../styles/Home.module.css';
 
 const PARTNER_REGISTRY_URL = process.env.NEXT_PUBLIC_PARTNER_REGISTRY_URL || '/api/partners';
@@ -45,7 +46,7 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
         }
         setPartners(await response.json());
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unexpected error');
+        setError(formatApiError(err, 'load partners'));
       } finally {
         setIsLoading(false);
       }
@@ -89,7 +90,7 @@ export default function MarketplacePage({ token }: MarketplacePageProps) {
       }
       setMessage(payload.message || `Your request has been sent to ${partnerName}. They will be in touch shortly.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unexpected error');
+      setError(formatApiError(err, 'send your request'));
     } finally {
       setIsSubmittingPartnerId(null);
     }

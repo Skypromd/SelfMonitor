@@ -133,7 +133,11 @@ async def get_sync_quota(
     user_id: str = Depends(get_current_user_id),
     claims: dict = Depends(_get_jwt_claims),
 ):
-    from .bank_sync_quota import last_sync_at, sync_used_today  # noqa: PLC0415
+    from .bank_sync_quota import (  # noqa: PLC0415
+        last_import_count,
+        last_sync_at,
+        sync_used_today,
+    )
     daily_limit = int(claims.get("bank_sync_daily_limit", 3))
     used = sync_used_today(user_id)
     remaining = max(0, daily_limit - used)
@@ -142,6 +146,7 @@ async def get_sync_quota(
         "used_today": used,
         "remaining": remaining,
         "last_sync_at": last_sync_at(user_id),
+        "last_import_count": last_import_count(user_id),
     }
 
 

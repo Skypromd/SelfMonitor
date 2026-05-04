@@ -241,6 +241,16 @@ export default function SubmissionPage({ token }: Props) {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [mtdDraft, setMtdDraft] = useState<MtdDraftLatest | null>(null);
   const [submitAttempts, setSubmitAttempts] = useState(0);
+  const [taxReserve, setTaxReserve] = useState<null | {
+    profit_gbp: number;
+    income_tax_gbp: number;
+    class4_nic_gbp: number;
+    net_tax_due_gbp: number;
+    cis_deductions_verified_gbp: number;
+    cis_deductions_unverified_gbp: number;
+    confidence: 'low' | 'medium' | 'high';
+    disclaimer?: string;
+  }>(null);
 
   const year = TAX_YEARS[yearIdx];
 
@@ -280,6 +290,15 @@ export default function SubmissionPage({ token }: Props) {
       setUnverifiedCisSubmitAck(false);
       setStep('review');
       void refreshMtdDraft(data);
+      // Fetch full tax reserve breakdown in parallel
+      void (async () => {
+        try {
+          const rr = await fetch(`${TXN_SERVICE_URL}/transactions/tax-reserve`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (rr.ok) setTaxReserve(await rr.json());
+        } catch { /* non-blocking */ }
+      })();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unexpected error');
     } finally {
@@ -740,23 +759,64 @@ export default function SubmissionPage({ token }: Props) {
               <p style={{ color: 'var(--lp-muted)', fontSize: '0.75rem', marginTop: '0.5rem', marginBottom: 0 }}>Each = 50% of prior year tax</p>
             </div>
 
-            {/* Tax Reserve suggestion */}
-            {calc.taxable_profit > 0 && (
-              <div style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 16, padding: '1.25rem' }}>
-                <p style={{ fontWeight: 700, fontSize: '0.9rem', margin: '0 0 0.5rem' }}>💡 Suggested Reserve</p>
-                <p style={{ fontSize: '1.4rem', fontWeight: 800, color: '#10b981', margin: '0 0 0.25rem' }}>
-                  {fmt(calc.estimated_tax_due * 1.05)}
-                </p>
-                <p style={{ color: 'var(--lp-muted)', fontSize: '0.75rem', margin: 0, lineHeight: 1.5 }}>
-                  Tax + NI + 5% buffer. Set this aside now to cover your Jan & Jul payments.
-                </p>
-                {calc.estimated_effective_tax_rate > 0 && (
-                  <p style={{ color: 'var(--lp-muted)', fontSize: '0.72rem', marginTop: '0.4rem', marginBottom: 0 }}>
-                    Effective rate: {pct(calc.estimated_effective_tax_rate)} of profit
+            {/* Tax Reserve widget */}
+            {(taxReserve || calc.taxable_profit > 0) && (() => {
+              const net = taxReserve ? taxReserve.net_tax_due_gbp : calc.estimated_tax_due * 1.05;
+              const confColor = !taxReserve ? '#94a3b8' :
+                taxReserve.confidence === 'high' ? '#22c55e' :
+                taxReserve.confidence === 'medium' ? '#f59e0b' : '#94a3b8';
+              // Weekly suggestion to next SA deadline
+              const now = new Date();
+              const year2 = now.getFullYear();
+              const nextDeadline = [new Date(year2, 0, 31), new Date(year2, 6, 31), new Date(year2 + 1, 0, 31)].find(d => d > now) ?? new Date(year2 + 1, 0, 31);
+              const weeksLeft = Math.max(1, Math.ceil((nextDeadline.getTime() - now.getTime()) / (7 * 86_400_000)));
+              return (
+                <div style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 16, padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.6rem', flexWrap: 'wrap' }}>
+                    <p style={{ fontWeight: 700, fontSize: '0.9rem', margin: 0 }}>💡 Tax Reserve</p>
+                    {taxReserve && (
+                      <span style={{ fontSize: '0.7rem', fontWeight: 700, color: confColor, textTransform: 'uppercase' }}>
+                        {taxReserve.confidence} confidence
+                      </span>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '1.6rem', fontWeight: 800, color: '#ef4444', margin: '0 0 0.5rem' }}>
+                    {fmt(net)}
                   </p>
-                )}
-              </div>
-            )}
+                  {taxReserve ? (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', display: 'flex', flexDirection: 'column', gap: '0.2rem', marginBottom: '0.6rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Income tax</span><span>{fmt(taxReserve.income_tax_gbp)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Class 4 NIC</span><span>{fmt(taxReserve.class4_nic_gbp)}</span>
+                      </div>
+                      {taxReserve.cis_deductions_verified_gbp > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#22c55e' }}>
+                          <span>CIS withheld (verified)</span><span>−{fmt(taxReserve.cis_deductions_verified_gbp)}</span>
+                        </div>
+                      )}
+                      {taxReserve.cis_deductions_unverified_gbp > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', color: '#f59e0b' }}>
+                          <span>CIS unverified</span><span>−{fmt(taxReserve.cis_deductions_unverified_gbp)}</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--lp-muted)', fontSize: '0.75rem', margin: '0 0 0.5rem', lineHeight: 1.5 }}>
+                      Tax + NI + 5% buffer. Set this aside now to cover Jan & Jul payments.
+                    </p>
+                  )}
+                  <p style={{ fontSize: '0.78rem', color: '#b91c1c', margin: 0, fontWeight: 600 }}>
+                    Save {fmt(net / weeksLeft)}/week → reaches target by{' '}
+                    {nextDeadline.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                  {taxReserve?.disclaimer && (
+                    <p style={{ color: 'var(--lp-muted)', fontSize: '0.72rem', marginTop: '0.4rem', marginBottom: 0 }}>{taxReserve.disclaimer}</p>
+                  )}
+                </div>
+              );
+            })()}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
               <button

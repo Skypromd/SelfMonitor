@@ -151,14 +151,14 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### P0.5 Reliability And Trust UX
 
-- [ ] Standardize user-facing API error copy.
+- [x] Standardize user-facing API error copy.
 - [x] Add retry indicators for HMRC submit.
 - [x] Add retry indicators for bank sync.
 - [x] Add retry indicators for OCR processing.
 - [ ] Add transparent fallback messaging.
 - [ ] Add operational readiness surface for HMRC.
-- [ ] Add “last successful sync” display.
-- [ ] Add “last successful submission” display.
+- [x] Add "last successful sync" display.
+- [x] Add "last successful submission" display.
 - [ ] Add audit trail access for user-visible actions.
 - [ ] Add security copy that is specific and verifiable.
 
@@ -198,7 +198,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add confidence level: low / medium / high.
 - [ ] Explain reserve changes: profit up, expenses down, quarter changed, CIS credited.
 - [x] Add reserve widget to dashboard.
-- [ ] Add reserve widget to quarter preview.
+- [x] Add reserve widget to quarter preview.
 
 ### 7-Minute Quarterly Wizard
 
@@ -335,8 +335,8 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 ### Must Not Fall Behind
 
 - [ ] Bank connection must be simple and reliable.
-- [ ] Bank sync must show imported count.
-- [ ] Bank sync must show last sync time.
+- [x] Bank sync must show imported count.
+- [x] Bank sync must show last sync time.
 - [x] Bank sync must show tier limits.
 - [x] Bank sync must show next available sync.
 - [ ] Receipt scan must be faster than manual entry.
