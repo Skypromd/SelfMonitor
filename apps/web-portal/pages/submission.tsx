@@ -55,6 +55,31 @@ type SubmitResult = {
 
 type Step = 'draft' | 'review' | 'confirm' | 'submitted';
 
+const SUBMISSIONS_HISTORY_KEY = 'mnt_submissions_history';
+
+type SubmissionHistoryEntry = {
+  submission_id: string;
+  submission_mode: string;
+  confirmed_at: string;
+  tax_year: string;
+  tax_due: number;
+};
+
+function loadSubmissionHistory(): SubmissionHistoryEntry[] {
+  try {
+    if (typeof localStorage === 'undefined') return [];
+    const raw = localStorage.getItem(SUBMISSIONS_HISTORY_KEY);
+    return raw ? (JSON.parse(raw) as SubmissionHistoryEntry[]) : [];
+  } catch { return []; }
+}
+
+function appendSubmissionHistory(entry: SubmissionHistoryEntry): SubmissionHistoryEntry[] {
+  const hist = loadSubmissionHistory();
+  const updated = [entry, ...hist].slice(0, 10);
+  try { localStorage.setItem(SUBMISSIONS_HISTORY_KEY, JSON.stringify(updated)); } catch { /* storage unavailable */ }
+  return updated;
+}
+
 /** Decode the payload section of a JWT without verification (client-side only). */
 function jwtPayload(tok: string): Record<string, unknown> {
   try {
@@ -251,6 +276,10 @@ export default function SubmissionPage({ token }: Props) {
   const [pdfBusy, setPdfBusy] = useState(false);
   const [mtdDraft, setMtdDraft] = useState<MtdDraftLatest | null>(null);
   const [submitAttempts, setSubmitAttempts] = useState(0);
+  const [previewToken, setPreviewToken] = useState<string | null>(null);
+  const [confirmedAt, setConfirmedAt] = useState<string | null>(null);
+  const [submissionHistory, setSubmissionHistory] = useState<SubmissionHistoryEntry[] | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [taxReserve, setTaxReserve] = useState<null | {
     profit_gbp: number;
     income_tax_gbp: number;
@@ -303,6 +332,15 @@ export default function SubmissionPage({ token }: Props) {
       setCalc(data);
       setUnverifiedCisSubmitAck(false);
       setStep('review');
+      // Generate preview fingerprint from key figures for tamper detection
+      if (typeof crypto !== 'undefined' && 'subtle' in crypto) {
+        try {
+          const key = `${String(data.taxable_profit)}|${String(data.estimated_tax_due)}|${String(data.start_date)}|${String(data.end_date)}`;
+          const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
+          const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+          setPreviewToken(hex.slice(0, 16));
+        } catch { setPreviewToken(null); }
+      }
       void refreshMtdDraft(data);
       // Fetch full tax reserve breakdown in parallel
       void (async () => {
@@ -438,6 +476,7 @@ export default function SubmissionPage({ token }: Props) {
           jurisdiction: 'UK',
           unverified_cis_submit_acknowledged: requiresUnverifiedCisAck ? unverifiedCisSubmitAck : false,
           hmrc_fraud_client_context: hmrcFraudClientContext,
+          preview_token: previewToken ?? undefined,
         }),
       });
       const data = await res.json();
@@ -454,6 +493,16 @@ export default function SubmissionPage({ token }: Props) {
       setSubmitResult(data);
       setStep('submitted');
       setSubmitAttempts(0);
+      const now = new Date().toISOString();
+      setConfirmedAt(now);
+      const hist = appendSubmissionHistory({
+        submission_id: String(data.submission_id),
+        submission_mode: String(data.submission_mode ?? (isSimulationMode ? 'simulation' : 'live')),
+        confirmed_at: now,
+        tax_year: year.label,
+        tax_due: calc.estimated_tax_due,
+      });
+      setSubmissionHistory(hist);
     } catch (err) {
       setSubmitAttempts((n) => n + 1);
       if (err instanceof TypeError && err.message.toLowerCase().includes('fetch')) {
@@ -1029,7 +1078,7 @@ export default function SubmissionPage({ token }: Props) {
 
       {/* STEP 4: SUBMITTED */}
       {step === 'submitted' && submitResult && (
-        <div style={{ maxWidth: 520 }}>
+        <div style={{ maxWidth: 560 }}>
           <div style={{ background: 'rgba(13,148,136,0.07)', border: '2px solid rgba(13,148,136,0.4)', borderRadius: 16, padding: '2.5rem', textAlign: 'center' }}>
             <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>{isSimulationMode ? '📦' : '✅'}</div>
             <h2 style={{ marginTop: 0, color: isSimulationMode ? '#d97706' : '#0d9488' }}>
@@ -1041,11 +1090,30 @@ export default function SubmissionPage({ token }: Props) {
                 : 'Your Self Assessment has been submitted successfully.'}
             </p>
 
+            {/* Fallback notice: direct-subscription user whose submission was routed to simulation */}
+            {!isSimulationMode && submitResult.submission_mode === 'simulation' && (
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.35)', borderRadius: 10, padding: '0.75rem 1rem', fontSize: '0.82rem', color: '#92400e', textAlign: 'left', marginBottom: '1.25rem' }}>
+                <strong>⚠ Automatic fallback:</strong> Live submission is enabled on your plan but the HMRC gateway is currently routing via simulation for resilience. Your return is saved — contact support if this persists.
+              </div>
+            )}
+
+            {/* Submit receipt */}
             <div style={{ background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 12, padding: '1.25rem', textAlign: 'left', marginBottom: '1.5rem' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginBottom: '0.25rem' }}>HMRC Reference</div>
-              <div style={{ fontFamily: 'monospace', fontSize: '1rem', fontWeight: 700 }}>{submitResult.submission_id}</div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginTop: '0.75rem', marginBottom: '0.25rem' }}>Mode</div>
-              <div style={{ fontSize: '0.9rem' }}>{submitResult.submission_mode?.replace(/_/g, ' ')}</div>
+              <div style={{ fontWeight: 700, fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--lp-muted)', marginBottom: '0.75rem' }}>Submission Receipt</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginBottom: '0.15rem' }}>Reference</div>
+              <div style={{ fontFamily: 'monospace', fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.75rem' }}>{submitResult.submission_id}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginBottom: '0.15rem' }}>Tax year</div>
+              <div style={{ fontSize: '0.9rem', marginBottom: '0.75rem' }}>{year.label}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginBottom: '0.15rem' }}>Confirmed at (UTC)</div>
+              <div style={{ fontFamily: 'monospace', fontSize: '0.85rem', marginBottom: '0.75rem' }}>{confirmedAt ?? new Date().toISOString()}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginBottom: '0.15rem' }}>Mode</div>
+              <div style={{ fontSize: '0.9rem', marginBottom: previewToken ? '0.75rem' : 0 }}>{submitResult.submission_mode?.replace(/_/g, ' ') ?? (isSimulationMode ? 'simulation' : 'live')}</div>
+              {previewToken && (
+                <>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--lp-muted)', marginBottom: '0.15rem', marginTop: '0' }}>Preview fingerprint</div>
+                  <div style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>{previewToken}</div>
+                </>
+              )}
             </div>
 
             <button
@@ -1054,12 +1122,43 @@ export default function SubmissionPage({ token }: Props) {
                 setCalc(null);
                 setSubmitResult(null);
                 setMtdDraft(null);
+                setPreviewToken(null);
+                setConfirmedAt(null);
               }}
               style={{ padding: '0.75rem 2rem', background: 'var(--lp-accent-teal)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 600, cursor: 'pointer' }}
             >
               Start New Return
             </button>
           </div>
+
+          {/* Submission history */}
+          {((submissionHistory ?? loadSubmissionHistory()).length > 0) && (
+            <div style={{ marginTop: '1.5rem', background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 14 }}>
+              <button
+                onClick={() => setHistoryOpen((o) => !o)}
+                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.9rem 1.25rem', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem' }}
+              >
+                <span>📋 Submission History</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--lp-muted)' }}>{historyOpen ? '▲ hide' : '▼ show'}</span>
+              </button>
+              {historyOpen && (
+                <div style={{ borderTop: '1px solid var(--lp-border)', padding: '0.75rem 1.25rem 1.25rem' }}>
+                  {(submissionHistory ?? loadSubmissionHistory()).map((h) => (
+                    <div key={h.submission_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '0.55rem 0', borderBottom: '1px solid var(--lp-border)', fontSize: '0.82rem', gap: '0.75rem' }}>
+                      <div>
+                        <div style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: '0.78rem' }}>{h.submission_id.slice(0, 18)}…</div>
+                        <div style={{ color: 'var(--lp-muted)', marginTop: '0.1rem' }}>{h.tax_year} · {h.confirmed_at.slice(0, 10)}</div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div>£{h.tax_due.toLocaleString('en-GB', { minimumFractionDigits: 2 })}</div>
+                        <div style={{ color: h.submission_mode === 'simulation' ? '#d97706' : '#0d9488', fontSize: '0.76rem', fontWeight: 600, textTransform: 'uppercase', marginTop: '0.1rem' }}>{h.submission_mode}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

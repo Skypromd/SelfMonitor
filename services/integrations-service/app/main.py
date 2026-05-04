@@ -217,6 +217,7 @@ class SubmissionStatus(BaseModel):
     message: str
     provider_reference: Optional[str] = None
     submitted_at: datetime.datetime = Field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
+    submission_mode: Optional[str] = None
 
 
 class MTDQuarterlyDraftRequest(BaseModel):
@@ -542,6 +543,11 @@ def init_integrations_db() -> None:
             conn.execute(
                 "ALTER TABLE mtd_quarterly_drafts ADD COLUMN workflow_status TEXT NOT NULL DEFAULT 'draft'"
             )
+        submission_cols = {str(r[1]) for r in conn.execute("PRAGMA table_info(hmrc_submissions)").fetchall()}
+        if "submission_mode" not in submission_cols:
+            conn.execute(
+                "ALTER TABLE hmrc_submissions ADD COLUMN submission_mode TEXT"
+            )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS mtd_quarterly_confirmation_tokens (
@@ -594,6 +600,7 @@ def _row_to_submission(row: sqlite3.Row) -> SubmissionStatus:
         message=row["message"],
         provider_reference=row["provider_reference"],
         submitted_at=datetime.datetime.fromisoformat(row["submitted_at"]),
+        submission_mode=row["submission_mode"] if "submission_mode" in row.keys() else None,
     )
 
 
@@ -603,6 +610,7 @@ def save_submission(
     request: HMRCSubmissionRequest,
     status_value: str,
     message: str,
+    submission_mode: Optional[str] = None,
 ) -> None:
     with db_lock:
         conn = _connect()
@@ -611,9 +619,9 @@ def save_submission(
                 """
                 INSERT INTO hmrc_submissions (
                     submission_id, user_id, tax_period_start, tax_period_end, tax_due,
-                    status, message, provider_reference, submitted_at
+                    status, message, provider_reference, submitted_at, submission_mode
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(submission_id),
@@ -625,6 +633,7 @@ def save_submission(
                     message,
                     None,
                     datetime.datetime.now(datetime.UTC).isoformat(),
+                    submission_mode,
                 ),
             )
             conn.commit()
@@ -878,12 +887,14 @@ async def submit_tax_return(
     user_id: str = Depends(get_current_user_id)
 ):
     submission_id = uuid.uuid4()
+    mode = "live" if HMRC_DIRECT_SUBMISSION_ENABLED else "simulation"
     save_submission(
         submission_id=submission_id,
         user_id=user_id,
         request=request,
         status_value="pending",
         message="Submission received and queued for HMRC processing.",
+        submission_mode=mode,
     )
     row = get_submission(submission_id)
     if row is None:
@@ -1562,6 +1573,24 @@ async def get_latest_submission(user_id: str = Depends(get_current_user_id)):
             "provider_reference": latest.provider_reference,
             "submission_mode": latest.submission_mode,
         }
+    }
+
+
+@app.get("/integrations/submissions")
+async def list_submissions(user_id: str = Depends(get_current_user_id)):
+    """Return all HMRC submissions for the authenticated user, newest first."""
+    submissions = list_submissions_for_user(user_id)
+    return {
+        "submissions": [
+            {
+                "submission_id": str(s.submission_id),
+                "status": s.status,
+                "submitted_at": s.submitted_at.isoformat(),
+                "provider_reference": s.provider_reference,
+                "submission_mode": s.submission_mode,
+            }
+            for s in submissions
+        ]
     }
 
 

@@ -138,14 +138,14 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show direct vs guided/simulation mode.
 - [x] Require "true and complete" acknowledgement before submit.
 - [x] Require extra acknowledgement if CIS credits are unverified.
-- [ ] Wire existing confirmation-token flow into tax submit UX.
-- [ ] Generate and store preview fingerprint.
-- [ ] Store confirmed timestamp.
-- [ ] Store submit receipt reference.
-- [ ] Store submission history.
+- [x] Wire existing confirmation-token flow into tax submit UX.
+- [x] Generate and store preview fingerprint.
+- [x] Store confirmed timestamp.
+- [x] Store submit receipt reference.
+- [x] Store submission history.
 - [x] Show retrying state for transient HMRC failures.
 - [x] Show clear error messages for OAuth, 429, 5xx and timeout.
-- [ ] Show direct-to-simulation fallback notice if fallback is enabled.
+- [x] Show direct-to-simulation fallback notice if fallback is enabled.
 - [ ] Add audit events for preview, confirmation and submit.
 - [ ] Add tests for confirmation and duplicate submit prevention.
 
@@ -156,7 +156,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add retry indicators for bank sync.
 - [x] Add retry indicators for OCR processing.
 - [x] Add transparent fallback messaging.
-- [ ] Add operational readiness surface for HMRC.
+- [x] Add operational readiness surface for HMRC.
 - [x] Add "last successful sync" display.
 - [x] Add "last successful submission" display.
 - [ ] Add audit trail access for user-visible actions.

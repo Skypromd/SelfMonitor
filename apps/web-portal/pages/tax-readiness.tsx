@@ -6,6 +6,7 @@ import styles from '../styles/Home.module.css';
 const API_GATEWAY_ROOT = (process.env.NEXT_PUBLIC_API_GATEWAY_URL || '/api').replace(/\/$/, '');
 const FINOPS_URL = `${API_GATEWAY_ROOT}/finops`;
 const TXN_URL = `${API_GATEWAY_ROOT}/transactions`;
+const INTEGRATIONS_URL = `${API_GATEWAY_ROOT}/integrations`;
 
 function parseJwtClaims(jwt: string): Record<string, unknown> {
   try {
@@ -82,6 +83,15 @@ type MtdStatus = {
   period_end?: string;
 };
 
+type HmrcReadiness = {
+  readiness_band: 'ready' | 'degraded' | 'not_ready';
+  direct_submission_enabled: boolean;
+  fallback_to_simulation_enabled: boolean;
+  oauth_credentials_configured: boolean;
+  credential_rotation_overdue: boolean;
+  notes: string[];
+};
+
 type Props = { token: string };
 
 export default function TaxReadinessPage({ token }: Props) {
@@ -89,6 +99,7 @@ export default function TaxReadinessPage({ token }: Props) {
   const [mtdStatus, setMtdStatus] = useState<MtdStatus | null>(null);
   const [reserve, setReserve] = useState<TaxReserve | null>(null);
   const [reserveChangeNote, setReserveChangeNote] = useState<string | null>(null);
+  const [hmrcReadiness, setHmrcReadiness] = useState<HmrcReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -100,15 +111,18 @@ export default function TaxReadinessPage({ token }: Props) {
 
     const fetchAll = async () => {
       try {
-        const [rdRes, mtdRes, resRes] = await Promise.allSettled([
+        const [rdRes, mtdRes, resRes, hmrcRes] = await Promise.allSettled([
           fetch(`${TXN_URL}/transactions/readiness`, { headers }),
           fetch(`${FINOPS_URL}/mtd/status`, { headers }),
           fetch(`${TXN_URL}/transactions/tax-reserve`, { headers }),
+          fetch(`${INTEGRATIONS_URL}/integrations/hmrc/mtd/operational-readiness`, { headers }),
         ]);
         if (rdRes.status === 'fulfilled' && rdRes.value.ok)
           setReadiness((await rdRes.value.json()) as ReadinessData);
         if (mtdRes.status === 'fulfilled' && mtdRes.value.ok)
           setMtdStatus((await mtdRes.value.json()) as MtdStatus);
+        if (hmrcRes.status === 'fulfilled' && hmrcRes.value.ok)
+          setHmrcReadiness((await hmrcRes.value.json()) as HmrcReadiness);
         if (resRes.status === 'fulfilled' && resRes.value.ok) {
           const resData = (await resRes.value.json()) as TaxReserve;
           setReserve(resData);
@@ -327,6 +341,58 @@ export default function TaxReadinessPage({ token }: Props) {
                 <Link href="/settings" style={{ display: 'block', marginTop: '0.75rem', fontSize: '0.78rem', color: 'var(--lp-accent-teal)', textDecoration: 'none', fontWeight: 600 }}>
                   HMRC Connection Settings →
                 </Link>
+              </div>
+
+              {/* HMRC Operational Status card */}
+              <div className={styles.subContainer}>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--lp-muted)', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  HMRC Gateway Status
+                </div>
+                {hmrcReadiness ? (() => {
+                  const bandColor =
+                    hmrcReadiness.readiness_band === 'ready' ? '#22c55e' :
+                    hmrcReadiness.readiness_band === 'degraded' ? '#f59e0b' : '#ef4444';
+                  const bandLabel =
+                    hmrcReadiness.readiness_band === 'ready' ? '🟢 HMRC Online' :
+                    hmrcReadiness.readiness_band === 'degraded' ? '🟡 HMRC Degraded' : '🔴 HMRC Unavailable';
+                  return (
+                    <div>
+                      <span style={{
+                        display: 'inline-block', padding: '0.3rem 0.9rem', borderRadius: 999,
+                        background: `${bandColor}22`, border: `1px solid ${bandColor}`, color: bandColor,
+                        fontWeight: 700, fontSize: '0.8rem', marginBottom: '0.6rem',
+                      }}>
+                        {bandLabel}
+                      </span>
+                      <div style={{ fontSize: '0.82rem', display: 'flex', flexDirection: 'column', gap: '0.25rem', marginBottom: '0.5rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--lp-muted)' }}>OAuth credentials</span>
+                          <strong style={{ color: hmrcReadiness.oauth_credentials_configured ? '#22c55e' : '#ef4444' }}>
+                            {hmrcReadiness.oauth_credentials_configured ? 'Configured' : 'Missing'}
+                          </strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--lp-muted)' }}>Rotation overdue</span>
+                          <strong style={{ color: hmrcReadiness.credential_rotation_overdue ? '#ef4444' : '#22c55e' }}>
+                            {hmrcReadiness.credential_rotation_overdue ? 'Yes — rotate now' : 'No'}
+                          </strong>
+                        </div>
+                        {hmrcReadiness.fallback_to_simulation_enabled && (
+                          <div style={{ marginTop: '0.25rem', padding: '0.3rem 0.6rem', background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 7, color: '#92400e', fontSize: '0.78rem' }}>
+                            ⚠ Automatic fallback to simulation is enabled
+                          </div>
+                        )}
+                      </div>
+                      {hmrcReadiness.notes.length > 0 && (
+                        <ul style={{ margin: 0, paddingLeft: '1rem', fontSize: '0.76rem', color: 'var(--lp-muted)', lineHeight: 1.5 }}>
+                          {hmrcReadiness.notes.map((n, i) => <li key={i}>{n}</li>)}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })() : (
+                  <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--lp-muted)' }}>Status unavailable</p>
+                )}
               </div>
             </div>
 
