@@ -293,6 +293,8 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
   const [txnFilterDateFrom, setTxnFilterDateFrom] = useState('');
   const [txnFilterDateTo, setTxnFilterDateTo] = useState('');
   const [txnFilterCategory, setTxnFilterCategory] = useState('');
+  // Keyboard review navigation
+  const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
   const [inboxFilter, setInboxFilter] = useState<'all' | 'uncategorised' | 'no_receipt' | 'cis_unverified'>(initialFilter);
 
   const displayedTransactions = useMemo(() => {
@@ -308,6 +310,45 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
       return true;
     });
   }, [transactions, txnFilterDateFrom, txnFilterDateTo, txnFilterCategory, inboxFilter, openTaskByTxnId]);
+
+  // Keyboard review flow: j/↓ next, k/↑ prev, b = mark business, p = mark personal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Do not intercept when typing in an input/textarea/select
+      const tag = (e.target as HTMLElement)?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      const count = displayedTransactions.length;
+      if (!count) return;
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        setFocusedIdx((prev) => (prev === null ? 0 : Math.min(prev + 1, count - 1)));
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        setFocusedIdx((prev) => (prev === null ? 0 : Math.max(prev - 1, 0)));
+      } else if (e.key === 'b') {
+        setFocusedIdx((prev) => {
+          if (prev !== null) {
+            const t = displayedTransactions[prev];
+            if (t) void patchTransaction(t.id, { is_personal: false, business_use_pct: 100 });
+          }
+          return prev;
+        });
+      } else if (e.key === 'p') {
+        setFocusedIdx((prev) => {
+          if (prev !== null) {
+            const t = displayedTransactions[prev];
+            if (t) void patchTransaction(t.id, { is_personal: true, business_use_pct: 0 });
+          }
+          return prev;
+        });
+      } else if (e.key === 'Escape') {
+        setFocusedIdx(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayedTransactions, focusedIdx]);
 
   useEffect(() => {
     if (!modalTask || !modalTxn) {
@@ -1166,17 +1207,24 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
           <thead>
             <tr>
               {bulkMode && <th style={{ width: 28 }}></th>}
-              <th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>CIS</th><th>Actions</th>
+              <th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>CIS</th>
+              <th>
+                Actions
+                <span style={{ marginLeft: 8, fontSize: '0.65rem', color: 'var(--lp-muted, #94a3b8)', fontWeight: 400 }}>
+                  j/k navigate · b business · p personal
+                </span>
+              </th>
             </tr>
           </thead>
           <tbody>
-            {displayedTransactions.map((t) => {
+            {displayedTransactions.map((t, idx) => {
               const isBusy = quickActionBusy.has(t.id);
               const isSelected = selectedTxnIds.has(t.id);
               const pctLabel = t.business_use_pct != null ? `${t.business_use_pct}%` : null;
               const isEditingPct = businessPctEdit?.txnId === t.id;
+              const isFocused = focusedIdx === idx;
               return (
-                <tr key={t.id} style={openTaskByTxnId.has(t.id) ? { background: 'rgba(245,158,11,0.06)' } : undefined}>
+                <tr key={t.id} style={{ ...(openTaskByTxnId.has(t.id) ? { background: 'rgba(245,158,11,0.06)' } : {}), ...(isFocused ? { outline: '2px solid var(--lp-accent-teal, #0ea5e9)', outlineOffset: -2 } : {}) }} onClick={() => setFocusedIdx(idx)}>
                   {bulkMode && (
                     <td>
                       <input type="checkbox" checked={isSelected}

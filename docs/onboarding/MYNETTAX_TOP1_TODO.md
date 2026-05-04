@@ -96,12 +96,12 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add bulk review mode.
 - [x] Add weekly Inbox Zero metric.
 - [x] Add empty state that celebrates completion without sounding childish.
-- [ ] Add keyboard/mobile-friendly review flow.
-- [ ] Add tests for transaction status transitions.
+- [x] Add keyboard/mobile-friendly review flow.
+- [x] Add tests for transaction status transitions.
 
 ### P0.3 Quarter Readiness Console
 
-- [ ] Create quarter readiness screen.
+- [x] Create quarter readiness screen.
 - [x] Show status: Ready / Needs attention / Blocked.
 - [x] Show current tax quarter and due date.
 - [x] Show MTD obligation status.
@@ -120,7 +120,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show HMRC operational readiness where relevant.
 - [ ] Add mobile version of readiness console.
 - [x] Add empty state for fully ready quarter.
-- [ ] Add tests for readiness score and blocker display.
+- [x] Add tests for readiness score and blocker display.
 
 ### P0.4 Preview, Confirm, Submit
 

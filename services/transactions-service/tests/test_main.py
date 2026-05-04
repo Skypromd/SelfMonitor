@@ -107,3 +107,33 @@ def test_cis_set_matched_transactions_empty_list_rejected():
     # min_length=1 → Pydantic validation error (422) — no DB needed
     assert resp.status_code == 422
 
+
+# ------------------------------------------------------------------
+# Transaction status transitions — auth guard tests
+# ------------------------------------------------------------------
+
+def test_patch_transaction_no_auth():
+    txn_id = str(uuid.uuid4())
+    resp = client.patch(f"/transactions/{txn_id}", json={"is_personal": True})
+    assert resp.status_code == 401
+
+
+def test_flag_cis_suspect_no_auth():
+    txn_id = str(uuid.uuid4())
+    resp = client.post(f"/cis/tasks/suspect", json={"transaction_id": txn_id})
+    assert resp.status_code == 401
+
+
+# ------------------------------------------------------------------
+# Readiness endpoint — auth guard tests
+# ------------------------------------------------------------------
+
+def test_readiness_no_auth():
+    resp = client.get("/transactions/readiness")
+    assert resp.status_code == 401
+
+
+def test_cis_refund_tracker_no_auth():
+    resp = client.get("/cis/refund-tracker")
+    assert resp.status_code == 401
+
