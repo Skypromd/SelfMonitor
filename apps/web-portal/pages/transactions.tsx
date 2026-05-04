@@ -227,7 +227,7 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
   const router = useRouter();
   const initialFilter = (() => {
     const q = typeof router.query.filter === 'string' ? router.query.filter : 'all';
-    const valid = ['all', 'uncategorised', 'no_receipt', 'cis_unverified'] as const;
+    const valid = ['all', 'uncategorised', 'no_receipt', 'cis_unverified', 'needs_business_pct', 'needs_split', 'possible_cis'] as const;
     return (valid as readonly string[]).includes(q) ? (q as typeof valid[number]) : 'all';
   })();
   const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -293,23 +293,65 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
   const [txnFilterDateFrom, setTxnFilterDateFrom] = useState('');
   const [txnFilterDateTo, setTxnFilterDateTo] = useState('');
   const [txnFilterCategory, setTxnFilterCategory] = useState('');
+  const [txnSortMode, setTxnSortMode] = useState<'date_desc' | 'date_asc' | 'fastest_readiness'>('date_desc');
+  // Tax period quick-select (YYYY-MM format)
+  const [txnTaxPeriod, setTxnTaxPeriod] = useState('');
   // Keyboard review navigation
   const [focusedIdx, setFocusedIdx] = useState<number | null>(null);
-  const [inboxFilter, setInboxFilter] = useState<'all' | 'uncategorised' | 'no_receipt' | 'cis_unverified'>(initialFilter);
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'uncategorised' | 'no_receipt' | 'cis_unverified' | 'needs_business_pct' | 'needs_split' | 'possible_cis'>(initialFilter);
 
   const displayedTransactions = useMemo(() => {
-    return transactions.filter((t) => {
-      if (txnFilterDateFrom && t.date < txnFilterDateFrom) return false;
-      if (txnFilterDateTo && t.date > txnFilterDateTo) return false;
+    let filtered = transactions.filter((t) => {
+      // Date range filter
+      const effectiveDateFrom = txnTaxPeriod ? `${txnTaxPeriod}-01` : txnFilterDateFrom;
+      const effectiveDateTo = txnTaxPeriod
+        ? (() => {
+            const [y, m] = txnTaxPeriod.split('-').map(Number);
+            const last = new Date(y, m, 0).getDate();
+            return `${txnTaxPeriod}-${String(last).padStart(2, '0')}`;
+          })()
+        : txnFilterDateTo;
+      if (effectiveDateFrom && t.date < effectiveDateFrom) return false;
+      if (effectiveDateTo && t.date > effectiveDateTo) return false;
       if (txnFilterCategory === '__uncategorized__') {
         if (t.category) return false;
       } else if (txnFilterCategory && (t.category || '') !== txnFilterCategory) return false;
       if (inboxFilter === 'uncategorised' && t.category) return false;
       if (inboxFilter === 'no_receipt' && t.reconciliation_status !== 'unmatched') return false;
       if (inboxFilter === 'cis_unverified' && !openTaskByTxnId.has(t.id)) return false;
+      if (inboxFilter === 'needs_business_pct') {
+        if (!(t.amount < 0 && t.business_use_pct == null)) return false;
+      }
+      if (inboxFilter === 'needs_split') {
+        // Heuristic: large expenses (>£500) without business_use_pct set or with round amounts
+        if (!(t.amount < -500 && t.business_use_pct == null)) return false;
+      }
+      if (inboxFilter === 'possible_cis') {
+        // Heuristic: income transactions (amount > 0) that might be CIS payments
+        const desc = (t.description || '').toLowerCase();
+        if (!(t.amount > 0 && (desc.includes('cis') || desc.includes('construct') || desc.includes('subcontract')))) return false;
+      }
       return true;
     });
-  }, [transactions, txnFilterDateFrom, txnFilterDateTo, txnFilterCategory, inboxFilter, openTaskByTxnId]);
+
+    // Sort
+    if (txnSortMode === 'date_desc') {
+      filtered = filtered.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    } else if (txnSortMode === 'date_asc') {
+      filtered = filtered.sort((a, b) => (a.date > b.date ? 1 : a.date < b.date ? -1 : 0));
+    } else if (txnSortMode === 'fastest_readiness') {
+      // Fastest readiness gain: uncategorised first, then no receipt, then needs_business_pct
+      const priority = (t: TransactionRecord): number => {
+        if (!t.category) return 0;
+        if (t.reconciliation_status === 'unmatched' && t.amount < 0) return 1;
+        if (t.amount < 0 && t.business_use_pct == null) return 2;
+        return 3;
+      };
+      filtered = filtered.sort((a, b) => priority(a) - priority(b));
+    }
+
+    return filtered;
+  }, [transactions, txnFilterDateFrom, txnFilterDateTo, txnFilterCategory, txnTaxPeriod, inboxFilter, txnSortMode, openTaskByTxnId]);
 
   // Keyboard review flow: j/↓ next, k/↑ prev, b = mark business, p = mark personal
   useEffect(() => {
@@ -1057,6 +1099,9 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
             { key: 'all', label: 'All' },
             { key: 'uncategorised', label: `Uncategorised (${transactions.filter((t) => !t.category).length})` },
             { key: 'no_receipt', label: `No Receipt (${transactions.filter((t) => t.reconciliation_status === 'unmatched').length})` },
+            { key: 'needs_business_pct', label: `Needs Business % (${transactions.filter((t) => t.amount < 0 && t.business_use_pct == null).length})` },
+            { key: 'needs_split', label: `Needs Split (${transactions.filter((t) => t.amount < -500 && t.business_use_pct == null).length})` },
+            { key: 'possible_cis', label: `Possible CIS (${transactions.filter((t) => t.amount > 0 && /(cis|construct|subcontract)/i.test(t.description || '')).length})` },
             { key: 'cis_unverified', label: `CIS Unverified (${transactions.filter((t) => openTaskByTxnId.has(t.id)).length})` },
           ] as const
         ).map(({ key, label }) => (
@@ -1090,11 +1135,33 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
         }}
       >
         <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>
+          Tax period
+          <input
+            type="month"
+            value={txnTaxPeriod}
+            onChange={(e) => { setTxnTaxPeriod(e.target.value); setTxnFilterDateFrom(''); setTxnFilterDateTo(''); }}
+            style={filterInputStyle}
+            placeholder="YYYY-MM"
+          />
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>
+          Sort
+          <select
+            value={txnSortMode}
+            onChange={(e) => setTxnSortMode(e.target.value as typeof txnSortMode)}
+            style={{ ...filterInputStyle, minWidth: 160 }}
+          >
+            <option value="date_desc">Newest first</option>
+            <option value="date_asc">Oldest first</option>
+            <option value="fastest_readiness">Fastest readiness gain</option>
+          </select>
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--lp-muted)' }}>
           From
           <input
             type="date"
             value={txnFilterDateFrom}
-            onChange={(e) => setTxnFilterDateFrom(e.target.value)}
+            onChange={(e) => { setTxnFilterDateFrom(e.target.value); setTxnTaxPeriod(''); }}
             style={filterInputStyle}
           />
         </label>
@@ -1103,7 +1170,7 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
           <input
             type="date"
             value={txnFilterDateTo}
-            onChange={(e) => setTxnFilterDateTo(e.target.value)}
+            onChange={(e) => { setTxnFilterDateTo(e.target.value); setTxnTaxPeriod(''); }}
             style={filterInputStyle}
           />
         </label>
@@ -1121,13 +1188,14 @@ function TransactionsList({ token, accountId, businessId }: { token: string; acc
             ))}
           </select>
         </label>
-        {(txnFilterDateFrom || txnFilterDateTo || txnFilterCategory) && (
+        {(txnFilterDateFrom || txnFilterDateTo || txnFilterCategory || txnTaxPeriod) && (
           <button
             type="button"
             onClick={() => {
               setTxnFilterDateFrom('');
               setTxnFilterDateTo('');
               setTxnFilterCategory('');
+              setTxnTaxPeriod('');
             }}
             style={{
               padding: '0.35rem 0.65rem',

@@ -1,8 +1,22 @@
 import datetime
 import uuid
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+# Canonical financial object statuses
+FinancialObjectStatus = Literal[
+    "unreviewed",
+    "needs_receipt",
+    "needs_split",
+    "needs_business_pct",
+    "verified",
+    "unverified",
+    "ready",
+]
+
+# Canonical quarter readiness statuses
+QuarterReadinessStatus = Literal["ready", "needs_attention", "blocked"]
 
 
 class TransactionBase(BaseModel):
@@ -28,8 +42,27 @@ class Transaction(TransactionBase):
     reconciliation_status: Optional[str] = None
     ignored_candidate_ids: Optional[List[str]] = None
     created_at: datetime.datetime
+    readiness_status: Optional[FinancialObjectStatus] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def compute_readiness_status(self) -> "Transaction":
+        if self.readiness_status is not None:
+            return self
+        is_expense = self.amount < 0
+        has_category = bool(self.tax_category or self.category)
+        has_receipt = self.reconciliation_status in ("matched",)
+        needs_biz_pct = is_expense and self.business_use_percent is None
+        if not has_category:
+            self.readiness_status = "unreviewed"
+        elif needs_biz_pct:
+            self.readiness_status = "needs_business_pct"
+        elif is_expense and not has_receipt:
+            self.readiness_status = "needs_receipt"
+        else:
+            self.readiness_status = "ready"
+        return self
 
 class UserBusinessOut(BaseModel):
     id: uuid.UUID

@@ -21,15 +21,15 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### P0.0 Brand Cleanup
 
-- [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in web landing pages.
+- [x] Replace customer-facing `SelfMonitor` with `MyNetTax` in web landing pages.
 - [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in pricing copy.
 - [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in testimonials or demo copy.
 - [ ] Replace customer-facing `SelfMonitor` with `MyNetTax` in billing emails.
 - [x] Replace customer-facing `SelfMonitor` with `MyNetTax` in invoice PDFs and payment emails.
-- [ ] Replace app-store placeholder links using `selfmonitor` package/URLs with MyNetTax placeholders.
+- [x] Replace app-store placeholder links using `selfmonitor` package/URLs with MyNetTax placeholders.
 - [ ] Update service metadata only where it is visible to customers or API docs.
 - [ ] Keep internal namespace changes scoped; do not rename code packages unless needed.
-- [ ] Add a brand glossary: `MyNetTax`, `SelfMate`, `Practolog`, `CIS Refund Tracker`.
+- [x] Add a brand glossary: `MyNetTax`, `SelfMate`, `Practolog`, `CIS Refund Tracker`.
 - [ ] Audit all public docs for conflicting product naming.
 
 ### Domain Architecture
@@ -52,35 +52,35 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### P0.1 Readiness Engine
 
-- [ ] Define canonical readiness statuses: `ready`, `needs_attention`, `blocked`.
-- [ ] Define financial object statuses: `unreviewed`, `needs_receipt`, `needs_split`, `needs_business_pct`, `verified`, `unverified`, `ready`.
-- [ ] Add readiness blocker types for unreviewed transactions.
-- [ ] Add readiness blocker types for missing receipts.
-- [ ] Add readiness blocker types for missing category.
-- [ ] Add readiness blocker types for missing split.
-- [ ] Add readiness blocker types for missing business-use percentage.
+- [x] Define canonical readiness statuses: `ready`, `needs_attention`, `blocked`.
+- [x] Define financial object statuses: `unreviewed`, `needs_receipt`, `needs_split`, `needs_business_pct`, `verified`, `unverified`, `ready`.
+- [x] Add readiness blocker types for unreviewed transactions.
+- [x] Add readiness blocker types for missing receipts.
+- [x] Add readiness blocker types for missing category.
+- [x] Add readiness blocker types for missing split.
+- [x] Add readiness blocker types for missing business-use percentage.
 - [ ] Add readiness blocker types for stale bank sync.
-- [ ] Add readiness blocker types for CIS unverified credits.
+- [x] Add readiness blocker types for CIS unverified credits.
 - [ ] Add readiness blocker types for missing CIS statement.
 - [ ] Add readiness blocker types for CIS bank mismatch.
 - [ ] Add readiness blocker types for HMRC fraud client context missing.
 - [ ] Add readiness blocker types for missing MTD obligation data.
 - [ ] Add readiness blocker types for VAT eligibility or VAT return prep where Pro+ applies.
-- [ ] Add a backend response contract for quarter readiness.
-- [ ] Add stable blocker IDs for deep-linking.
-- [ ] Add blocker severity: `info`, `attention`, `blocking`.
-- [ ] Add blocker impact: readiness points or estimated completion gain.
-- [ ] Add blocker action metadata: label, route, payload, estimated time.
+- [x] Add a backend response contract for quarter readiness.
+- [x] Add stable blocker IDs for deep-linking.
+- [x] Add blocker severity: `info`, `attention`, `blocking`.
+- [x] Add blocker impact: readiness points or estimated completion gain.
+- [x] Add blocker action metadata: label, route, payload, estimated time.
 - [ ] Add test fixtures for readiness with mixed blockers.
 - [ ] Add API tests for readiness blocker generation.
 
 ### P0.2 Transaction Inbox Zero
 
-- [ ] Make Transaction Inbox the main financial workbench.
+- [x] Make Transaction Inbox the main financial workbench.
 - [x] Add filters by readiness status.
-- [ ] Add filters by tax period.
+- [x] Add filters by tax period.
 - [x] Add filters by transaction type: income, expense, CIS, receipt draft.
-- [ ] Add “fastest readiness gain” sorting.
+- [x] Add "fastest readiness gain" sorting.
 - [ ] Add “needs receipt” queue.
 - [ ] Add “needs category” queue.
 - [ ] Add “needs business %” queue.
@@ -243,7 +243,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show OCR confidence.
 - [x] Require review when confidence is low.
 - [x] Store document reference on CIS record.
-- [ ] Add tests for statement parsing edge cases.
+- [x] Add tests for statement parsing edge cases.
 
 ### CIS Bank Reconciliation
 

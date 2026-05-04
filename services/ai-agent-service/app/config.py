@@ -5,8 +5,8 @@ Comprehensive configuration management for all components.
 """
 
 import os
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -98,7 +98,7 @@ class SecurityConfig:
 
     def __post_init__(self):
         if self.cors_origins is None:
-            self.cors_origins = ["http://localhost:3000", "https://selfmonitor.app"]
+            self.cors_origins = ["http://localhost:3000", "https://mynettax.app"]
 
 
 @dataclass

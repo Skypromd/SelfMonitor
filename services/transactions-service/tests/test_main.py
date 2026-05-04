@@ -142,3 +142,136 @@ def test_cis_evidence_pack_summary_no_auth():
     resp = client.get("/cis/evidence-pack/summary")
     assert resp.status_code == 401
 
+
+# ------------------------------------------------------------------
+# CIS statement parsing edge cases — validation (422) and auth (401)
+# ------------------------------------------------------------------
+
+def test_cis_create_record_no_auth():
+    """POST /cis/records without auth → 401."""
+    resp = client.post("/cis/records", json={
+        "contractor_name": "Smith Builders Ltd",
+        "period_start": "2024-04-06",
+        "period_end": "2024-05-05",
+        "gross_total": 1000.0,
+        "cis_deducted_total": 200.0,
+        "net_paid_total": 800.0,
+        "evidence_status": "pending",
+        "source": "manual",
+    })
+    assert resp.status_code == 401
+
+
+def test_cis_create_record_empty_contractor_rejected():
+    """contractor_name empty (min_length=1) → 422."""
+    resp = client.post("/cis/records",
+                       headers=AUTH_HEADER,
+                       json={
+                           "contractor_name": "",
+                           "period_start": "2024-04-06",
+                           "period_end": "2024-05-05",
+                           "gross_total": 1000.0,
+                           "cis_deducted_total": 200.0,
+                           "net_paid_total": 800.0,
+                           "evidence_status": "pending",
+                           "source": "manual",
+                       })
+    assert resp.status_code == 422
+
+
+def test_cis_create_record_negative_gross_rejected():
+    """gross_total < 0 → 422 (ge=0 constraint)."""
+    resp = client.post("/cis/records",
+                       headers=AUTH_HEADER,
+                       json={
+                           "contractor_name": "Smith Builders Ltd",
+                           "period_start": "2024-04-06",
+                           "period_end": "2024-05-05",
+                           "gross_total": -500.0,
+                           "cis_deducted_total": 200.0,
+                           "net_paid_total": 800.0,
+                           "evidence_status": "pending",
+                           "source": "manual",
+                       })
+    assert resp.status_code == 422
+
+
+def test_cis_create_record_negative_cis_deducted_rejected():
+    """cis_deducted_total < 0 → 422 (ge=0 constraint)."""
+    resp = client.post("/cis/records",
+                       headers=AUTH_HEADER,
+                       json={
+                           "contractor_name": "Smith Builders Ltd",
+                           "period_start": "2024-04-06",
+                           "period_end": "2024-05-05",
+                           "gross_total": 1000.0,
+                           "cis_deducted_total": -1.0,
+                           "net_paid_total": 800.0,
+                           "evidence_status": "pending",
+                           "source": "manual",
+                       })
+    assert resp.status_code == 422
+
+
+def test_cis_create_record_missing_required_fields():
+    """Omit period_start and period_end → 422."""
+    resp = client.post("/cis/records",
+                       headers=AUTH_HEADER,
+                       json={
+                           "contractor_name": "Smith Builders Ltd",
+                           "gross_total": 1000.0,
+                           "cis_deducted_total": 200.0,
+                           "net_paid_total": 800.0,
+                           "evidence_status": "pending",
+                           "source": "manual",
+                       })
+    assert resp.status_code == 422
+
+
+def test_cis_create_record_invalid_date_format():
+    """period_start with wrong format → 422."""
+    resp = client.post("/cis/records",
+                       headers=AUTH_HEADER,
+                       json={
+                           "contractor_name": "Smith Builders Ltd",
+                           "period_start": "not-a-date",
+                           "period_end": "2024-05-05",
+                           "gross_total": 1000.0,
+                           "cis_deducted_total": 200.0,
+                           "net_paid_total": 800.0,
+                           "evidence_status": "pending",
+                           "source": "manual",
+                       })
+    assert resp.status_code == 422
+
+
+def test_cis_create_record_contractor_name_too_long():
+    """contractor_name > 300 chars → 422."""
+    resp = client.post("/cis/records",
+                       headers=AUTH_HEADER,
+                       json={
+                           "contractor_name": "A" * 301,
+                           "period_start": "2024-04-06",
+                           "period_end": "2024-05-05",
+                           "gross_total": 1000.0,
+                           "cis_deducted_total": 200.0,
+                           "net_paid_total": 800.0,
+                           "evidence_status": "pending",
+                           "source": "manual",
+                       })
+    assert resp.status_code == 422
+
+
+def test_cis_patch_record_no_auth():
+    """PATCH /cis/records/{id} without auth → 401."""
+    rid = str(uuid.uuid4())
+    resp = client.patch(f"/cis/records/{rid}", json={"evidence_status": "verified"})
+    assert resp.status_code == 401
+
+
+def test_cis_auto_match_record_no_auth():
+    """POST /cis/records/{id}/auto-match without auth → 401."""
+    rid = str(uuid.uuid4())
+    resp = client.post(f"/cis/records/{rid}/auto-match")
+    assert resp.status_code == 401
+

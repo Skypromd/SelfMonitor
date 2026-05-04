@@ -406,7 +406,17 @@ async def get_transaction_readiness(
 
     today_list = blocker_list[:3]
 
+    blocking_count = sum(1 for b in blocker_list if b["severity"] == "blocking")
+    attention_count = sum(1 for b in blocker_list if b["severity"] == "attention")
+    if blocking_count > 0:
+        readiness_status = "blocked"
+    elif attention_count > 0:
+        readiness_status = "needs_attention"
+    else:
+        readiness_status = "ready"
+
     return {
+        "status": readiness_status,
         "uncategorized_count": uncategorized_count,
         "missing_business_pct": missing_business_pct,
         "unmatched_receipts": unmatched_count,
