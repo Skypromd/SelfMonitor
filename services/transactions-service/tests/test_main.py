@@ -137,3 +137,8 @@ def test_cis_refund_tracker_no_auth():
     resp = client.get("/cis/refund-tracker")
     assert resp.status_code == 401
 
+
+def test_cis_evidence_pack_summary_no_auth():
+    resp = client.get("/cis/evidence-pack/summary")
+    assert resp.status_code == 401
+

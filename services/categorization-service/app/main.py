@@ -341,3 +341,21 @@ async def list_categories():
         category: {"merchant_count": len(merchants), "examples": merchants[:5]}
         for category, merchants in _CATEGORY_RULES.items()
     }
+
+
+@app.get("/categories/hmrc-mapping")
+async def categories_hmrc_mapping():
+    """
+    Return all self-employed categories with their HMRC SA103 box references,
+    MTD ITSA field names, plain-language descriptions, and guidance warnings.
+    Suitable for digital record-keeping export as required by HMRC MTD rules.
+    """
+    import os
+    import sys
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")))
+    try:
+        from libs.shared_categories.category_map import export_digital_record_categories
+        return {"categories": export_digital_record_categories()}
+    except ImportError:
+        # Fallback: return basic list from merchant rules
+        return {"categories": [{"key": k, "label": k} for k in _CATEGORY_RULES]}

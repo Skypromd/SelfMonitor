@@ -517,6 +517,101 @@ function TrialBanner({ token }: { token: string }) {
   );
 }
 
+// ── CIS Subcontractor Homepage Section ────────────────────────────────────────
+
+type CisSummaryData = {
+  total_records: number;
+  verified_count: number;
+  unverified_count: number;
+  total_cis_deducted_gbp: number;
+  total_verified_cis_deducted_gbp: number;
+  total_unverified_cis_deducted_gbp: number;
+};
+
+function CisSubcontractorSection({ token }: { token: string }) {
+  const [data, setData] = useState<CisSummaryData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token) return;
+    void (async () => {
+      try {
+        const res = await fetch('/api/transactions/cis/refund-tracker', {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const payload = await res.json();
+        const rows: Array<{ cis_deducted_sum?: number; hmrc_verification_status?: string }> =
+          Array.isArray(payload?.rows) ? payload.rows : [];
+        const verified = rows.filter((r) => r.hmrc_verification_status === 'verified');
+        const unverified = rows.filter((r) => r.hmrc_verification_status !== 'verified');
+        const sum = (arr: typeof rows) => arr.reduce((a, r) => a + (r.cis_deducted_sum ?? 0), 0);
+        setData({
+          total_records: rows.length,
+          verified_count: verified.length,
+          unverified_count: unverified.length,
+          total_cis_deducted_gbp: sum(rows),
+          total_verified_cis_deducted_gbp: sum(verified),
+          total_unverified_cis_deducted_gbp: sum(unverified),
+        });
+      } catch { /* non-CIS users — hide section */ } finally {
+        setLoading(false);
+      }
+    })();
+  }, [token]);
+
+  if (loading || !data || data.total_records === 0) return null;
+
+  const allVerified = data.unverified_count === 0;
+
+  return (
+    <div style={{ background: 'var(--lp-bg-elevated, #1e293b)', borderRadius: 16, padding: '1.25rem 1.5rem', marginBottom: '1.25rem', border: `1.5px solid ${allVerified ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.35)'}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <span style={{ fontSize: '1.2rem' }}>🏗️</span>
+        <h2 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>CIS — Construction Industry Scheme</h2>
+        {allVerified ? (
+          <span style={{ marginLeft: 'auto', fontSize: '0.75rem', background: 'rgba(16,185,129,0.15)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 6, padding: '0.15rem 0.6rem', fontWeight: 600 }}>All verified</span>
+        ) : (
+          <span style={{ marginLeft: 'auto', fontSize: '0.75rem', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 6, padding: '0.15rem 0.6rem', fontWeight: 600 }}>{data.unverified_count} unverified</span>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1rem' }}>
+        <div style={{ minWidth: 120 }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--lp-muted, #94a3b8)', marginBottom: 2 }}>Total CIS deducted</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f1f5f9' }}>£{data.total_cis_deducted_gbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </div>
+        <div style={{ minWidth: 120 }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--lp-muted, #94a3b8)', marginBottom: 2 }}>Verified</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#10b981' }}>£{data.total_verified_cis_deducted_gbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+        </div>
+        {data.unverified_count > 0 && (
+          <div style={{ minWidth: 120 }}>
+            <div style={{ fontSize: '0.72rem', color: 'var(--lp-muted, #94a3b8)', marginBottom: 2 }}>Unverified</div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f59e0b' }}>£{data.total_unverified_cis_deducted_gbp.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+          </div>
+        )}
+      </div>
+
+      {data.unverified_count > 0 && (
+        <p style={{ margin: '0 0 0.75rem', fontSize: '0.82rem', color: 'var(--lp-muted, #94a3b8)', lineHeight: 1.5 }}>
+          {data.unverified_count} contractor payment{data.unverified_count !== 1 ? 's' : ''} still need a CIS300 statement to become verified.
+          Upload statements in the CIS Control Centre to maximise your verified deduction at year-end.
+        </p>
+      )}
+
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <Link href="/cis-refund-tracker" style={{ padding: '0.5rem 1rem', borderRadius: 10, background: 'var(--lp-accent-teal)', color: '#fff', fontWeight: 700, fontSize: '0.84rem', textDecoration: 'none' }}>
+          CIS Control Centre →
+        </Link>
+        <Link href="/transactions?filter=cis_unverified" style={{ padding: '0.5rem 1rem', borderRadius: 10, border: '1px solid rgba(245,158,11,0.4)', color: '#f59e0b', fontWeight: 600, fontSize: '0.84rem', textDecoration: 'none' }}>
+          Review CIS transactions
+        </Link>
+      </div>
+    </div>
+  );
+}
+
 type CisTaskRow = {
   id: string;
   status: string;
@@ -1049,6 +1144,7 @@ export default function DashboardPage({ token }: DashboardPageProps) {
       <MtdComplianceBanner token={token} />
       <h1>Financial Dashboard</h1>
       <p>Your financial overview</p>
+      <CisSubcontractorSection token={token} />
       <CisTasksStrip token={token} />
       <TaxReserveWidget token={token} />
       <BankSyncStatus token={token} />

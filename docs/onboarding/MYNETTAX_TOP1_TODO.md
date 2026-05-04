@@ -181,13 +181,13 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### Category Mapping
 
-- [ ] Define plain-language self-employed categories.
-- [ ] Map UI categories to HMRC/SA/MTD fields.
-- [ ] Add “why this category” explanation.
-- [ ] Add guidance warning for suspicious categories.
-- [ ] Add “not advice” copy where needed.
-- [ ] Add category mapping tests.
-- [ ] Add export of digital record categories.
+- [x] Define plain-language self-employed categories.
+- [x] Map UI categories to HMRC/SA/MTD fields.
+- [x] Add "why this category" explanation.
+- [x] Add guidance warning for suspicious categories.
+- [x] Add "not advice" copy where needed.
+- [x] Add category mapping tests.
+- [x] Add export of digital record categories.
 
 ### Tax Reserve
 
@@ -218,7 +218,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 ### CIS Control Center
 
 - [x] Make CIS Refund Tracker visible in primary navigation.
-- [ ] Add homepage section for CIS subcontractors.
+- [x] Add homepage section for CIS subcontractors.
 - [x] Show UK tax month x contractor table.
 - [x] Show statuses: Matched, Mismatch, Missing statement, Unverified, Not CIS.
 - [x] Add filter: only problems.
@@ -264,7 +264,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Allow unverified credits with explicit acknowledgement.
 - [x] Watermark unverified CIS in evidence pack.
 - [x] Generate "what to upload to become verified" report.
-- [ ] Add accountant-facing CIS evidence summary.
+- [x] Add accountant-facing CIS evidence summary.
 - [x] Add share token for accountant evidence pack.
 - [x] Add audit events for CIS classification.
 - [x] Add audit events for statement upload.
@@ -277,8 +277,8 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add reminder copy for requesting statement from contractor/client.
 - [x] Add snooze 7, 14, 30 days.
 - [x] Add reminder sent log.
-- [ ] Add mobile push reminder.
-- [ ] Add email reminder.
+- [x] Add mobile push reminder.
+- [x] Add email reminder.
 
 ## P1-C Language Advantage
 

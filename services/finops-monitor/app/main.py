@@ -16,10 +16,10 @@ Scheduled tasks:
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 import logging
 import os
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, HTTPException
@@ -208,3 +208,74 @@ async def mtd_sync(user_id: str, payload: SyncPayload):
             },
         )
     return result
+
+
+# ── CIS reminder endpoints ────────────────────────────────────────────────────
+
+class CISReminderRequest(BaseModel):
+    user_id: str
+    to_email: str
+    contractor_name: str
+    tax_month: str            # ISO date, e.g. "2026-03-01"
+    expo_push_token: str | None = None
+    cis_deducted_estimate: float | None = None
+
+
+@app.post("/cis/reminders/send")
+async def send_cis_reminder(payload: CISReminderRequest):
+    """
+    Send a CIS statement request reminder to the user via email and/or Expo push.
+    Called by the transactions-service CIS reminder scheduler or manually by the operator.
+
+    Message copy asks the user to request their CIS300 statement from the contractor
+    for the given tax month so that the deduction can be verified before year-end.
+    """
+    from app.mtd.expo_push import validate_expo_push_token_format
+    from app.mtd.reminder_email import _send_smtp, _try_send_push
+
+    month_label = payload.tax_month[:7]  # "YYYY-MM"
+    subject = f"Action needed: CIS statement for {payload.contractor_name} ({month_label})"
+    body = (
+        f"Hello,\n\n"
+        f"Your CIS record for {payload.contractor_name} in tax month {month_label} "
+        f"is currently unverified in MyNetTax.\n\n"
+        f"To verify your CIS deduction{f' (estimated £{payload.cis_deducted_estimate:.2f})' if payload.cis_deducted_estimate else ''}, "
+        f"please request your CIS300 statement from {payload.contractor_name} "
+        f"and upload it in the CIS Control Centre.\n\n"
+        f"Once verified, your deduction will be included in your quarterly and annual HMRC return.\n\n"
+        f"Steps:\n"
+        f"  1. Contact {payload.contractor_name} and request your CIS300 for {month_label}.\n"
+        f"  2. Upload the statement in MyNetTax → CIS Control Centre → Upload Statement.\n"
+        f"  3. Confirm the gross and deducted amounts match your bank records.\n\n"
+        f"— MyNetTax\n"
+        f"\nThis is an automated reminder. General guidance only — not professional tax advice."
+    )
+
+    results: dict[str, str] = {}
+
+    # Email
+    try:
+        _send_smtp(payload.to_email, subject, body)
+        results["email"] = "sent"
+    except Exception as exc:
+        log.warning("CIS reminder email failed for %s: %s", payload.user_id, exc)
+        results["email"] = f"failed: {exc}"
+
+    # Expo push
+    if payload.expo_push_token:
+        if validate_expo_push_token_format(payload.expo_push_token):
+            try:
+                from app.mtd.expo_push import send_expo_push_notification
+                await send_expo_push_notification(
+                    to_token=payload.expo_push_token,
+                    title=f"CIS statement needed — {payload.contractor_name}",
+                    body=f"Upload your CIS300 for {month_label} to verify your deduction in MyNetTax.",
+                )
+                results["push"] = "sent"
+            except Exception as exc:
+                log.warning("CIS reminder push failed for %s: %s", payload.user_id, exc)
+                results["push"] = f"failed: {exc}"
+        else:
+            results["push"] = "skipped: invalid token format"
+
+    return {"user_id": payload.user_id, "channels": results}

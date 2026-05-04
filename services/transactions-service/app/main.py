@@ -1490,6 +1490,67 @@ async def cis_evidence_shared_zip(
     )
 
 
+@app.get("/cis/evidence-pack/summary")
+async def cis_evidence_pack_summary(
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Accountant-facing CIS evidence summary.
+    Returns a structured overview of all CIS records for this user:
+    total records, verification breakdown, amounts, and per-record status.
+    Suitable for an accountant to review before completing SA returns.
+    """
+    from sqlalchemy import select as sa_select
+
+    from app.models import CISRecord
+
+    stmt = sa_select(CISRecord).where(CISRecord.user_id == user_id)
+    rows = (await db.execute(stmt)).scalars().all()
+
+    verified = [r for r in rows if r.evidence_status == "verified"]
+    unverified = [r for r in rows if r.evidence_status != "verified"]
+
+    total_verified_deducted = sum(float(r.cis_deducted_total or 0) for r in verified)
+    total_unverified_deducted = sum(float(r.cis_deducted_total or 0) for r in unverified)
+    total_gross = sum(float(r.gross_total or 0) for r in rows)
+
+    records_out = [
+        {
+            "id": str(r.id),
+            "contractor_name": r.contractor_name,
+            "period_start": r.period_start.isoformat() if r.period_start else None,
+            "period_end": r.period_end.isoformat() if r.period_end else None,
+            "gross_total": float(r.gross_total or 0),
+            "cis_deducted_total": float(r.cis_deducted_total or 0),
+            "net_paid_total": float(r.net_paid_total or 0),
+            "evidence_status": r.evidence_status,
+            "reconciliation_status": r.reconciliation_status,
+            "bank_net_observed_gbp": float(r.bank_net_observed_gbp or 0) if r.bank_net_observed_gbp is not None else None,
+            "document_id": str(r.document_id) if r.document_id else None,
+        }
+        for r in sorted(rows, key=lambda x: (x.period_start or ""), reverse=True)
+    ]
+
+    return {
+        "user_id": user_id,
+        "total_records": len(rows),
+        "verified_count": len(verified),
+        "unverified_count": len(unverified),
+        "total_gross_gbp": round(total_gross, 2),
+        "total_verified_cis_deducted_gbp": round(total_verified_deducted, 2),
+        "total_unverified_cis_deducted_gbp": round(total_unverified_deducted, 2),
+        "total_cis_deducted_gbp": round(total_verified_deducted + total_unverified_deducted, 2),
+        "not_advice_copy": (
+            "This summary is prepared from records submitted by the client and "
+            "has not been independently verified by MyNetTax. "
+            "The accountant is responsible for confirming figures against CIS300 statements "
+            "before inclusion in any HMRC return."
+        ),
+        "records": records_out,
+    }
+
+
 @app.post(
     "/accountant/delegations",
     response_model=schemas.AccountantDelegationOut,
