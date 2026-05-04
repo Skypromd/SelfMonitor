@@ -129,6 +129,28 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <p style={{ marginTop: '0.5rem', color: '#94a3b8', fontSize: '0.875rem', textAlign: 'center' }}>
                 <Link href="/" style={{ color: '#475569', fontSize: '0.8rem' }}>← Back to homepage</Link>
               </p>
+
+              {/* Language strip */}
+              <div style={{
+                marginTop: '2rem', paddingTop: '1.5rem',
+                borderTop: '1px solid rgba(255,255,255,0.07)',
+                width: '100%',
+              }}>
+                <p style={{ textAlign: 'center', fontSize: '0.7rem', color: '#475569', marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Available in
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '0.3rem' }}>
+                  {['🇬🇧 EN', '🇵🇱 PL', '🇷🇴 RO', '🇺🇦 UK', '🇷🇺 RU', '🇪🇸 ES', '🇮🇹 IT', '🇵🇹 PT', '🇹🇷 TR', '🇧🇩 BN'].map(lang => (
+                    <span key={lang} style={{
+                      fontSize: '0.72rem', padding: '0.2rem 0.5rem', borderRadius: 12,
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+                      color: '#64748b',
+                    }}>
+                      {lang}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </>
           ) : (
             /* ── 2FA step ── */

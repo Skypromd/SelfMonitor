@@ -288,23 +288,23 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Remove raw translation keys from visible UI.
 - [x] Localize onboarding.
 - [x] Localize dashboard.
-- [ ] Localize Transaction Inbox.
+- [x] Localize Transaction Inbox.
 - [x] Localize Quarter Readiness.
 - [x] Localize CIS Control Center.
-- [ ] Localize receipt review.
+- [x] Localize receipt review.
 - [x] Localize MTD preview.
-- [ ] Localize confirmation and warning copy.
+- [x] Localize confirmation and warning copy.
 - [x] Localize error messages.
 - [ ] Localize emails and push notifications.
 - [x] Add translation completeness checks.
 
 ### Multilingual Tax Guidance
 
-- [ ] Write plain-language MTD explanation per language.
-- [ ] Write plain-language CIS explanation per language.
+- [x] Write plain-language MTD explanation per language.
+- [x] Write plain-language CIS explanation per language.
 - [ ] Write plain-language VAT explanation per language.
-- [ ] Preserve key HMRC/legal terms in English where needed.
-- [ ] Add “guidance, not advice” translation per language.
+- [x] Preserve key HMRC/legal terms in English where needed.
+- [x] Add "guidance, not advice" translation per language.
 - [ ] Add language-specific onboarding examples.
 
 ### AI And Voice
@@ -352,7 +352,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 - [x] CIS refund tracking must be more user-friendly than Sage CIS workflows.
 - [x] Quarter readiness must feel easier than accounting dashboards.
-- [ ] Language support must be visible before signup.
+- [x] Language support must be visible before signup.
 - [ ] Mobile receipt and voice flows must feel native and fast.
 - [x] Evidence pack must feel professional enough for accountants.
 - [x] Mortgage readiness must connect tax records to life goals.

@@ -810,6 +810,48 @@ export default function LandingPage() {
           </motion.div>
         </section>
 
+        {/* ====== LANGUAGE STRIP — visible before signup ====== */}
+        <section className={styles.section} style={{ padding: '1.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className={styles.container}>
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.45 }}
+              style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '0.5rem 1rem' }}
+            >
+              <span style={{ color: '#64748b', fontSize: '0.8rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginRight: '0.5rem' }}>
+                Available in
+              </span>
+              {[
+                { flag: '🇬🇧', label: 'English' },
+                { flag: '🇵🇱', label: 'Polski' },
+                { flag: '🇷🇴', label: 'Română' },
+                { flag: '🇺🇦', label: 'Українська' },
+                { flag: '🇷🇺', label: 'Русский' },
+                { flag: '🇪🇸', label: 'Español' },
+                { flag: '🇮🇹', label: 'Italiano' },
+                { flag: '🇵🇹', label: 'Português' },
+                { flag: '🇹🇷', label: 'Türkçe' },
+                { flag: '🇧🇩', label: 'বাংলা' },
+              ].map(({ flag, label }) => (
+                <span key={label} style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                  padding: '0.3rem 0.65rem', borderRadius: 20,
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                  fontSize: '0.8rem', color: '#cbd5e1', fontWeight: 500,
+                }}>
+                  <span aria-hidden>{flag}</span>
+                  {label}
+                </span>
+              ))}
+              <span style={{ color: '#64748b', fontSize: '0.75rem', marginLeft: '0.25rem' }}>
+                · more coming
+              </span>
+            </motion.div>
+          </div>
+        </section>
+
         {/* ====== CHALLENGE ====== */}
         <section className={styles.sectionElevated}>
           <div className={styles.container}>
