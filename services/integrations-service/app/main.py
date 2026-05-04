@@ -1594,6 +1594,80 @@ async def list_submissions(user_id: str = Depends(get_current_user_id)):
     }
 
 
+@app.get("/integrations/audit-trail")
+async def get_audit_trail(user_id: str = Depends(get_current_user_id)):
+    """Return user-visible audit trail: MTD workflow stages + submission records."""
+    events: list[dict] = []
+    with db_lock:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT stage, created_at, report_hash, unverified_cis_ack
+                FROM mtd_fraud_audit
+                WHERE user_id = ?
+                ORDER BY created_at DESC
+                LIMIT 50
+                """,
+                (user_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+    for row in rows:
+        label_map = {
+            "preview": "Quarterly preview generated",
+            "confirm": "Return confirmed for submission",
+            "submit": "Submitted to HMRC",
+            "draft": "Draft prepared",
+        }
+        stage = str(row["stage"])
+        events.append({
+            "event_type": stage,
+            "label": label_map.get(stage, stage.replace("_", " ").capitalize()),
+            "timestamp": row["created_at"],
+            "report_hash": row["report_hash"],
+            "unverified_cis_ack": bool(row["unverified_cis_ack"]),
+        })
+    # Append submission records not already covered by fraud-audit rows
+    subs = list_submissions_for_user(user_id)
+    for s in subs:
+        events.append({
+            "event_type": "submission_record",
+            "label": "HMRC submission record",
+            "timestamp": s.submitted_at.isoformat(),
+            "submission_id": str(s.submission_id),
+            "status": s.status,
+            "submission_mode": s.submission_mode,
+        })
+    events.sort(key=lambda e: str(e.get("timestamp", "")), reverse=True)
+    return {"events": events[:50]}
+
+
+class AuditEventRequest(BaseModel):
+    stage: str = Field(min_length=1, max_length=64, pattern=r'^[a-z_]+$')
+    report_hash: Optional[str] = None
+    note: Optional[str] = Field(None, max_length=256)
+
+
+@app.post("/integrations/audit/event", status_code=201)
+async def log_audit_event(
+    req: AuditEventRequest,
+    user_id: str = Depends(get_current_user_id),
+):
+    """Log a user-initiated workflow event (preview, confirm, etc.) to the audit table."""
+    _log_mtd_fraud_audit(
+        stage=req.stage,
+        user_id=user_id,
+        connection_method="WEB_APP_VIA_SERVER",
+        report_hash=req.report_hash,
+        fraud_headers={},
+        client_context=None,
+        forwarded_observed="",
+        unverified_cis_ack=False,
+    )
+    return {"recorded": True}
+
+
 @app.get("/integrations/hmrc/mtd/business-details", response_model=list[BusinessDetail])
 async def get_business_details(
     nino: str = "AB123456C",

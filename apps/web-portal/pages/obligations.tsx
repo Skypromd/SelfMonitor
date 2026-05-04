@@ -159,14 +159,41 @@ export default function ObligationsPage({ token }: Props) {
           <>
             {/* Deadline reminder banners */}
             {(() => {
+              const upcoming = obligations.filter(o => o.status !== 'fulfilled');
+
+              // 24h urgent banner (0 days = due today, hours-based check)
+              const urgentToday = upcoming.filter(o => {
+                const msLeft = new Date(o.due_date).setHours(23, 59, 59, 999) - Date.now();
+                return msLeft >= 0 && msLeft <= 24 * 60 * 60 * 1000;
+              });
+              const urgentBanner = urgentToday.length > 0 ? (
+                <div key="24h" style={{
+                  padding: '1rem 1.25rem', borderRadius: 12, marginBottom: '0.75rem',
+                  background: '#fef2f2', border: '2px solid #ef4444', color: '#7f1d1d',
+                  fontSize: '0.9rem', fontWeight: 700,
+                  display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap',
+                  boxShadow: '0 0 0 3px rgba(239,68,68,0.15)',
+                }}>
+                  <span style={{ fontSize: '1.4rem', lineHeight: 1 }}>🚨</span>
+                  <span style={{ flex: 1 }}>
+                    <strong>ACTION REQUIRED TODAY:</strong>{' '}
+                    {urgentToday.length} obligation{urgentToday.length > 1 ? 's are' : ' is'} due within 24 hours
+                    {' '}({urgentToday.map(m => fmtDate(m.due_date)).join(', ')}).{' '}
+                    Missing this deadline may result in HMRC penalties.
+                  </span>
+                  <Link href="/quarterly-wizard" style={{ padding: '0.45rem 1rem', borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: '0.82rem', textDecoration: 'none', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                    Start wizard now →
+                  </Link>
+                </div>
+              ) : null;
+
               const windows = [
                 { days: 1,  label: 'Due today or tomorrow',  bg: '#fef2f2', border: '#ef4444', color: '#b91c1c' },
                 { days: 3,  label: 'Due within 3 days',      bg: '#fef3c7', border: '#f59e0b', color: '#92400e' },
                 { days: 7,  label: 'Due within 7 days',      bg: '#fff7ed', border: '#fb923c', color: '#9a3412' },
                 { days: 14, label: 'Due within 14 days',     bg: '#f0fdf4', border: '#22c55e', color: '#166534' },
               ];
-              const upcoming = obligations.filter(o => o.status !== 'fulfilled');
-              return windows
+              const windowBanners = windows
                 .map(w => {
                   const matches = upcoming.filter(o => {
                     const d = daysUntil(o.due_date);
@@ -192,6 +219,8 @@ export default function ObligationsPage({ token }: Props) {
                   );
                 })
                 .filter(Boolean);
+
+              return [urgentBanner, ...windowBanners].filter(Boolean);
             })()}
 
             {/* Summary strip */}

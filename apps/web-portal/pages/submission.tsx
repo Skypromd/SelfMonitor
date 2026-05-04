@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { useState, type FormEvent } from 'react';
 import { MtdDraftWorkflowStrip, type MtdDraftLatest } from '../components/MtdDraftWorkflow';
 import { downloadAccountantTaxSummaryPdf, type AccountantPdfCalc } from '../lib/taxAccountantPdf';
@@ -78,6 +79,14 @@ function appendSubmissionHistory(entry: SubmissionHistoryEntry): SubmissionHisto
   const updated = [entry, ...hist].slice(0, 10);
   try { localStorage.setItem(SUBMISSIONS_HISTORY_KEY, JSON.stringify(updated)); } catch { /* storage unavailable */ }
   return updated;
+}
+
+function fireAuditEvent(token: string, stage: string, reportHash?: string | null): void {
+  void fetch(`${INTEGRATIONS_API}/integrations/audit/event`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ stage, report_hash: reportHash ?? null }),
+  }).catch(() => { /* non-blocking */ });
 }
 
 /** Decode the payload section of a JWT without verification (client-side only). */
@@ -339,7 +348,10 @@ export default function SubmissionPage({ token }: Props) {
           const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(key));
           const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
           setPreviewToken(hex.slice(0, 16));
+          fireAuditEvent(token, 'preview', hex.slice(0, 16));
         } catch { setPreviewToken(null); }
+      } else {
+        fireAuditEvent(token, 'preview', null);
       }
       void refreshMtdDraft(data);
       // Fetch full tax reserve breakdown in parallel
@@ -495,6 +507,7 @@ export default function SubmissionPage({ token }: Props) {
       setSubmitAttempts(0);
       const now = new Date().toISOString();
       setConfirmedAt(now);
+      fireAuditEvent(token, 'submit', previewToken);
       const hist = appendSubmissionHistory({
         submission_id: String(data.submission_id),
         submission_mode: String(data.submission_mode ?? (isSimulationMode ? 'simulation' : 'live')),
@@ -965,7 +978,7 @@ export default function SubmissionPage({ token }: Props) {
             </div>
 
             <button
-              onClick={() => setStep('confirm')}
+              onClick={() => { setStep('confirm'); fireAuditEvent(token, 'confirm', previewToken); }}
               style={{ width: '100%', padding: '0.9rem', background: 'var(--lp-accent-teal)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 700, fontSize: '1rem', cursor: 'pointer' }}
             >
               Proceed to Confirm →
@@ -1054,6 +1067,15 @@ export default function SubmissionPage({ token }: Props) {
                 )}
               </div>
             )}
+
+            {/* Security attestation */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginBottom: '1.25rem', padding: '0.75rem 1rem', background: 'rgba(100,116,139,0.06)', border: '1px solid rgba(100,116,139,0.18)', borderRadius: 10, fontSize: '0.76rem', color: 'var(--lp-muted)' }}>
+              <span>🔒 TLS 1.2+ in transit</span>
+              <span>🏛 HMRC-certified MTD API</span>
+              <span>🔑 OAuth 2.0 with PKCE</span>
+              <span>📝 Fraud-prevention headers per HMRC spec</span>
+              <span>🗃 Submission receipt stored server-side</span>
+            </div>
 
             <div style={{ display: 'flex', gap: '0.75rem' }}>
               <button
@@ -1159,6 +1181,9 @@ export default function SubmissionPage({ token }: Props) {
               )}
             </div>
           )}
+          <p style={{ marginTop: '1rem', textAlign: 'center', fontSize: '0.78rem', color: 'var(--lp-muted)' }}>
+            <Link href="/tax-readiness" style={{ color: 'var(--lp-accent-teal)', textDecoration: 'none', fontWeight: 600 }}>View full audit trail →</Link>
+          </p>
         </div>
       )}
     </div>

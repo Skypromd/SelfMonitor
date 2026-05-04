@@ -117,7 +117,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show missing category/split/business % count.
 - [x] Show CIS verified/unverified summary.
 - [x] Show direct/guided/simulation HMRC mode status.
-- [ ] Show HMRC operational readiness where relevant.
+- [x] Show HMRC operational readiness where relevant.
 - [ ] Add mobile version of readiness console.
 - [ ] Add empty state for fully ready quarter.
 - [ ] Add tests for readiness score and blocker display.
@@ -146,7 +146,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Show retrying state for transient HMRC failures.
 - [x] Show clear error messages for OAuth, 429, 5xx and timeout.
 - [x] Show direct-to-simulation fallback notice if fallback is enabled.
-- [ ] Add audit events for preview, confirmation and submit.
+- [x] Add audit events for preview, confirmation and submit.
 - [ ] Add tests for confirmation and duplicate submit prevention.
 
 ### P0.5 Reliability And Trust UX
@@ -159,8 +159,8 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Add operational readiness surface for HMRC.
 - [x] Add "last successful sync" display.
 - [x] Add "last successful submission" display.
-- [ ] Add audit trail access for user-visible actions.
-- [ ] Add security copy that is specific and verifiable.
+- [x] Add audit trail access for user-visible actions.
+- [x] Add security copy that is specific and verifiable.
 
 ## P1-A MTD ITSA
 
@@ -175,7 +175,7 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 - [x] Link each deadline to quarter readiness.
 - [x] Add reminders for 14, 7, 3 and 1 day windows.
 - [x] Suppress reminders when already submitted.
-- [ ] Add urgent pending reminder 24h before deadline.
+- [x] Add urgent pending reminder 24h before deadline.
 - [ ] Add mobile push copy for deadlines.
 - [ ] Add email copy for deadlines.
 

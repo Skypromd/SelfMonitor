@@ -92,6 +92,17 @@ type HmrcReadiness = {
   notes: string[];
 };
 
+type AuditEvent = {
+  event_type: string;
+  label: string;
+  timestamp: string;
+  report_hash?: string | null;
+  submission_id?: string;
+  status?: string;
+  submission_mode?: string;
+  unverified_cis_ack?: boolean;
+};
+
 type Props = { token: string };
 
 export default function TaxReadinessPage({ token }: Props) {
@@ -100,6 +111,7 @@ export default function TaxReadinessPage({ token }: Props) {
   const [reserve, setReserve] = useState<TaxReserve | null>(null);
   const [reserveChangeNote, setReserveChangeNote] = useState<string | null>(null);
   const [hmrcReadiness, setHmrcReadiness] = useState<HmrcReadiness | null>(null);
+  const [auditTrail, setAuditTrail] = useState<AuditEvent[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -111,11 +123,12 @@ export default function TaxReadinessPage({ token }: Props) {
 
     const fetchAll = async () => {
       try {
-        const [rdRes, mtdRes, resRes, hmrcRes] = await Promise.allSettled([
+        const [rdRes, mtdRes, resRes, hmrcRes, auditRes] = await Promise.allSettled([
           fetch(`${TXN_URL}/transactions/readiness`, { headers }),
           fetch(`${FINOPS_URL}/mtd/status`, { headers }),
           fetch(`${TXN_URL}/transactions/tax-reserve`, { headers }),
           fetch(`${INTEGRATIONS_URL}/integrations/hmrc/mtd/operational-readiness`, { headers }),
+          fetch(`${INTEGRATIONS_URL}/integrations/audit-trail`, { headers }),
         ]);
         if (rdRes.status === 'fulfilled' && rdRes.value.ok)
           setReadiness((await rdRes.value.json()) as ReadinessData);
@@ -123,6 +136,10 @@ export default function TaxReadinessPage({ token }: Props) {
           setMtdStatus((await mtdRes.value.json()) as MtdStatus);
         if (hmrcRes.status === 'fulfilled' && hmrcRes.value.ok)
           setHmrcReadiness((await hmrcRes.value.json()) as HmrcReadiness);
+        if (auditRes.status === 'fulfilled' && auditRes.value.ok) {
+          const auditData = (await auditRes.value.json()) as { events: AuditEvent[] };
+          setAuditTrail(auditData.events ?? []);
+        }
         if (resRes.status === 'fulfilled' && resRes.value.ok) {
           const resData = (await resRes.value.json()) as TaxReserve;
           setReserve(resData);
@@ -395,6 +412,44 @@ export default function TaxReadinessPage({ token }: Props) {
                 )}
               </div>
             </div>
+
+            {/* ── Audit Trail ── */}
+            {auditTrail && auditTrail.length > 0 && (
+              <div className={styles.subContainer} style={{ marginBottom: '1.5rem' }}>
+                <h2 style={{ margin: '0 0 0.75rem', fontSize: '1rem', fontWeight: 700 }}>📋 Audit Trail</h2>
+                <p style={{ margin: '0 0 1rem', fontSize: '0.82rem', color: 'var(--lp-muted)' }}>
+                  Recent HMRC workflow events for your account.
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {auditTrail.slice(0, 12).map((ev, i) => {
+                    const iconMap: Record<string, string> = { preview: '👁', confirm: '✅', submit: '📤', submission_record: '🗃', draft: '📝' };
+                    const icon = iconMap[ev.event_type] ?? '•';
+                    const modeColor = ev.submission_mode === 'simulation' ? '#d97706' : ev.submission_mode === 'live' ? '#0d9488' : undefined;
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', padding: '0.6rem 0', borderBottom: i < auditTrail.slice(0, 12).length - 1 ? '1px solid var(--lp-border)' : 'none', fontSize: '0.84rem' }}>
+                        <span style={{ fontSize: '1rem', minWidth: 20, textAlign: 'center' }}>{icon}</span>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontWeight: 600 }}>{ev.label}</span>
+                          {ev.submission_mode && (
+                            <span style={{ marginLeft: '0.5rem', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: modeColor ?? 'var(--lp-muted)' }}>
+                              {ev.submission_mode}
+                            </span>
+                          )}
+                          {ev.report_hash && (
+                            <span style={{ marginLeft: '0.5rem', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--lp-muted)' }}>
+                              #{ev.report_hash.slice(0, 8)}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ color: 'var(--lp-muted)', fontSize: '0.76rem', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          {new Date(ev.timestamp).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* ── Today List ── */}
             {todayList.length > 0 && (
