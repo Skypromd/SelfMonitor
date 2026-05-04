@@ -4,6 +4,7 @@ from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+
 class TransactionBase(BaseModel):
     provider_transaction_id: str
     date: datetime.date
@@ -237,6 +238,29 @@ class CISRecordPatch(BaseModel):
     report_status: Optional[str] = Field(default=None, max_length=64)
     document_id: Optional[str] = Field(default=None, max_length=128)
     evidence_status: Optional[str] = Field(default=None, max_length=64)
+
+
+class CISManualMatchRequest(BaseModel):
+    transaction_ids: List[uuid.UUID] = Field(min_length=1, max_length=20)
+
+
+class CISAutoMatchCandidate(BaseModel):
+    transaction_id: str
+    date: datetime.date
+    description: str
+    amount: float
+    delta_gbp: float
+    within_tolerance: bool
+
+
+class CISAutoMatchResult(BaseModel):
+    record_id: str
+    net_paid_total: float
+    tolerance_gbp: float
+    candidates: List[CISAutoMatchCandidate]
+    auto_applied: bool
+    reconciliation_status: Optional[str] = None
+    bank_net_observed_gbp: Optional[float] = None
 
 
 class AccountantDelegationCreate(BaseModel):

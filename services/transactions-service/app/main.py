@@ -829,6 +829,126 @@ async def cis_patch_record(
     return rec
 
 
+@app.post("/cis/records/{record_id}/auto-match", response_model=schemas.CISAutoMatchResult)
+async def cis_auto_match_record(
+    record_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Auto-match bank transactions to a CIS record by net_paid_total amount ± tolerance.
+    Returns candidates and, if exactly one candidate is within tolerance, applies the match.
+    """
+    from sqlalchemy import select as _select
+
+    from .cis_reconciliation import (
+        _TOLERANCE_FRAC,
+        _TOLERANCE_MIN_GBP,
+        recompute_cis_record_reconciliation,
+    )
+
+    rec = await crud_cis.get_cis_record(db, user_id=user_id, record_id=record_id)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_record_not_found")
+
+    net = float(rec.net_paid_total or 0)
+    tol = max(_TOLERANCE_MIN_GBP, _TOLERANCE_FRAC * abs(net))
+
+    # Scan bank transactions in the 90-day window around the CIS period
+    import datetime as _dt
+    period_start = rec.period_start if isinstance(rec.period_start, _dt.date) else rec.period_start
+    window_start = period_start - _dt.timedelta(days=14)
+    window_end = rec.period_end + _dt.timedelta(days=30) if isinstance(rec.period_end, _dt.date) else _dt.date.today()
+
+    r = await db.execute(
+        _select(models.Transaction).where(
+            models.Transaction.user_id == user_id,
+            models.Transaction.amount > 0,
+            models.Transaction.date >= window_start,
+            models.Transaction.date <= window_end,
+        )
+    )
+    txns = list(r.scalars().all())
+
+    candidates = []
+    within_tol = []
+    for tx in txns:
+        delta = abs(float(tx.amount) - net)
+        in_tol = delta <= tol
+        candidates.append(schemas.CISAutoMatchCandidate(
+            transaction_id=str(tx.id),
+            date=tx.date,
+            description=tx.description,
+            amount=float(tx.amount),
+            delta_gbp=round(delta, 2),
+            within_tolerance=in_tol,
+        ))
+        if in_tol:
+            within_tol.append(tx)
+
+    # Sort closest first
+    candidates.sort(key=lambda c: c.delta_gbp)
+
+    auto_applied = False
+    if len(within_tol) == 1:
+        rec.matched_bank_transaction_ids = [str(within_tol[0].id)]
+        await recompute_cis_record_reconciliation(db, rec=rec)
+        await db.commit()
+        await db.refresh(rec)
+        auto_applied = True
+
+    return schemas.CISAutoMatchResult(
+        record_id=str(record_id),
+        net_paid_total=net,
+        tolerance_gbp=round(tol, 2),
+        candidates=candidates[:10],
+        auto_applied=auto_applied,
+        reconciliation_status=rec.reconciliation_status,
+        bank_net_observed_gbp=rec.bank_net_observed_gbp,
+    )
+
+
+@app.post("/cis/records/{record_id}/set-matched-transactions", response_model=schemas.CISRecordOut)
+async def cis_set_matched_transactions(
+    record_id: uuid.UUID,
+    body: schemas.CISManualMatchRequest,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Manually set the matched bank transaction IDs for a CIS record and recompute reconciliation.
+    Accepts a list of transaction UUIDs. Validates all belong to the user.
+    """
+    from sqlalchemy import select as _select
+
+    from .cis_reconciliation import recompute_cis_record_reconciliation
+
+    rec = await crud_cis.get_cis_record(db, user_id=user_id, record_id=record_id)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_record_not_found")
+
+    # Validate all transaction IDs exist and belong to this user
+    r = await db.execute(
+        _select(models.Transaction).where(
+            models.Transaction.user_id == user_id,
+            models.Transaction.id.in_(body.transaction_ids),
+        )
+    )
+    found = {tx.id for tx in r.scalars().all()}
+    missing_ids = [str(tid) for tid in body.transaction_ids if tid not in found]
+    if missing_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"transaction_not_found: {', '.join(missing_ids[:5])}",
+        )
+
+    rec.matched_bank_transaction_ids = [str(tid) for tid in body.transaction_ids]
+    await recompute_cis_record_reconciliation(db, rec=rec)
+    await db.commit()
+    await db.refresh(rec)
+    return rec
+
+
 @app.post("/cis/tasks/suspect", response_model=schemas.CISReviewTaskOut, status_code=status.HTTP_201_CREATED)
 async def cis_create_suspect_task(
     body: schemas.CISSuspectTaskCreate,

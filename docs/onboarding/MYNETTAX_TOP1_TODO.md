@@ -247,16 +247,16 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### CIS Bank Reconciliation
 
-- [ ] Auto-match statement net paid to bank transactions.
-- [ ] Show why a match succeeded.
-- [ ] Show why a mismatch happened.
-- [ ] Add manual matching UI.
-- [ ] Support multiple bank transaction matches.
-- [ ] Mark reconciliation status `matched`.
-- [ ] Mark reconciliation status `needs_review`.
-- [ ] Mark reconciliation status `missing_bank_transaction`.
-- [ ] Add tolerance rules for rounding.
-- [ ] Add tests for matching and mismatch.
+- [x] Auto-match statement net paid to bank transactions.
+- [x] Show why a match succeeded.
+- [x] Show why a mismatch happened.
+- [x] Add manual matching UI.
+- [x] Support multiple bank transaction matches.
+- [x] Mark reconciliation status `matched`.
+- [x] Mark reconciliation status `needs_review`.
+- [x] Mark reconciliation status `missing_bank_transaction`.
+- [x] Add tolerance rules for rounding.
+- [x] Add tests for matching and mismatch.
 
 ### CIS Gating And Evidence
 

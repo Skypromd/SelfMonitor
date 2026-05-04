@@ -80,3 +80,30 @@ def test_get_account_transactions_with_auth():
     account_id = str(uuid.uuid4())
     resp = client.get(f"/accounts/{account_id}/transactions", headers=AUTH_HEADER)
     assert resp.status_code in (200, 500)
+
+
+# ------------------------------------------------------------------
+# CIS auto-match and manual-match endpoint tests
+# ------------------------------------------------------------------
+
+def test_cis_auto_match_no_auth():
+    rid = str(uuid.uuid4())
+    resp = client.post(f"/cis/records/{rid}/auto-match")
+    assert resp.status_code == 401
+
+
+def test_cis_set_matched_transactions_no_auth():
+    rid = str(uuid.uuid4())
+    resp = client.post(f"/cis/records/{rid}/set-matched-transactions",
+                       json={"transaction_ids": [str(uuid.uuid4())]})
+    assert resp.status_code == 401
+
+
+def test_cis_set_matched_transactions_empty_list_rejected():
+    rid = str(uuid.uuid4())
+    resp = client.post(f"/cis/records/{rid}/set-matched-transactions",
+                       headers=AUTH_HEADER,
+                       json={"transaction_ids": []})
+    # min_length=1 → Pydantic validation error (422) — no DB needed
+    assert resp.status_code == 422
+

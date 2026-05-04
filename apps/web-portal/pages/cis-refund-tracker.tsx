@@ -117,6 +117,26 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
   const [saving, setSaving] = useState(false);
   const [saveOk, setSaveOk] = useState(false);
 
+  // Auto-match state: keyed by first record_id of the row
+  type AutoMatchCandidate = { transaction_id: string; date: string; description: string; amount: number; delta_gbp: number; within_tolerance: boolean };
+  type AutoMatchResult = { net_paid_total: number; tolerance_gbp: number; candidates: AutoMatchCandidate[]; auto_applied: boolean; reconciliation_status: string | null; bank_net_observed_gbp: number | null };
+  const [matchResults, setMatchResults] = useState<Record<string, AutoMatchResult>>({});
+  const [matchLoading, setMatchLoading] = useState<Record<string, boolean>>({});
+
+  const runAutoMatch = async (recordId: string) => {
+    setMatchLoading(prev => ({ ...prev, [recordId]: true }));
+    try {
+      const r = await fetch(`${TXN_SERVICE_URL}/cis/records/${recordId}/auto-match`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) setMatchResults(prev => ({ ...prev, [recordId]: j as AutoMatchResult }));
+    } finally {
+      setMatchLoading(prev => ({ ...prev, [recordId]: false }));
+    }
+  };
+
   const openUploadForContractor = (contractorName: string, periodStart?: string, periodEnd?: string) => {
     setSaveOk(false);
     setUploadErr('');
@@ -542,6 +562,79 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
                 {c.status === 'VERIFIED' && c.reconciliation_worst !== 'needs_review' && (
                   <span style={{ color: '#10b981' }}>✓ No action needed</span>
                 )}
+                {/* Bank reconciliation panel — shown when bank match is needed */}
+                {(c.reconciliation_worst === 'needs_review' || c.reconciliation_worst === 'pending') && c.record_ids.length > 0 && (() => {
+                  const rid = c.record_ids[0];
+                  const result = matchResults[rid];
+                  const loading = matchLoading[rid];
+                  return (
+                    <div style={{ marginTop: 8, padding: '0.7rem 1rem', borderRadius: 8, background: 'rgba(249,115,22,0.06)', border: '1px solid rgba(249,115,22,0.25)', fontSize: '0.78rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: result ? 8 : 0 }}>
+                        <span style={{ fontWeight: 700, color: '#f97316' }}>Bank match</span>
+                        {c.bank_net_observed_gbp != null && (
+                          <span style={{ color: '#94a3b8' }}>
+                            Bank: {fmt(c.bank_net_observed_gbp)} vs declared: {fmt(c.net_paid_declared_gbp)}
+                            {' '}({c.reconciliation_worst === 'needs_review' ? '⚠ outside tolerance' : '⏳ unmatched'})
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => runAutoMatch(rid)}
+                          disabled={loading}
+                          style={{ marginLeft: 'auto', padding: '0.2rem 0.65rem', borderRadius: 6, background: loading ? '#374151' : 'rgba(249,115,22,0.15)', color: '#f97316', border: '1px solid rgba(249,115,22,0.4)', fontSize: '0.73rem', fontWeight: 700, cursor: loading ? 'default' : 'pointer' }}
+                        >
+                          {loading ? 'Searching…' : result ? 'Re-run auto-match' : 'Auto-match'}
+                        </button>
+                      </div>
+                      {result && (
+                        <div>
+                          {result.auto_applied && (
+                            <div style={{ color: '#10b981', fontWeight: 700, marginBottom: 4 }}>
+                              ✓ Match applied — status: {result.reconciliation_status}
+                              {result.bank_net_observed_gbp != null && ` (bank net: ${fmt(result.bank_net_observed_gbp)})`}
+                            </div>
+                          )}
+                          {!result.auto_applied && result.candidates.length === 0 && (
+                            <div style={{ color: '#ef4444', marginBottom: 4 }}>No bank transactions found within ±{fmt(result.tolerance_gbp)} of {fmt(result.net_paid_total)}</div>
+                          )}
+                          {!result.auto_applied && result.candidates.length > 1 && (
+                            <div style={{ color: '#f59e0b', marginBottom: 4 }}>Multiple candidates found — select one below</div>
+                          )}
+                          {result.candidates.length > 0 && (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4 }}>
+                              <thead>
+                                <tr style={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.7rem' }}>
+                                  <th style={{ textAlign: 'left', paddingBottom: 4 }}>Date</th>
+                                  <th style={{ textAlign: 'left', paddingBottom: 4 }}>Description</th>
+                                  <th style={{ textAlign: 'right', paddingBottom: 4 }}>Amount</th>
+                                  <th style={{ textAlign: 'right', paddingBottom: 4 }}>Delta</th>
+                                  <th style={{ textAlign: 'center', paddingBottom: 4 }}>Match</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {result.candidates.map(cand => (
+                                  <tr key={cand.transaction_id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                                    <td style={{ padding: '3px 0', whiteSpace: 'nowrap' }}>{cand.date}</td>
+                                    <td style={{ padding: '3px 8px', color: '#94a3b8', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cand.description}</td>
+                                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>{fmt(cand.amount)}</td>
+                                    <td style={{ textAlign: 'right', color: cand.within_tolerance ? '#10b981' : '#ef4444', whiteSpace: 'nowrap' }}>±{fmt(cand.delta_gbp)}</td>
+                                    <td style={{ textAlign: 'center' }}>
+                                      {cand.within_tolerance ? (
+                                        <span style={{ color: '#10b981', fontWeight: 700 }}>✓</span>
+                                      ) : (
+                                        <span style={{ color: '#ef4444' }}>✗</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             );
 
