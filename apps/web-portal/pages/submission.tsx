@@ -693,6 +693,44 @@ export default function SubmissionPage({ token }: Props) {
               )}
             </div>
 
+            {/* CIS Disclosure — shown when unverified CIS credits are included */}
+            {calc.cis_hmrc_submit_requires_unverified_ack && (
+              <section style={{ background: 'rgba(245,158,11,0.06)', border: '1.5px solid rgba(245,158,11,0.35)', borderRadius: 14, padding: '1.2rem 1.5rem' }}>
+                <h2 style={{ margin: '0 0 0.6rem', fontSize: '0.95rem', fontWeight: 700, color: '#f59e0b' }}>⚠ CIS Deductions — Unverified Credits Included</h2>
+                <p style={{ margin: '0 0 0.8rem', fontSize: '0.85rem', color: 'var(--lp-muted)', lineHeight: 1.6 }}>
+                  This return includes self-attested CIS tax credits that do not yet have a matching CIS statement on file.
+                  HMRC may query these figures during compliance checks. To claim CIS deductions without risk:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', marginBottom: '0.9rem', fontSize: '0.84rem' }}>
+                  {[
+                    { step: '1', text: 'Ask each contractor for their CIS300 monthly return or P35 subcontractor deduction statement.' },
+                    { step: '2', text: 'Upload the statement to the CIS Control Centre (one per contractor per tax month).' },
+                    { step: '3', text: 'Once verified, the unverified credit is converted to a verified deduction and this warning is cleared.' },
+                  ].map(({ step, text }) => (
+                    <div key={step} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                      <span style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'rgba(245,158,11,0.18)', color: '#f59e0b', fontWeight: 800, fontSize: '0.7rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{step}</span>
+                      <span style={{ color: 'var(--lp-text)', lineHeight: 1.5 }}>{text}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {calc.cis_tax_credit_verified_gbp != null && calc.cis_tax_credit_verified_gbp > 0 && (
+                    <span style={{ padding: '0.2rem 0.7rem', borderRadius: 999, background: 'rgba(16,185,129,0.12)', color: '#10b981', fontSize: '0.78rem', fontWeight: 700 }}>
+                      ✓ Verified: −£{calc.cis_tax_credit_verified_gbp.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
+                  {calc.cis_tax_credit_self_attested_gbp != null && calc.cis_tax_credit_self_attested_gbp > 0 && (
+                    <span style={{ padding: '0.2rem 0.7rem', borderRadius: 999, background: 'rgba(245,158,11,0.12)', color: '#f59e0b', fontSize: '0.78rem', fontWeight: 700 }}>
+                      ⚠ Self-attested: −£{calc.cis_tax_credit_self_attested_gbp.toLocaleString('en-GB', { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
+                  <a href="/cis-refund-tracker" style={{ padding: '0.2rem 0.85rem', borderRadius: 999, background: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontSize: '0.78rem', fontWeight: 700, textDecoration: 'none', border: '1px solid rgba(245,158,11,0.4)' }}>
+                    Upload CIS statements →
+                  </a>
+                </div>
+              </section>
+            )}
+
             {/* Income & Expenses */}
             <section style={{ background: 'var(--lp-bg-elevated)', border: '1px solid var(--lp-border)', borderRadius: 16, padding: '1.5rem' }}>
               <h2 style={{ marginTop: 0, fontSize: '1rem', fontWeight: 700, marginBottom: '1rem' }}>📊 Income & Expenses</h2>

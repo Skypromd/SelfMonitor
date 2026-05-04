@@ -260,23 +260,23 @@ This TODO turns the current MyNetTax codebase into a focused product that can co
 
 ### CIS Gating And Evidence
 
-- [ ] Show CIS disclosure in quarterly preview.
-- [ ] Allow unverified credits with explicit acknowledgement.
+- [x] Show CIS disclosure in quarterly preview.
+- [x] Allow unverified credits with explicit acknowledgement.
 - [x] Watermark unverified CIS in evidence pack.
-- [ ] Generate "what to upload to become verified" report.
+- [x] Generate "what to upload to become verified" report.
 - [ ] Add accountant-facing CIS evidence summary.
 - [x] Add share token for accountant evidence pack.
-- [ ] Add audit events for CIS classification.
-- [ ] Add audit events for statement upload.
-- [ ] Add audit events for shared evidence download.
+- [x] Add audit events for CIS classification.
+- [x] Add audit events for statement upload.
+- [x] Add audit events for shared evidence download.
 
 ### CIS Reminders
 
 - [x] Keep 72h hard throttle.
 - [x] Keep 2 per 7 days soft throttle.
-- [ ] Add reminder copy for requesting statement from contractor/client.
-- [ ] Add snooze 7, 14, 30 days.
-- [ ] Add reminder sent log.
+- [x] Add reminder copy for requesting statement from contractor/client.
+- [x] Add snooze 7, 14, 30 days.
+- [x] Add reminder sent log.
 - [ ] Add mobile push reminder.
 - [ ] Add email reminder.
 

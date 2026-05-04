@@ -949,6 +949,96 @@ async def cis_set_matched_transactions(
     return rec
 
 
+@app.get("/cis/records/{record_id}/upload-guide")
+async def cis_record_upload_guide(
+    record_id: uuid.UUID,
+    user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return a structured "what to upload to become verified" guide for a CIS record.
+    Lists concrete next steps with expected document types.
+    """
+    rec = await crud_cis.get_cis_record(db, user_id=user_id, record_id=record_id)
+    if not rec:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="cis_record_not_found")
+
+    verified = rec.evidence_status == "verified_with_statement"
+    steps = []
+    if not verified:
+        steps.append({
+            "step": 1,
+            "action": "obtain_statement",
+            "title": "Obtain CIS300 / Deduction Statement",
+            "description": (
+                f"Contact '{rec.contractor_name}' and request their CIS300 monthly return or "
+                "a subcontractor deduction statement for the period "
+                f"{rec.period_start} to {rec.period_end}."
+            ),
+            "accepted_formats": ["PDF", "JPG/PNG (clear photo)", "XLSX"],
+            "hmrc_reference": "CIS300 form or equivalent contractor-issued statement",
+        })
+        steps.append({
+            "step": 2,
+            "action": "upload",
+            "title": "Upload Statement to CIS Control Centre",
+            "description": "Go to the CIS Refund Tracker, find this contractor, click 'Upload statement' and attach the document.",
+            "accepted_formats": ["PDF", "JPG", "PNG", "XLSX"],
+            "hmrc_reference": None,
+        })
+        steps.append({
+            "step": 3,
+            "action": "verify_amounts",
+            "title": "Confirm Key Amounts Match",
+            "description": (
+                f"The statement must show CIS deducted: £{rec.cis_deducted_total:.2f}, "
+                f"net paid: £{rec.net_paid_total:.2f}. Any discrepancy triggers review."
+            ),
+            "accepted_formats": None,
+            "hmrc_reference": None,
+        })
+
+    recon_status = rec.reconciliation_status
+    if recon_status == "needs_review":
+        steps.append({
+            "step": len(steps) + 1,
+            "action": "reconcile_bank",
+            "title": "Reconcile Bank Transaction",
+            "description": (
+                "The bank net received differs from the declared net by more than the tolerance. "
+                "Use the Auto-match tool in the CIS Control Centre to link the correct bank transaction, "
+                "or manually select the matching payment."
+            ),
+            "accepted_formats": None,
+            "hmrc_reference": None,
+        })
+    elif recon_status == "pending":
+        steps.append({
+            "step": len(steps) + 1,
+            "action": "link_bank_transaction",
+            "title": "Link a Bank Transaction",
+            "description": (
+                "No bank transaction has been linked to this CIS record yet. "
+                "Use 'Auto-match' in the CIS Control Centre to automatically find the payment."
+            ),
+            "accepted_formats": None,
+            "hmrc_reference": None,
+        })
+
+    return {
+        "record_id": str(record_id),
+        "contractor_name": rec.contractor_name,
+        "period_start": str(rec.period_start),
+        "period_end": str(rec.period_end),
+        "cis_deducted_total": rec.cis_deducted_total,
+        "net_paid_total": rec.net_paid_total,
+        "evidence_status": rec.evidence_status,
+        "reconciliation_status": recon_status,
+        "is_verified": verified,
+        "steps": steps,
+    }
+
+
 @app.post("/cis/tasks/suspect", response_model=schemas.CISReviewTaskOut, status_code=status.HTTP_201_CREATED)
 async def cis_create_suspect_task(
     body: schemas.CISSuspectTaskCreate,

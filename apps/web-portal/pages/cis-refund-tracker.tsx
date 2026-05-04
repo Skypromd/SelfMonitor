@@ -137,6 +137,29 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
     }
   };
 
+  // Snooze state
+  const [snoozeLoading, setSnoozeLoading] = useState<Record<string, boolean>>({});
+  const [snoozeDone_, setSnoozeDone_] = useState<Record<string, boolean>>({});
+  type ReminderLogEntry = { at: string; task_id: string; action: string; days?: number };
+  const [reminderLog, setReminderLog] = useState<ReminderLogEntry[]>([]);
+
+  const snoozeTask = async (taskId: string, days: number) => {
+    setSnoozeLoading(prev => ({ ...prev, [taskId]: true }));
+    try {
+      const r = await fetch(`${TXN_SERVICE_URL}/cis/tasks/${taskId}/snooze-reminder`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days }),
+      });
+      if (r.ok) {
+        setSnoozeDone_(prev => ({ ...prev, [taskId]: true }));
+        setReminderLog(prev => [{ at: new Date().toLocaleTimeString('en-GB'), task_id: taskId, action: 'snoozed', days }, ...prev.slice(0, 19)]);
+      }
+    } finally {
+      setSnoozeLoading(prev => ({ ...prev, [taskId]: false }));
+    }
+  };
+
   const openUploadForContractor = (contractorName: string, periodStart?: string, periodEnd?: string) => {
     setSaveOk(false);
     setUploadErr('');
@@ -792,15 +815,46 @@ export default function CisRefundTrackerPage({ token }: { token: string }) {
           })()}
 
           {data.open_tasks_preview.length > 0 && (
-            <section>
-              <h2 style={{ fontSize: '1rem', marginBottom: 8 }}>Recent open tasks</h2>
-              <ul style={{ paddingLeft: 18, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                {data.open_tasks_preview.map((t) => (
-                  <li key={t.task_id} style={{ marginBottom: 6 }}>
-                    {t.description || 'CIS suspect'} {t.amount_gbp != null ? `· ${fmt(t.amount_gbp)}` : ''}
-                  </li>
-                ))}
-              </ul>
+            <section style={{ background: 'var(--lp-bg-elevated, rgba(255,255,255,0.03))', border: '1px solid var(--lp-border, rgba(255,255,255,0.08))', borderRadius: 14, padding: '1.2rem 1.5rem' }}>
+              <h2 style={{ fontSize: '1rem', marginBottom: 12, marginTop: 0 }}>🔔 Open CIS Tasks</h2>
+              {data.open_tasks_preview.map((t) => {
+                const snoozing = snoozeLoading[t.task_id];
+                const snoozeDone = snoozeDone_[t.task_id];
+                return (
+                  <div key={t.task_id} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', marginBottom: 10, fontSize: '0.84rem', padding: '0.5rem 0', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span style={{ flex: 1, color: 'var(--text-secondary)' }}>
+                      {t.description || 'CIS suspect'} {t.amount_gbp != null ? `· ${fmt(t.amount_gbp)}` : ''}
+                    </span>
+                    {snoozeDone ? (
+                      <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>✓ Snoozed</span>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '0.35rem' }}>
+                        {(data.reminder_policy.snooze_days_allowed ?? [7, 14, 30]).map((days) => (
+                          <button
+                            key={days}
+                            type="button"
+                            disabled={snoozing}
+                            onClick={() => snoozeTask(t.task_id, days)}
+                            style={{ padding: '0.18rem 0.55rem', borderRadius: 6, background: 'rgba(148,163,184,0.1)', color: '#94a3b8', border: '1px solid rgba(148,163,184,0.2)', fontSize: '0.7rem', fontWeight: 600, cursor: snoozing ? 'default' : 'pointer' }}
+                          >
+                            {snoozing ? '…' : `Snooze ${days}d`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {reminderLog.length > 0 && (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#94a3b8', marginBottom: 6 }}>REMINDER LOG</div>
+                  {reminderLog.map((entry, i) => (
+                    <div key={i} style={{ fontSize: '0.75rem', color: '#94a3b8', marginBottom: 3 }}>
+                      {entry.at} — {entry.action} task {entry.task_id.slice(0, 8)}…{entry.days != null ? ` (${entry.days}d snooze)` : ''}
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
         </>
